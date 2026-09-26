@@ -53,6 +53,58 @@ class PlayerViewModel(private val container: AppContainer) : ViewModel() {
     var lyricOffsetMs by mutableStateOf(0L)
         private set
 
+    /**
+     * Progress of a long-press-to-download on the artwork.
+     *
+     * Held here rather than in the screen so it survives a recomposition of the player (and the
+     * lyric/artwork presentation switch), and so the download is not cancelled by the user rotating
+     * or navigating the player's own UI.
+     */
+    var download by mutableStateOf<DownloadState>(DownloadState.Idle)
+        private set
+
+    private var downloadJob: Job? = null
+
+    /**
+     * Downloads the current track and files it in the device's music collection.
+     *
+     * Resolves the stream URL first: NetEase hands out short-lived signed links, so the URL is not
+     * reusable and cannot be pre-fetched. The state machine is deliberately coarse (downloading →
+     * saved / failed) because the transfer reports no progress of its own, and a fake percentage
+     * would be worse than an honest indeterminate indicator.
+     */
+    fun downloadCurrent() {
+        val track = container.player.state.value.current ?: return
+        if (download is DownloadState.Downloading) return
+        downloadJob?.cancel()
+        download = DownloadState.Downloading
+        downloadJob = viewModelScope.launch {
+            val quality = container.settings.quality
+            val resolved = container.music.streamUrl(track.id, quality)
+            val url = resolved?.url
+            if (url.isNullOrBlank()) {
+                download = DownloadState.Failed(
+                    when {
+                        resolved == null -> "无法获取下载地址"
+                        resolved.isTrial -> "会员歌曲仅可试听，无法下载"
+                        else -> "该歌曲当前不可下载"
+                    },
+                )
+                return@launch
+            }
+            val result = container.downloads.save(url, track)
+            download = result.fold(
+                onSuccess = { DownloadState.Saved },
+                onFailure = { DownloadState.Failed(it.message ?: "下载失败") },
+            )
+        }
+    }
+
+    /** Clears the transient saved/failed badge once it has been seen. */
+    fun clearDownloadState() {
+        if (download !is DownloadState.Downloading) download = DownloadState.Idle
+    }
+
     /** Applies and persists an offset for the current track. */
     fun setLyricOffset(offsetMs: Long) {
         val id = lastTrackId
@@ -163,3 +215,16 @@ class PlayerViewModel(private val container: AppContainer) : ViewModel() {
 
 /** Largest manual lyric offset the UI allows, in milliseconds. */
 const val LYRIC_OFFSET_LIMIT_MS = 5000L
+
+/**
+ * State of a long-press-to-download.
+ *
+ * A download has no meaningful progress to report (the transfer is a single streamed response), so
+ * the model stays coarse: in flight, done, or failed with a reason worth reading.
+ */
+sealed interface DownloadState {
+    data object Idle : DownloadState
+    data object Downloading : DownloadState
+    data object Saved : DownloadState
+    data class Failed(val message: String) : DownloadState
+}

@@ -45,10 +45,10 @@ import com.yunyin.music.ui.theme.SFPro
  * until that work is done (with a minimum and a fail-safe maximum), so it is a *cover* rather than a
  * fixed delay.
  *
- * **Design.** The icon is a sky-blue note on a white face, so the launch continues that: the same
- * white ground, the same blue mark, the wordmark beneath. That is Apple's own launch idiom — the
- * icon, larger, on its own background — and it makes the launch one continuous surface from the
- * platform splash through to the app.
+ * **Design.** The icon is a sky-blue mark on a white face, so the launch continues that: the same
+ * white ground, the same mark, the wordmark beneath. That is Apple's own launch idiom — the icon,
+ * larger, on its own background — and it makes the launch one continuous surface from the platform
+ * splash through to the app.
  *
  * **Motion.** Two beats, then an idle.
  *
@@ -116,13 +116,13 @@ fun SplashScreen(modifier: Modifier = Modifier) {
             verticalArrangement = Arrangement.Center,
         ) {
             // The mark is its own drawable rather than the launcher foreground, whose viewport is
-            // the 108-unit icon canvas: using that here would leave the note at ~57% of the box and
-            // make it awkward to size. `ic_brand_note` is cropped to the note's own ink.
+            // the 108-unit icon canvas: using that here would leave the mark at ~70% of the box and
+            // make it awkward to size. `ic_brand_note` is cropped to the mark's own ink.
             Image(
                 painter = painterResource(R.drawable.ic_brand_note),
                 contentDescription = null,
                 modifier = Modifier
-                    .size(SplashMarkWidth, SplashMarkWidth * BrandNoteAspect)
+                    .size(SplashMarkSize)
                     .graphicsLayer {
                         alpha = markT * idle
                         // Settles from 5% larger. Scaling down into place reads as arriving; scaling
@@ -145,7 +145,7 @@ fun SplashScreen(modifier: Modifier = Modifier) {
                 color = SplashWordmark,
                 textAlign = TextAlign.Center,
                 modifier = Modifier
-                    .padding(top = 26.dp)
+                    .padding(top = 24.dp)
                     .graphicsLayer {
                         alpha = wordT * idle
                         translationY = (1f - wordT) * 10.dp.toPx()
@@ -158,11 +158,13 @@ fun SplashScreen(modifier: Modifier = Modifier) {
 /** Smoothstep; keeps each element's slice of the progress gentle at both ends. */
 private fun Float.smooth(): Float = this * this * (3f - 2f * this)
 
-/** The mark's width on the launch screen. Its height follows from the note's own aspect. */
-private val SplashMarkWidth = 150.dp
-
-/** The note's height/width ratio, matching the supplied note's own bounding box. */
-private const val BrandNoteAspect = 0.961f
+/**
+ * The mark's box on the launch screen.
+ *
+ * The brand drawable's viewport is cropped to the mark's ink, so a square box is safe: the mark's
+ * own box is only slightly taller than wide (1.09:1) and the layout does not need to know.
+ */
+private val SplashMarkSize = 132.dp
 
 /** How far the idle breath dips, so it is felt rather than noticed. */
 private const val BreathFloor = 0.90f
@@ -179,7 +181,7 @@ private const val WordmarkTracking = 2.5f
 private val SplashBackground = Color(0xFFFCFCFD)
 
 /**
- * The wordmark takes the note's own blue, so it reads as part of the lockup rather than as separate
+ * The wordmark takes the mark's own blue, so it reads as part of the lockup rather than as separate
  * text — and it clears 3.3:1 against the white ground, which is what a graphic this size needs.
  */
 private val SplashWordmark = Color(0xFF1E93E0)

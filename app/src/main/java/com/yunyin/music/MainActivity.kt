@@ -399,6 +399,22 @@ class MainActivity : ComponentActivity() {
                     onShowSettings = { showSettings = true; showPlayer = false },
                     lyricOffsetMs = playerViewModel.lyricOffsetMs,
                     onLyricOffsetChange = playerViewModel::setLyricOffset,
+                    download = playerViewModel.download,
+                    onDownload = playerViewModel::downloadCurrent,
+                    onDownloadDismissed = playerViewModel::clearDownloadState,
+                    onCopyLyric = { text ->
+                        if (text.isNullOrBlank()) {
+                            Toast.makeText(context, "这一行没有可复制的文字", Toast.LENGTH_SHORT).show()
+                        } else {
+                            val clipboard =
+                                context.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+                                    as android.content.ClipboardManager
+                            clipboard.setPrimaryClip(
+                                android.content.ClipData.newPlainText("歌词", text),
+                            )
+                            Toast.makeText(context, "已复制歌词", Toast.LENGTH_SHORT).show()
+                        }
+                    },
                     positionProvider = container.player::positionMsNow,
                 )
             }

@@ -40,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextMotion
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.yunyin.music.data.LyricClipboard
 import com.yunyin.music.ui.components.CrossfadeContent
 import com.yunyin.music.ui.icons.SfIcons
 import com.yunyin.music.ui.theme.SFPro
@@ -68,6 +69,13 @@ fun LyricsView(
     positionProvider: () -> Long,
     /** Called when the user taps a line; receives the line's start time in ms. */
     onSeekToLine: (Int) -> Unit,
+    /**
+     * Called when the user long-presses a line.
+     *
+     * Receives the line's copyable text (content plus translation, or nothing when the line has no
+     * real content), so the view does not have to know how a line becomes a string.
+     */
+    onLineLongPress: (String?) -> Unit = {},
     modifier: Modifier = Modifier,
     /**
      * Reading position of the focused line, as a fraction of the lyrics area.
@@ -228,7 +236,7 @@ fun LyricsView(
                         // stepping a coarse playback callback would otherwise produce.
                         renderCurrentPosition = { smoothPositionMs.toInt() },
                         onLineClicked = { line -> onSeekToLine(line.start) },
-                        onLinePressed = { },
+                        onLinePressed = { line -> onLineLongPress(LyricClipboard.textFor(line)) },
                         modifier = Modifier.fillMaxSize(),
                         // Styles come from the caller, which also pre-warms `layoutCache` with
                         // them, so the measurements in the cache match what is drawn.

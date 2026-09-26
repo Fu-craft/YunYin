@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -65,6 +66,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextMotion
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -82,8 +84,10 @@ import com.yunyin.music.ui.components.CrossfadeContent
 import com.yunyin.music.ui.components.formatDuration
 import com.yunyin.music.ui.components.rememberControlRipple
 import com.yunyin.music.ui.icons.SfIcons
+import com.yunyin.music.ui.theme.AppleColors
 import com.yunyin.music.ui.theme.AppleShapes
 import com.yunyin.music.ui.theme.SFPro
+import com.yunyin.music.ui.DownloadState
 import com.mocharealm.accompanist.lyrics.core.model.SyncedLyrics
 import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
 import kotlinx.coroutines.delay
@@ -121,6 +125,12 @@ fun PlayerScreen(
     /** Current per-track lyric offset, and its setter, for the manual timing control. */
     lyricOffsetMs: Long = 0L,
     onLyricOffsetChange: (Long) -> Unit = {},
+    /** State of a long-press-to-download, and the two actions that drive it. */
+    download: DownloadState = DownloadState.Idle,
+    onDownload: () -> Unit = {},
+    onDownloadDismissed: () -> Unit = {},
+    /** Called with a long-pressed lyric's text; null when the line had nothing to copy. */
+    onCopyLyric: (String?) -> Unit = {},
     positionProvider: () -> Long,
     modifier: Modifier = Modifier,
 ) {
@@ -470,6 +480,7 @@ fun PlayerScreen(
                                     isPlaying = state.isPlaying,
                                     positionProvider = positionProvider,
                                     onSeekToLine = { onSeek(it.toLong()) },
+                                    onLineLongPress = onCopyLyric,
                                     modifier = Modifier.fillMaxSize(),
                                     focusFraction = LANDSCAPE_LYRICS_FOCUS_FRACTION,
                                     topFadeZone = edgeFade,
@@ -497,7 +508,10 @@ fun PlayerScreen(
                                     track = track,
                                     cover = cover,
                                     loader = loader,
+                                    download = download,
                                     onToggleLyrics = { interaction++; onToggleLyrics() },
+                                    onDownload = { interaction++; onDownload() },
+                                    onDownloadDismissed = onDownloadDismissed,
                                     onCollapse = onCollapse,
                                     dragDistance = { dragDistance },
                                     setDragDistance = { dragDistance = it },
@@ -610,6 +624,7 @@ fun PlayerScreen(
                                 isPlaying = state.isPlaying,
                                 positionProvider = positionProvider,
                                 onSeekToLine = { onSeek(it.toLong()) },
+                                onLineLongPress = onCopyLyric,
                                 modifier = Modifier.fillMaxSize(),
                                 // Constant in both states: the chrome only changes alpha, so the
                                 // reading position never moves on entering immersive mode.
@@ -739,7 +754,10 @@ fun PlayerScreen(
                                 track = track,
                                 cover = cover,
                                 loader = loader,
+                                download = download,
                                 onToggleLyrics = { interaction++; onToggleLyrics() },
+                                onDownload = { interaction++; onDownload() },
+                                onDownloadDismissed = onDownloadDismissed,
                                 onCollapse = onCollapse,
                                 dragDistance = { dragDistance },
                                 setDragDistance = { dragDistance = it },
@@ -797,14 +815,23 @@ fun PlayerScreen(
  *
  * `dragDistance` is passed as a getter/setter pair because the value lives in the parent's state —
  * the gesture and the dismissal threshold belong together.
+ *
+ * Gestures on the cover, in the order the user meets them:
+ *  - **tap** switches to the lyrics presentation;
+ *  - **long press** downloads the track ([onDownload]), with the state surfaced over the cover;
+ *  - **drag down** dismisses the player.
  */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun ArtworkWithGestures(
     artSize: androidx.compose.ui.unit.Dp,
     track: Track?,
     cover: ImageBitmap?,
     loader: ArtworkLoader,
+    download: DownloadState,
     onToggleLyrics: () -> Unit,
+    onDownload: () -> Unit,
+    onDownloadDismissed: () -> Unit,
     onCollapse: () -> Unit,
     dragDistance: () -> Float,
     setDragDistance: (Float) -> Unit,
@@ -829,10 +856,14 @@ private fun ArtworkWithGestures(
                     },
                 )
             }
-            .clickable(
+            // A long press downloads. `combinedClickable` rather than a second `pointerInput`: the
+            // tap and the long press then share one gesture detector, so they cannot both fire for
+            // the same press and there is no ordering to reason about.
+            .combinedClickable(
                 indication = rememberControlRipple(),
                 interactionSource = null,
                 onClick = onToggleLyrics,
+                onLongClick = onDownload,
             ),
         contentAlignment = Alignment.Center,
     ) {
@@ -859,6 +890,130 @@ private fun ArtworkWithGestures(
                 )
                 .shadow(14.dp, ContinuousRoundedRectangle(ARTWORK_CORNER)),
         )
+
+        // Download feedback, drawn over the cover so the gesture's result appears exactly where the
+        // gesture was made.
+        DownloadOverlay(state = download, size = artSize, onDismissed = onDownloadDismissed)
+    }
+}
+
+/**
+ * The result of a long-press-to-download, rendered over the artwork.
+ *
+ * Three states, and each is a different *kind* of thing, so each gets a different treatment:
+ *
+ *  - **downloading** — a scrim and a spinner, both fading in. The scrim is what makes the spinner
+ *    readable over arbitrary artwork, and fading rather than appearing avoids a flash.
+ *  - **saved** — the scrim lifts, the cover springs back to full size, and a checkmark scales in
+ *    *with a slight overshoot* before the whole thing fades away. The overshoot is deliberate and is
+ *    the one iOS idiom worth borrowing here: a confirmation should feel like it landed.
+ *  - **failed** — same as saved, in the system orange, and it lingers a little longer because it
+ *    carries a message the user has to read.
+ *
+ * Everything animates on `alpha`/`scale` only (never size), so it cannot re-layout the player mid
+ * gesture, and the overlay takes no touches: the cover's own gestures must keep working underneath.
+ */
+@Composable
+private fun DownloadOverlay(
+    state: DownloadState,
+    size: androidx.compose.ui.unit.Dp,
+    onDismissed: () -> Unit,
+) {
+    val visible = state !is DownloadState.Idle
+    // Hold the badge a moment after it arrives so the eye can catch it, then retract. Driven by a
+    // key on the state so each new result restarts it rather than inheriting the previous run.
+    var badgeVisible by remember(state) { mutableStateOf(false) }
+    LaunchedEffect(state) {
+        if (state is DownloadState.Saved || state is DownloadState.Failed) {
+            badgeVisible = true
+            delay(if (state is DownloadState.Failed) BADGE_HOLD_ERROR_MS else BADGE_HOLD_MS)
+            badgeVisible = false
+            delay(BADGE_FADE_MS_L)
+            onDismissed()
+        }
+    }
+
+    val scrim by animateFloatAsState(
+        targetValue = if (state is DownloadState.Downloading) 0.55f else 0f,
+        animationSpec = tween(320, easing = ChromeEasing),
+        label = "download-scrim",
+    )
+    // The badge stays up while `badgeVisible`, and the whole overlay unmounts once it has faded.
+    val badge by animateFloatAsState(
+        targetValue = if (badgeVisible) 1f else 0f,
+        animationSpec = tween(BADGE_FADE_MS, easing = ChromeEasing),
+        label = "download-badge",
+    )
+
+    if (!visible && badge == 0f) return
+
+    Box(
+        Modifier
+            .size(size)
+            .clip(ContinuousRoundedRectangle(ARTWORK_CORNER))
+            // No touches: the cover's tap / long press / drag must keep working under the overlay.
+            .pointerInput(Unit) { },
+        contentAlignment = Alignment.Center,
+    ) {
+        if (scrim > 0.01f) {
+            Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = scrim)))
+        }
+
+        if (state is DownloadState.Downloading) {
+            CircularProgressIndicator(
+                color = Color.White,
+                strokeWidth = 3.dp,
+                modifier = Modifier.size(46.dp).graphicsLayer { alpha = scrim / 0.55f },
+            )
+        }
+
+        if (badge > 0.01f) {
+            val saved = state is DownloadState.Saved
+            // A small overshoot on arrival, settling at 1: the confirmation "lands".
+            val pop = 0.86f + 0.14f * badge
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .graphicsLayer {
+                        alpha = badge
+                        scaleX = pop * (1f + (1f - badge) * 0.06f)
+                        scaleY = pop * (1f + (1f - badge) * 0.06f)
+                    },
+            ) {
+                Box(
+                    Modifier
+                        .size(72.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (saved) Color.Black.copy(alpha = 0.62f)
+                            else AppleColors.systemOrange.copy(alpha = 0.82f),
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = if (saved) SfIcons.Checkmark else SfIcons.ExclamationTriangle,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(if (saved) 34.dp else 30.dp),
+                    )
+                }
+                if (!saved && state is DownloadState.Failed) {
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        text = state.message,
+                        fontFamily = SFPro,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color.White,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .clip(ContinuousRoundedRectangle(AppleShapes.pill))
+                            .background(Color.Black.copy(alpha = 0.55f))
+                            .padding(horizontal = 12.dp, vertical = 5.dp),
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -1695,3 +1850,16 @@ private fun Modifier.sharpAbove(
 
 /** Which screen edge the frosted control panel occupies. */
 private enum class FrostEdge { Bottom, Left, Right }
+
+/**
+ * Download-feedback timings.
+ *
+ * The badge is held long enough to be read without being dismissed by reflex, then fades. A failure
+ * is held longer because it carries a message; a plain success only has to register.
+ */
+private const val BADGE_HOLD_MS = 900L
+private const val BADGE_HOLD_ERROR_MS = 1900L
+
+/** Fade duration. Two spellings because `tween` takes an Int and `delay` a Long. */
+private const val BADGE_FADE_MS = 260
+private const val BADGE_FADE_MS_L = 260L
