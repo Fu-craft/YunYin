@@ -45,10 +45,10 @@ import com.yunyin.music.ui.theme.SFPro
  * until that work is done (with a minimum and a fail-safe maximum), so it is a *cover* rather than a
  * fixed delay.
  *
- * **Design.** The icon is a white note on a blue face, so the launch continues that: the same blue
- * ground, the same white mark, the wordmark beneath. That is Apple's own launch idiom — the icon,
- * larger, on its own background — and it makes the launch one continuous surface from the platform
- * splash through to the app.
+ * **Design.** The icon is a sky-blue note on a white face, so the launch continues that: the same
+ * white ground, the same blue mark, the wordmark beneath. That is Apple's own launch idiom — the
+ * icon, larger, on its own background — and it makes the launch one continuous surface from the
+ * platform splash through to the app.
  *
  * **Motion.** Two beats, then an idle.
  *
@@ -104,7 +104,7 @@ fun SplashScreen(modifier: Modifier = Modifier) {
     Box(
         modifier
             .fillMaxSize()
-            .background(Brush.verticalGradient(SplashBackground))
+            .background(SplashBackground)
             // Swallow input. A background alone does not consume touches, so without this a tap
             // during the launch screen would reach the app underneath and could start playback on a
             // screen the user cannot see yet.
@@ -159,10 +159,10 @@ fun SplashScreen(modifier: Modifier = Modifier) {
 private fun Float.smooth(): Float = this * this * (3f - 2f * this)
 
 /** The mark's width on the launch screen. Its height follows from the note's own aspect. */
-private val SplashMarkWidth = 128.dp
+private val SplashMarkWidth = 150.dp
 
-/** The note's height/width ratio, matching the launcher icon's geometry. */
-private const val BrandNoteAspect = 1.183f
+/** The note's height/width ratio, matching the supplied note's own bounding box. */
+private const val BrandNoteAspect = 0.961f
 
 /** How far the idle breath dips, so it is felt rather than noticed. */
 private const val BreathFloor = 0.90f
@@ -171,21 +171,18 @@ private const val BreathFloor = 0.90f
 private const val WordmarkTracking = 2.5f
 
 /**
- * Launch ground: the icon's blue, as a narrow vertical gradient.
+ * Launch ground: white, matching the icon's face.
  *
- * Matches `ic_launcher_background.xml`, so the handover from the platform splash (which uses the
- * same top stop as a flat colour, via `brand_background`) has no visible step.
+ * A hair off pure white so the mark's edges sit on a surface rather than in a void, and so the
+ * handover from the platform splash (which uses the same colour) has no step.
  */
-private val SplashBackground = listOf(
-    Color(0xFF2A9DE8),
-    Color(0xFF0A66AC),
-)
+private val SplashBackground = Color(0xFFFCFCFD)
 
 /**
- * The wordmark is white, like the note — the marks belong to the same lockup, and white on this blue
- * is the highest-contrast pairing available.
+ * The wordmark takes the note's own blue, so it reads as part of the lockup rather than as separate
+ * text — and it clears 3.3:1 against the white ground, which is what a graphic this size needs.
  */
-private val SplashWordmark = Color(0xFFFFFFFF)
+private val SplashWordmark = Color(0xFF1E93E0)
 
 /**
  * Reveal curve: a decelerating ease-out with no overshoot.
