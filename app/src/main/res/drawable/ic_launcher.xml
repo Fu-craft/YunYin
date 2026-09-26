@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Legacy (non-adaptive) launcher icon for 云音: background gradient + mark composed into one vector,
+  for tooling that cannot read an adaptive icon. The platform uses res/mipmap-anydpi-v26, which
+  composites the same two layers.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path android:pathData="M0,0h108v108h-108z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="0" android:startY="0"
+                android:endX="86" android:endY="108">
+                <item android:offset="0" android:color="#FF6EC6FF" />
+                <item android:offset="0.62" android:color="#FF3C6BFF" />
+                <item android:offset="1" android:color="#FF2A55F0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M59.14,65.79C60.95,70.27 57.64,75.82 51.75,78.2C45.87,80.58 39.63,78.88 37.82,74.41C36.01,69.93 39.32,64.38 45.21,62C51.09,59.62 57.33,61.32 59.14,65.79Z" />
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="5.5"
+        android:strokeLineCap="round"
+        android:pathData="M58.6,68.38L58.6,28.47" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M58.6,28.47C71.48,31.46 74.01,40.66 68.72,48.94C66.42,42.5 62.51,37.44 58.6,35.6Z" />
+</vector>

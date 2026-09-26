@@ -1,0 +1,49 @@
+# ---------------------------------------------------------------- build output
+build/
+app/build/
+.gradle/
+.kotlin/
+.idea/
+*.iml
+captures/
+.externalNativeBuild/
+.cxx/
+
+# ---------------------------------------------------------------- local config & secrets
+# Machine-specific SDK path, and the API endpoint the local build targets.
+local.properties
+# Signing material. Never commit the keystore: leaking it lets anyone publish
+# updates that Android will accept as yours.
+keystore.properties
+*.jks
+*.keystore
+*.p12
+
+# ---------------------------------------------------------------- development scaffolding
+# The scripts in tools/ are development helpers. They hardcode this machine's paths
+# (e.g. the Android SDK location and a scratch screenshot directory) and the API
+# endpoint used while developing, so they are neither portable nor safe to publish.
+# Set api.base.url in local.properties to build against your own endpoint instead.
+tools/
+plans/
+
+# Development log: the round-by-round fix history from before publication. It contains
+# the API endpoint, quotes from the development conversation, and this machine's paths
+# and device model, so it is kept local only.
+docs/DEVLOG.md
+
+# ---------------------------------------------------------------- logs / scratch
+*.log
+
+# Rendered previews and screenshots: these embed album artwork and other apps' UI,
+# so they are not redistributable even though the code is.
+*.png
+*.jpg
+*.jpeg
+!docs/screenshots/*.png
+
+# ---------------------------------------------------------------- fonts
+# SF Pro is Apple's font and its licence does not permit redistribution in a
+# third-party repository. Supply your own copy locally, or swap SFPro in
+# ui/theme/Type.kt for a freely-licensed family.
+app/src/main/res/font/sf_pro.ttf
