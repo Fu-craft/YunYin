@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Adaptive launcher icon for 云音 (API 26+; the app's minSdk is 33, so this is the only form the
-  platform actually renders). The legacy `@drawable/ic_launcher` remains for any tooling that
-  cannot read an adaptive icon.
+  Adaptive launcher icon for 云音 (API 26+; minSdk is 33, so this is the only form the platform
+  renders).
+
+  Both layers come from tools/build_mark_from_png.py: the background is a white vector, and the
+  foreground is the supplied mark as a per-density PNG, so it stays smooth at every launcher size.
 -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@drawable/ic_launcher_background" />

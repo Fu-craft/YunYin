@@ -41,9 +41,13 @@ docs/DEVLOG.md
 
 # Rendered previews and screenshots: these embed album artwork and other apps' UI,
 # so they are not redistributable even though the code is.
+#
+# App resources are re-included: the launcher icon and the splash mark are PNGs, and excluding them
+# would ship a repository whose build is missing its own icon.
 *.png
 *.jpg
 *.jpeg
+!app/src/main/res/drawable*/**/*.png
 !docs/screenshots/*.png
 
 # ---------------------------------------------------------------- fonts

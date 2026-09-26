@@ -115,9 +115,9 @@ fun SplashScreen(modifier: Modifier = Modifier) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            // The mark is its own drawable rather than the launcher foreground, whose viewport is
-            // the 108-unit icon canvas: using that here would leave the mark at ~70% of the box and
-            // make it awkward to size. `ic_brand_note` is cropped to the mark's own ink.
+            // The mark is its own drawable, cropped to the mark's ink, so it can be sized directly.
+            // The launcher foreground cannot be used here: its viewport is the 108-unit icon canvas,
+            // so the mark would sit at ~57% of the box with dead space all round.
             Image(
                 painter = painterResource(R.drawable.ic_brand_note),
                 contentDescription = null,
@@ -161,8 +161,8 @@ private fun Float.smooth(): Float = this * this * (3f - 2f * this)
 /**
  * The mark's box on the launch screen.
  *
- * The brand drawable's viewport is cropped to the mark's ink, so a square box is safe: the mark's
- * own box is only slightly taller than wide (1.09:1) and the layout does not need to know.
+ * The brand drawable is square (its viewport is cropped to the mark's ink with a little padding), so
+ * one dimension is enough.
  */
 private val SplashMarkSize = 132.dp
 
