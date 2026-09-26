@@ -9,6 +9,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.yunyin.music.AppContainer
+import com.yunyin.music.data.TrackDownloader
 import com.yunyin.music.playback.PlaybackUiState
 import com.yunyin.music.ui.background.DynamicBackgroundPalette
 import com.mocharealm.accompanist.lyrics.core.model.SyncedLyrics
@@ -92,11 +93,13 @@ class PlayerViewModel(private val container: AppContainer) : ViewModel() {
                 )
                 return@launch
             }
-            val result = container.downloads.save(url, track)
-            download = result.fold(
-                onSuccess = { DownloadState.Saved },
-                onFailure = { DownloadState.Failed(it.message ?: "下载失败") },
-            )
+            // The session cookie goes with the request: NetEase's CDN refuses an anonymous fetch of a
+            // signed audio URL, which is what made the download fail while the URL itself resolved.
+            val outcome = container.downloads.save(url, track, container.settings.cookie)
+            download = when (outcome) {
+                is TrackDownloader.Outcome.Saved -> DownloadState.Saved(outcome.fileName)
+                is TrackDownloader.Outcome.Failed -> DownloadState.Failed(outcome.reason)
+            }
         }
     }
 
@@ -225,6 +228,9 @@ const val LYRIC_OFFSET_LIMIT_MS = 5000L
 sealed interface DownloadState {
     data object Idle : DownloadState
     data object Downloading : DownloadState
-    data object Saved : DownloadState
+
+    /** Carries the saved file name so the confirmation can say where it went. */
+    data class Saved(val fileName: String) : DownloadState
+
     data class Failed(val message: String) : DownloadState
 }

@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -994,16 +995,26 @@ private fun DownloadOverlay(
                         modifier = Modifier.size(if (saved) 34.dp else 30.dp),
                     )
                 }
-                if (!saved && state is DownloadState.Failed) {
+                // A failure message, or the saved file's name — the latter so a completed download
+                // says *what* it saved and where it went, rather than leaving the user to hunt for it.
+                val caption = when (state) {
+                    is DownloadState.Failed -> state.message
+                    is DownloadState.Saved -> state.fileName
+                    else -> null
+                }
+                if (caption != null) {
                     Spacer(Modifier.height(10.dp))
                     Text(
-                        text = state.message,
+                        text = caption,
                         fontFamily = SFPro,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Medium,
                         color = Color.White,
                         textAlign = TextAlign.Center,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
                         modifier = Modifier
+                            .widthIn(max = size * 0.86f)
                             .clip(ContinuousRoundedRectangle(AppleShapes.pill))
                             .background(Color.Black.copy(alpha = 0.55f))
                             .padding(horizontal = 12.dp, vertical = 5.dp),
