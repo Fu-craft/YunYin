@@ -1,10 +1,14 @@
 # ---------------------------------------------------------------- build output
 build/
 app/build/
+# Gradle sometimes emits APKs here depending on the task; it is still output, not source.
+app/debug/
+app/release/
 .gradle/
 .kotlin/
 .idea/
 *.iml
+*.apk
 captures/
 .externalNativeBuild/
 .cxx/
