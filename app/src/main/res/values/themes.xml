@@ -14,10 +14,8 @@
         <item name="android:windowBackground">@color/brand_background</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
-        <!-- Dark status-bar icons: the launch ground is white, and this is what the very first
-             frame (before Compose draws) shows. MainActivity switches these to match the app theme
-             once the splash has gone. -->
-        <item name="android:windowLightStatusBar">true</item>
+        <!-- Light status-bar icons: the launch ground is the icon's blue. -->
+        <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
 

@@ -25,6 +25,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -44,8 +45,8 @@ import com.yunyin.music.ui.theme.SFPro
  * until that work is done (with a minimum and a fail-safe maximum), so it is a *cover* rather than a
  * fixed delay.
  *
- * **Design.** The launcher icon is a sky-blue note on a white face, so the launch continues that:
- * white ground, the same mark, the wordmark beneath. That is Apple's own launch idiom — the icon,
+ * **Design.** The icon is a white note on a blue face, so the launch continues that: the same blue
+ * ground, the same white mark, the wordmark beneath. That is Apple's own launch idiom — the icon,
  * larger, on its own background — and it makes the launch one continuous surface from the platform
  * splash through to the app.
  *
@@ -79,8 +80,9 @@ fun SplashScreen(modifier: Modifier = Modifier) {
         reveal.animateTo(1f, tween(durationMillis = 780, easing = SplashEase))
     }
 
-    // Idle breath. An infinite transition is created unconditionally (hooks must not be conditional)
-    // but its value is ignored when it should not run, so reduced-motion users get a still screen.
+    // Idle breath. An infinite transition is created unconditionally (composition must not branch
+    // on hooks) but its value is ignored when it should not run, so reduced-motion users get a
+    // still screen.
     val breath by rememberInfiniteTransition(label = "splash-breath").animateFloat(
         initialValue = 1f,
         targetValue = 0.90f,
@@ -102,7 +104,7 @@ fun SplashScreen(modifier: Modifier = Modifier) {
     Box(
         modifier
             .fillMaxSize()
-            .background(SplashBackground)
+            .background(Brush.verticalGradient(SplashBackground))
             // Swallow input. A background alone does not consume touches, so without this a tap
             // during the launch screen would reach the app underneath and could start playback on a
             // screen the user cannot see yet.
@@ -136,9 +138,9 @@ fun SplashScreen(modifier: Modifier = Modifier) {
                 fontFamily = SFPro,
                 fontWeight = FontWeight.Medium,
                 fontSize = 26.sp,
-                // Tightens from wide to its final tracking as it fades in. Animated as a real
-                // value so the text re-lays-out each frame rather than being scaled, which would
-                // stretch the glyphs instead of the spacing.
+                // Tightens from wide to its final tracking as it fades in. Animated as a real value
+                // so the text re-lays-out each frame, rather than being scaled — scaling would
+                // stretch the glyphs instead of the spacing between them.
                 letterSpacing = (WordmarkTracking + (1f - wordT) * 7f).sp,
                 color = SplashWordmark,
                 textAlign = TextAlign.Center,
@@ -157,7 +159,7 @@ fun SplashScreen(modifier: Modifier = Modifier) {
 private fun Float.smooth(): Float = this * this * (3f - 2f * this)
 
 /** The mark's width on the launch screen. Its height follows from the note's own aspect. */
-private val SplashMarkWidth = 134.dp
+private val SplashMarkWidth = 128.dp
 
 /** The note's height/width ratio, matching the launcher icon's geometry. */
 private const val BrandNoteAspect = 1.183f
@@ -169,18 +171,21 @@ private const val BreathFloor = 0.90f
 private const val WordmarkTracking = 2.5f
 
 /**
- * Launch ground: white, matching the icon's face.
+ * Launch ground: the icon's blue, as a narrow vertical gradient.
  *
- * A hair off pure white so the mark's soft edges sit on a surface rather than in a void, and so the
- * handover from the platform splash (which uses the same colour) has no step.
+ * Matches `ic_launcher_background.xml`, so the handover from the platform splash (which uses the
+ * same top stop as a flat colour, via `brand_background`) has no visible step.
  */
-private val SplashBackground = Color(0xFFFCFCFD)
+private val SplashBackground = listOf(
+    Color(0xFF2A9DE8),
+    Color(0xFF0A66AC),
+)
 
 /**
- * The wordmark takes the note's own cool tone rather than pure black, so it reads as part of the
- * lockup instead of as separate text.
+ * The wordmark is white, like the note — the marks belong to the same lockup, and white on this blue
+ * is the highest-contrast pairing available.
  */
-private val SplashWordmark = Color(0xFF1B84CB)
+private val SplashWordmark = Color(0xFFFFFFFF)
 
 /**
  * Reveal curve: a decelerating ease-out with no overshoot.

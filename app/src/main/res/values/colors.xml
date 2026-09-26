@@ -2,8 +2,8 @@
 <resources>
     <!--
       Launch ground, shared by the platform splash and the window background so the launch is one
-      continuous screen. Matches the icon's own white face (and the Compose splash's backdrop), so
-      there is no step where one hands over to the next.
+      continuous screen. This is the icon's blue (its top gradient stop), because the app's mark is
+      white on blue — so the very first frame before Compose draws is already the right colour.
     -->
-    <color name="brand_background">#FCFCFD</color>
+    <color name="brand_background">#2A9DE8</color>
 </resources>

@@ -185,17 +185,19 @@ class MainActivity : ComponentActivity() {
             splashVisible = false
         }
 
-        // The launch ground is white while the app itself follows the system theme, so the status
-        // bar icons have to flip: dark on the white splash, then back to whatever the theme wants.
-        // Without this, a dark-mode device shows white icons on white for the length of the splash.
+        // The launch ground is the icon's blue while the app itself follows the system theme, so the
+        // status bar icons have to flip: light icons on the blue splash, then whatever the theme
+        // wants. Without this, a light-mode device shows dark icons on a mid-blue bar — legible, but
+        // not what a first-party app would do, and inconsistent with the dark-mode case.
         val darkTheme = androidx.compose.foundation.isSystemInDarkTheme()
         DisposableEffect(splashVisible, darkTheme) {
             val window = (context as? android.app.Activity)?.window
             val controller = window?.let {
                 androidx.core.view.WindowCompat.getInsetsController(it, it.decorView)
             }
-            // `isAppearanceLightStatusBars = true` means DARK icons (light bar appearance).
-            controller?.isAppearanceLightStatusBars = splashVisible || !darkTheme
+            // `isAppearanceLightStatusBars = true` means DARK icons (a light bar appearance), so
+            // the splash wants it false and the app wants it to match the theme.
+            controller?.isAppearanceLightStatusBars = !splashVisible && !darkTheme
             onDispose { }
         }
 
