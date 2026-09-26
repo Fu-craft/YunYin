@@ -82,6 +82,7 @@ import com.yunyin.music.ui.background.HyperBackground
 import com.yunyin.music.ui.components.Artwork
 import com.yunyin.music.ui.components.CrossfadeContent
 import com.yunyin.music.ui.components.formatDuration
+import com.yunyin.music.ui.components.pressableGestures
 import com.yunyin.music.ui.components.rememberControlRipple
 import com.yunyin.music.ui.icons.SfIcons
 import com.yunyin.music.ui.theme.AppleColors
@@ -843,27 +844,23 @@ private fun ArtworkWithGestures(
     Box(
         Modifier
             .fillMaxSize()
-            // Downward drag dismisses the player (there is no back button).
-            .pointerInput(Unit) {
-                detectVerticalDragGestures(
-                    onDragEnd = {
-                        if (dragDistance() > 90f) onCollapse()
-                        setDragDistance(0f)
-                    },
-                    onVerticalDrag = { change, amount ->
-                        change.consume()
-                        setDragDistance((dragDistance() + amount).coerceAtLeast(0f))
-                    },
-                )
-            }
-            // A long press downloads. `combinedClickable` rather than a second `pointerInput`: the
-            // tap and the long press then share one gesture detector, so they cannot both fire for
-            // the same press and there is no ordering to reason about.
-            .combinedClickable(
-                indication = rememberControlRipple(),
-                interactionSource = null,
-                onClick = onToggleLyrics,
-                onLongClick = onDownload,
+            // Tap / long press / drag decided by ONE detector.
+            //
+            // These were previously `detectVerticalDragGestures` plus `combinedClickable` on the same
+            // box, and they compete: a long press needs the pointer within touch slop for the whole
+            // system timeout, while the drag detector watches the same movement, so a hold that
+            // drifted at all was handed to the drag detector and the long press never fired. That is
+            // what made the download both unreliable and feel like it had to be held for ages.
+            // `pressableGestures` owns the pointer from down to up, so exactly one outcome wins.
+            .pressableGestures(
+                onTap = onToggleLyrics,
+                onLongPress = onDownload,
+                dragDistance = dragDistance,
+                setDragDistance = setDragDistance,
+                onDragEnd = { distance ->
+                    if (distance > 90f) onCollapse()
+                    setDragDistance(0f)
+                },
             ),
         contentAlignment = Alignment.Center,
     ) {
