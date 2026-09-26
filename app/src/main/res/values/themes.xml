@@ -3,22 +3,26 @@
     <!--
       Host theme.
 
-      The window background is the brand blue rather than black: on API 31+ the platform draws its
+      The window background is the brand white rather than black: on API 31+ the platform draws its
       own splash (the app icon on `windowSplashScreenBackground`) before the first Compose frame, and
-      the Compose splash then continues from there. Giving both the same blue makes the launch one
-      continuous brand screen instead of black-into-blue. `windowBackground` also covers the frame
-      between the system splash leaving and Compose drawing, which would otherwise flash black.
+      the Compose splash then continues from there. Giving both the same white makes the launch one
+      continuous brand screen instead of flashing black.
+
+      The status bar text is dark, since the launch ground is now light.
     -->
     <style name="Theme.YunYin" parent="android:Theme.Material.NoActionBar">
-        <item name="android:windowBackground">@color/brand_blue</item>
+        <item name="android:windowBackground">@color/brand_background</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
-        <item name="android:windowLightStatusBar">false</item>
+        <!-- Dark status-bar icons: the launch ground is white, and this is what the very first
+             frame (before Compose draws) shows. MainActivity switches these to match the app theme
+             once the splash has gone. -->
+        <item name="android:windowLightStatusBar">true</item>
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
 
         <!-- Platform splash (API 31+; minSdk is 33, so this is always in effect). -->
-        <item name="android:windowSplashScreenBackground">@color/brand_blue</item>
+        <item name="android:windowSplashScreenBackground">@color/brand_background</item>
         <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
     </style>
 </resources>

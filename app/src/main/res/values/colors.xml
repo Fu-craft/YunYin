@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!--
-      Brand blue, shared by the platform splash and the window background so the launch is one
-      continuous screen. Matches the top stop of `ic_launcher_background.xml` (and of the Compose
-      splash's backdrop), so there is no step where one hands over to the next.
+      Launch ground, shared by the platform splash and the window background so the launch is one
+      continuous screen. Matches the icon's own white face (and the Compose splash's backdrop), so
+      there is no step where one hands over to the next.
     -->
-    <color name="brand_blue">#4F8CEC</color>
+    <color name="brand_background">#FCFCFD</color>
 </resources>

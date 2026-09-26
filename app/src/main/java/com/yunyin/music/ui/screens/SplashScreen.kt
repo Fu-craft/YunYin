@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -17,7 +18,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -37,19 +37,15 @@ import com.yunyin.music.ui.theme.SFPro
  * holds it until that work is done (with a minimum and a fail-safe maximum), so it is a *cover*
  * rather than a fixed delay.
  *
- * **Design.** Deliberately quiet, following the iOS rule that a launch screen should feel
- * inevitable rather than expressive:
+ * **Design.** The launcher icon is a pastel note on a white face, so the launch screen continues
+ * that: a white ground with the same mark, centred, and the wordmark beneath. This is Apple's own
+ * launch-screen idiom — the icon, larger, on its own background — and it makes the launch read as
+ * one continuous surface from the system splash through to the app.
  *
- *  - One flat, near-solid background in the icon's own blue, so the launch reads as one continuous
- *    surface from the system splash through to the app.
- *  - The mark is the launcher icon's own vector, upright and centred — continuous with the icon the
- *    user just tapped.
- *  - A single settle: the mark eases up a very small distance while fading in, then the wordmark
- *    follows underneath. No bounce, no overshoot, no looping ornament — an earlier version pulsed a
- *    glow behind the mark, which is decoration competing with a two-second wait. Motion here only
- *    explains the order of arrival.
- *  - One progress value for the whole reveal, each element reading its own slice, so it cannot
- *    desynchronise and stays legible as one coordinated movement.
+ * Only three things move, and each explains the arrival order rather than decorating it:
+ * the mark fades in, the wordmark follows once the mark has settled, and the wordmark rises the
+ * last few dp into place. No bounce, no overshoot, no looping ornament: a launch screen is the wrong
+ * place for anything that draws attention to itself.
  */
 @Composable
 fun SplashScreen(modifier: Modifier = Modifier) {
@@ -69,82 +65,82 @@ fun SplashScreen(modifier: Modifier = Modifier) {
     Box(
         modifier
             .fillMaxSize()
+            .background(SplashBackground)
             // Swallow input. A background alone does not consume touches, so without this a tap
             // during the launch screen would reach the app underneath and could start playback on a
             // screen the user cannot see yet.
             .pointerInput(Unit) { detectTapGestures { } },
     ) {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(Brush.verticalGradient(SplashBackground)),
-        )
-
         Column(
             Modifier.fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
+            // The mark is its own drawable rather than the launcher foreground, whose viewport is
+            // the 108-unit icon canvas: using that here would leave the note at ~57% of the box and
+            // make it awkward to size. `ic_brand_note` is cropped to the note's own ink.
             Image(
-                painter = painterResource(R.drawable.ic_launcher_foreground),
+                painter = painterResource(R.drawable.ic_brand_note),
                 contentDescription = null,
                 modifier = Modifier
-                    .size(SplashMarkSize)
+                    .size(SplashMarkWidth, SplashMarkWidth * BrandNoteAspect)
                     .graphicsLayer {
                         alpha = markT
-                        // A one-and-a-half percent rise. Any more reads as movement for its own
-                        // sake; this is only enough to make the mark feel placed rather than pasted.
+                        // A one-and-a-half percent rise: enough that the mark reads as placed rather
+                        // than pasted, not enough to be movement for its own sake.
                         val s = 0.985f + 0.015f * markT
                         scaleX = s
                         scaleY = s
                     },
             )
 
-            // No spacer: the vector's 108-unit viewport carries empty space below the mark
-            // (its ink stops at ~75 of 108), which is the gap to the wordmark.
             Text(
                 text = "云音",
                 fontFamily = SFPro,
                 fontWeight = FontWeight.Medium,
                 fontSize = 26.sp,
                 letterSpacing = 3.sp,
-                color = Color.White.copy(alpha = 0.94f),
+                color = SplashWordmark,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.graphicsLayer {
-                    alpha = wordT
-                    // Rises 8dp into place, so the wordmark arrives rather than appears.
-                    translationY = (1f - wordT) * 8.dp.toPx()
-                },
+                modifier = Modifier
+                    .padding(top = 28.dp)
+                    .graphicsLayer {
+                        alpha = wordT
+                        translationY = (1f - wordT) * 8.dp.toPx()
+                    },
             )
         }
     }
 }
 
-/** Smoothstep; keeps every element's slice of the progress gentle at both ends. */
+/** Smoothstep; keeps each element's slice of the progress gentle at both ends. */
 private fun Float.smooth(): Float = this * this * (3f - 2f * this)
 
-/**
- * The mark box. The vector's ink spans ~56% of its viewport, so this yields a mark of roughly
- * 112dp — present without shouting, and leaving the lockup optically centred.
- */
-private val SplashMarkSize = 200.dp
+/** The mark's width on the launch screen. Its height follows from the note's own aspect. */
+private val SplashMarkWidth = 132.dp
+
+/** The note's height/width ratio, matching the launcher icon's geometry. */
+private const val BrandNoteAspect = 1.183f
 
 /**
- * Launch backdrop: the icon's blue, held near-flat.
+ * Launch ground: white, matching the icon's face.
  *
- * A very narrow ramp rather than a pronounced gradient. Two stops this close read as one colour on
- * a phone while avoiding the banding a single flat fill can show on an OLED panel.
+ * A hair off pure white so the mark's soft edges sit on a surface rather than in a void, and so the
+ * handover from the platform splash (which uses the same colour) has no step.
  */
-private val SplashBackground = listOf(
-    Color(0xFF4F8CEC),
-    Color(0xFF3D74DE),
-)
+private val SplashBackground = Color(0xFFFCFCFD)
+
+/**
+ * The wordmark takes the note's own cool tone rather than pure black, so it reads as part of the
+ * lockup instead of as separate text.
+ */
+private val SplashWordmark = Color(0xFF5A6480)
 
 /**
  * Reveal curve: a decelerating ease-out with no overshoot.
  *
- * A launch screen is the wrong place for a spring or a bounce — the mark simply arrives. The values
- * are the classic iOS "ease out" family (fast start, long settle), which is what makes the movement
- * feel like the system's own.
+ * A launch screen is the wrong place for a spring or a bounce — the mark simply arrives. These are
+ * the classic iOS "ease out" values (fast start, long settle), which is what makes the movement feel
+ * like the system's own.
  */
 private val SplashEase = CubicBezierEasing(0.25f, 0.1f, 0.25f, 1f)

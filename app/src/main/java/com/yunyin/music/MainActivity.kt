@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -182,6 +183,20 @@ class MainActivity : ComponentActivity() {
         LaunchedEffect(Unit) {
             delay(SPLASH_MAX_MS)
             splashVisible = false
+        }
+
+        // The launch ground is white while the app itself follows the system theme, so the status
+        // bar icons have to flip: dark on the white splash, then back to whatever the theme wants.
+        // Without this, a dark-mode device shows white icons on white for the length of the splash.
+        val darkTheme = androidx.compose.foundation.isSystemInDarkTheme()
+        DisposableEffect(splashVisible, darkTheme) {
+            val window = (context as? android.app.Activity)?.window
+            val controller = window?.let {
+                androidx.core.view.WindowCompat.getInsetsController(it, it.decorView)
+            }
+            // `isAppearanceLightStatusBars = true` means DARK icons (light bar appearance).
+            controller?.isAppearanceLightStatusBars = splashVisible || !darkTheme
+            onDispose { }
         }
 
         /**
