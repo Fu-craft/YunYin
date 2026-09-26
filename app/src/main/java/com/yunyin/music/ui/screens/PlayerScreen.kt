@@ -80,6 +80,7 @@ import com.yunyin.music.ui.background.HyperBackground
 import com.yunyin.music.ui.components.Artwork
 import com.yunyin.music.ui.components.CrossfadeContent
 import com.yunyin.music.ui.components.formatDuration
+import com.yunyin.music.ui.components.rememberControlRipple
 import com.yunyin.music.ui.icons.SfIcons
 import com.yunyin.music.ui.theme.AppleShapes
 import com.yunyin.music.ui.theme.SFPro
@@ -828,7 +829,11 @@ private fun ArtworkWithGestures(
                     },
                 )
             }
-            .clickable(onClick = onToggleLyrics),
+            .clickable(
+                indication = rememberControlRipple(),
+                interactionSource = null,
+                onClick = onToggleLyrics,
+            ),
         contentAlignment = Alignment.Center,
     ) {
         Artwork(
@@ -1081,7 +1086,11 @@ private fun LyricsHeader(
                     // Tapping the thumbnail returns to the artwork presentation. The shared
                     // element then animates it back out to full size, so the gesture is the exact
                     // reverse of the one that brought the user here.
-                    .clickable(onClick = onCoverClick)
+                    .clickable(
+                        indication = rememberControlRipple(),
+                        interactionSource = null,
+                        onClick = onCoverClick,
+                    )
                     .sharedElement(
                         rememberSharedContentState(key = COVER_SHARED_KEY),
                         animatedVisibilityScope = visibilityScope,
@@ -1130,6 +1139,9 @@ private fun LyricOffsetSheet(
     onChange: (Long) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    // The sheet is a dark surface too, so its pill buttons get the white indication as well. Bounded
+    // here: a pill's ripple should stay inside the pill rather than spill past its rounded edge.
+    val resetRipple = rememberControlRipple(bounded = true)
     androidx.compose.ui.window.Dialog(
         onDismissRequest = onDismiss,
         properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
@@ -1138,14 +1150,20 @@ private fun LyricOffsetSheet(
             Modifier
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.45f))
-                .clickable(onClick = onDismiss),
+                // A scrim that dims the screen to catch a dismissal tap should not paint anything
+                // when pressed; the default indication would flash a large dark rectangle.
+                .clickable(indication = null, interactionSource = null, onClick = onDismiss),
             contentAlignment = Alignment.Center,
         ) {
             Column(
                 Modifier
                     .fillMaxWidth(0.86f)
                     // Swallow taps so clicking the card does not dismiss it.
-                    .clickable(enabled = false) { }
+                    .clickable(
+                        enabled = false,
+                        indication = null,
+                        interactionSource = null,
+                    ) { }
                     .clip(ContinuousRoundedRectangle(AppleShapes.sheet))
                     .background(Color(0xFF1C1C1E))
                     .padding(20.dp),
@@ -1215,7 +1233,10 @@ private fun LyricOffsetSheet(
                         color = Color.White.copy(alpha = 0.75f),
                         modifier = Modifier
                             .clip(ContinuousRoundedRectangle(AppleShapes.pill))
-                            .clickable { onChange(0L) }
+                            .clickable(
+                                indication = resetRipple,
+                                interactionSource = null,
+                            ) { onChange(0L) }
                             .padding(horizontal = 14.dp, vertical = 8.dp),
                     )
                     Spacer(Modifier.width(6.dp))
@@ -1228,7 +1249,7 @@ private fun LyricOffsetSheet(
                         modifier = Modifier
                             .clip(ContinuousRoundedRectangle(AppleShapes.pill))
                             .background(Color.White.copy(alpha = 0.16f))
-                            .clickable(onClick = onDismiss)
+                            .clickable(indication = resetRipple, interactionSource = null, onClick = onDismiss)
                             .padding(horizontal = 18.dp, vertical = 8.dp),
                     )
                 }
@@ -1287,12 +1308,15 @@ private fun CircleGlassIcon(
     size: androidx.compose.ui.unit.Dp,
     onClick: () -> Unit,
 ) {
+    // Same white unbounded indication as the transport controls: these circles sit on the same dark
+    // bar, so the default (dark, bounded) ripple showed here too.
+    val ripple = rememberControlRipple()
     Box(
         Modifier
             .size(size)
             .clip(CircleShape)
             .background(Color.White.copy(alpha = 0.16f))
-            .clickable(onClick = onClick),
+            .clickable(indication = ripple, interactionSource = null, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
@@ -1329,8 +1353,11 @@ private fun TransportButton(
     size: androidx.compose.ui.unit.Dp,
     onClick: () -> Unit,
 ) {
+    // A white, unbounded ripple: the default indication is a dark bounded one, which showed as a
+    // black rectangle under the glyph on the dark control bar.
+    val ripple = rememberControlRipple()
     Box(
-        Modifier.size(64.dp).clickable(onClick = onClick),
+        Modifier.size(64.dp).clickable(indication = ripple, interactionSource = null, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Icon(icon, contentDescription = description, tint = Color.White, modifier = Modifier.size(size))
@@ -1339,8 +1366,9 @@ private fun TransportButton(
 
 @Composable
 private fun PlayPauseButton(isPlaying: Boolean, isBuffering: Boolean, onClick: () -> Unit) {
+    val ripple = rememberControlRipple()
     Box(
-        Modifier.size(72.dp).clickable(onClick = onClick),
+        Modifier.size(72.dp).clickable(indication = ripple, interactionSource = null, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         // Cross-faded so pressing it reads as the control changing state rather than the glyph
@@ -1376,14 +1404,20 @@ private fun BottomIcon(
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
 ) {
+    val ripple = rememberControlRipple()
     Box(
         Modifier
             .size(56.dp)
             .then(
                 if (onLongClick != null) {
-                    Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
+                    Modifier.combinedClickable(
+                        indication = ripple,
+                        interactionSource = null,
+                        onClick = onClick,
+                        onLongClick = onLongClick,
+                    )
                 } else {
-                    Modifier.clickable(onClick = onClick)
+                    Modifier.clickable(indication = ripple, interactionSource = null, onClick = onClick)
                 },
             ),
         contentAlignment = Alignment.Center,

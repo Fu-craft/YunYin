@@ -57,7 +57,9 @@ fun QueueSheet(
         modifier = modifier
             .fillMaxSize()
             .background(Color.Black.copy(alpha = 0.45f))
-            .clickable(onClick = onDismiss),
+            // A scrim that catches a dismissal tap should not paint anything when pressed; the
+            // default indication would flash a full-screen dark rectangle.
+            .clickable(indication = null, interactionSource = null, onClick = onDismiss),
     ) {
         Column(
             Modifier
@@ -66,7 +68,11 @@ fun QueueSheet(
                 .fillMaxHeight(0.72f)
                 .clip(ContinuousRoundedRectangle(AppleShapes.sheet))
                 .background(AppTheme.palette.background)
-                .clickable(enabled = false) { },
+                .clickable(
+                    enabled = false,
+                    indication = null,
+                    interactionSource = null,
+                ) { },
         ) {
             // Grabber, as on a native sheet.
             Box(Modifier.fillMaxWidth().padding(top = 8.dp), contentAlignment = Alignment.Center) {
