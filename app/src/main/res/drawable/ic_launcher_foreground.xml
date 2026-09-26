@@ -24,10 +24,10 @@
               android:type="linear"
               android:startX="54" android:startY="29.56"
               android:endX="54" android:endY="78.44">
-            <item android:offset="0.0" android:color="#FFE7ACBE" />
-            <item android:offset="0.32" android:color="#FFD3C7D6" />
-            <item android:offset="0.64" android:color="#FFBBCEE7" />
-            <item android:offset="1.0" android:color="#FFAEB8F0" />
+            <item android:offset="0.0" android:color="#FFB8E2FA" />
+            <item android:offset="0.34" android:color="#FF93D2F5" />
+            <item android:offset="0.67" android:color="#FF6CBFEE" />
+            <item android:offset="1.0" android:color="#FF45A5E4" />
           </gradient>
         </aapt:attr>
     </path>
