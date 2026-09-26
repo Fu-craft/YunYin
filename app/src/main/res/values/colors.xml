@@ -2,8 +2,8 @@
 <resources>
     <!--
       Brand blue, shared by the platform splash and the window background so the launch is one
-      continuous screen. Matches the first stop of `ic_launcher_background.xml`; the Compose splash
-      draws the full gradient over it, so this only has to match the gradient's light end.
+      continuous screen. Matches the top stop of `ic_launcher_background.xml` (and of the Compose
+      splash's backdrop), so there is no step where one hands over to the next.
     -->
-    <color name="brand_blue">#6EC6FF</color>
+    <color name="brand_blue">#4F8CEC</color>
 </resources>

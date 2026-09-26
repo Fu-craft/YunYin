@@ -2,13 +2,7 @@ package com.yunyin.music.ui.screens
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -20,7 +14,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,52 +33,38 @@ import com.yunyin.music.ui.theme.SFPro
  * Launch screen, shown while the first network work completes.
  *
  * It exists to cover the genuinely slow part of a cold start — resolving a session and loading the
- * home feed — so the user's first sight of the app is the brand rather than a half-built list. The
- * caller keeps it up until that work is done (with a minimum and a fail-safe maximum), so the
- * animation is a *cover*, not a fixed delay: on a fast warm start it is brief, and on a slow network
- * it stays without ever hanging forever.
+ * home feed — so the first sight of the app is the brand rather than a half-built list. The caller
+ * holds it until that work is done (with a minimum and a fail-safe maximum), so it is a *cover*
+ * rather than a fixed delay.
  *
- * Design notes:
- *  - It shows the app's own mark, drawn by the same `ic_launcher_foreground` vector the launcher
- *    icon uses, so the icon the user tapped is continuous with what appears. The vector's own
- *    coordinates already place the mark optically centred, so it is simply scaled up.
- *  - The background is the icon's blue gradient, matching how the system splash (API 31+, on the
- *    theme's window background) hands off to this screen.
- *  - A soft radial glow behind the mark pulses very gently; it gives the static mark life without
- *    drawing attention, which is what a wait state should do. Everything is a per-frame animation of
- *    two `Animatable`s plus one infinite transition, so it costs one draw per frame and nothing else.
- *  - The reveal is a single 0..1 progress, with each element reading its own slice of it, rather than
- *    several chained coroutines — that keeps the whole thing legible as one coordinated movement and
- *    means it cannot desynchronise.
+ * **Design.** Deliberately quiet, following the iOS rule that a launch screen should feel
+ * inevitable rather than expressive:
+ *
+ *  - One flat, near-solid background in the icon's own blue, so the launch reads as one continuous
+ *    surface from the system splash through to the app.
+ *  - The mark is the launcher icon's own vector, upright and centred — continuous with the icon the
+ *    user just tapped.
+ *  - A single settle: the mark eases up a very small distance while fading in, then the wordmark
+ *    follows underneath. No bounce, no overshoot, no looping ornament — an earlier version pulsed a
+ *    glow behind the mark, which is decoration competing with a two-second wait. Motion here only
+ *    explains the order of arrival.
+ *  - One progress value for the whole reveal, each element reading its own slice, so it cannot
+ *    desynchronise and stays legible as one coordinated movement.
  */
 @Composable
 fun SplashScreen(modifier: Modifier = Modifier) {
-    // One progress for the whole reveal.
     val reveal = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
-        // A slight overshoot on the mark's scale is what makes it feel alive rather than mechanical;
-        // y goes past 1 and settles, the classic "back out" curve.
         reveal.animateTo(
             targetValue = 1f,
-            animationSpec = tween(durationMillis = 760, easing = SplashRevealEasing),
+            animationSpec = tween(durationMillis = 620, easing = SplashEase),
         )
     }
 
-    val pulse by rememberInfiniteTransition(label = "splash-pulse").animateFloat(
-        initialValue = 0.55f,
-        targetValue = 0.95f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 2100, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "splash-pulse-alpha",
-    )
-
     val p = reveal.value
-    // Mark leads; the wordmark follows once the mark has mostly arrived.
-    val markAlpha = (p / 0.5f).coerceIn(0f, 1f).let { it * it * (3f - 2f * it) }
-    val markScale = 0.80f + 0.20f * p
-    val wordT = ((p - 0.34f) / 0.66f).coerceIn(0f, 1f).let { it * it * (3f - 2f * it) }
+    // The mark leads; the wordmark arrives once the mark has settled.
+    val markT = (p / 0.62f).coerceIn(0f, 1f).smooth()
+    val wordT = ((p - 0.45f) / 0.55f).coerceIn(0f, 1f).smooth()
 
     Box(
         modifier
@@ -95,13 +74,10 @@ fun SplashScreen(modifier: Modifier = Modifier) {
             // screen the user cannot see yet.
             .pointerInput(Unit) { detectTapGestures { } },
     ) {
-        // Brand backdrop: the same sky-blue-to-azure ramp as the launcher icon. The default
-        // linear-gradient ends at the far corner of the drawn bounds, which matches the icon's
-        // top-left-to-bottom-right direction.
         Box(
             Modifier
                 .fillMaxSize()
-                .background(Brush.linearGradient(colors = SplashBrandGradient)),
+                .background(Brush.verticalGradient(SplashBackground)),
         )
 
         Column(
@@ -109,83 +85,66 @@ fun SplashScreen(modifier: Modifier = Modifier) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            Box(
-                Modifier
+            Image(
+                painter = painterResource(R.drawable.ic_launcher_foreground),
+                contentDescription = null,
+                modifier = Modifier
                     .size(SplashMarkSize)
                     .graphicsLayer {
-                        alpha = markAlpha
-                        scaleX = markScale
-                        scaleY = markScale
+                        alpha = markT
+                        // A one-and-a-half percent rise. Any more reads as movement for its own
+                        // sake; this is only enough to make the mark feel placed rather than pasted.
+                        val s = 0.985f + 0.015f * markT
+                        scaleX = s
+                        scaleY = s
                     },
-                contentAlignment = Alignment.Center,
-            ) {
-                // Glow, behind the mark. Sized to the box and drawn first so the white mark sits on
-                // top of it.
-                Canvas(Modifier.fillMaxSize()) {
-                    val radius = size.minDimension * 0.62f
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            colors = listOf(
-                                Color.White.copy(alpha = 0.16f * pulse),
-                                Color.White.copy(alpha = 0.05f * pulse),
-                                Color.Transparent,
-                            ),
-                            center = center,
-                            radius = radius,
-                        ),
-                        radius = radius,
-                        center = center,
-                    )
-                }
-                // The launcher mark, verbatim.
-                Image(
-                    painter = painterResource(R.drawable.ic_launcher_foreground),
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            }
+            )
 
-            // No spacer: the vector's 108-unit viewport already carries ~24dp of empty space below
-            // the mark (its ink is ~52% of the viewport), which is the gap to the wordmark. An
-            // explicit spacer on top of that read as a disconnected pair.
-
+            // No spacer: the vector's 108-unit viewport carries empty space below the mark
+            // (its ink stops at ~75 of 108), which is the gap to the wordmark.
             Text(
                 text = "云音",
                 fontFamily = SFPro,
-                fontWeight = FontWeight.Bold,
-                fontSize = 30.sp,
-                letterSpacing = 2.sp,
-                color = Color.White,
+                fontWeight = FontWeight.Medium,
+                fontSize = 26.sp,
+                letterSpacing = 3.sp,
+                color = Color.White.copy(alpha = 0.94f),
                 textAlign = TextAlign.Center,
                 modifier = Modifier.graphicsLayer {
                     alpha = wordT
-                    // Rises the last few dp into place, so the wordmark reads as arriving rather
-                    // than appearing.
-                    translationY = (1f - wordT) * 16.dp.toPx()
+                    // Rises 8dp into place, so the wordmark arrives rather than appears.
+                    translationY = (1f - wordT) * 8.dp.toPx()
                 },
             )
         }
     }
 }
 
-/**
- * The mark box. The vector's mark occupies about 0.52 of its 108-unit viewport vertically, so this
- * yields roughly a 118dp-tall mark on a phone — large enough to read as a launch identity, small
- * enough to leave the wordmark in the optical centre.
- */
-private val SplashMarkSize = 226.dp
+/** Smoothstep; keeps every element's slice of the progress gentle at both ends. */
+private fun Float.smooth(): Float = this * this * (3f - 2f * this)
 
-/** Icon blue, matching `ic_launcher_background.xml` so splash and icon are the same colour. */
-private val SplashBrandGradient = listOf(
-    Color(0xFF6EC6FF),
-    Color(0xFF3C6BFF),
-    Color(0xFF2A55F0),
+/**
+ * The mark box. The vector's ink spans ~56% of its viewport, so this yields a mark of roughly
+ * 112dp — present without shouting, and leaving the lockup optically centred.
+ */
+private val SplashMarkSize = 200.dp
+
+/**
+ * Launch backdrop: the icon's blue, held near-flat.
+ *
+ * A very narrow ramp rather than a pronounced gradient. Two stops this close read as one colour on
+ * a phone while avoiding the banding a single flat fill can show on an OLED panel.
+ */
+private val SplashBackground = listOf(
+    Color(0xFF4F8CEC),
+    Color(0xFF3D74DE),
 )
 
 /**
- * Reveal curve for the splash.
+ * Reveal curve: a decelerating ease-out with no overshoot.
  *
- * Deliberately overshoots (the y control value above 1), which is what gives the mark's scale a
- * small settle at the end instead of stopping dead.
+ * A launch screen is the wrong place for a spring or a bounce — the mark simply arrives. The values
+ * are the classic iOS "ease out" family (fast start, long settle), which is what makes the movement
+ * feel like the system's own.
  */
-private val SplashRevealEasing = CubicBezierEasing(0.22f, 1.30f, 0.36f, 1f)
+private val SplashEase = CubicBezierEasing(0.25f, 0.1f, 0.25f, 1f)
