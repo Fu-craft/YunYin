@@ -133,8 +133,8 @@ dependencies {
     implementation(libs.palette)
 
     // Word-by-word lyrics: lyrics-core parses TTML/YRC/LRC. The lyrics *view* is vendored
-    // under `com.amll.player.lyrics` (see tools/vendor_lyrics_ui.ps1) so its focus and
-    // auto-scroll behaviour could be fixed; it was previously the `lyrics-ui` artifact.
+    // under `com.yunyin.music.lyrics` so its focus and auto-scroll behaviour could be adapted;
+    // it was previously the `lyrics-ui` artifact.
     implementation(libs.lyrics.core)
     // iOS-style continuous (squircle) corners.
     implementation(libs.gaze.capsule)
