@@ -15,6 +15,7 @@ import com.yunyin.music.playback.PlaybackUiState
 import com.yunyin.music.ui.background.DynamicBackgroundPalette
 import com.mocharealm.accompanist.lyrics.core.model.SyncedLyrics
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
@@ -381,16 +382,31 @@ class PlayerViewModel(private val container: AppContainer) : ViewModel() {
             // Two-phase: paint the first usable document as soon as it exists, then let a
             // word-by-word upgrade replace it if one arrives. Waiting for the upgrade *before*
             // showing anything is what made loading feel slow (measured median 2.4s -> 0.4s).
-            val loaded = container.lyrics.lyricsFor(
+            suspend fun attempt(): SyncedLyrics? = container.lyrics.lyricsFor(
                 trackId = trackId,
                 onFirstDoc = { provisional -> applyIfCurrent(trackId, provisional) },
                 // Delivered from the repository's IO scope, so hop to the main dispatcher before
                 // touching composition state.
                 onUpgraded = { better -> viewModelScope.launch { applyIfCurrent(trackId, better) } },
             )
+
+            var loaded = attempt()
+
+            // One automatic retry when nothing was found.
+            //
+            // Nothing else would ever try again for this track: the collector above starts a load
+            // only when the *track id* changes, so a transient failure — a mirror that timed out, a
+            // dropped API call — would last for as long as the user stayed on the song, which is the
+            // "some songs' lyrics never load" symptom. One bounded retry covers the transient case
+            // without hammering a service that genuinely has no lyrics for the track.
+            if (loaded == null && lastTrackId == trackId) {
+                delay(LYRIC_RETRY_DELAY_MS)
+                if (lastTrackId == trackId) loaded = attempt()
+            }
+
             // The job may have been cancelled (track skipped) while the fetch ran to completion
             // on the repository's own scope; do not resurrect the old track's lyrics.
-            if (loaded != null) applyIfCurrent(trackId, loaded)
+            if (loaded != null) applyIfCurrent(trackId, loaded) else applyIfCurrent(trackId, null)
         }
     }
 
@@ -426,6 +442,15 @@ class PlayerViewModel(private val container: AppContainer) : ViewModel() {
 
 /** Largest manual lyric offset the UI allows, in milliseconds. */
 const val LYRIC_OFFSET_LIMIT_MS = 5000L
+
+/**
+ * Wait before the single automatic lyric retry.
+ *
+ * Long enough that a source which merely answered slowly has settled, short enough that the user is
+ * still looking at the same song. Nothing else retries for this track, so this is the only second
+ * chance a transient failure gets.
+ */
+private const val LYRIC_RETRY_DELAY_MS = 2_500L
 
 /**
  * State of a long-press-to-download.

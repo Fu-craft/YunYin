@@ -7,6 +7,7 @@ import com.yunyin.music.data.net.NeteaseClient
 import com.mocharealm.accompanist.lyrics.core.model.SyncedLyrics
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeLine
 import com.mocharealm.accompanist.lyrics.core.parser.AutoParser
+import com.mocharealm.accompanist.lyrics.core.parser.NeteaseYrcParser
 import com.mocharealm.accompanist.lyrics.core.parser.TTMLParser
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -120,20 +121,37 @@ class LyricsRepository(
         // than making the caller wait on fetches that may fail.
         if (cached != null) {
             onFirstDoc?.invoke(cached)
-            launchUpgrade(trackId, amllDeferred, neteaseDeferred, onUpgraded)
+            deliverLateDocument(trackId, amllDeferred, neteaseDeferred, onUpgraded)
             return cached
         }
 
         val first = withTimeoutOrNull(FIRST_DOCUMENT_WAIT_MS) {
             awaitFirstDocument(neteaseDeferred, amllDeferred)
-        } ?: return null
+        }
+        if (first == null) {
+            // Nothing usable arrived within the window. Crucially, this must **not** simply return:
+            // the fetch is still running on [scope], and abandoning it here is what made some songs
+            // load lyrics "never" — the caller was told there were none, nothing was cached, and
+            // nothing retried the track (the view model only starts a load when the *track id*
+            // changes, and its manual retry is not wired to any UI). Handing the in-flight fetch to
+            // the background upgrader turns "shows nothing, forever" into "shows lyrics a moment
+            // later".
+            deliverLateDocument(trackId, amllDeferred, neteaseDeferred, onUpgraded)
+            return null
+        }
 
         // The NetEase payload supplies both the alignment reference and the translation, so it is
         // part of the result rather than an optimisation — and it is the fast source (0.4s).
         val netease = withTimeoutOrNull(BUNDLE_WAIT_MS) { neteaseDeferred.await() }
             ?: NeteaseSide(null)
 
-        val resolved = resolve(first, netease) ?: return null
+        // Same reasoning as above: a document that cannot be resolved is not the end of the story,
+        // because the other source may still produce a usable one.
+        val resolved = resolve(first, netease)
+        if (resolved == null) {
+            deliverLateDocument(trackId, amllDeferred, neteaseDeferred, onUpgraded)
+            return null
+        }
         storeIfTrustworthy(trackId, resolved)
 
         if (isWordByWord(resolved.lyrics)) return resolved.lyrics
@@ -151,31 +169,40 @@ class LyricsRepository(
         // The window expired without a karaoke document. The fetch is still running on [scope], so
         // let it finish and hand the better document over. Without this the user would have to
         // replay the song to get karaoke — which is exactly the reported symptom.
-        launchUpgrade(trackId, amllDeferred, neteaseDeferred, onUpgraded)
+        deliverLateDocument(trackId, amllDeferred, neteaseDeferred, onUpgraded)
         return resolved.lyrics
     }
 
     /**
-     * Upgrades to word-by-word lyrics once the AMLL fetch settles, off the caller's critical path.
+     * Delivers a lyric document that arrived **after** the caller was told to stop waiting.
      *
-     * Runs on [scope] (IO). Does nothing when there is no upgrade to make, so the common case
-     * (karaoke already delivered, or no karaoke exists at all) costs only an await that has
-     * already completed.
+     * Runs on [scope] (IO) and is the safety net for every early return above: the fetches are
+     * started on this scope precisely so they outlive the caller's patience, and this is what turns
+     * that into something the user sees. Without it, a slow source meant the track was reported as
+     * having no lyrics at all — and since the view model only starts a load when the *track id*
+     * changes, the failure lasted until the user skipped away and back.
+     *
+     * It accepts **either** source, unlike the word-by-word-only upgrade it replaces. A late
+     * line-level NetEase document is just as much a rescue as a karaoke one when the alternative is
+     * an empty screen, and in the timeout case there is no on-screen document to protect from
+     * being replaced.
+     *
+     * @param onDelivered invoked off the main thread; callers marshal to their own dispatcher.
      */
-    private fun launchUpgrade(
+    private fun deliverLateDocument(
         trackId: Long,
         amllDeferred: Deferred<SyncedLyrics?>,
         neteaseDeferred: Deferred<NeteaseSide>,
-        onUpgraded: ((SyncedLyrics) -> Unit)?,
+        onDelivered: ((SyncedLyrics) -> Unit)?,
     ) {
-        if (onUpgraded == null) return
+        if (onDelivered == null) return
         scope.launch {
-            val amll = runCatching { amllDeferred.await() }.getOrNull() ?: return@launch
+            val candidate = runCatching { awaitFirstDocument(neteaseDeferred, amllDeferred) }
+                .getOrNull() ?: return@launch
             val netease = runCatching { neteaseDeferred.await() }.getOrNull() ?: NeteaseSide(null)
-            val upgraded = upgradeFrom(amll, netease) ?: return@launch
-            if (!upgraded.trustworthy) return@launch
-            store(trackId, upgraded.lyrics)
-            onUpgraded(upgraded.lyrics)
+            val resolved = runCatching { resolve(candidate, netease) }.getOrNull() ?: return@launch
+            storeIfTrustworthy(trackId, resolved)
+            onDelivered(resolved.lyrics)
         }
     }
 
@@ -225,22 +252,18 @@ class LyricsRepository(
      * Only the *first* document is awaited here. Holding out for a better one is [lyricsFor]'s
      * upgrade phase, which runs after the first document has already been handed to the caller —
      * that separation is the whole point of the two-phase design.
+     *
+     * The race is in [raceFirstOf], which returns as soon as one side answers. The obvious
+     * `coroutineScope { launch { … }; launch { … }; receive() }` form looks equivalent but waits for
+     * both producers, which made the load as slow as the slowest source — see that function's note.
      */
     private suspend fun awaitFirstDocument(
         netease: Deferred<NeteaseSide>,
         amll: Deferred<SyncedLyrics?>,
-    ): Candidate? = coroutineScope {
-        val arriving = Channel<Candidate>(2)
-        launch {
-            netease.await().doc?.takeIf { it.lines.isNotEmpty() }
-                ?.let { arriving.send(Candidate(it, fromAmll = false)) }
-        }
-        launch {
-            amll.await()?.takeIf { it.lines.isNotEmpty() }
-                ?.let { arriving.send(Candidate(it, fromAmll = true)) }
-        }
-        arriving.receive()
-    }
+    ): Candidate? = raceFirstOf(
+        first = { netease.await().doc?.takeIf { it.lines.isNotEmpty() }?.let { Candidate(it, fromAmll = false) } },
+        second = { amll.await()?.takeIf { it.lines.isNotEmpty() }?.let { Candidate(it, fromAmll = true) } },
+    )
 
     /**
      * Aligns and enriches [candidate] against the NetEase side.
@@ -480,13 +503,24 @@ class LyricsRepository(
      * `lrc` alongside it was never looked at — which loses the lyrics entirely, or silently drops
      * the song from word-by-word to nothing at all.
      *
-     * AutoParser is correct here: this payload is one of the formats it sniffs, unlike the
-     * known-TTML case, which uses the specific parser.
+     * **`yrc` is parsed with the YRC parser rather than `AutoParser`.** Both detectors accept a YRC
+     * payload — verified by running them on a Latin-script sample, where both `canParse` calls return
+     * true — and `AutoParser` orders `LyricifySyllableParser` before `NeteaseYrcParser`. On that
+     * sample the two happened to produce identical syllable timings, so this is not the cause of any
+     * observed missing-lyrics bug; it is a correctness measure, because relying on a detector order is
+     * not a guarantee about which parser actually claims the document. `lrc` keeps using
+     * [autoParser], since its variants genuinely need detection.
      */
     private fun parseNetease(bundle: LyricBundle): SyncedLyrics? {
-        for (raw in listOfNotNull(bundle.yrc, bundle.lrc)) {
-            val parsed = runCatching { autoParser.parse(raw) }.getOrNull()
-            if (parsed != null && parsed.lines.isNotEmpty()) return parsed
+        bundle.yrc?.let { raw ->
+            runCatching { NeteaseYrcParser.parse(raw) }.getOrNull()
+                ?.takeIf { it.lines.isNotEmpty() }
+                ?.let { return it }
+        }
+        for (raw in listOfNotNull(bundle.lrc)) {
+            runCatching { autoParser.parse(raw) }.getOrNull()
+                ?.takeIf { it.lines.isNotEmpty() }
+                ?.let { return it }
         }
         return null
     }

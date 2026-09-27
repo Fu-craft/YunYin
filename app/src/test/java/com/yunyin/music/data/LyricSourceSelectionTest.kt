@@ -8,14 +8,17 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Guards the lyric-source selection.
+ * Guards the app's decision to parse known-YRC payloads with `NeteaseYrcParser` directly.
  *
- * `AutoParser` returns the first parser whose `canParse` matches, and it orders
- * `LyricifySyllableParser` before `NeteaseYrcParser`. A YRC payload whose syllable text is
- * Latin produces `Hello(1734,400,0)`, which the Lyricify detector accepts — so auto
- * detection can claim a YRC document and parse it as the wrong format, silently dropping
- * the syllable timing. The app therefore parses known-TTML with `TTMLParser` and known-YRC
- * with `NeteaseYrcParser` directly.
+ * Both detectors accept a YRC payload — measured on the Latin-script sample below, `AutoParser().canParse`
+ * and `NeteaseYrcParser.canParse` are both true — and `AutoParser` orders `LyricifySyllableParser`
+ * first. So *which* parser claims the document depends on detector ordering rather than on the
+ * format, which is why the app names the parser it knows is right for this field.
+ *
+ * Note what these tests do **not** claim: on this sample auto detection produced identical, correct
+ * syllable timings. An earlier version of this file asserted that auto detection was broken here,
+ * but its assertions compared a value with itself and could not fail. The tests below were rewritten
+ * to state what is actually true, so they pin the behaviour rather than the intent.
  */
 class LyricSourceSelectionTest {
 
@@ -26,7 +29,9 @@ class LyricSourceSelectionTest {
     """.trimIndent()
 
     @Test
-    fun `Latin YRC is recognised by the YRC parser`() {
+    fun `both detectors accept a YRC payload`() {
+        // This is the overlap that makes the app name the parser explicitly.
+        assertTrue(AutoParser().canParse(latinYrc))
         assertTrue(NeteaseYrcParser.canParse(latinYrc))
     }
 
@@ -36,7 +41,8 @@ class LyricSourceSelectionTest {
         val karaoke = lyrics.lines.filterIsInstance<KaraokeLine>()
         assertTrue("expected karaoke lines", karaoke.isNotEmpty())
 
-        // The regression would show up as zero (or one) syllable per line.
+        // The failure this would catch is a payload parsed as line-level text, which shows up as
+        // zero or one "syllable" per line.
         val syllables = karaoke.sumOf { it.syllables.size }
         assertTrue("expected syllable-level timing, got $syllables syllables", syllables > karaoke.size)
 
@@ -48,23 +54,18 @@ class LyricSourceSelectionTest {
     }
 
     @Test
-    fun `auto detection is not the safe route for YRC`() {
-        // Documents *why* the app bypasses AutoParser for this input: if the first
-        // matching parser is not the YRC one, syllable timing is lost.
+    fun `on this sample auto detection agrees with the direct parser`() {
+        // Records the measured result rather than assuming a bug. If a future version starts
+        // disagreeing, this fails and points at detector ordering — which is exactly the signal the
+        // app's explicit parser choice is defending against.
         val auto = AutoParser().parse(latinYrc)
-        val autoSyllables = auto.lines.filterIsInstance<KaraokeLine>().sumOf { it.syllables.size }
-        val directSyllables = NeteaseYrcParser.parse(latinYrc)
-            .lines.filterIsInstance<KaraokeLine>().sumOf { it.syllables.size }
+        val direct = NeteaseYrcParser.parse(latinYrc)
 
+        assertEquals("line count", direct.lines.size, auto.lines.size)
         assertEquals(
-            "direct parsing should preserve every syllable",
-            directSyllables,
-            NeteaseYrcParser.parse(latinYrc).lines.filterIsInstance<KaraokeLine>().sumOf { it.syllables.size },
-        )
-        assertTrue(
-            "direct parsing must yield at least as many syllables as auto detection " +
-                "(auto=$autoSyllables, direct=$directSyllables)",
-            directSyllables >= autoSyllables,
+            "syllable timings",
+            direct.lines.filterIsInstance<KaraokeLine>().flatMap { it.syllables.map { s -> "$s" } },
+            auto.lines.filterIsInstance<KaraokeLine>().flatMap { it.syllables.map { s -> "$s" } },
         )
     }
 }

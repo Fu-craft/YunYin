@@ -85,6 +85,10 @@ internal object LyricMetadata {
      * (a "作词：…" appearing again, or a lyric containing a colon) is left alone. If every line
      * looks like metadata the input is returned unchanged, because showing the document is better
      * than showing "no lyrics".
+     *
+     * This cannot empty a document: `firstReal` is by definition the index of a *non*-metadata line,
+     * so the sublist always keeps at least that line. The only "nothing left" case is a document with
+     * no non-metadata line at all, which is covered by the `firstReal <= 0` early return.
      */
     fun <T> stripLeading(items: List<T>, textOf: (T) -> String): List<T> {
         val firstReal = items.indexOfFirst { !isMetadataLine(textOf(it)) }
