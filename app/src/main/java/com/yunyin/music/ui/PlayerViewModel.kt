@@ -91,7 +91,12 @@ class PlayerViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     private var downloadJob: Job? = null
+
+    /** The in-flight like toggle, kept apart from [likedQueryJob] so neither cancels the other. */
     private var likeJob: Job? = null
+
+    /** The in-flight "is this liked?" query, which is advisory and must never cancel a toggle. */
+    private var likedQueryJob: Job? = null
 
     /**
      * Saves the current track's **cover art** to the device's pictures.
@@ -106,8 +111,11 @@ class PlayerViewModel(private val container: AppContainer) : ViewModel() {
         downloadJob?.cancel()
         download = DownloadState.Downloading
         downloadJob = viewModelScope.launch {
+            // A track played from search carries no artwork, so the detail is fetched before giving
+            // up — otherwise the gesture would report "no cover" for songs that plainly have one.
+            val coverUrl = track.coverUrl ?: container.music.coverUrlFor(track.id)
             val outcome = container.covers.save(
-                coverUrl = track.coverUrl,
+                coverUrl = coverUrl,
                 track = track,
                 cookie = container.settings.cookie,
             )
@@ -142,6 +150,10 @@ class PlayerViewModel(private val container: AppContainer) : ViewModel() {
         val target = !liked
         liked = target
         likePending = true
+        // A query started for this same track may still be in flight; its answer describes the state
+        // *before* this tap, so letting it land afterwards would flip the heart straight back.
+        likedQueryJob?.cancel()
+        likeJob?.cancel()
         likeJob = viewModelScope.launch {
             val error = container.music.setLiked(track.id, target)
             likePending = false
@@ -169,10 +181,12 @@ class PlayerViewModel(private val container: AppContainer) : ViewModel() {
             liked = false
             return
         }
-        likeJob?.cancel()
-        likeJob = viewModelScope.launch {
+        likedQueryJob?.cancel()
+        likedQueryJob = viewModelScope.launch {
             val value = container.music.isLiked(account.userId, trackId)
-            if (lastTrackId == trackId) liked = value
+            // Ignore a stale answer: the track changed underneath us, or the user has since tapped
+            // the heart and the optimistic value must win until the service confirms it.
+            if (lastTrackId == trackId && !likePending) liked = value
         }
     }
 

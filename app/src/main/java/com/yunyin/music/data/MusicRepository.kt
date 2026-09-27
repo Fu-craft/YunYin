@@ -97,6 +97,17 @@ class MusicRepository(private val client: NeteaseClient) {
     /** Whether [id] is liked; false when the session cannot answer (guest, or the call failed). */
     suspend fun isLiked(uid: Long, id: Long): Boolean =
         client.isLiked(uid, id).valueOrNull() ?: false
+
+    /**
+     * The cover URL for [id].
+     *
+     * Search results are mapped without artwork (`/search` does not return an album object), so a
+     * track the user just found and played can carry a null cover. Asking for the detail fills that
+     * in, which is what makes saving the cover work from every entry point rather than only from the
+     * shelves that happen to include one.
+     */
+    suspend fun coverUrlFor(id: Long): String? =
+        client.songDetail(listOf(id)).valueOrNull()?.firstOrNull()?.coverUrl
 }
 
 /** Unwraps a list result, treating any failure as "no items". */

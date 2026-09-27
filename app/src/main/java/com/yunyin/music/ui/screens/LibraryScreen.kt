@@ -228,11 +228,6 @@ fun LibraryScreen(
                                     track = track,
                                     loader = loader,
                                     onClick = { onTrackClick(track) },
-                                    modifier = Modifier.animateItem(
-                                        fadeInSpec = tween(240),
-                                        fadeOutSpec = null,
-                                        placementSpec = null,
-                                    ),
                                 )
                             }
                         }
