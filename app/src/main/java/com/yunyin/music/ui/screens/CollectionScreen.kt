@@ -141,18 +141,18 @@ fun CollectionScreen(
     /**
      * When the pinned bar stops floating on artwork and becomes an opaque bar.
      *
-     * The header's last band is the ramp into the page background, so the bar must go opaque the
+     * The header's last band is the fade into the page background, so the bar must go opaque the
      * moment that band reaches it — before then everything behind the bar is cover artwork with the
      * measured ink on top, and after it everything behind is the page background the list sits on.
      *
      * This is computed, not tuned. An earlier fixed 74dp made the bar turn solid while the cover was
      * still plainly on screen: a white slab appearing across the middle of the artwork. Deriving it
-     * from the measured header height and the ramp's own height means the switch lands on the exact
+     * from the measured header height and the fade's own height means the switch lands on the exact
      * frame where the colour under the bar stops being the cover.
      */
-    val rampPx = with(density) { RampBand.toPx() }
+    val fadePx = with(density) { PageFade.toPx() }
     val barBottomPx = WindowInsets.systemBars.getTop(density) + with(density) { TopBarHeight.toPx() }
-    val barSolidThreshold = (headerHeightPx - rampPx - barBottomPx).coerceAtLeast(0f)
+    val barSolidThreshold = (headerHeightPx - fadePx - barBottomPx).coerceAtLeast(0f)
     val barSolid by remember(listState, barSolidThreshold) {
         derivedStateOf {
             listState.firstVisibleItemIndex > 0 ||
@@ -255,16 +255,11 @@ private fun Header(
     onHeightChanged: (Int) -> Unit,
 ) {
     val palette = AppTheme.palette
-    val density = LocalDensity.current
-    var headerHeightPx by remember { mutableIntStateOf(0) }
 
     Box(
         Modifier
             .fillMaxWidth()
-            .onSizeChanged {
-                headerHeightPx = it.height
-                onHeightChanged(it.height)
-            },
+            .onSizeChanged { onHeightChanged(it.height) },
     ) {
         // ---------------------------------------------------------------- colour field
         Box(Modifier.matchParentSize().clipToBounds()) {
@@ -299,24 +294,31 @@ private fun Header(
                     ),
             )
 
-            // The ramp into the page background. Held fully transparent until the last band, which
-            // is why nothing in the header has to worry about the page colour bleeding under it.
+            // The fade into the page background, anchored to the header's bottom edge.
             //
-            // Before the first measurement the height is unknown, and the safe reading of "unknown"
-            // is *no ramp at all*: guessing would ramp the whole header and flash the page background
-            // over the artwork for a frame. Correcting on the next frame is invisible; that flash is
-            // not.
-            val rampPx = with(density) { RampBand.toPx() }
-            val stops = if (headerHeightPx > 0 && rampPx > 0f) {
-                val start = ((headerHeightPx - rampPx) / headerHeightPx.toFloat()).coerceIn(0f, 1f)
-                arrayOf(0f to Color.Transparent, start to Color.Transparent, 1f to palette.background)
-            } else {
-                arrayOf(0f to Color.Transparent, 1f to Color.Transparent)
-            }
+            // Three things here are load-bearing, and each was a visible artefact before:
+            //
+            //  - **The transparent end is the page colour at zero alpha, not `Color.Transparent`.**
+            //    `Color.Transparent` is black with no alpha, and Compose interpolates the RGB channels
+            //    as well as alpha — so a "transparent → page background" ramp spends its middle at
+            //    roughly 50% of a *black-tinted* colour. Composited over the field that is darker than
+            //    either end, which paints a grey band across the fade. Most of what read as a hard
+            //    edge here was this, not the gradient's shape.
+            //  - **The curve is eased.** A linear ramp arrives and leaves with a slope
+            //    discontinuity — one where the flat cover colour above it stops being flat, one where
+            //    the list's flat background below it begins — and the eye draws a line at each. That
+            //    is the Mach band, and it is why a colour-correct linear fade still shows a seam.
+            //  - **It is anchored to the bottom rather than stretched over the whole header.** Only
+            //    the last [PageFade] is a gradient; above that the field is untouched cover colour, so
+            //    the fade cannot wash out the artwork.
             Box(
                 Modifier
-                    .matchParentSize()
-                    .background(Brush.verticalGradient(colorStops = stops)),
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(PageFade)
+                    .background(
+                        Brush.verticalGradient(colorStops = pageFadeStops(palette.background)),
+                    ),
             )
         }
 
@@ -415,10 +417,10 @@ private fun Header(
                 )
             }
 
-            // The band the ramp completes in. Text-free by construction, and given a margin above
-            // it so the buttons sit on a fully un-ramped field even once the ramp has begun.
-            Spacer(Modifier.height(RampMargin))
-            Spacer(Modifier.height(RampBand))
+            // The band the fade completes in. Text-free by construction, and given a margin above it
+            // so the buttons sit on the untouched cover colour rather than inside the gradient.
+            Spacer(Modifier.height(PageFadeMargin))
+            Spacer(Modifier.height(PageFade))
         }
     }
 }
@@ -572,8 +574,11 @@ private fun TopBar(
                 .matchParentSize()
                 .background(
                     Brush.verticalGradient(
+                        // Both stops are the same colour; only the alpha differs. Fading to
+                        // `Color.Transparent` instead would interpolate its black RGB through the
+                        // middle of the scrim — the same grey-band defect the page fade documents.
                         0f to scrimTint.copy(alpha = TopBarScrim * (1f - surface)),
-                        1f to Color.Transparent,
+                        1f to scrimTint.copy(alpha = 0f),
                     ),
                 ),
         )
@@ -785,17 +790,46 @@ private val BarClearance = 6.dp
 private const val TopBarScrim = 0.34f
 
 /**
- * Height of the band in which the colour field ramps into the page background.
+ * Height of the mask that dissolves the artwork into the page background.
  *
- * Sits entirely below the action pills, so no text ever sits on a partially-ramped field — which
- * also means it is unavoidably empty space, and its height is the gap the user sees between the
- * actions and the list. At 120dp that read as a large blank band rather than as a fade; 28dp is
- * still a gradient (84px at 3x, so no visible seam) while keeping the gap to list spacing.
+ * This is the whole transition between the cover area and the list, so it doubles as the gap the
+ * user sees under the action buttons — which is why it is not larger. It is a real gradient at this
+ * size (144px on a 3x screen) and, because the curve is eased rather than linear, it reads as the
+ * cover dissolving rather than as a band with two edges.
  */
-private val RampBand = 28.dp
+private val PageFade = 48.dp
 
-/** Clearance between the action pills and the start of the ramp. */
-private val RampMargin = 8.dp
+/** Clearance between the action pills and the start of the fade. */
+private val PageFadeMargin = 8.dp
+
+/**
+ * Stops in the fade. More than two is what makes the curve possible: a gradient interpolates
+ * straight between adjacent stops, so the ease is expressed by sampling it.
+ */
+private const val PageFadeSteps = 9
+
+/**
+ * Stops for a fully transparent → [color] fade.
+ *
+ * Every stop carries [color]'s own RGB with only the alpha varying. Ramping `Color.Transparent`
+ * instead would interpolate black through the middle of the gradient, which darkens it well below
+ * either end and paints a grey band across the transition.
+ */
+private fun pageFadeStops(color: Color): Array<Pair<Float, Color>> =
+    Array(PageFadeSteps) { index ->
+        val t = index / (PageFadeSteps - 1).toFloat()
+        t to color.copy(alpha = smootherStep(t))
+    }
+
+/**
+ * `6t⁵ − 15t⁴ + 10t³`.
+ *
+ * Its first and second derivatives are zero at both ends, so the ramp leaves the flat cover colour
+ * and arrives at the flat page background without a slope discontinuity. A linear ramp has one at
+ * each end, and the visual system exaggerates it into a line — the Mach band, which is what keeps a
+ * colour-correct linear fade looking like a band anyway.
+ */
+private fun smootherStep(t: Float): Float = t * t * t * (t * (t * 6f - 15f) + 10f)
 
 /** Width reserved for the row position / now-playing marker. Fits three digits. */
 private val IndexWidth = 30.dp
