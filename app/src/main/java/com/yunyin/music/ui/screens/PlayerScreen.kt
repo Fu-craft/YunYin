@@ -152,14 +152,22 @@ fun PlayerScreen(
     /** Called with a long-pressed lyric's text; null when the line had nothing to copy. */
     onCopyLyric: (String?) -> Unit = {},
     /**
-     * Reports the cover's rect in root coordinates.
+     * Where the cover's centre sits in this screen, as a fraction of its height.
      *
-     * The expand transition anchors its growing window on the cover's centre — centring the *player*
-     * instead opens the window onto the controls, which is visibly wrong. The centre cannot be computed
-     * from the screen size: the cover's position depends on the layout, on the aspect ratio and on which
-     * presentation is showing, so it is measured.
+     * Reported to the expand transition, which anchors its growing window there. Measured rather than
+     * assumed: the cover's position depends on the layout and the aspect ratio, and a constant here was
+     * wrong by 0.08 of the screen.
      */
-    onCoverBoundsChanged: (androidx.compose.ui.geometry.Rect) -> Unit = {},
+    onCoverAnchorChanged: (Float) -> Unit = {},
+    /**
+     * Whether the expand transition is in flight.
+     *
+     * When it is, the two backdrop shaders are **paused**: they are full-screen, they are drawn twice,
+     * and the moving container re-blurs that output, so leaving them running costs a shader draw, a
+     * full-screen blur and an offscreen composite on every frame of the animation. Nothing behind the
+     * opaque container is visible while it animates, so the frames are spent and not seen.
+     */
+    backgroundPaused: Boolean = false,
     positionProvider: () -> Long,
     modifier: Modifier = Modifier,
 ) {
@@ -395,7 +403,7 @@ fun PlayerScreen(
         // Freeze the backdrop while the two presentations cross-fade: it sits behind both of them,
         // so animating it during the transition adds no visible motion but does add a full-screen
         // shader draw every frame. Measured, this window is where "Slow issue draw commands" spiked.
-        val transitioning = transitionActive
+        val transitioning = transitionActive || backgroundPaused
 
         // Bottom layer: the same field, blurred. Only visible inside the panel, because the
         // sharp layer above masks itself off there.
@@ -547,7 +555,7 @@ fun PlayerScreen(
                                     onCollapse = onCollapse,
                                     dragDistance = { dragDistance },
                                     setDragDistance = { dragDistance = it },
-                                    onCoverBoundsChanged = onCoverBoundsChanged,
+                                    onCoverAnchorChanged = onCoverAnchorChanged,
                                     sharedScope = this@SharedTransitionLayout,
                                     visibilityScope = this@AnimatedContent,
                                 )
@@ -814,7 +822,7 @@ fun PlayerScreen(
                                 onCollapse = onCollapse,
                                 dragDistance = { dragDistance },
                                 setDragDistance = { dragDistance = it },
-                                onCoverBoundsChanged = onCoverBoundsChanged,
+                                onCoverAnchorChanged = onCoverAnchorChanged,
                                 sharedScope = this@SharedTransitionLayout,
                                 visibilityScope = this@AnimatedContent,
                             )
@@ -931,8 +939,8 @@ private fun ArtworkWithGestures(
     onCollapse: () -> Unit,
     dragDistance: () -> Float,
     setDragDistance: (Float) -> Unit,
-    /** Reports the cover's rect so the expand transition can anchor on its centre. */
-    onCoverBoundsChanged: (androidx.compose.ui.geometry.Rect) -> Unit = {},
+    /** Reports the cover's centre position for the expand transition's anchor. */
+    onCoverAnchorChanged: (Float) -> Unit = {},
     // Receiver scopes are passed in rather than captured: this is a separate composable, so the
     // caller's `this@SharedTransitionLayout` / `this@AnimatedContent` are not in scope here.
     sharedScope: SharedTransitionScope,
@@ -973,7 +981,11 @@ private fun ArtworkWithGestures(
             modifier = Modifier
                 .size(artSize)
                 .onGloballyPositioned { coordinates ->
-                    onCoverBoundsChanged(coordinates.boundsInRoot())
+                    val bounds = coordinates.boundsInRoot()
+                    val screenHeight = coordinates.parentLayoutCoordinates?.size?.height ?: 0
+                    if (screenHeight > 0) {
+                        onCoverAnchorChanged((bounds.center.y / screenHeight).coerceIn(0f, 1f))
+                    }
                 }
                 // The other half of the shared cover: switching to the lyrics presentation shrinks
                 // this into the header thumbnail.

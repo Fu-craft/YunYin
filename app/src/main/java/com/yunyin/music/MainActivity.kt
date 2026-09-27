@@ -29,6 +29,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -158,12 +159,6 @@ class MainActivity : ComponentActivity() {
         var account by remember { mutableStateOf(container.settings.account) }
 
         /**
-         * Where the mini player capsule currently is, in root coordinates.
-         *
-         * The expand animation grows the player out of this rect, so it has to be measured; the
-         * capsule's width depends on the screen, so it cannot be assumed.
-         */
-        /**
          * The mini player's rect in root coordinates — where the expanding container starts.
          *
          * Measured rather than computed: its width depends on the screen, and the container's growth is
@@ -172,25 +167,38 @@ class MainActivity : ComponentActivity() {
         var miniPlayerBounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
 
         /**
-         * The player's cover rect, measured.
+         * The cover's centre in the player, as a fraction of the screen height.
          *
-         * The expand transition anchors its growing window on the cover's centre, so this is read as a
-         * *fraction* of the screen and handed to the transition. Derived from the measurement rather than
-         * from a constant: an earlier version assumed 0.38 and was off by 0.11 of the screen, so the
-         * window opened on the space above the cover.
+         * The expand transition anchors its growing window there. A constant was wrong by 0.08 of the
+         * screen — the window opened above the cover — so it is measured, and the fallback only covers
+         * the frame before the first measurement lands.
          */
-        var playerCoverBounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
-        val coverAnchorY by remember(playerCoverBounds) {
-            mutableStateOf(playerCoverBounds?.center?.y)
-        }
+        var coverAnchor by remember { mutableStateOf(0.30f) }
 
         /**
-         * 0 = the player is the mini player's size, 1 = full screen.
+         * 0 = the container is at the mini player, 1 = full screen.
          *
-         * A spring, so the expand and collapse are one continuous motion and can be reversed mid-flight
-         * — which is what makes it feel like the system's container transition rather than a page push.
+         * A spring, so the expand and collapse are one continuous motion and can be reversed mid-flight —
+         * which is what makes it feel like the system's container transition rather than a page push.
+         *
+         * Passed to the transition as a **lambda**, never read here. Reading it in this scope would
+         * recompose this whole tree — the tabs, the lists, the chrome — on every frame of the animation,
+         * which is what made it stutter.
          */
         val expandProgress = rememberExpandProgress(open = showPlayer)
+
+        /**
+         * Whether the player's layer should be composed at all.
+         *
+         * `derivedStateOf` so this boolean only *changes* at the two ends. A plain `expand > 0.001f` here
+         * would be a state read in this scope, and therefore a full recomposition per frame.
+         */
+        val playerLayerVisible by remember(expandProgress) {
+            derivedStateOf { showPlayer || expandProgress.value > 0.001f }
+        }
+        val backgroundPaused by remember(expandProgress) {
+            derivedStateOf { expandProgress.value > 0.001f && expandProgress.value < 0.999f }
+        }
 
         /**
          * The audio quality the player is set to.
@@ -510,25 +518,20 @@ class MainActivity : ComponentActivity() {
             //
             // No AnimatedVisibility: the player must stay composed while animating *out*, which a
             // visibility scope would remove.
-            val expand = expandProgress.value
-            if (showPlayer || expand > 0.001f) {
+            if (playerLayerVisible) {
                 // Collected here, inside the player's own branch, so the 4x/second position tick
                 // invalidates only the player screen and never the browsing tabs behind it.
                 val playback by container.player.state.collectAsState()
 
-                // The app recedes: dimmed and blurred, the "something is opening over this" cue.
-                BackdropRecede(progress = expand)
+                // The app recedes: dimmed, the "something is opening over this" cue. Dim only — an
+                // animated full-screen blur was the other half of the stutter.
+                BackdropRecede(progress = { expandProgress.value })
 
                 ContainerExpand(
-                    progress = expand,
+                    progress = { expandProgress.value },
                     source = miniPlayerBounds,
                     background = AppTheme.palette.background,
-                    // The cover's centre, as a fraction of the screen. Falls back to a reasonable
-                    // portrait value only until the first measurement lands.
-                    focusFraction = coverAnchorY?.let { anchor ->
-                        val screenH = context.resources.displayMetrics.heightPixels
-                        if (screenH > 0) (anchor / screenH).coerceIn(0.05f, 0.95f) else null
-                    } ?: 0.27f,
+                    focusFraction = { coverAnchor },
                 ) {
                     PlayerScreen(
                         state = playback,
@@ -581,7 +584,8 @@ class MainActivity : ComponentActivity() {
                             Toast.makeText(context, "已复制歌词", Toast.LENGTH_SHORT).show()
                         }
                     },
-                    onCoverBoundsChanged = { playerCoverBounds = it },
+                    onCoverAnchorChanged = { coverAnchor = it },
+                    backgroundPaused = backgroundPaused,
                     positionProvider = container.player::positionMsNow,
                     )
                 }
