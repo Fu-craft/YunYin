@@ -13,7 +13,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -1242,12 +1241,27 @@ private fun PlayerControls(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             BottomIcon(SfIcons.QuoteOpening, "歌词", active = showLyrics, onClick = onToggleLyrics)
+            // Shuffle and repeat are two separate controls with one job each.
+            //
+            // They used to share a single button: tap cycled the loop mode, *long press* toggled
+            // shuffle, and the icon swapped between a shuffle glyph and a repeat glyph to match. That
+            // was wrong three ways. Two unrelated settings behind one control are not discoverable —
+            // a long press is not a control, it is a secret. The repeat mode disappeared from view
+            // whenever shuffle was on, because the icon had been swapped away. And there was no way to
+            // reach repeat-one at all without first turning shuffle off. One tap, one setting, and a
+            // glyph that always shows its own state.
             BottomIcon(
-                icon = if (state.shuffle) SfIcons.Shuffle else SfIcons.Repeat,
-                description = if (state.shuffle) "随机播放（长按切换循环）" else "循环模式（长按开启随机）",
-                active = state.shuffle || state.repeatMode != Player.REPEAT_MODE_OFF,
+                icon = SfIcons.Shuffle,
+                description = if (state.shuffle) "随机播放：已开启" else "随机播放：已关闭",
+                active = state.shuffle,
+                onClick = onToggleShuffle,
+            )
+            BottomIcon(
+                icon = if (state.repeatMode == Player.REPEAT_MODE_ONE) SfIcons.RepeatOne
+                else SfIcons.Repeat,
+                description = repeatDescription(state.repeatMode),
+                active = state.repeatMode != Player.REPEAT_MODE_OFF,
                 onClick = onCycleRepeat,
-                onLongClick = onToggleShuffle,
             )
             BottomIcon(SfIcons.ListBullet, "播放队列", active = false, onClick = onShowQueue)
         }
@@ -1778,36 +1792,32 @@ private fun PlayPauseButton(isPlaying: Boolean, isBuffering: Boolean, onClick: (
     }
 }
 
-@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+/**
+ * One control in the player's bottom row.
+ *
+ * Tap-only, deliberately: the row used to hide a second setting behind a long press, which is not a
+ * control a user can find. See the shuffle/repeat pair at the call site.
+ *
+ * Sized at 48dp — the minimum comfortable touch target — rather than the 56dp it used to be, so four
+ * controls fit this row on the narrowest phones without the spacing collapsing.
+ */
 @Composable
 private fun BottomIcon(
     icon: ImageVector,
     description: String,
     active: Boolean,
     onClick: () -> Unit,
-    onLongClick: (() -> Unit)? = null,
 ) {
     val ripple = rememberControlRipple()
     Box(
         Modifier
-            .size(56.dp)
-            .then(
-                if (onLongClick != null) {
-                    Modifier.combinedClickable(
-                        indication = ripple,
-                        interactionSource = null,
-                        onClick = onClick,
-                        onLongClick = onLongClick,
-                    )
-                } else {
-                    Modifier.clickable(indication = ripple, interactionSource = null, onClick = onClick)
-                },
-            ),
+            .size(48.dp)
+            .clickable(indication = ripple, interactionSource = null, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         // Tint eases between active/inactive instead of snapping, and the glyph cross-fades so
-        // toggling shuffle (which swaps the repeat icon for the shuffle icon) reads as the control
-        // changing rather than the button being redrawn.
+        // switching repeat-all to repeat-one reads as the control changing state rather than as the
+        // button being redrawn.
         val tint by animateColorAsState(
             targetValue = if (active) Color.White else Color.White.copy(alpha = 0.72f),
             label = "bottom-icon-tint",
@@ -1825,6 +1835,19 @@ private fun BottomIcon(
             )
         }
     }
+}
+
+/**
+ * Spoken state of the loop control.
+ *
+ * The three modes are indistinguishable from the tint alone — repeat-all and repeat-one are both
+ * "on" — so the description is the only place the distinction is stated in words, and the glyph
+ * carries it visually.
+ */
+private fun repeatDescription(mode: Int): String = when (mode) {
+    Player.REPEAT_MODE_ONE -> "单曲循环"
+    Player.REPEAT_MODE_ALL -> "列表循环"
+    else -> "不循环"
 }
 
 /** Idle time before the lyrics presentation fades its chrome away. */

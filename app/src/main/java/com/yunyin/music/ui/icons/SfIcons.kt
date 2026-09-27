@@ -319,61 +319,122 @@ object SfIcons {
         }
     }
 
+    /**
+     * `repeat` — the loop control's off/all state.
+     *
+     * A rounded rectangle broken only at the top-right and bottom-left, where the two arrowheads
+     * sit. The break is what makes it read as a loop with a direction rather than as a plain rounded
+     * box, and confining it to those two corners is what keeps the outline legible as one continuous
+     * shape.
+     *
+     * The previous shape was drawn as two separate arcs with big solid triangular heads and its two
+     * halves never joined up, so it rendered as two disconnected arrows pointing at each other — it
+     * did not read as a loop at all. Three things fix that: the corners are real quarter-circles, the
+     * verticals and horizontals run the full side so the loop stays continuous, and the heads are
+     * chevrons at the loop's own stroke weight rather than solid triangles, which is how SF Symbols
+     * draws them and what stops them dominating a 26dp glyph.
+     *
+     * The box is a little wider than it is tall (14×11.6 units) rather than square: the two arrowheads
+     * project above and below it, so a square box would make the finished glyph read as too tall.
+     */
     val Repeat: ImageVector = icon("repeat") {
-        mono("repeat", width = 1.95f) {
-            moveTo(7.4f, 6.2f)
-            horizontalLineTo(14.6f)
-            curveTo(17.2f, 6.2f, 19.3f, 8.3f, 19.3f, 10.9f)
-            verticalLineTo(11.6f)
+        mono("repeat.right") {
+            moveTo(5.0f, 15.0f)
+            verticalLineTo(9.0f)
+            curveTo(5.0f, 7.45f, 6.25f, 6.2f, 7.8f, 6.2f)
+            horizontalLineTo(16.6f)
         }
-        mono("repeat.head", width = 1.95f) {
-            moveTo(16.6f, 17.8f)
-            horizontalLineTo(9.4f)
-            curveTo(6.8f, 17.8f, 4.7f, 15.7f, 4.7f, 13.1f)
-            verticalLineTo(12.4f)
+        mono("repeat.right.tip") {
+            moveTo(14.4f, 4.0f)
+            lineTo(16.6f, 6.2f)
+            lineTo(14.4f, 8.4f)
         }
-        mono("repeat.tip.top", width = 1.95f) {
-            moveTo(15.2f, 3.6f)
-            lineTo(18.1f, 6.3f)
-            lineTo(15.2f, 9.0f)
+        mono("repeat.left") {
+            moveTo(19.0f, 9.0f)
+            verticalLineTo(15.0f)
+            curveTo(19.0f, 16.55f, 17.75f, 17.8f, 16.2f, 17.8f)
+            horizontalLineTo(7.4f)
         }
-        mono("repeat.tip.bottom", width = 1.95f) {
-            moveTo(8.8f, 20.4f)
-            lineTo(5.9f, 17.7f)
-            lineTo(8.8f, 15.0f)
+        mono("repeat.left.tip") {
+            moveTo(9.6f, 15.6f)
+            lineTo(7.4f, 17.8f)
+            lineTo(9.6f, 20.0f)
         }
     }
 
+    /**
+     * `repeat.1` — the loop control's repeat-one state.
+     *
+     * The same loop with a numeral in the middle, which is the only thing that can tell repeat-one
+     * from repeat-all: both are "active", so the tint cannot distinguish them.
+     *
+     * The numeral is a stem with a short flag and a base. The base is not decoration — at the ~5dp a
+     * numeral gets inside this loop, a bare stem reads as a divider and the flag alone reads as a
+     * slash. It is struck thinner than the loop so the two do not merge, and it sits on the loop's
+     * centre with clear space on every side (the loop was widened for exactly this).
+     */
+    val RepeatOne: ImageVector = icon("repeat.1") {
+        mono("repeat.1.loop.right") {
+            moveTo(5.0f, 15.0f)
+            verticalLineTo(9.0f)
+            curveTo(5.0f, 7.45f, 6.25f, 6.2f, 7.8f, 6.2f)
+            horizontalLineTo(16.6f)
+        }
+        mono("repeat.1.loop.right.tip") {
+            moveTo(14.4f, 4.0f)
+            lineTo(16.6f, 6.2f)
+            lineTo(14.4f, 8.4f)
+        }
+        mono("repeat.1.loop.left") {
+            moveTo(19.0f, 9.0f)
+            verticalLineTo(15.0f)
+            curveTo(19.0f, 16.55f, 17.75f, 17.8f, 16.2f, 17.8f)
+            horizontalLineTo(7.4f)
+        }
+        mono("repeat.1.loop.left.tip") {
+            moveTo(9.6f, 15.6f)
+            lineTo(7.4f, 17.8f)
+            lineTo(9.6f, 20.0f)
+        }
+        mono("repeat.1.numeral", width = 1.7f) {
+            moveTo(11.2f, 10.75f)
+            lineTo(12.6f, 9.7f)
+            verticalLineTo(14.3f)
+            moveTo(11.4f, 14.3f)
+            horizontalLineTo(13.8f)
+        }
+    }
+
+    /**
+     * `shuffle` — two lanes swapping sides.
+     *
+     * Rebuilt because the previous version crowded its two curves together near the middle and ended
+     * each in a heavy solid triangle, so it read as an X with wedges rather than as two crossing
+     * arrows. The lanes are now set wide apart (y 8.2 and 15.8) and cross exactly at the centre,
+     * which is the symmetry the symbol depends on, and the heads are slim chevrons.
+     */
     val Shuffle: ImageVector = icon("shuffle") {
-        mono("shuffle.a", width = 1.95f) {
-            moveTo(4.2f, 6.6f)
-            horizontalLineTo(6.6f)
-            curveTo(8.0f, 6.6f, 9.3f, 7.4f, 10.1f, 8.6f)
-            lineTo(13.9f, 15.4f)
-            curveTo(14.7f, 16.6f, 16.0f, 17.4f, 17.4f, 17.4f)
-            horizontalLineTo(19.8f)
+        mono("shuffle.down") {
+            moveTo(3.2f, 8.2f)
+            horizontalLineTo(6.4f)
+            curveTo(10.6f, 8.2f, 11.6f, 15.8f, 15.8f, 15.8f)
+            horizontalLineTo(18.6f)
         }
-        mono("shuffle.b", width = 1.95f) {
-            moveTo(4.2f, 17.4f)
-            horizontalLineTo(6.6f)
-            curveTo(8.0f, 17.4f, 9.3f, 16.6f, 10.1f, 15.4f)
-            lineTo(11.4f, 13.2f)
+        mono("shuffle.down.tip") {
+            moveTo(16.2f, 13.4f)
+            lineTo(18.6f, 15.8f)
+            lineTo(16.2f, 18.2f)
         }
-        mono("shuffle.c", width = 1.95f) {
-            moveTo(12.6f, 10.8f)
-            lineTo(13.9f, 8.6f)
-            curveTo(14.7f, 7.4f, 16.0f, 6.6f, 17.4f, 6.6f)
-            horizontalLineTo(19.8f)
+        mono("shuffle.up") {
+            moveTo(3.2f, 15.8f)
+            horizontalLineTo(6.4f)
+            curveTo(10.6f, 15.8f, 11.6f, 8.2f, 15.8f, 8.2f)
+            horizontalLineTo(18.6f)
         }
-        mono("shuffle.tip.top", width = 1.95f) {
-            moveTo(17.3f, 3.9f)
-            lineTo(20.0f, 6.6f)
-            lineTo(17.3f, 9.3f)
-        }
-        mono("shuffle.tip.bottom", width = 1.95f) {
-            moveTo(17.3f, 14.7f)
-            lineTo(20.0f, 17.4f)
-            lineTo(17.3f, 20.1f)
+        mono("shuffle.up.tip") {
+            moveTo(16.2f, 5.8f)
+            lineTo(18.6f, 8.2f)
+            lineTo(16.2f, 10.6f)
         }
     }
 
