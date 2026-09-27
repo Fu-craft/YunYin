@@ -32,10 +32,20 @@ import io.github.proify.lyricon.provider.providerMetadataOf
  * for users who do not have Lyricon installed. [register] is therefore called only from app startup
  * when the module is present, and the connection is dropped in [release].
  *
- * **Position is sent, not animated.** Lyricon keeps its own clock from the last `setPosition` plus the
- * playback state and speed, so there is no need to push a position every frame — and doing so would
- * be a binder call per frame. It is re-sent on the events that actually move the clock: play, pause,
- * seek, and track change.
+ * **Position must be pushed repeatedly, and that is not an optimisation.**
+ *
+ * `RemotePlayer.setPosition(ms)` sends nothing over the binder: it writes a single `Long` into a
+ * `SharedMemory` buffer obtained from Lyricon when the connection binds. That buffer holds no
+ * timestamp and no speed, so the receiver cannot work out the rate — it can only read whatever value
+ * is there. The cadence at which it does so is what `setPositionUpdateInterval` configures.
+ *
+ * An earlier version of this class pushed the position only on a track change, a play/pause flip or a
+ * seek, assuming Lyricon interpolated its own clock. It does not — verified by decompiling the
+ * provider library: `CachedRemotePlayer` caches a plain `lastPosition` and nothing advances it. The
+ * visible symptom was that the highlighted line never moved past the first one.
+ *
+ * [publishPosition] is therefore called on every player state emission, which the controller produces
+ * at 4Hz while playing. That is cheap precisely because it is a memory write, not a binder call.
  */
 class LyriconBridge(private val context: Context) {
 
@@ -43,6 +53,9 @@ class LyriconBridge(private val context: Context) {
 
     /** Set once [register] has been called, so repeated calls are harmless. */
     private var registrationAttempted = false
+
+    /** Identity of the lyric document most recently sent, so it is not re-sent unchanged. */
+    private var lastSongSignature: String? = null
 
     /**
      * Whether Lyricon is installed and the provider is connected.
@@ -128,6 +141,16 @@ class LyriconBridge(private val context: Context) {
         connected = value
         if (value) {
             available = true
+            // The read cadence is deliberately *not* set here.
+            //
+            // `setPositionUpdateInterval` configures how often the consumer reads the shared-memory
+            // position, and the library's own default is 41ms (~24Hz) — its tuned value. An earlier
+            // version of this class set it to 1000ms, which throttled the consumer to one read per
+            // second and made the highlight lurch; that was a self-inflicted wound on top of the real
+            // bug. The rate at which the value actually changes is our write cadence (4Hz, from the
+            // player's position poll), which is the correct thing to adjust if this ever needs to be
+            // smoother — not the reader's poll rate.
+            //
             // Push whatever is already playing, so a bridge connected mid-song does not leave
             // Lyricon showing nothing until the next track change.
             onConnectedCallback?.invoke()
@@ -167,21 +190,46 @@ class LyriconBridge(private val context: Context) {
         runCatching {
             if (track == null) {
                 // Nothing playing: clear Lyricon's display rather than leaving the last song up.
+                lastSongSignature = null
                 player.sendText(null)
                 player.setPlaybackState(false)
                 return@runCatching
             }
-            player.setSong(LyriconMapper.toSong(track, lyrics))
+            // The document is only re-sent when it actually changes.
+            //
+            // A `setSong` replaces the whole lyric set, and there is no guarantee the receiver keeps
+            // its reading position across that — re-sending the identical document on every
+            // play/pause is at best wasted work (it serialises every line to JSON and deflates it)
+            // and at worst resets the displayed line to the top. The play state and position are
+            // cheap idempotent writes and are always sent.
+            val signature = songSignature(track, lyrics)
+            if (signature != lastSongSignature) {
+                player.setSong(LyriconMapper.toSong(track, lyrics))
+                lastSongSignature = signature
+            }
             player.setPlaybackState(isPlaying)
             player.setPosition(positionMs.coerceAtLeast(0L))
-            // Lyricon interpolates between position updates; one per second keeps it aligned without
-            // a binder call per frame.
-            player.setPositionUpdateInterval(POSITION_UPDATE_INTERVAL_MS)
             // Both display toggles are instructions to Lyricon about what it may show; the document
             // already carries the translation, so this only controls visibility.
             player.setDisplayTranslation(true)
         }.onFailure { error ->
             Log.w(TAG, "Lyricon publish failed", error)
+        }
+    }
+
+    /**
+     * Identity of the document last sent, so an unchanged one is not re-sent.
+     *
+     * Based on what Lyricon would actually render: the song's identity, how many lines there are, and
+     * the first and last line's times. That distinguishes a genuinely different document (a lyric
+     * upgrade arriving mid-song, or a new track with the same title) without hashing every syllable.
+     */
+    private fun songSignature(track: Track, lyrics: SyncedLyrics?): String {
+        val lines = lyrics?.lines
+        return buildString {
+            append(track.id).append('|').append(lines?.size ?: 0)
+            lines?.firstOrNull()?.let { append('|').append(it.start) }
+            lines?.lastOrNull()?.let { append('|').append(it.end) }
         }
     }
 
@@ -200,6 +248,5 @@ class LyriconBridge(private val context: Context) {
     private companion object {
         const val TAG = "YunYin/Lyricon"
         const val APP_NAME = "云音"
-        const val POSITION_UPDATE_INTERVAL_MS = 1000
     }
 }

@@ -224,15 +224,19 @@ class PlayerViewModel(private val container: AppContainer) : ViewModel() {
     /**
      * Keeps 词幕 (Lyricon) in step with playback.
      *
-     * A **separate** collector from the track-change one above, for two reasons. It must observe
-     * play/pause and seeks, which that one filters out (`return@collectLatest` until the id changes).
-     * And it must not be cancelled and restarted per track, or a seek in the middle of a skip would
-     * be dropped.
+     * A **separate** collector from the track-change one above, because that one filters out
+     * everything except an id change (`return@collectLatest` until the id changes), while Lyricon
+     * needs the play/pause and position updates too.
      *
-     * Publishing is event-driven rather than per-tick. Lyricon interpolates its own clock from the last
-     * position plus the playback state, so pushing a position on every 250ms poll would be four binder
-     * calls a second for no visible gain. A position is sent when it actually jumps — a seek, or a
-     * track change — and the playing flag when it flips.
+     * The position is pushed on **every** emission, not only on the events that obviously move it.
+     * Lyricon reads the position from a shared-memory buffer that holds a bare value with no timestamp
+     * or rate, so it cannot derive progress between updates — and the player reports position at 4Hz
+     * while playing, which is what advances the highlighted line. Pushing only on a track change or a
+     * seek is exactly the bug that left the status bar stuck on the first line.
+     *
+     * A full [LyriconBridge.publish] (which rebuilds and re-sends the lyric document) only happens when
+     * the song or the play state changes; the per-tick path writes the position alone, which is a
+     * memory write rather than a binder call.
      */
     private fun startLyriconSync() {
         // A bridge that connects mid-song should get the current state rather than waiting for the
@@ -242,30 +246,34 @@ class PlayerViewModel(private val container: AppContainer) : ViewModel() {
         lyriconJob = viewModelScope.launch {
             var previousTrackId = 0L
             var previousPlaying = false
-            var previousPosition = 0L
 
             container.player.state.collect { state ->
                 val trackId = state.current?.id ?: 0L
                 val trackChanged = trackId != previousTrackId
                 val playingChanged = state.isPlaying != previousPlaying
-                // A seek is a position that disagrees with where the clock should have reached.
-                // The tolerance covers the poll interval plus jitter so ordinary playback is never
-                // mistaken for one.
-                val expectedNext = previousPosition + if (previousPlaying) POSITION_DRIFT_ALLOWANCE_MS else 0L
-                val seeked = !trackChanged && !playingChanged &&
-                    kotlin.math.abs(state.positionMs - expectedNext) > SEEK_THRESHOLD_MS
 
-                when {
-                    trackChanged || playingChanged -> publishToLyricon()
-                    seeked -> container.lyricon.publishPosition(state.positionMs)
+                if (trackChanged || playingChanged) {
+                    publishToLyricon()
+                } else if (trackId != 0L) {
+                    container.lyricon.publishPosition(lyriconClockMs(state.positionMs))
                 }
 
                 previousTrackId = trackId
                 previousPlaying = state.isPlaying
-                previousPosition = state.positionMs
             }
         }
     }
+
+    /**
+     * The clock value Lyricon should display this song against.
+     *
+     * Same correction the in-app renderer applies: a positive manual offset means "show the lyrics
+     * later", which the renderer implements by making its clock *lag* playback. Sending the raw
+     * position instead would leave the status bar disagreeing with the player for any track the user
+     * has calibrated — the two views read the same document, so they should read the same clock.
+     */
+    private fun lyriconClockMs(positionMs: Long): Long =
+        (positionMs - lyricOffsetMs).coerceAtLeast(0L)
 
     /** Sends the current song, lyrics and playback state to Lyricon. No-op when it is not installed. */
     private fun publishToLyricon() {
@@ -274,7 +282,7 @@ class PlayerViewModel(private val container: AppContainer) : ViewModel() {
             track = state.current,
             lyrics = lyrics,
             isPlaying = state.isPlaying,
-            positionMs = state.positionMs,
+            positionMs = lyriconClockMs(state.positionMs),
         )
     }
 
@@ -372,19 +380,6 @@ class PlayerViewModel(private val container: AppContainer) : ViewModel() {
 
 /** Largest manual lyric offset the UI allows, in milliseconds. */
 const val LYRIC_OFFSET_LIMIT_MS = 5000L
-
-/**
- * How far the clock may drift between position polls before a jump is treated as a seek.
- *
- * The player publishes position at 4Hz, so ~250ms of ordinary advance is expected between samples.
- * This is set well above that so normal playback never registers as a seek (which would cost a binder
- * call every tick) while a real seek — a drag on the progress bar, or a jump to a lyric line — is
- * well beyond it.
- */
-private const val POSITION_DRIFT_ALLOWANCE_MS = 400L
-
-/** Minimum position jump treated as a seek rather than drift. */
-private const val SEEK_THRESHOLD_MS = 1500L
 
 /**
  * State of a long-press-to-download.
