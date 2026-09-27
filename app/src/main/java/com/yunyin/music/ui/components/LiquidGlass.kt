@@ -282,11 +282,11 @@ fun FloatingMiniPlayer(
     onTogglePlay: () -> Unit,
     modifier: Modifier = Modifier,
     /**
-     * Called with the **artwork tile's** bounds in root coordinates.
+     * Called with the **capsule's** bounds in root coordinates.
      *
-     * The tile, not the capsule: the expand transition grows this image into the player's cover, so the
-     * animation has to start from the thing the finger was actually on. Measured rather than computed,
-     * because the tile's position depends on the screen and on the capsule's layout.
+     * The capsule, not its artwork: the expanding container starts as the surface the user touched, and
+     * its pill radius becomes the container's initial radius. Measured rather than computed because the
+     * width depends on the screen.
      */
     onCoverBoundsChanged: (Rect) -> Unit = {},
 ) {
@@ -319,6 +319,10 @@ fun FloatingMiniPlayer(
                 indication = null,
                 onClick = onExpand,
             )
+            // The capsule's own rect: the expand transition starts from the surface that was touched.
+            .onGloballyPositioned { coordinates ->
+                onCoverBoundsChanged(coordinates.boundsInRoot())
+            }
             .padding(horizontal = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -327,13 +331,7 @@ fun FloatingMiniPlayer(
             loader = loader,
             corner = MiniArtworkCorner,
             requestSize = 200,
-            modifier = Modifier
-                .size(MiniArtworkSize)
-                // The *artwork's* rect, not the capsule's: the transition grows this tile into the
-                // player's cover, so the animation starts from the tile the finger was on.
-                .onGloballyPositioned { coordinates ->
-                    onCoverBoundsChanged(coordinates.boundsInRoot())
-                },
+            modifier = Modifier.size(MiniArtworkSize),
         )
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {

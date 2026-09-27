@@ -152,19 +152,12 @@ fun PlayerScreen(
     /** Called with a long-pressed lyric's text; null when the line had nothing to copy. */
     onCopyLyric: (String?) -> Unit = {},
     /**
-     * Opacity of the player's own cover.
-     *
-     * 0 while the cover that grew out of the mini player is still travelling, 1 once it has been handed
-     * over. The player must *hide* its own cover for most of that, or the same artwork would be on
-     * screen twice at two different sizes.
-     */
-    coverAlpha: Float = 1f,
-    /**
      * Reports the cover's rect in root coordinates.
      *
-     * The transition's destination: the travelling cover animates to exactly this rect, so it has to be
-     * measured rather than computed from the screen size — it depends on the layout, the aspect ratio
-     * and the presentation.
+     * The expand transition anchors its growing window on the cover's centre — centring the *player*
+     * instead opens the window onto the controls, which is visibly wrong. The centre cannot be computed
+     * from the screen size: the cover's position depends on the layout, on the aspect ratio and on which
+     * presentation is showing, so it is measured.
      */
     onCoverBoundsChanged: (androidx.compose.ui.geometry.Rect) -> Unit = {},
     positionProvider: () -> Long,
@@ -554,7 +547,6 @@ fun PlayerScreen(
                                     onCollapse = onCollapse,
                                     dragDistance = { dragDistance },
                                     setDragDistance = { dragDistance = it },
-                                    coverAlpha = coverAlpha,
                                     onCoverBoundsChanged = onCoverBoundsChanged,
                                     sharedScope = this@SharedTransitionLayout,
                                     visibilityScope = this@AnimatedContent,
@@ -822,7 +814,6 @@ fun PlayerScreen(
                                 onCollapse = onCollapse,
                                 dragDistance = { dragDistance },
                                 setDragDistance = { dragDistance = it },
-                                coverAlpha = coverAlpha,
                                 onCoverBoundsChanged = onCoverBoundsChanged,
                                 sharedScope = this@SharedTransitionLayout,
                                 visibilityScope = this@AnimatedContent,
@@ -940,8 +931,7 @@ private fun ArtworkWithGestures(
     onCollapse: () -> Unit,
     dragDistance: () -> Float,
     setDragDistance: (Float) -> Unit,
-    /** Opacity of the cover itself, so the transition can hide it while another copy travels. */
-    coverAlpha: Float = 1f,
+    /** Reports the cover's rect so the expand transition can anchor on its centre. */
     onCoverBoundsChanged: (androidx.compose.ui.geometry.Rect) -> Unit = {},
     // Receiver scopes are passed in rather than captured: this is a separate composable, so the
     // caller's `this@SharedTransitionLayout` / `this@AnimatedContent` are not in scope here.
@@ -985,7 +975,6 @@ private fun ArtworkWithGestures(
                 .onGloballyPositioned { coordinates ->
                     onCoverBoundsChanged(coordinates.boundsInRoot())
                 }
-                .alpha(coverAlpha)
                 // The other half of the shared cover: switching to the lyrics presentation shrinks
                 // this into the header thumbnail.
                 .then(

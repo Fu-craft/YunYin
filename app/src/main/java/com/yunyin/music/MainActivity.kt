@@ -50,17 +50,13 @@ import com.yunyin.music.playback.PlaybackUiState
 import com.yunyin.music.ui.AppViewModel
 import com.yunyin.music.ui.AudioQuality
 import com.yunyin.music.ui.PlayerViewModel
+import com.yunyin.music.ui.components.BackdropRecede
+import com.yunyin.music.ui.components.ContainerExpand
 import com.yunyin.music.ui.components.CrossfadeContent
-import com.yunyin.music.ui.components.FloatingCover
 import com.yunyin.music.ui.components.FloatingMiniPlayer
 import com.yunyin.music.ui.components.FloatingTabBar
-import com.yunyin.music.ui.components.MiniArtworkCorner
 import com.yunyin.music.ui.components.PlayerTab
 import com.yunyin.music.ui.components.QueueSheet
-import com.yunyin.music.ui.components.backdropBlurRadius
-import com.yunyin.music.ui.components.backdropDimAlpha
-import com.yunyin.music.ui.components.playerCoverAlpha
-import com.yunyin.music.ui.components.playerScreenAlpha
 import com.yunyin.music.ui.components.rememberExpandProgress
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
@@ -168,14 +164,25 @@ class MainActivity : ComponentActivity() {
          * capsule's width depends on the screen, so it cannot be assumed.
          */
         /**
-         * Measured rects for the cover's travel, in root coordinates.
+         * The mini player's rect in root coordinates — where the expanding container starts.
          *
-         * Both ends must be measured: the *source* is the mini player's artwork tile and the *target* is
-         * the player's full-size cover, and neither can be computed from the screen size — the target in
-         * particular depends on the layout and on which presentation is showing.
+         * Measured rather than computed: its width depends on the screen, and the container's growth is
+         * only anchored correctly if it begins from the rect the user actually touched.
          */
-        var miniCoverBounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+        var miniPlayerBounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+
+        /**
+         * The player's cover rect, measured.
+         *
+         * The expand transition anchors its growing window on the cover's centre, so this is read as a
+         * *fraction* of the screen and handed to the transition. Derived from the measurement rather than
+         * from a constant: an earlier version assumed 0.38 and was off by 0.11 of the screen, so the
+         * window opened on the space above the cover.
+         */
         var playerCoverBounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+        val coverAnchorY by remember(playerCoverBounds) {
+            mutableStateOf(playerCoverBounds?.center?.y)
+        }
 
         /**
          * 0 = the player is the mini player's size, 1 = full screen.
@@ -389,7 +396,9 @@ class MainActivity : ComponentActivity() {
                         backdrop = bottomBackdrop,
                         onExpand = { showPlayer = true },
                         onTogglePlay = container.player::togglePlayPause,
-                        onCoverBoundsChanged = { miniCoverBounds = it },
+                        // The whole capsule's rect, not just its artwork: the expanding container starts
+                        // as the capsule the user actually touched.
+                        onCoverBoundsChanged = { miniPlayerBounds = it },
                     )
                 }
 
@@ -492,14 +501,12 @@ class MainActivity : ComponentActivity() {
                 )
             }
 
-            // Full-screen player, grown out of the mini player's cover.
+            // Full-screen player, grown out of the mini player as a container transition.
             //
-            // The cover is the element that travels: one image, always on screen, whose rect is
-            // interpolated between the mini player's artwork and the player's cover. The player screen
-            // fades in around it, and the app behind dims and blurs. This is the system container
-            // transition the user asked for — and unlike scaling a whole screen (which needs a
-            // (0.91, 0.075) squash and therefore shows a flattened ribbon), it has no geometric
-            // failure mode.
+            // Matches the reference recording: a rounded container grows from the mini player's rect to
+            // the full screen and the player is revealed inside it at its true size. No scaling, so no
+            // distortion — the two earlier attempts scaled (the screen, then the cover) and the squash
+            // was the visible defect.
             //
             // No AnimatedVisibility: the player must stay composed while animating *out*, which a
             // visibility scope would remove.
@@ -509,23 +516,19 @@ class MainActivity : ComponentActivity() {
                 // invalidates only the player screen and never the browsing tabs behind it.
                 val playback by container.player.state.collectAsState()
 
-                // Dim + blur the browsing app as the player takes over: the "something is opening over
-                // this" cue. Both derive from the same progress, so they cannot disagree.
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .graphicsLayer {
-                            alpha = backdropDimAlpha(expand)
-                            clip = false
-                        }
-                        .blur(backdropBlurRadius(expand))
-                        .background(Color.Black),
-                )
+                // The app recedes: dimmed and blurred, the "something is opening over this" cue.
+                BackdropRecede(progress = expand)
 
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .graphicsLayer { alpha = playerScreenAlpha(expand) },
+                ContainerExpand(
+                    progress = expand,
+                    source = miniPlayerBounds,
+                    background = AppTheme.palette.background,
+                    // The cover's centre, as a fraction of the screen. Falls back to a reasonable
+                    // portrait value only until the first measurement lands.
+                    focusFraction = coverAnchorY?.let { anchor ->
+                        val screenH = context.resources.displayMetrics.heightPixels
+                        if (screenH > 0) (anchor / screenH).coerceIn(0.05f, 0.95f) else null
+                    } ?: 0.27f,
                 ) {
                     PlayerScreen(
                         state = playback,
@@ -533,7 +536,7 @@ class MainActivity : ComponentActivity() {
                         palette = playerViewModel.palette,
                         lyrics = playerViewModel.lyrics,
                         lyricsLoading = playerViewModel.lyricsLoading,
-                    loader = container.artwork,
+                        loader = container.artwork,
                     quality = quality,
                     onQualityChange = { tier ->
                         quality = tier
@@ -578,26 +581,11 @@ class MainActivity : ComponentActivity() {
                             Toast.makeText(context, "已复制歌词", Toast.LENGTH_SHORT).show()
                         }
                     },
-                    // The player hides its own cover for most of the transition: the covering copy is
-                    // already on screen and travelling to exactly this rect, and the handover at the end
-                    // is invisible because both are the same bitmap at the same rect by then.
-                    coverAlpha = if (showPlayer) playerCoverAlpha(expand) else 1f,
                     onCoverBoundsChanged = { playerCoverBounds = it },
                     positionProvider = container.player::positionMsNow,
-                )
+                    )
+                }
             }
-        }
-
-        // The travelling cover, drawn over both the app and the player so it is never clipped by
-        // either, and never re-created mid-flight.
-        FloatingCover(
-            source = miniCoverBounds,
-            target = playerCoverBounds,
-            progress = expandProgress.value,
-            cover = playerViewModel.coverBitmap,
-            cornerStart = MiniArtworkCorner,
-            cornerEnd = PlayerArtworkCorner,
-        )
 
             // Transient messages from the player (a refused like, a failed share).
             LaunchedEffect(playerViewModel.notice) {
