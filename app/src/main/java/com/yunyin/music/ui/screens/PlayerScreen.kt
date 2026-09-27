@@ -87,6 +87,7 @@ import com.yunyin.music.ui.components.rememberControlRipple
 import com.yunyin.music.ui.icons.SfIcons
 import com.yunyin.music.ui.theme.AppleColors
 import com.yunyin.music.ui.theme.AppleShapes
+import com.yunyin.music.ui.theme.AppTheme
 import com.yunyin.music.ui.theme.SFPro
 import com.yunyin.music.ui.DownloadState
 import com.mocharealm.accompanist.lyrics.core.model.SyncedLyrics
@@ -1809,30 +1810,50 @@ private fun BottomIcon(
     onClick: () -> Unit,
 ) {
     val ripple = rememberControlRipple()
+    val accent = AppTheme.palette.accent
     Box(
         Modifier
             .size(48.dp)
             .clickable(indication = ripple, interactionSource = null, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        // Tint eases between active/inactive instead of snapping, and the glyph cross-fades so
-        // switching repeat-all to repeat-one reads as the control changing state rather than as the
-        // button being redrawn.
+        // Active state is carried by *colour*, not by brightness.
+        //
+        // It used to be white at 0.72 vs 1.0 alpha, which is not a distinction anyone can see: both
+        // states are white on a dark panel, so turning either control on looked identical to leaving
+        // it off. The accent colour is what makes "on" unmistakable, and it matches how the rest of
+        // the app marks an active control (the current lyric line, the liked heart).
+        //
+        // Plus a filled container behind the glyph, so the state is legible at a glance from the
+        // shape of the control and not only from its colour — colour alone would fail for anyone who
+        // cannot separate the accent from white.
         val tint by animateColorAsState(
-            targetValue = if (active) Color.White else Color.White.copy(alpha = 0.72f),
+            targetValue = if (active) accent else Color.White.copy(alpha = 0.72f),
             label = "bottom-icon-tint",
         )
-        CrossfadeContent(
-            targetState = icon.name,
-            durationMillis = 200,
-            label = "bottom-icon",
+        val container by animateColorAsState(
+            targetValue = if (active) accent.copy(alpha = 0.16f) else Color.Transparent,
+            label = "bottom-icon-container",
+        )
+        Box(
+            Modifier
+                .size(34.dp)
+                .clip(CircleShape)
+                .background(container),
+            contentAlignment = Alignment.Center,
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = description,
-                tint = tint,
-                modifier = Modifier.size(26.dp),
-            )
+            CrossfadeContent(
+                targetState = icon.name,
+                durationMillis = 200,
+                label = "bottom-icon",
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = description,
+                    tint = tint,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
         }
     }
 }

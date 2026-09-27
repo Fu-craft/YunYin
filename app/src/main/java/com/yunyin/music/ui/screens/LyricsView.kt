@@ -40,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextMotion
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import com.yunyin.music.data.LyricClipboard
 import com.yunyin.music.ui.components.CrossfadeContent
 import com.yunyin.music.ui.icons.SfIcons
@@ -161,12 +162,25 @@ fun LyricsView(
     fun offsetClock(): Long = currentPosition() - latestOffset
 
     LaunchedEffect(isPlaying, lyrics) {
-        // While playing, track the interpolated position at display refresh rate;
-        // while paused, a single sample keeps the view in sync after a seek.
         if (!isPlaying) {
-            framePositionMs = offsetClock()
-            smoothPositionMs = framePositionMs
-            return@LaunchedEffect
+            // Keep following the position while paused, at a low rate.
+            //
+            // This used to take a single sample and return, so a seek made while paused did **not**
+            // move the lyrics at all — they stayed on whatever line was current when playback
+            // stopped, until the user pressed play. Dragging the progress bar and watching the
+            // lyrics ignore it is the visible form of that bug. There is no karaoke fill to animate
+            // while paused, so a frame ticker would be waste; a slow poll reflects a seek quickly
+            // enough to feel immediate and costs nothing measurable.
+            while (true) {
+                val now = offsetClock()
+                if (now != framePositionMs) {
+                    framePositionMs = now
+                    // No smoothing while paused: there is no advancing clock to smooth, and easing
+                    // toward a seek target would look like the lyrics sliding into place.
+                    smoothPositionMs = now
+                }
+                delay(PAUSED_POLL_MS)
+            }
         }
         var lastFrameNs = 0L
         while (true) {
@@ -280,6 +294,15 @@ fun LyricsView(
  * the per-frame work, which is the same degradation NeriPlayer applies in low-power mode.
  */
 private const val LOW_POWER_FRAME_INTERVAL_NS = 33_000_000L
+
+/**
+ * How often the paused path re-reads the position.
+ *
+ * Only needs to be fast enough that a seek is reflected without the user noticing a lag; there is no
+ * fill animation to drive while paused. 100ms is comfortably below the threshold of feeling delayed
+ * and is ~10x cheaper than the playing ticker.
+ */
+private const val PAUSED_POLL_MS = 100L
 
 /**
  * Kaomoji shown while lyrics load.

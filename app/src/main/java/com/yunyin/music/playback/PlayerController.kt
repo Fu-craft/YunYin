@@ -33,6 +33,11 @@ data class PlaybackUiState(
     val durationMs: Long = 0L,
     val queue: List<Track> = emptyList(),
     val index: Int = 0,
+    /**
+     * Matches what [PlaybackService] configures on the player (`REPEAT_MODE_ALL`), so the mirror
+     * describes the real default rather than a guess. Note this means "list repeat" is genuinely on
+     * at startup and the loop control is correctly shown as active from the first track.
+     */
     val repeatMode: Int = Player.REPEAT_MODE_ALL,
     val shuffle: Boolean = false,
     val error: String? = null,
@@ -87,6 +92,19 @@ class PlayerController(
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) = publish()
+
+        /**
+         * Repeat and shuffle changes must republish.
+         *
+         * These were missing, which matters for any change that does not come from this class's own
+         * tap handlers. The concrete case: [refreshTrialAndQueueMode] forces `repeatMode` to OFF for a
+         * member-only preview, and with no callback the UI kept showing the user's old mode — the
+         * control lied about the player for the whole preview. The same gap meant a change made from
+         * the notification or the lock screen never reached the in-app controls.
+         */
+        override fun onRepeatModeChanged(repeatMode: Int) = publish()
+
+        override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) = publish()
 
         override fun onMediaItemTransition(mediaItem: androidx.media3.common.MediaItem?, reason: Int) {
             // Reset the trial window on every track change, then re-resolve for the new one.
@@ -157,8 +175,17 @@ class PlayerController(
         }
     }
 
-    /** Remembers the user's chosen repeat mode so a trial can restore it afterwards. */
-    private var savedRepeatMode: Int = Player.REPEAT_MODE_ALL
+    /**
+     * The loop mode to restore once a member-only preview is over.
+     *
+     * Kept in sync from [publish] rather than only from [cycleRepeat], and only while *not* on a
+     * preview. That distinction matters: a preview forces repeat off, and an earlier version
+     * remembered only what the user had cycled to — defaulting to repeat-all — so playing a trial
+     * song and then a normal one would switch the user into list repeat that they had never chosen.
+     * Mirroring the live mode while no override is in effect makes the restore faithful to whatever
+     * the user (or the notification) last set, and never captures the forced off.
+     */
+    private var savedRepeatMode: Int = Player.REPEAT_MODE_OFF
 
     /**
      * Re-checks the current track's trial window (e.g. after a quality or account change,
@@ -215,9 +242,18 @@ class PlayerController(
         publish()
     }
 
+    /**
+     * Advances the loop mode: list → one → off → list.
+     *
+     * The mode is read from and written back to [_state] rather than read back from the controller.
+     * A `MediaController` does update its cached `PlayerInfo` before returning, so a read-back would
+     * work here — but it dispatches the actual change to the service over IPC, and reading our own
+     * mirror is both cheaper and independent of that ordering. The authoritative value still arrives
+     * via [Player.Listener.onRepeatModeChanged].
+     */
     fun cycleRepeat() {
         val mediaController = controller ?: return
-        val next = when (mediaController.repeatMode) {
+        val next = when (_state.value.repeatMode) {
             Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
             Player.REPEAT_MODE_ONE -> Player.REPEAT_MODE_OFF
             else -> Player.REPEAT_MODE_ALL
@@ -225,14 +261,17 @@ class PlayerController(
         // Remember the user's choice: a member-only preview temporarily forces repeat off,
         // and this is what it restores afterwards.
         savedRepeatMode = next
-        mediaController.repeatMode = if (_state.value.isTrialPreview) Player.REPEAT_MODE_OFF else next
-        publish()
+        val applied = if (_state.value.isTrialPreview) Player.REPEAT_MODE_OFF else next
+        mediaController.repeatMode = applied
+        _state.value = _state.value.copy(repeatMode = applied)
     }
 
+    /** Toggles shuffle, mirroring it into [_state] as [cycleRepeat] does. */
     fun toggleShuffle() {
         val mediaController = controller ?: return
-        mediaController.shuffleModeEnabled = !mediaController.shuffleModeEnabled
-        publish()
+        val next = !_state.value.shuffle
+        mediaController.shuffleModeEnabled = next
+        _state.value = _state.value.copy(shuffle = next)
     }
 
     fun clearError() {
@@ -252,6 +291,10 @@ class PlayerController(
         }
         val duration = mediaController.duration.takeIf { it != androidx.media3.common.C.TIME_UNSET } ?: 0L
         val position = mediaController.currentPosition.coerceAtLeast(0L)
+
+        // Track the user's real loop mode whenever no preview override is in effect, so leaving a
+        // preview restores what they actually had rather than a hard-coded default.
+        if (!_state.value.isTrialPreview) savedRepeatMode = mediaController.repeatMode
 
         // Re-anchor the interpolation on every authoritative poll. `advancing` is false while
         // buffering, so the lyric clock holds still instead of running ahead of the audio.

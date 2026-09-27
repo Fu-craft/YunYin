@@ -4,6 +4,8 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,6 +41,7 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.LookaheadScope
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
@@ -474,7 +477,20 @@ fun KaraokeLyricsView(
     val currentFocus by rememberUpdatedState(lyricsFocusState)
     val currentLyrics by rememberUpdatedState(lyrics)
 
+    // Whether a finger is currently dragging the list.
+    //
+    // Needed because `isScrollInProgress` is also true while *this* view's own scroll animation runs,
+    // and the auto-scroll loop has to tell a deliberate drag from its own movement. A separate
+    // pointer-driven flag is the only way to know, and it is what replaced the old
+    // `isAutoScrolling`/`lastUserInteracting` juggling.
+    val isDragging = remember { mutableStateOf(false) }
+
     // A new song starts from the top of its own lyrics.
+    //
+    // The scroll signal is the *lyrics document*, not the ambient `currentFocus`. Keying it on the
+    // focus state meant this fired whenever the focus changed, and since `scrollToItem(0)` is
+    // non-animated it would snap the list back to the top mid-song — fighting the auto-scroll for
+    // the rest of that line. Reset only when the song actually changes.
     LaunchedEffect(currentLyrics) {
         runCatching { listState.scrollToItem(0) }
     }
@@ -490,48 +506,55 @@ fun KaraokeLyricsView(
      *
      * A user drag is honoured until playback moves on, mirroring NeriPlayer's behaviour: the
      * viewport is held on the line the user scrolled to, then released on the next line change.
+     *
+     * Three details here are load-bearing and each was a real defect:
+     *
+     *  - **A scroll is judged by *where the list is*, not by a flag this loop owns.** The previous
+     *    version set `isAutoScrolling = true` around its own `animateScrollToItem` and treated any
+     *    other scroll as a user drag. But the list also scrolls for reasons this loop knows nothing
+     *    about — fling settling, and the item animations inside each row — and any of those would
+     *    latch `holdIndex`, which suppresses following until the line index happens to change. The
+     *    lyrics would then sit on the wrong line for the rest of that line's duration. Comparing the
+     *    list's current index against the line we last *asked* for is stable and needs no flag.
+     *  - **The first placement is immediate.** Starting a song with `animateScrollToItem` from index
+     *    0 animates the whole list past every line from the top, which is the visible "lyrics rush
+     *    up from the bottom" at track start. The first jump belongs at the target with no animation.
+     *  - **A drag is detected by touch, not by `isScrollInProgress`.** That flag is also true during
+     *    our own animation, and the old flag juggling to tell the two apart is exactly what made the
+     *    hold logic misfire.
      */
     LaunchedEffect(listState) {
-        var isAutoScrolling = false
-        var lastUserInteracting = false
-        var holdIndex: Int? = null
-        var lastIndex = Int.MIN_VALUE
+        val decider = LyricScrollDecider()
 
         while (true) {
             withFrameNanos { }
 
             val focus = currentFocus
-            val index = focus.firstIndex
+            // Nothing to follow during the lead-in: the dots represent the position and the first
+            // line already sits at the reading position.
+            val target = if (focus.introActive) null else focus.firstIndex
+            if (target != null && (target < 0 || target >= lyrics.lines.size)) continue
 
-            // The lead-in has nothing to scroll to: the dots represent the position and the
-            // first line already sits at the reading position.
-            if (focus.introActive) continue
-
-            val interacting = listState.isScrollInProgress && !isAutoScrolling
-            if (interacting && !lastUserInteracting) {
-                // The user took over: hold the viewport where they put it.
-                holdIndex = if (index >= 0) index else null
-            }
-            lastUserInteracting = interacting
-
-            if (!interacting && holdIndex != null && index != holdIndex) {
-                // Playback moved on, so resume following it.
-                holdIndex = null
-            }
-            if (interacting || holdIndex != null) continue
-            if (index < 0 || index >= lyrics.lines.size) continue
-            if (index == lastIndex && listState.firstVisibleItemIndex == index) continue
-            lastIndex = index
-
-            isAutoScrolling = true
-            try {
-                listState.animateScrollToItem(index)
-            } catch (cancellation: kotlin.coroutines.cancellation.CancellationException) {
-                throw cancellation
-            } catch (_: Exception) {
-                // A concurrent scroll can cancel this; the next line change retries.
-            } finally {
-                isAutoScrolling = false
+            when (val decision = decider.decide(
+                index = target,
+                dragging = isDragging.value,
+                firstVisibleIndex = listState.firstVisibleItemIndex,
+            )) {
+                is LyricScrollDecider.Decision.Wait -> continue
+                is LyricScrollDecider.Decision.Scroll -> {
+                    try {
+                        if (decision.animate) {
+                            listState.animateScrollToItem(decision.index)
+                        } else {
+                            listState.scrollToItem(decision.index)
+                        }
+                    } catch (cancellation: kotlin.coroutines.cancellation.CancellationException) {
+                        throw cancellation
+                    } catch (_: Exception) {
+                        // A concurrent scroll can cancel this; the next frame retries, because the
+                        // decider only treats a request as settled once the list is actually there.
+                    }
+                }
             }
         }
     }
@@ -546,6 +569,36 @@ fun KaraokeLyricsView(
                 state = listState,
                 modifier = modifier
                     .fillMaxSize()
+                    // Report drags so the auto-scroll can yield to them. `pointerInput` observes
+                    // touches without consuming them, so tapping and long-pressing a line — which are
+                    // handled per row — keep working unchanged.
+                    //
+                    // A drag is only reported once the finger has actually moved past the touch slop.
+                    // Treating every touch-down as a drag would make a tap on a line pause the
+                    // auto-scroll and hold the viewport, which is the hold-latch behaviour this
+                    // rewrite exists to remove.
+                    .pointerInput(Unit) {
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            var dragging = false
+                            try {
+                                while (true) {
+                                    val event = awaitPointerEvent()
+                                    if (event.changes.all { !it.pressed }) break
+                                    if (!dragging && event.changes.any {
+                                            (it.position - down.position).getDistance() >
+                                                viewConfiguration.touchSlop
+                                        }
+                                    ) {
+                                        dragging = true
+                                        isDragging.value = true
+                                    }
+                                }
+                            } finally {
+                                isDragging.value = false
+                            }
+                        }
+                    }
                     .graphicsLayer {
                         compositingStrategy = CompositingStrategy.Offscreen
                     }
