@@ -25,6 +25,7 @@
   封面图到相册，长按歌词行复制歌词。
 - **词幕状态栏歌词** —— 可选集成：安装「词幕」后，当前歌曲、逐字歌词与播放状态会推送给它，
   由它渲染到状态栏／锁屏。未安装时不启用，应用行为不受影响（见下方「词幕」）。
+- **Flyme 状态栏歌词** —— 在 Flyme 系 ROM 上，当前歌词会显示在状态栏（见下方「Flyme」）。
 - **开屏动画** —— 冷启动期间展示品牌开屏，待会话与首页数据就绪后交叉溶解揭开。
 - **后台播放** —— Media3 ExoPlayer + MediaSessionService，支持锁屏与通知控制。
 - **网页登录** —— 应用内嵌浏览器登录，自动获取登录态，无需手动复制 Cookie。
@@ -46,7 +47,7 @@
 | 播放 | Media3 ExoPlayer + MediaSessionService |
 | 背景 | AGSL（`android.graphics.RuntimeShader`，需 API 33+） |
 | 图像取色 | AndroidX Palette |
-| 状态栏歌词 | 词幕 Lyricon Provider（可选，见「词幕」） |
+| 状态栏歌词 | 词幕 Lyricon Provider（可选）+ Flyme 通知 ticker（见「词幕」「Flyme」） |
 | minSdk / targetSdk | 33 / 37 |
 | 构建 | Gradle 9.7.1 / AGP 9.3.2 / Kotlin 2.4.10 |
 
@@ -184,6 +185,27 @@ keytool -genkeypair -v -keystore my-release.jks -alias mykey \
 
 **未安装词幕时整个功能是空操作**：provider 返回空实现，应用其余部分完全不受影响；
 设置页有「状态栏歌词」一行显示当前状态（已连接／未连接／未安装）并可重试。
+
+---
+
+## Flyme 状态栏歌词
+
+Flyme 的状态栏歌词是**系统功能**，不是第三方渲染：它改造了 Android 通知的 ticker，
+监听一条常驻通知，把 `tickerText` 动画显示在状态栏上。因此应用这边只是按
+[Flyme 官方适配说明](https://open.flyme.cn/docs?id=239)（doc 239）发一条通知：
+
+- 通知必须常驻（`FLAG_NO_CLEAR`），并复用同一个 id，否则 ticker 会被系统清掉；
+- 歌词放在 `setTicker(...)`，且必须同时设置 `FLAG_ALWAYS_SHOW_TICKER` 与
+  `FLAG_ONLY_UPDATE_TICKER` 两个私有 flag——只设一个会被当作普通 ticker 只动画一次；
+- `ticker_icon_switch` 与 `ticker_icon` 控制最左侧的图标（用于显示播放／暂停）；
+- 关闭歌词即清空 ticker 并清除这两个 flag。
+
+支持检测用反射读取那两个私有 flag：它们只存在于移植了该功能的 ROM 上，
+**大部分机型都不支持**，此时不创建任何通知，设置页也直接说明「当前系统未内置该功能」。
+
+几个实现细节：通知 id 取 2001，避开 Media3 传输通知的 1001（否则两者会互相覆盖）；
+ticker 只在歌词行**变化**时重发（否则会不停重放动画）；通知渠道设为 LOW 且静音，
+避免每换一句都提示；设置页可关闭该功能，关闭时立即移除常驻通知。
 
 ---
 

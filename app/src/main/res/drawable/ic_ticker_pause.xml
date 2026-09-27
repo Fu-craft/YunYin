@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Pause indicator for the Flyme status-bar lyric's leading icon. See ic_ticker_play.xml for why this
+  is a vector rather than the 60x60 xxhdpi bitmap the guide describes.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M7.4,6.2h2.6c0.44,0 0.8,0.36 0.8,0.8v10c0,0.44 -0.36,0.8 -0.8,0.8H7.4c-0.44,0 -0.8,-0.36 -0.8,-0.8V7c0,-0.44 0.36,-0.8 0.8,-0.8z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M14,6.2h2.6c0.44,0 0.8,0.36 0.8,0.8v10c0,0.44 -0.36,0.8 -0.8,0.8H14c-0.44,0 -0.8,-0.36 -0.8,-0.8V7c0,-0.44 0.36,-0.8 0.8,-0.8z" />
+</vector>

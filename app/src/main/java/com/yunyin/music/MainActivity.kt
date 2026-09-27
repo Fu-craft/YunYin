@@ -373,6 +373,14 @@ class MainActivity : ComponentActivity() {
                     lyriconConnected = container.lyricon.connected,
                     lyriconAvailable = container.lyricon.available,
                     onRetryLyricon = { container.lyricon.retry() },
+                    flymeSupported = container.tickerLyrics.isSupported(),
+                    statusBarLyrics = container.settings.statusBarLyrics,
+                    onStatusBarLyricsChange = { enabled ->
+                        container.settings.statusBarLyrics = enabled
+                        // Turning it off must remove the resident notification immediately rather
+                        // than leaving it in the shade until the next track change.
+                        if (!enabled) container.tickerLyrics.clear()
+                    },
                 )
             }
 

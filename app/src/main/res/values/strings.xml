@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">云音</string>
+    <!-- Channel for the Flyme status-bar lyric notification; silent and low importance. -->
+    <string name="ticker_channel_name">状态栏歌词</string>
 </resources>

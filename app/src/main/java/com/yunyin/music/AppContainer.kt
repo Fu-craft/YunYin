@@ -8,6 +8,7 @@ import com.yunyin.music.data.PlayHistoryStore
 import com.yunyin.music.data.SearchHistoryStore
 import com.yunyin.music.data.SettingsStore
 import com.yunyin.music.data.CoverDownloader
+import com.yunyin.music.data.FlymeLyricNotifier
 import com.yunyin.music.data.LyriconBridge
 import com.yunyin.music.data.net.NeteaseClient
 import com.yunyin.music.playback.PlayerController
@@ -39,6 +40,9 @@ class AppContainer(val appContext: Context) {
 
     /** Publishes song/lyrics/playback state to 词幕 (Lyricon), when it is installed. */
     val lyricon: LyriconBridge by lazy { LyriconBridge(appContext) }
+
+    /** Flyme's status-bar lyric, via a resident notification ticker (Flyme-family ROMs only). */
+    val tickerLyrics: FlymeLyricNotifier by lazy { FlymeLyricNotifier(appContext) }
 
     val player: PlayerController by lazy {
         PlayerController(appContext) { trackId ->

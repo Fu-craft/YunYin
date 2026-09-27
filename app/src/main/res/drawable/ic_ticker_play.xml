@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Play indicator for the Flyme status-bar lyric's leading icon.
+
+  A vector rather than the 60x60 xxhdpi bitmap Flyme's guide asks for: the guide's point is to avoid
+  an under-sampled icon, and a vector is resolution-independent, so it is sharp at every density
+  including the 3x case the 60px figure describes. Intrinsic size is the platform's standard 24dp for
+  a status-bar glyph. White because Android masks notification small icons by alpha.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M8.2,5.1c0,-0.9 0.98,-1.45 1.74,-0.97l9.06,5.7c0.72,0.45 0.72,1.5 0,1.95l-9.06,5.7C9.18,17.96 8.2,17.41 8.2,16.51z" />
+</vector>

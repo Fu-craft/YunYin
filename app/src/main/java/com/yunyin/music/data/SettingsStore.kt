@@ -30,6 +30,18 @@ class SettingsStore(context: Context) {
         get() = prefs.getString(KEY_QUALITY, "exhigh") ?: "exhigh"
         set(value) = prefs.edit().putString(KEY_QUALITY, value).apply()
 
+    /**
+     * Whether to post the Flyme status-bar lyric notification.
+     *
+     * Opt-out rather than opt-in: on a ROM that supports it the user installed the app expecting the
+     * feature, and a permanent notification is the documented mechanism — there is no way to show a
+     * status-bar lyric without one. Defaults to on, and the toggle exists so it can be turned off
+     * where a permanent notification is unwelcome.
+     */
+    var statusBarLyrics: Boolean
+        get() = prefs.getBoolean(KEY_STATUS_BAR_LYRICS, true)
+        set(value) = prefs.edit().putBoolean(KEY_STATUS_BAR_LYRICS, value).apply()
+
     var account: Account?
         get() {
             val id = prefs.getLong(KEY_USER_ID, 0L)
@@ -107,5 +119,6 @@ class SettingsStore(context: Context) {
         private const val KEY_AVATAR = "avatar"
         private const val KEY_ANON = "anonymous"
         private const val KEY_LYRIC_OFFSETS = "lyric_offsets"
+        private const val KEY_STATUS_BAR_LYRICS = "status_bar_lyrics"
     }
 }

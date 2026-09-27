@@ -19,6 +19,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -62,6 +64,15 @@ fun SettingsScreen(
     lyriconConnected: Boolean = false,
     lyriconAvailable: Boolean = false,
     onRetryLyricon: () -> Unit = {},
+    /**
+     * Flyme 状态栏歌词 availability and preference.
+     *
+     * [flymeSupported] is false on any ROM that did not port the feature — which is most of them — so
+     * the row explains that rather than presenting a switch that does nothing.
+     */
+    flymeSupported: Boolean = false,
+    statusBarLyrics: Boolean = true,
+    onStatusBarLyricsChange: (Boolean) -> Unit = {},
 ) {
     Column(
         modifier = modifier
@@ -115,6 +126,11 @@ fun SettingsScreen(
                 connected = lyriconConnected,
                 available = lyriconAvailable,
                 onRetry = onRetryLyricon,
+            )
+            FlymeTickerRow(
+                supported = flymeSupported,
+                enabled = statusBarLyrics,
+                onChange = onStatusBarLyricsChange,
             )
 
             Spacer(Modifier.height(28.dp))
@@ -177,6 +193,65 @@ private fun LyriconRow(connected: Boolean, available: Boolean, onRetry: () -> Un
             fontWeight = FontWeight.Medium,
             color = if (connected) AppTheme.palette.accent else AppTheme.palette.secondaryLabel,
         )
+    }
+}
+
+/**
+ * Flyme 状态栏歌词 toggle.
+ *
+ * Only interactive on a ROM that ported the feature (detected by reflection on the two private
+ * notification flags Flyme requires). Elsewhere it states that plainly instead of offering a switch
+ * that would do nothing — the feature is implemented by the ROM's ticker, so there is nothing the app
+ * can substitute.
+ */
+@Composable
+private fun FlymeTickerRow(
+    supported: Boolean,
+    enabled: Boolean,
+    onChange: (Boolean) -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(ContinuousRoundedRectangle(10.dp))
+            .then(
+                if (supported) {
+                    Modifier.clickable { onChange(!enabled) }
+                } else {
+                    Modifier
+                },
+            )
+            .padding(horizontal = 12.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = "Flyme 状态栏歌词",
+                fontFamily = SFPro,
+                fontSize = 16.sp,
+                color = AppTheme.palette.label,
+            )
+            Text(
+                text = if (supported) {
+                    "由系统通知栏显示，需保持常驻通知"
+                } else {
+                    "当前系统未内置该功能"
+                },
+                fontFamily = SFPro,
+                fontSize = 12.sp,
+                color = AppTheme.palette.secondaryLabel,
+            )
+        }
+        if (supported) {
+            Switch(
+                checked = enabled,
+                onCheckedChange = onChange,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = androidx.compose.ui.graphics.Color.White,
+                    checkedTrackColor = AppTheme.palette.accent,
+                ),
+            )
+        }
     }
 }
 

@@ -10,6 +10,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.yunyin.music.AppContainer
 import com.yunyin.music.data.CoverDownloader
+import com.yunyin.music.data.LyricTicker
 import com.yunyin.music.playback.PlaybackUiState
 import com.yunyin.music.ui.background.DynamicBackgroundPalette
 import com.mocharealm.accompanist.lyrics.core.model.SyncedLyrics
@@ -222,11 +223,11 @@ class PlayerViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     /**
-     * Keeps 词幕 (Lyricon) in step with playback.
+     * Keeps the external status-bar lyric surfaces in step with playback.
      *
      * A **separate** collector from the track-change one above, because that one filters out
-     * everything except an id change (`return@collectLatest` until the id changes), while Lyricon
-     * needs the play/pause and position updates too.
+     * everything except an id change (`return@collectLatest` until the id changes), while these need
+     * the play/pause and position updates too.
      *
      * The position is pushed on **every** emission, not only on the events that obviously move it.
      * Lyricon reads the position from a shared-memory buffer that holds a bare value with no timestamp
@@ -258,11 +259,56 @@ class PlayerViewModel(private val container: AppContainer) : ViewModel() {
                     container.lyricon.publishPosition(lyriconClockMs(state.positionMs))
                 }
 
+                // Flyme's status-bar lyric is a notification ticker, so it is driven from here too:
+                // it needs the current line at this same 4Hz, and the same clock the other two
+                // surfaces read. Updated after the Lyricon branch so both see identical state.
+                updateTickerLyric(state.current, state.positionMs, state.isPlaying, trackChanged)
+
                 previousTrackId = trackId
                 previousPlaying = state.isPlaying
             }
         }
     }
+
+    /**
+     * Pushes the current lyric line to Flyme's status-bar ticker.
+     *
+     * Only the line's *identity* is compared, not the whole line, so the notification is reposted when
+     * the lyric actually changes rather than on every position poll — reposting 4 times a second would
+     * make Flyme replay its ticker animation continuously.
+     */
+    private fun updateTickerLyric(
+        track: com.yunyin.music.core.Track?,
+        positionMs: Long,
+        isPlaying: Boolean,
+        trackChanged: Boolean,
+    ) {
+        if (!container.settings.statusBarLyrics) {
+            if (trackChanged || tickerLine != null) {
+                tickerLine = null
+                container.tickerLyrics.clear()
+            }
+            return
+        }
+        if (!container.tickerLyrics.isSupported()) return
+        if (track == null) {
+            tickerLine = null
+            container.tickerLyrics.clear()
+            return
+        }
+
+        val line = LyricTicker.contentOf(
+            LyricTicker.lineAt(lyrics?.lines.orEmpty(), lyriconClockMs(positionMs)),
+        )
+        // Title while the lead-in plays, so the entry shows something useful instead of vanishing.
+        val shown = line ?: track.name
+        if (shown == tickerLine && !trackChanged) return
+        tickerLine = shown
+        container.tickerLyrics.update(line = line, fallback = track.name, playing = isPlaying)
+    }
+
+    /** The last text pushed to the status-bar ticker, so an unchanged line is not reposted. */
+    private var tickerLine: String? = null
 
     /**
      * The clock value Lyricon should display this song against.
