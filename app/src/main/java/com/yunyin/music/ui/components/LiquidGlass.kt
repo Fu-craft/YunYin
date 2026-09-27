@@ -69,28 +69,30 @@ enum class PlayerTab(val label: String, val icon: androidx.compose.ui.graphics.v
 /**
  * The liquid-glass surface used by the floating bottom chrome.
  *
- * Unlike the translucent fills elsewhere in this app, this samples and refracts **what is actually
- * behind it**: [Backdrop] holds a recorded layer of the content, and `drawBackdrop` blurs that layer,
- * bends it through a lens, and lifts its saturation so the colour of the artwork behind still reads
- * through. That is the difference between glass and a grey rectangle at 40% opacity, and it is why the
- * reference library is used here rather than another translucent fill.
+ * ## It is a *solid* surface, and that is the point
  *
- * Two things about this are easy to get wrong and were:
+ * Two rounds of tuning went the wrong way on this, so the target is worth stating plainly: the reference
+ * bar is an opaque light-grey surface. You cannot see the list through it at all — no text, no artwork
+ * edges. What makes it read as material rather than as a plain rectangle is that it still **samples what
+ * is behind it** ([Backdrop] records the content; `drawBackdrop` blurs and saturates it), so the surface
+ * carries a faint tint of the artwork underneath, plus the edge highlight and depth.
  *
- *  - **The surface tint is required.** `drawBackdrop` on its own produces *only* the refracted
- *    backdrop — with no `onDrawSurface` the result is nearly invisible over a busy list, which is the
- *    "too transparent" the user reported. The reference passes a `containerColor` for exactly this
- *    reason; here it is the theme's own surface at an alpha that frosts without hiding.
- *  - **The blur has to be substantial.** A few dp of blur leaves the sampled content legible through
- *    the glass, which reads as a smudge rather than as frosted glass.
+ * So the fill is deliberately heavy — around 90% of the theme's own surface colour. This is the
+ * opposite of the previous revision, which lowered the fill to ~34% to let the blur show through; that
+ * produced a translucent panel with content legible behind it, which is what the user rejected twice.
+ * The blur and refraction are still applied and still contribute (the remaining ~10%, the edges, the
+ * pressed-state lens), but they are now a subtlety rather than the main event.
+ *
+ * The library's draw order matters to that reading: blurred backdrop, then this fill, then the content.
+ * A heavy fill therefore *paints over* the blur — which is exactly how a solid surface is achieved here.
  *
  * @param shape the surface outline. The app's own continuous-corner shape is used so the chrome matches
  *        the rest of the UI instead of the library's default capsule.
- * @param blurRadius how much the backdrop is diffused.
- * @param refraction how far the lens bends the backdrop near the edge, which is what makes the surface
- *        read as a physical object with an edge rather than as a rectangle of frosted colour.
- * @param pressed increases the bend and the highlight, so the glass reacts to the touch that is about
- *        to move it.
+ * @param blurRadius how much the backdrop is diffused before the fill covers most of it.
+ * @param refraction how far the lens bends the backdrop near the edge, which is what gives the surface a
+ *        lit rim rather than a flat cut.
+ * @param pressed increases the bend and the highlight, so the glass reacts to the touch that is about to
+ *        move it.
  */
 fun Modifier.liquidGlass(
     backdrop: Backdrop,
@@ -113,34 +115,30 @@ fun Modifier.liquidGlass(
     highlight = { Highlight.Default.copy(alpha = if (pressed) 1f else 0.5f) },
     shadow = { Shadow.Default },
     innerShadow = { InnerShadow(radius = 6.dp, alpha = if (pressed) 1f else 0.45f) },
-    // The frosting. Without this the surface is only the refracted backdrop and all but disappears
-    // over a bright or busy list.
+    // The surface itself. Heavy on purpose: see the note above.
     onDrawSurface = { drawRect(tint) },
 )
 
 /**
- * Blur radius for the frosted chrome.
+ * Blur radius for the backdrop under the chrome.
  *
- * This, not the fill, is what produces the frost: it has to be heavy enough that the content behind is
- * a colour field rather than legible rows. 26dp is roughly a third of the bar's own height.
+ * No longer "the thing that produces the frost" — the surface fill is heavy enough to be solid. This
+ * shapes the ~10% that does show through, so what leaks is a soft tint of the artwork rather than
+ * legible rows.
  */
-private val GlassBlur = 26.dp
+private val GlassBlur = 22.dp
 
 /**
- * The frosting laid over the refracted backdrop.
+ * The surface fill.
  *
- * **The alpha here is what decides whether the glass is frosted or flat**, and it was wrong twice over.
- * The library's draw order is: blurred backdrop, then this fill, then the content. So a heavy fill does
- * not "add frost" — it *paints over the blur*, giving the flat translucent panel the user saw with no
- * blur behind it at all.
- *
- * The frost is therefore produced by the blur, and this fill only mutes it: enough tint that text stays
- * legible over a bright list, little enough that the blurred colour field reads through. Measured from
- * the reference component, whose container fill is 0.4 alpha over an 8dp blur; this app's blur is
- * heavier, so the fill is slightly lower.
+ * Heavy, because the target is a **solid** surface: content behind the chrome must not be readable
+ * through it. It is the theme's own secondary background, so the chrome belongs to the app in either
+ * appearance, and it is left a few percent short of opaque on purpose — that residue is what lets the
+ * blurred artwork underneath tint the surface, which is what keeps it from looking like a flat grey
+ * rectangle.
  */
 @Composable
-private fun glassTint(): Color = AppTheme.palette.background.copy(alpha = 0.34f)
+private fun glassTint(): Color = AppTheme.palette.secondaryBackground.copy(alpha = 0.92f)
 
 /**
  * Floating tab bar: a glass pill with an accent selection sliding between tabs.
