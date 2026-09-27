@@ -42,15 +42,14 @@ import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
 /**
  * Settings.
  *
- * Only user-facing choices appear here: the audio quality they want, plus maintenance actions.
- * Server/network configuration is intentionally absent — the app ships with a working service
+ * Only user-facing choices appear here: maintenance actions and status. Audio quality is deliberately
+ * **not** here — it is something people change while listening, so it lives on the player itself as a
+ * tappable chip. Server/network configuration is also absent: the app ships with a working service
  * endpoint, and exposing addresses, proxies or IP overrides asks the user to reason about
  * infrastructure they have no reason to know about.
  */
 @Composable
 fun SettingsScreen(
-    quality: String,
-    onQualityChange: (String) -> Unit,
     onClearLyricsCache: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
@@ -112,15 +111,6 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp, vertical = 8.dp),
         ) {
-            SectionLabel("音质")
-            QualityOption("standard", "标准", quality, onQualityChange)
-            QualityOption("higher", "较高", quality, onQualityChange)
-            QualityOption("exhigh", "极高", quality, onQualityChange)
-            QualityOption("lossless", "无损", quality, onQualityChange)
-            QualityOption("hires", "Hi-Res", quality, onQualityChange)
-
-            Spacer(Modifier.height(28.dp))
-
             SectionLabel("状态栏歌词")
             LyriconRow(
                 connected = lyriconConnected,
@@ -271,40 +261,6 @@ private fun SectionLabel(text: String) {
         color = AppTheme.palette.secondaryLabel,
         modifier = Modifier.padding(bottom = 6.dp),
     )
-}
-
-@Composable
-private fun QualityOption(
-    value: String,
-    label: String,
-    current: String,
-    onChange: (String) -> Unit,
-) {
-    val selected = value == current
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clip(ContinuousRoundedRectangle(10.dp))
-            .clickable { onChange(value) }
-            .padding(horizontal = 12.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            label,
-            fontFamily = SFPro,
-            fontSize = 16.sp,
-            color = AppTheme.palette.label,
-            modifier = Modifier.weight(1f),
-        )
-        if (selected) {
-            Icon(
-                SfIcons.Checkmark,
-                contentDescription = null,
-                tint = AppTheme.palette.accent,
-                modifier = Modifier.size(18.dp),
-            )
-        }
-    }
 }
 
 @Composable

@@ -76,6 +76,7 @@ import com.yunyin.music.core.Track
 import com.yunyin.music.core.player.effects.AudioReactive
 import com.yunyin.music.data.ArtworkLoader
 import com.yunyin.music.playback.PlaybackUiState
+import com.yunyin.music.ui.AudioQuality
 import com.yunyin.music.ui.LYRIC_OFFSET_LIMIT_MS
 import com.yunyin.music.ui.background.DynamicBackgroundPalette
 import com.yunyin.music.ui.background.HyperBackground
@@ -112,7 +113,16 @@ fun PlayerScreen(
     lyrics: SyncedLyrics?,
     lyricsLoading: Boolean,
     loader: ArtworkLoader,
-    qualityLabel: String,
+    /**
+     * The audio quality to request, and its setter.
+     *
+     * The tier is passed as the enum rather than as a display string so the chip and the sheet cannot
+     * disagree: the chip's label *is* the enum's label, and there is no second mapping to drift. It was
+     * previously a `qualityLabel: String` produced in `MainActivity` while the selectable levels were
+     * listed separately in Settings — two lists of one thing.
+     */
+    quality: AudioQuality,
+    onQualityChange: (AudioQuality) -> Unit,
     showLyrics: Boolean,
     onToggleLyrics: () -> Unit,
     onCollapse: () -> Unit,
@@ -146,9 +156,11 @@ fun PlayerScreen(
     // Battery-saver state, observed so toggling it takes effect without leaving the screen.
     val powerSaveMode = rememberPowerSaveMode()
 
-    // The actions sheet (ellipsis) and the lyric-timing sheet it can open.
+    // The actions sheet (ellipsis), the lyric-timing sheet it can open, and the quality picker the
+    // chip opens.
     var showActions by remember { mutableStateOf(false) }
     var showLyricOffset by remember { mutableStateOf(false) }
+    var showQuality by remember { mutableStateOf(false) }
 
     /**
      * True for the duration of a presentation change.
@@ -611,7 +623,11 @@ fun PlayerScreen(
                                 PlayerControls(
                                     state = state,
                                     displayedPosition = displayedPosition,
-                                    qualityLabel = qualityLabel,
+                                    quality = quality,
+                                    onQualityClick = {
+                                        interaction++
+                                        showQuality = true
+                                    },
                                     showLyrics = showLyrics,
                                     onSeek = { fraction ->
                                         scrubFraction = -1f
@@ -732,7 +748,11 @@ fun PlayerScreen(
                             PlayerControls(
                                 state = state,
                                 displayedPosition = displayedPosition,
-                                qualityLabel = qualityLabel,
+                                quality = quality,
+                                onQualityClick = {
+                                    interaction++
+                                    showQuality = true
+                                },
                                 showLyrics = showLyrics,
                                 onSeek = { fraction ->
                                     scrubFraction = -1f
@@ -801,7 +821,11 @@ fun PlayerScreen(
                         PlayerControls(
                             state = state,
                             displayedPosition = displayedPosition,
-                            qualityLabel = qualityLabel,
+                            quality = quality,
+                            onQualityClick = {
+                                interaction++
+                                showQuality = true
+                            },
                             showLyrics = showLyrics,
                             onSeek = { fraction ->
                                 scrubFraction = -1f
@@ -849,6 +873,17 @@ fun PlayerScreen(
                 hasLyrics = lyrics != null,
                 onChange = onLyricOffsetChange,
                 onDismiss = { showLyricOffset = false },
+            )
+        }
+
+        if (showQuality) {
+            QualitySheet(
+                current = quality,
+                onSelect = { tier ->
+                    onQualityChange(tier)
+                    showQuality = false
+                },
+                onDismiss = { showQuality = false },
             )
         }
     }
@@ -1170,7 +1205,8 @@ private fun readPowerSaveMode(context: android.content.Context): Boolean =
 private fun PlayerControls(
     state: PlaybackUiState,
     displayedPosition: Long,
-    qualityLabel: String,
+    quality: AudioQuality,
+    onQualityClick: () -> Unit,
     showLyrics: Boolean,
     onSeek: (Float) -> Unit,
     onTogglePlay: () -> Unit,
@@ -1205,7 +1241,11 @@ private fun PlayerControls(
                 color = Color.White.copy(alpha = 0.9f),
                 modifier = Modifier.align(Alignment.CenterStart),
             )
-            QualityChip(level = qualityLabel, modifier = Modifier.align(Alignment.Center))
+            QualityChip(
+                quality = quality,
+                onClick = onQualityClick,
+                modifier = Modifier.align(Alignment.Center),
+            )
             Text(
                 text = formatDuration(state.durationMs),
                 fontFamily = SFPro,
@@ -1726,21 +1766,186 @@ private fun CircleGlassIcon(
     }
 }
 
+/**
+ * The audio-quality chip between the elapsed and remaining times.
+ *
+ * Tappable, and that is the whole point of it: quality is something people change *while listening*,
+ * so the control belongs on the player rather than buried in Settings. It carries the tier's own icon
+ * so the level is readable without reading — the bars grow and the lossless tiers switch to a badge.
+ *
+ * The label and icon cross-fade on change rather than snapping, because the chip is small and a hard
+ * swap of both glyph and text in one frame reads as a flicker.
+ */
 @Composable
-private fun QualityChip(level: String, modifier: Modifier = Modifier) {
-    Box(
+private fun QualityChip(
+    quality: AudioQuality,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
         modifier
             .clip(ContinuousRoundedRectangle(AppleShapes.pill))
             .background(Color.White.copy(alpha = 0.18f))
-            .padding(horizontal = 16.dp, vertical = 5.dp),
+            .clickable(
+                indication = rememberControlRipple(bounded = true),
+                interactionSource = null,
+                onClick = onClick,
+            )
+            .padding(horizontal = 12.dp, vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = level,
-            fontFamily = SFPro,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Medium,
-            color = Color.White,
+        CrossfadeContent(
+            targetState = quality,
+            durationMillis = 200,
+            label = "quality-chip",
+        ) { active ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = active.icon,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(14.dp),
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = active.label,
+                    fontFamily = SFPro,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color.White,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * The quality picker, opened from the chip.
+ *
+ * A bottom sheet like the other secondary choices in this app (queue, lyric calibration, track
+ * actions), so the interaction is one the user has already met here rather than a new pattern.
+ *
+ * Rows carry their own tier icon plus a one-line description, because the level names alone
+ * ("较高" vs "极高") do not tell anyone what actually differs. The selected row is marked with the
+ * accent colour *and* a checkmark — colour alone would not be enough for a user who cannot separate
+ * the accent from white.
+ */
+@Composable
+private fun QualitySheet(
+    current: AudioQuality,
+    onSelect: (AudioQuality) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.45f))
+                .clickable(indication = null, interactionSource = null, onClick = onDismiss),
+            contentAlignment = Alignment.BottomCenter,
+        ) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 12.dp, vertical = 12.dp)
+                    .clip(ContinuousRoundedRectangle(AppleShapes.sheet))
+                    .background(Color(0xFF1C1C1E))
+                    // Swallows taps on the sheet body so they do not reach the dismiss scrim behind it.
+                    .clickable(enabled = false, indication = null, interactionSource = null) { }
+                    .padding(vertical = 6.dp),
+            ) {
+                Text(
+                    text = "音质",
+                    fontFamily = SFPro,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 15.sp,
+                    color = Color.White.copy(alpha = 0.6f),
+                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
+                )
+                AudioQuality.entries.forEach { tier ->
+                    QualityRow(
+                        tier = tier,
+                        selected = tier == current,
+                        onClick = { onSelect(tier) },
+                    )
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = "取消",
+                    fontFamily = SFPro,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 17.sp,
+                    color = Color.White,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(ContinuousRoundedRectangle(AppleShapes.control))
+                        .clickable(
+                            indication = rememberControlRipple(bounded = true),
+                            interactionSource = null,
+                            onClick = onDismiss,
+                        )
+                        .padding(vertical = 14.dp),
+                )
+            }
+        }
+    }
+}
+
+/** One tier in [QualitySheet]. */
+@Composable
+private fun QualityRow(
+    tier: AudioQuality,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(
+                indication = rememberControlRipple(bounded = true),
+                interactionSource = null,
+                onClick = onClick,
+            )
+            .padding(horizontal = 18.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = tier.icon,
+            contentDescription = null,
+            // A fixed accent rather than the theme palette: the sheet is always a dark surface, so it
+            // needs a colour that is legible on dark regardless of the app's appearance.
+            tint = if (selected) AppleColors.musicRed else Color.White.copy(alpha = 0.85f),
+            modifier = Modifier.size(22.dp),
         )
+        Spacer(Modifier.width(16.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = tier.label,
+                fontFamily = SFPro,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                fontSize = 17.sp,
+                color = Color.White,
+            )
+            Text(
+                text = tier.detail,
+                fontFamily = SFPro,
+                fontSize = 12.sp,
+                color = Color.White.copy(alpha = 0.5f),
+            )
+        }
+        if (selected) {
+            Icon(
+                imageVector = SfIcons.Checkmark,
+                contentDescription = "已选择",
+                tint = AppleColors.musicRed,
+                modifier = Modifier.size(18.dp),
+            )
+        }
     }
 }
 

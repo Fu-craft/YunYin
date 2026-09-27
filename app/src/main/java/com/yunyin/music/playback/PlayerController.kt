@@ -3,6 +3,7 @@ package com.yunyin.music.playback
 import android.content.ComponentName
 import android.content.Context
 import android.os.SystemClock
+import android.util.Log
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -188,8 +189,49 @@ class PlayerController(
     private var savedRepeatMode: Int = Player.REPEAT_MODE_OFF
 
     /**
-     * Re-checks the current track's trial window (e.g. after a quality or account change,
-     * both of which alter what the service returns).
+     * Applies a newly-selected audio quality to the track that is playing.
+     *
+     * Needed because the stream URL is resolved **once, at load time**, from the quality setting (see
+     * `PlaybackService`'s resolving data source). Writing the new quality to settings therefore has no
+     * audible effect until the next track loads — the user picks 无损 and hears no change, which reads
+     * as a broken control.
+     *
+     * The fix is to make ExoPlayer load the current item again, so the data source runs at the new
+     * quality:
+     *
+     *  - the item is **replaced with a fresh instance** rather than re-seeked. A seek does not force a
+     *    re-read — the buffered data for the current URI is reused — so it would leave the old stream
+     *    playing. A new `MediaItem` means a new load and a new resolve.
+     *  - the position and play state are captured first and restored after, so the song continues from
+     *    where it was rather than restarting.
+     *
+     * Does nothing when paused with no track, and never throws: this is a convenience action on a user
+     * gesture, so a failure must leave playback alone rather than stop it.
+     */
+    fun applyQualityChange() {
+        val mediaController = controller ?: return
+        val index = mediaController.currentMediaItemIndex
+        val item = mediaController.currentMediaItem ?: return
+        val track = currentQueue.firstOrNull { it.id == item.mediaId.toLongOrNull() }
+            ?: TrackMediaItem.trackOf(item)
+        val wasPlaying = mediaController.isPlaying
+        val position = mediaController.currentPosition.coerceAtLeast(0L)
+
+        runCatching {
+            mediaController.replaceMediaItem(index, TrackMediaItem.mediaItem(track))
+            mediaController.seekTo(index, position)
+            if (wasPlaying) mediaController.play()
+        }.onFailure { error ->
+            Log.w(TAG, "Could not reload the current track at the new quality", error)
+        }
+        publish()
+    }
+
+    /**
+     * Re-checks the current track's trial window after a change that alters what the service returns.
+     *
+     * Called alongside [applyQualityChange] because a different quality can change whether the track
+     * resolves as a member-only fragment.
      */
     fun refreshCurrentTrial() {
         scope.launch { refreshTrialAndQueueMode(controller?.currentMediaItem?.mediaId?.toLongOrNull()) }
@@ -339,5 +381,9 @@ class PlayerController(
         controller?.removeListener(listener)
         controller?.release()
         controller = null
+    }
+
+    private companion object {
+        const val TAG = "YunYin/Player"
     }
 }

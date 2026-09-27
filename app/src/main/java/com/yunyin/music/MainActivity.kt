@@ -41,6 +41,7 @@ import com.yunyin.music.data.ShareText
 import com.yunyin.music.playback.LocalPlayerController
 import com.yunyin.music.playback.PlaybackUiState
 import com.yunyin.music.ui.AppViewModel
+import com.yunyin.music.ui.AudioQuality
 import com.yunyin.music.ui.PlayerViewModel
 import com.yunyin.music.ui.components.CrossfadeContent
 import com.yunyin.music.ui.components.MiniPlayer
@@ -144,17 +145,13 @@ class MainActivity : ComponentActivity() {
         var account by remember { mutableStateOf(container.settings.account) }
 
         /**
-         * The settings the Settings screen both renders and edits.
+         * The audio quality the player is set to.
          *
-         * Held as Compose state because the store is plain `SharedPreferences`: writing a preference
-         * does not invalidate composition, so a switch or checkmark bound straight to the stored value
-         * reads the old value back on the next recomposition and never moves — which is exactly the
-         * "toggle is stuck" symptom. Every write goes to both this state and the store, so the screen
-         * reflects the change immediately and it still persists.
-         *
-         * Seeded from the store rather than hard-coded so a re-entry shows the saved values.
+         * Held as Compose state as well as persisted, because it is now changed from the player's own
+         * chip: a `SharedPreferences` write does not invalidate composition, so a chip bound straight
+         * to the stored value would keep showing the old tier after a selection.
          */
-        var qualitySetting by remember { mutableStateOf(container.settings.quality) }
+        var quality by remember { mutableStateOf(AudioQuality.from(container.settings.quality)) }
         var statusBarLyricsEnabled by remember { mutableStateOf(container.settings.statusBarLyrics) }
 
         // Set once the first-launch session work below finishes. The splash waits on it (and on the
@@ -374,11 +371,6 @@ class MainActivity : ComponentActivity() {
                 exit = slideOutVertically(tween(280)) { it },
             ) {
                 SettingsScreen(
-                    quality = qualitySetting,
-                    onQualityChange = {
-                        qualitySetting = it
-                        container.settings.quality = it
-                    },
                     onClearLyricsCache = {
                         container.lyrics.clearCache()
                         Toast.makeText(context, "歌词缓存已清除", Toast.LENGTH_SHORT).show()
@@ -439,7 +431,16 @@ class MainActivity : ComponentActivity() {
                     lyrics = playerViewModel.lyrics,
                     lyricsLoading = playerViewModel.lyricsLoading,
                     loader = container.artwork,
-                    qualityLabel = qualityLabel(container.settings.quality),
+                    quality = quality,
+                    onQualityChange = { tier ->
+                        quality = tier
+                        container.settings.quality = tier.level
+                        // The stream URL was resolved from the previous quality when the track
+                        // loaded, so without reloading it the new tier would not be heard until the
+                        // next song — the control would look broken.
+                        container.player.applyQualityChange()
+                        container.player.refreshCurrentTrial()
+                    },
                     showLyrics = showLyrics,
                     onToggleLyrics = { showLyrics = !showLyrics },
                     onCollapse = { showPlayer = false },
@@ -608,20 +609,5 @@ private fun viewModelFactory(container: AppContainer) = object : androidx.lifecy
             else -> error("Unknown ViewModel: ${modelClass.name}")
         }
     }
-}
-
-/**
- * Maps a `/song/url/v1` level flag to the label shown on the player.
- *
- * Note this states what the app *requests*: the service silently caps a free session at
- * a lower tier, and the resolved `br` is what actually plays.
- */
-private fun qualityLabel(level: String): String = when (level) {
-    "standard" -> "标准音质"
-    "higher" -> "较高音质"
-    "exhigh" -> "极高音质"
-    "lossless" -> "无损音质"
-    "hires" -> "Hi-Res"
-    else -> "极高音质"
 }
 
