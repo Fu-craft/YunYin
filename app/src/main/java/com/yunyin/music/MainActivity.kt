@@ -16,10 +16,13 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -33,6 +36,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.yunyin.music.core.NetResult
@@ -44,10 +48,15 @@ import com.yunyin.music.ui.AppViewModel
 import com.yunyin.music.ui.AudioQuality
 import com.yunyin.music.ui.PlayerViewModel
 import com.yunyin.music.ui.components.CrossfadeContent
-import com.yunyin.music.ui.components.MiniPlayer
+import com.yunyin.music.ui.components.FloatingMiniPlayer
+import com.yunyin.music.ui.components.FloatingTabBar
 import com.yunyin.music.ui.components.PlayerTab
+import com.yunyin.music.ui.components.PlayerExpandOverlay
 import com.yunyin.music.ui.components.QueueSheet
-import com.yunyin.music.ui.components.TabBar
+import com.yunyin.music.ui.components.rememberExpandProgress
+import com.yunyin.music.ui.components.expandCardAlpha
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.yunyin.music.ui.screens.CollectionScreen
 import com.yunyin.music.ui.screens.HomeScreen
 import com.yunyin.music.ui.screens.LibraryScreen
@@ -143,6 +152,22 @@ class MainActivity : ComponentActivity() {
         var showSettings by remember { mutableStateOf(false) }
         var showLogin by remember { mutableStateOf(false) }
         var account by remember { mutableStateOf(container.settings.account) }
+
+        /**
+         * Where the mini player capsule currently is, in root coordinates.
+         *
+         * The expand animation grows the player out of this rect, so it has to be measured; the
+         * capsule's width depends on the screen, so it cannot be assumed.
+         */
+        var miniPlayerBounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+
+        /**
+         * 0 = the player is the mini player's size, 1 = full screen.
+         *
+         * A spring, so the expand and collapse are one continuous motion and can be reversed mid-flight
+         * — which is what makes it feel like the system's container transition rather than a page push.
+         */
+        val expandProgress = rememberExpandProgress(open = showPlayer)
 
         /**
          * The audio quality the player is set to.
@@ -256,9 +281,18 @@ class MainActivity : ComponentActivity() {
         }
 
         Box(Modifier.fillMaxSize().background(AppTheme.palette.background)) {
+            /**
+             * Records the app's content so the floating chrome can sample it.
+             *
+             * `layerBackdrop` makes the subtree draw into a shared layer; `drawBackdrop` on the glass
+             * then reads it. The chrome itself is deliberately **outside** this subtree — including it
+             * would put the bars into the layer they sample, so they would blur themselves.
+             */
+            val bottomBackdrop = rememberLayerBackdrop()
+
             // ------------------------------------------------ primary content
-            Column(Modifier.fillMaxSize()) {
-                Box(Modifier.weight(1f)) {
+            Box(Modifier.fillMaxSize().layerBackdrop(bottomBackdrop)) {
+                Box(Modifier.fillMaxSize()) {
                     // Cross-fade between tabs: switching previously swapped the whole screen in a
                     // single frame, which read as a flicker.
                     CrossfadeContent(targetState = tab, label = "tab") { activeTab ->
@@ -305,22 +339,49 @@ class MainActivity : ComponentActivity() {
                     }
                     }
                 }
+            }
 
-                // Mini player hovers above the tab bar whenever something is loaded.
+            /**
+             * Floating chrome: the glass samples the content recorded above.
+             *
+             * Overlaid rather than laid out in a column, which is what makes it float — the lists
+             * scroll underneath and are visible through the glass. The bottom padding of each screen
+             * keeps its last rows clear of the bars.
+             */
+            Column(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(bottom = FloatingChromeBottomGap),
+                verticalArrangement = Arrangement.spacedBy(FloatingChromeGap),
+            ) {
+                // Mini player floats directly above the tab bar whenever something is loaded.
+                //
+                // Visible even while the player is open, because the expand transition grows the player
+                // *out of this card*: the card has to still be on screen, fading, for the start of that
+                // animation to read as the card itself expanding.
                 AnimatedVisibility(
-                    visible = hasTrack && !showPlayer,
+                    visible = hasTrack,
                     enter = fadeIn(tween(200)) + slideInVertically { it / 2 },
                     exit = fadeOut(tween(160)) + slideOutVertically { it / 2 },
                 ) {
-                    MiniPlayer(
+                    FloatingMiniPlayer(
                         state = miniPlayerState,
                         loader = container.artwork,
+                        backdrop = bottomBackdrop,
                         onExpand = { showPlayer = true },
                         onTogglePlay = container.player::togglePlayPause,
+                        onBoundsChanged = { miniPlayerBounds = it },
+                        alpha = if (showPlayer) expandCardAlpha(expandProgress.value) else 1f,
                     )
                 }
 
-                TabBar(selected = tab, onSelect = { tab = if (showSettings) tab else it; showSettings = false })
+                FloatingTabBar(
+                    selected = tab,
+                    onSelect = { tab = if (showSettings) tab else it; showSettings = false },
+                    backdrop = bottomBackdrop,
+                )
             }
 
             // ------------------------------------------------ overlays
@@ -415,22 +476,30 @@ class MainActivity : ComponentActivity() {
                 )
             }
 
-            // Full-screen player, rising from the bottom and keeping the tab state.
-            AnimatedVisibility(
-                visible = showPlayer,
-                enter = slideInVertically(tween(380)) { it } + fadeIn(tween(220)),
-                exit = slideOutVertically(tween(320)) { it } + fadeOut(tween(200)),
+            // Full-screen player, grown out of the mini player card rather than slid in.
+            //
+            // The whole point of the gesture: tapping the card must make *that card* become the
+            // player, the way a system container transform does, rather than pushing a new screen up
+            // from the bottom edge. The overlay starts at the card's rect and springs to full size;
+            // closing runs the same spring back into the card.
+            //
+            // Unlike the other overlays this one keeps no AnimatedVisibility: it must stay composed
+            // while animating out, which a visibility scope would remove.
+            PlayerExpandOverlay(
+                progress = expandProgress.value,
+                sourceBounds = miniPlayerBounds,
             ) {
-                // Collected here, inside the player's own branch, so the 4x/second position tick
-                // invalidates only the player screen and never the browsing tabs behind it.
-                val playback by container.player.state.collectAsState()
-                PlayerScreen(
-                    state = playback,
-                    cover = playerViewModel.coverBitmap,
-                    palette = playerViewModel.palette,
-                    lyrics = playerViewModel.lyrics,
-                    lyricsLoading = playerViewModel.lyricsLoading,
-                    loader = container.artwork,
+                if (showPlayer || expandProgress.value > 0.001f) {
+                    // Collected here, inside the player's own branch, so the 4x/second position tick
+                    // invalidates only the player screen and never the browsing tabs behind it.
+                    val playback by container.player.state.collectAsState()
+                    PlayerScreen(
+                        state = playback,
+                        cover = playerViewModel.coverBitmap,
+                        palette = playerViewModel.palette,
+                        lyrics = playerViewModel.lyrics,
+                        lyricsLoading = playerViewModel.lyricsLoading,
+                        loader = container.artwork,
                     quality = quality,
                     onQualityChange = { tier ->
                         quality = tier
@@ -476,7 +545,8 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                     positionProvider = container.player::positionMsNow,
-                )
+                    )
+                }
             }
 
             // Transient messages from the player (a refused like, a failed share).
@@ -596,6 +666,16 @@ class MainActivity : ComponentActivity() {
 private const val SPLASH_MIN_MS = 1100L
 private const val SPLASH_MAX_MS = 6000L
 private const val SPLASH_EXIT_MS = 480
+
+/**
+ * Floating chrome metrics.
+ *
+ * The bars are inset from the bottom so they read as floating rather than docked; [FloatingChromeGap]
+ * separates the mini player from the tab bar, and [FloatingChromeBottomGap] leaves the home indicator
+ * area clear on top of the navigation-bar inset applied by the caller.
+ */
+private val FloatingChromeGap = 8.dp
+private val FloatingChromeBottomGap = 10.dp
 
 /**
  * Minimal `ViewModelProvider.Factory` for the two view models, both container-backed.

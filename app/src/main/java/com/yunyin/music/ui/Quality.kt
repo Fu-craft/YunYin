@@ -1,7 +1,7 @@
 package com.yunyin.music.ui
 
 import androidx.compose.ui.graphics.vector.ImageVector
-import com.yunyin.music.ui.icons.SfIcons
+import com.yunyin.music.ui.icons.MaterialSymbols
 
 /**
  * The audio-quality tiers the app can request.
@@ -29,20 +29,25 @@ enum class AudioQuality(
     ;
 
     /**
-     * The tier's marker.
+     * The tier's marker, from **Google Material Symbols** (Apache-2.0) rather than hand-drawn.
      *
-     * The three lossy tiers share a bar-count shape, because they differ only in degree; the two
-     * lossless tiers get a badge, because they are a different kind of thing rather than a fourth and
-     * fifth bar. That distinction is the same one NetEase draws with its badges, and it is why the
-     * icons are not simply 1–5 bars.
+     * Three kinds of thing are being distinguished, so three kinds of glyph are used:
+     *
+     *  - the lossy tiers differ only in degree, so they share the ascending-bars family and the bar
+     *    count carries the level — the one encoding where "more" needs no legend;
+     *  - 无损 is not "higher than 极高", it is a different format, so it gets a **gem** badge rather
+     *    than a fourth bar, which would imply the same kind of thing at a higher number;
+     *  - Hi-Res is a resolution claim, which is exactly what the **HD badge** says.
+     *
+     * Imported by `tools/import_material_symbols.py` from the official SVGs; see [MaterialSymbols].
      */
     val icon: ImageVector
         get() = when (this) {
-            Standard -> SfIcons.qualityBars(1)
-            Higher -> SfIcons.qualityBars(2)
-            ExHigh -> SfIcons.qualityBars(3)
-            Lossless -> SfIcons.Diamond
-            HiRes -> SfIcons.DiamondDouble
+            Standard -> MaterialSymbols.SignalCellularAlt1Bar
+            Higher -> MaterialSymbols.SignalCellularAlt2Bar
+            ExHigh -> MaterialSymbols.SignalCellularAlt
+            Lossless -> MaterialSymbols.Diamond
+            HiRes -> MaterialSymbols.Hd
         }
 
     companion object {

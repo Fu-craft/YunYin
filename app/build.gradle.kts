@@ -144,5 +144,9 @@ dependencies {
     // installed, and the bridge reports "unavailable" rather than failing.
     implementation(libs.lyricon.provider)
 
+    // Liquid Glass (Backdrop): samples and refracts what is actually behind a surface, so the
+    // floating tab bar and mini player are real glass rather than a translucent fill.
+    implementation(libs.backdrop)
+
     testImplementation("junit:junit:4.13.2")
 }
