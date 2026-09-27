@@ -1,5 +1,6 @@
 package com.yunyin.music
 
+import android.content.Intent
 import android.os.Bundle
 import android.os.SystemClock
 import android.widget.Toast
@@ -36,6 +37,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.yunyin.music.core.NetResult
 import com.yunyin.music.data.SettingsStore
+import com.yunyin.music.data.ShareText
 import com.yunyin.music.playback.LocalPlayerController
 import com.yunyin.music.playback.PlaybackUiState
 import com.yunyin.music.ui.AppViewModel
@@ -318,6 +320,14 @@ class MainActivity : ComponentActivity() {
             ) {
                 val state = collectionState
                 if (state != null) {
+                    // Stripped to just what the list marks: collecting the full state here would
+                    // recompose all 500 rows four times a second while music plays.
+                    val nowPlaying by remember {
+                        playerState
+                            .map { it.current?.id to it.isPlaying }
+                            .distinctUntilChanged()
+                    }.collectAsState(initial = null to false)
+
                     Surface(Modifier.fillMaxSize(), color = AppTheme.palette.background) {
                         CollectionScreen(
                             state = state,
@@ -327,6 +337,18 @@ class MainActivity : ComponentActivity() {
                             onPlayAll = {
                                 state.tracks.firstOrNull()?.let { play(it, state.tracks) }
                             },
+                            onShufflePlay = {
+                                // Shuffle is a player mode, not a one-off ordering: enabling it and
+                                // then starting anywhere is what makes "next" stay random, whereas
+                                // playing a shuffled copy would drift back to the list order.
+                                container.player.toggleShuffle()
+                                state.tracks.randomOrNull()?.let { play(it, state.tracks) }
+                            },
+                            onShare = {
+                                shareText(ShareText.playlist(state.title, state.id), "分享歌单")
+                            },
+                            nowPlayingId = nowPlaying.first,
+                            isPlaying = nowPlaying.second,
                         )
                     }
                 }
@@ -405,22 +427,7 @@ class MainActivity : ComponentActivity() {
                     liked = playerViewModel.liked,
                     onToggleLike = playerViewModel::toggleLike,
                     onShareTrack = {
-                        // Share the text, not an intent to the NetEase app: the track has no public
-                        // URL to hand over, so a "name - artist" line is what is actually useful.
-                        val text = playerViewModel.currentShareText()
-                        if (text.isNullOrBlank()) {
-                            Toast.makeText(context, "没有可分享的内容", Toast.LENGTH_SHORT).show()
-                        } else {
-                            val send = android.content.Intent(
-                                android.content.Intent.ACTION_SEND,
-                            ).apply {
-                                type = "text/plain"
-                                putExtra(android.content.Intent.EXTRA_TEXT, text)
-                            }
-                            context.startActivity(
-                                android.content.Intent.createChooser(send, "分享歌曲"),
-                            )
-                        }
+                        shareText(playerViewModel.currentShareText(), "分享歌曲")
                     },
                     onCopyLyric = { text ->
                         if (text.isNullOrBlank()) {
@@ -522,6 +529,26 @@ class MainActivity : ComponentActivity() {
         if (!granted) {
             notificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
         }
+    }
+
+    /**
+     * Hands [text] to whatever app the user picks for sharing.
+     *
+     * A plain `text/plain` send, not an intent aimed at the NetEase app: the app is a third-party
+     * client, so a track has no public URL to hand over and a "name - artist" line is what is
+     * actually useful. A playlist does have an addressable page, which is why its text carries the
+     * id — see [ShareText].
+     */
+    private fun shareText(text: String?, chooserTitle: String) {
+        if (text.isNullOrBlank()) {
+            Toast.makeText(this, "没有可分享的内容", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, text)
+        }
+        startActivity(Intent.createChooser(send, chooserTitle))
     }
 }
 

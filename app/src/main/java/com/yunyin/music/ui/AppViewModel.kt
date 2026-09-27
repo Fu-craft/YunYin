@@ -27,10 +27,13 @@ data class HomeUiState(
 
 /** A playlist/chart detail page. */
 data class CollectionUiState(
+    /** The playlist id, used to build a shareable link. Zero for the liked list, which has none. */
+    val id: Long = 0L,
     val title: String = "",
     val subtitle: String? = null,
     val coverUrl: String? = null,
     val description: String? = null,
+    val playCount: Long = 0L,
     val tracks: List<Track> = emptyList(),
     val loading: Boolean = true,
 )
@@ -158,10 +161,12 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
 
     fun openPlaylist(playlist: Playlist) {
         _collection.value = CollectionUiState(
+            id = playlist.id,
             title = playlist.name,
             subtitle = "${playlist.trackCount} 首",
             coverUrl = playlist.coverUrl,
             description = playlist.description,
+            playCount = playlist.playCount,
         )
         viewModelScope.launch {
             val tracks = container.music.playlistTracks(playlist.id)
@@ -210,7 +215,7 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun openChart(id: Long, title: String, coverUrl: String?) {
-        _collection.value = CollectionUiState(title = title, coverUrl = coverUrl)
+        _collection.value = CollectionUiState(id = id, title = title, coverUrl = coverUrl)
         viewModelScope.launch {
             val tracks = container.music.playlistTracks(id)
             _collection.value = _collection.value?.copy(tracks = tracks, loading = false)
