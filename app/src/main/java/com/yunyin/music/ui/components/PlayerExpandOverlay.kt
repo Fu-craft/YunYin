@@ -4,25 +4,23 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.layout
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.dp
 import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
-import kotlin.math.roundToInt
 
 /**
  * Drives the mini-player → player transition.
@@ -50,37 +48,28 @@ fun rememberExpandProgress(open: Boolean): State<Float> {
 /**
  * Grows the player out of the mini player's rect, the way a system container transition does.
  *
- * ## Why this is a growing *container* and not a scaled screen
+ * ## What it draws
  *
- * Two earlier attempts scaled the player: first the whole screen (a (0.91, 0.075) squash, so mid-flight
- * it was a flattened ribbon), then just the cover. Frames extracted from the reference recording show
- * what it actually does, and it is neither: **a rounded rect grows from the mini player's rect to the
- * full screen, and the player is revealed inside it at its true size.** Nothing is scaled, which is why
- * nothing can look distorted.
+ * A rounded container grows from the mini player's rect to the full screen, and the player is revealed
+ * inside it at its **true size** — nothing is scaled, so nothing can distort. The content is anchored so
+ * the *cover's* centre sits at the container's centre, which is what makes the window open onto the
+ * cover rather than onto the controls.
  *
- * ## The content is anchored to the cover, not to its own centre
+ * ## Why this is entirely a draw-phase effect
  *
- * Rendered both ways and compared against the reference: centring the *player* on the container makes the
- * window open onto the controls, because the player's centre is well below its cover. The reference
- * always shows the cover in the opening window, so the content is placed with the cover's centre at the
- * container's centre, and that placement is released to the exact full-screen position as the container
- * reaches full size.
+ * The first version of this resized the container each frame with a `layout` modifier. That looks
+ * harmless and is not: a parent whose size changes forces its children to be re-measured, so the whole
+ * player screen — the lyric document, its wrapped syllable layouts, the lists — was **re-measured every
+ * frame**. That is the stutter, and it is why it survived the previous round of fixes.
  *
- * ## Why [progress] is a lambda and every use of it is deferred
+ * So the content is measured exactly once at full screen size, and each frame only:
  *
- * This is the difference between a smooth transition and a janky one, and it was the actual cause of the
- * reported stutter. Reading an animated value in a composable's **body** makes Compose recompose that
- * composable — and with it the whole of `content`, i.e. the entire player screen — on every frame. With a
- * `State<Float>` read in the caller, the caller's whole subtree (the tab content, the list, the chrome)
- * was recomposing 60 times a second.
+ *  - `translate`s the content (draw-phase, no layout),
+ *  - `clipPath`s it to the container's rounded rect (draw-phase, no layout).
  *
- * Reading it inside `layout`/`offset`/`graphicsLayer` lambdas instead means the value is only consumed in
- * the **layout and draw** phases, so composition runs once and the animation costs a measure and a draw.
- *
- * @param source the mini player's rect in root coordinates — where the container starts. Measured, not
- *        computed, because its width depends on the screen.
- * @param focusFraction where the cover's centre sits in the player, as a fraction of its height, also
- *        read on demand for the same reason.
+ * With [progress] read inside the draw lambda, a frame of this animation costs one draw pass and zero
+ * composition and zero measure. That is the only way a container transition over a screen this heavy is
+ * smooth.
  */
 @Composable
 fun ContainerExpand(
@@ -93,70 +82,53 @@ fun ContainerExpand(
 ) {
     if (source == null) return
 
-    BoxWithConstraints(modifier.fillMaxSize()) {
-        val density = LocalDensity.current
-        // Read once: the screen does not change during the animation, and these are needed to derive the
-        // end rect. Everything that *does* change is read inside a deferred lambda.
-        val screenW = with(density) { maxWidth.toPx() }
-        val screenH = with(density) { maxHeight.toPx() }
-        if (screenW <= 0f || screenH <= 0f) return@BoxWithConstraints
+    Box(
+        modifier
+            .fillMaxSize()
+            .drawWithContent {
+                val t = progress().coerceIn(0f, 1f)
+                // The container's rect: from the capsule to the whole screen.
+                val left = lerp(source.left, 0f, t)
+                val top = lerp(source.top, 0f, t)
+                val width = lerp(source.width, size.width, t)
+                val height = lerp(source.height, size.height, t)
+                // Pill radius relaxing to square. At the end the corners are off-screen anyway.
+                val corner = lerp(source.height / 2f, 0f, t)
 
-        Box(
-            Modifier
-                // No `size()` call: the container's size is decided in the measure pass, so composition
-                // does not have to run to resize it.
-                .layout { measurable, constraints ->
-                    val t = progress().coerceIn(0f, 1f)
-                    val width = lerp(source.width, screenW, t).roundToInt()
-                    val height = lerp(source.height, screenH, t).roundToInt()
-                    // The content is measured at full screen size — it is never resized — and then the
-                    // container simply reports a smaller frame around it.
-                    val placeable = measurable.measure(constraints)
-                    layout(width, height) { placeable.place(0, 0) }
-                }
-                .offset {
-                    val t = progress().coerceIn(0f, 1f)
-                    IntOffset(
-                        lerp(source.left, 0f, t).roundToInt(),
-                        lerp(source.top, 0f, t).roundToInt(),
+                // Where the content sits, relative to the container. Anchoring puts the cover's centre
+                // (at `focusFraction` of the screen) on the container's centre, and the displacement is
+                // released to zero by the end so the finished player is exactly where it would be with
+                // no animation at all.
+                val focusY = focusFraction() * size.height
+                val anchorX = lerp(width / 2f - size.width / 2f, 0f, t)
+                val anchorY = lerp(height / 2f - focusY, 0f, t)
+
+                val path = Path().apply {
+                    addRoundRect(
+                        RoundRect(
+                            left = left,
+                            top = top,
+                            right = left + width,
+                            bottom = top + height,
+                            radiusX = corner,
+                            radiusY = corner,
+                        ),
                     )
                 }
-                .graphicsLayer {
-                    val t = progress().coerceIn(0f, 1f)
-                    // The capsule's pill radius relaxing to square, read here so the shape is a
-                    // draw-phase concern. At the end the corners are off-screen anyway.
-                    val cornerPx = lerp(source.height / 2f, 0f, t)
-                    shape = ContinuousRoundedRectangle(cornerPx.toDp())
-                    clip = true
-                }
-                // Opaque: the container *is* the player's surface, and a transparent one would show the
-                // dimmed app through the growing player.
-                .background(background),
-        ) {
-            Box(
-                Modifier.offset {
-                    val t = progress().coerceIn(0f, 1f)
-                    val focusY = focusFraction() * screenH
-                    // The offsets are **relative to the container's own top-left**, which is why they
-                    // depend only on the sizes and not on where the container happens to be. An earlier
-                    // version added the container's absolute position, which pushed the player a whole
-                    // container-height off the window — showing an empty fill instead of the cover.
-                    //
-                    // Aligning the centres means putting the cover's centre (at `focusY` in the player)
-                    // on the container's centre (`height / 2`), and the same for x:
-                    val anchorX = lerp(source.width, screenW, t) / 2f - screenW / 2f
-                    val anchorY = lerp(source.height, screenH, t) / 2f - focusY
-                    // Released to zero by the end, so the finished player is where it would be with no
-                    // animation at all.
-                    IntOffset(
-                        lerp(anchorX, 0f, t).roundToInt(),
-                        lerp(anchorY, 0f, t).roundToInt(),
+                clipPath(path) {                    // The container's own opaque surface. Drawn inside the clip so the rounded corners
+                    // are filled too, rather than showing the app through them.
+                    drawRect(
+                        color = background,
+                        topLeft = Offset(left, top),
+                        size = Size(width, height),
                     )
-                },
-            ) {
-                content()
-            }
-        }
+                    translate(anchorX, anchorY) {
+                        this@drawWithContent.drawContent()
+                    }
+                }
+            },
+    ) {
+        content()
     }
 }
 

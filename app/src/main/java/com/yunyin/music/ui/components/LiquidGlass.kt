@@ -121,19 +121,29 @@ fun Modifier.liquidGlass(
     onDrawSurface = { drawRect(tint) },
 )
 
-/** Blur radius for the frosted chrome. Large enough that the content behind is a colour field. */
+/**
+ * Blur radius for the frosted chrome.
+ *
+ * This, not the fill, is what produces the frost: it has to be heavy enough that the content behind is
+ * a colour field rather than legible rows. 26dp is roughly a third of the bar's own height.
+ */
 private val GlassBlur = 26.dp
 
 /**
  * The frosting laid over the refracted backdrop.
  *
- * Derived from the theme's own background so the chrome belongs to the app in either appearance, and
- * heavily weighted toward opaque: at ~72% the content behind is still visible as colour and shape but
- * the surface reads as frosted glass rather than as a window. An earlier version passed no tint at all,
- * which is why the glass looked almost invisible over a busy list.
+ * **The alpha here is what decides whether the glass is frosted or flat**, and it was wrong twice over.
+ * The library's draw order is: blurred backdrop, then this fill, then the content. So a heavy fill does
+ * not "add frost" — it *paints over the blur*, giving the flat translucent panel the user saw with no
+ * blur behind it at all.
+ *
+ * The frost is therefore produced by the blur, and this fill only mutes it: enough tint that text stays
+ * legible over a bright list, little enough that the blurred colour field reads through. Measured from
+ * the reference component, whose container fill is 0.4 alpha over an 8dp blur; this app's blur is
+ * heavier, so the fill is slightly lower.
  */
 @Composable
-private fun glassTint(): Color = AppTheme.palette.background.copy(alpha = 0.72f)
+private fun glassTint(): Color = AppTheme.palette.background.copy(alpha = 0.34f)
 
 /**
  * Floating tab bar: a glass pill with an accent selection sliding between tabs.
