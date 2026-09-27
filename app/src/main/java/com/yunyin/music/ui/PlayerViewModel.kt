@@ -202,6 +202,7 @@ class PlayerViewModel(private val container: AppContainer) : ViewModel() {
     private var artJob: Job? = null
     private var lyricsJob: Job? = null
     private var prefetchJob: Job? = null
+    private var lyriconJob: Job? = null
     private var lastTrackId: Long = 0L
 
     init {
@@ -217,6 +218,64 @@ class PlayerViewModel(private val container: AppContainer) : ViewModel() {
                 prefetchUpcoming(state)
             }
         }
+        startLyriconSync()
+    }
+
+    /**
+     * Keeps 词幕 (Lyricon) in step with playback.
+     *
+     * A **separate** collector from the track-change one above, for two reasons. It must observe
+     * play/pause and seeks, which that one filters out (`return@collectLatest` until the id changes).
+     * And it must not be cancelled and restarted per track, or a seek in the middle of a skip would
+     * be dropped.
+     *
+     * Publishing is event-driven rather than per-tick. Lyricon interpolates its own clock from the last
+     * position plus the playback state, so pushing a position on every 250ms poll would be four binder
+     * calls a second for no visible gain. A position is sent when it actually jumps — a seek, or a
+     * track change — and the playing flag when it flips.
+     */
+    private fun startLyriconSync() {
+        // A bridge that connects mid-song should get the current state rather than waiting for the
+        // next track change to hear anything.
+        container.lyricon.onConnectedCallback = { publishToLyricon() }
+
+        lyriconJob = viewModelScope.launch {
+            var previousTrackId = 0L
+            var previousPlaying = false
+            var previousPosition = 0L
+
+            container.player.state.collect { state ->
+                val trackId = state.current?.id ?: 0L
+                val trackChanged = trackId != previousTrackId
+                val playingChanged = state.isPlaying != previousPlaying
+                // A seek is a position that disagrees with where the clock should have reached.
+                // The tolerance covers the poll interval plus jitter so ordinary playback is never
+                // mistaken for one.
+                val expectedNext = previousPosition + if (previousPlaying) POSITION_DRIFT_ALLOWANCE_MS else 0L
+                val seeked = !trackChanged && !playingChanged &&
+                    kotlin.math.abs(state.positionMs - expectedNext) > SEEK_THRESHOLD_MS
+
+                when {
+                    trackChanged || playingChanged -> publishToLyricon()
+                    seeked -> container.lyricon.publishPosition(state.positionMs)
+                }
+
+                previousTrackId = trackId
+                previousPlaying = state.isPlaying
+                previousPosition = state.positionMs
+            }
+        }
+    }
+
+    /** Sends the current song, lyrics and playback state to Lyricon. No-op when it is not installed. */
+    private fun publishToLyricon() {
+        val state = container.player.state.value
+        container.lyricon.publish(
+            track = state.current,
+            lyrics = lyrics,
+            isPlaying = state.isPlaying,
+            positionMs = state.positionMs,
+        )
     }
 
     /**
@@ -292,6 +351,18 @@ class PlayerViewModel(private val container: AppContainer) : ViewModel() {
         this.lyrics = lyrics
         wordByWord = container.lyrics.isWordByWord(lyrics)
         lyricsLoading = false
+        // Re-publish: the song was already sent when the track changed, but without its lyrics —
+        // they had not arrived yet. This is what gets the actual lyric text into Lyricon's status
+        // bar, including the case where a provisional line-level document is later upgraded to a
+        // word-by-word one.
+        publishToLyricon()
+    }
+
+    override fun onCleared() {
+        // Drop the binder to Lyricon's central service; leaving it bound would outlive the UI.
+        container.lyricon.onConnectedCallback = null
+        container.lyricon.release()
+        super.onCleared()
     }
 
     fun retryLyrics() {
@@ -301,6 +372,19 @@ class PlayerViewModel(private val container: AppContainer) : ViewModel() {
 
 /** Largest manual lyric offset the UI allows, in milliseconds. */
 const val LYRIC_OFFSET_LIMIT_MS = 5000L
+
+/**
+ * How far the clock may drift between position polls before a jump is treated as a seek.
+ *
+ * The player publishes position at 4Hz, so ~250ms of ordinary advance is expected between samples.
+ * This is set well above that so normal playback never registers as a seek (which would cost a binder
+ * call every tick) while a real seek — a drag on the progress bar, or a jump to a lyric line — is
+ * well beyond it.
+ */
+private const val POSITION_DRIFT_ALLOWANCE_MS = 400L
+
+/** Minimum position jump treated as a seek rather than drift. */
+private const val SEEK_THRESHOLD_MS = 1500L
 
 /**
  * State of a long-press-to-download.

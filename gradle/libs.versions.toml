@@ -21,6 +21,10 @@ lyrics = "1.0.19"
 lyricsCore = "0.4.7"
 capsule = "2.1.1-patch2"
 
+# 词幕 (Lyricon) provider bridge — pushes the current song/lyrics/playback state to Lyricon so it
+# can render a status-bar / lock-screen lyric. Apache-2.0, published on Maven Central.
+lyricon = "0.1.70"
+
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
@@ -45,6 +49,8 @@ palette = { group = "androidx.palette", name = "palette-ktx", version.ref = "pal
 lyrics-ui = { group = "com.mocharealm.accompanist", name = "lyrics-ui", version.ref = "lyrics" }
 lyrics-core = { group = "com.mocharealm.accompanist", name = "lyrics-core", version.ref = "lyricsCore" }
 gaze-capsule = { group = "com.mocharealm.gaze", name = "capsule", version.ref = "capsule" }
+
+lyricon-provider = { group = "io.github.proify.lyricon", name = "provider", version.ref = "lyricon" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

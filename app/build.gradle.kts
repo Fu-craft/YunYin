@@ -139,5 +139,10 @@ dependencies {
     // iOS-style continuous (squircle) corners.
     implementation(libs.gaze.capsule)
 
+    // 词幕 (Lyricon) provider bridge: pushes song, lyrics and playback state to Lyricon so it can
+    // render a status-bar lyric. Optional at runtime — the app works unchanged when Lyricon is not
+    // installed, and the bridge reports "unavailable" rather than failing.
+    implementation(libs.lyricon.provider)
+
     testImplementation("junit:junit:4.13.2")
 }

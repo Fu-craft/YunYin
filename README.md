@@ -23,6 +23,8 @@
   亮封面深字），顶部返回/分享条常驻并随滚动过渡为不透明；列表标注序号与正在播放行。
 - **收藏与分享** —— 播放页爱心直接收藏/取消收藏（乐观更新，失败回滚）；长按封面保存
   封面图到相册，长按歌词行复制歌词。
+- **词幕状态栏歌词** —— 可选集成：安装「词幕」后，当前歌曲、逐字歌词与播放状态会推送给它，
+  由它渲染到状态栏／锁屏。未安装时不启用，应用行为不受影响（见下方「词幕」）。
 - **开屏动画** —— 冷启动期间展示品牌开屏，待会话与首页数据就绪后交叉溶解揭开。
 - **后台播放** —— Media3 ExoPlayer + MediaSessionService，支持锁屏与通知控制。
 - **网页登录** —— 应用内嵌浏览器登录，自动获取登录态，无需手动复制 Cookie。
@@ -44,6 +46,7 @@
 | 播放 | Media3 ExoPlayer + MediaSessionService |
 | 背景 | AGSL（`android.graphics.RuntimeShader`，需 API 33+） |
 | 图像取色 | AndroidX Palette |
+| 状态栏歌词 | 词幕 Lyricon Provider（可选，见「词幕」） |
 | minSdk / targetSdk | 33 / 37 |
 | 构建 | Gradle 9.7.1 / AGP 9.3.2 / Kotlin 2.4.10 |
 
@@ -166,6 +169,24 @@ keytool -genkeypair -v -keystore my-release.jks -alias mykey \
 
 ---
 
+## 词幕（状态栏歌词）
+
+可选集成。安装 [词幕 Lyricon](https://github.com/proify/lyricon) 后，应用会把当前歌曲、
+歌词与播放状态推送过去，由词幕渲染到状态栏、锁屏与悬浮窗。
+
+接入的是词幕官方的 **Provider** 接口（`io.github.proify.lyricon:provider`，Apache-2.0）：
+
+- `AndroidManifest.xml` 中声明 `lyricon_module` 等 meta-data，词幕据此把本应用列为歌词来源。
+- `LyriconBridge` 注册 provider，并通过 `RemotePlayer` 推送 `Song`（含逐字 `words` 与翻译）
+  与播放状态／进度。
+- `LyriconMapper` 负责把本项目的歌词文档转成词幕的模型，并强制满足其文档约定：
+  时间统一毫秒、行时间单调递增、逐字范围落在所属行内、空行不发布。
+
+**未安装词幕时整个功能是空操作**：provider 返回空实现，应用其余部分完全不受影响；
+设置页有「状态栏歌词」一行显示当前状态（已连接／未连接／未安装）并可重试。
+
+---
+
 ## 播放
 
 `Media3 ExoPlayer` + `MediaSessionService`（后台播放、锁屏与通知控制）。
@@ -202,6 +223,7 @@ app/src/main/java/com/yunyin/music/
 |---|---|---|
 | 流动背景（着色器、painter、调色板、音频响应） | [NeriPlayer](https://github.com/cwuom/NeriPlayer) | **GPL-3.0** |
 | 逐字歌词渲染器（`lyrics/`） | `accompanist-lyrics-ui` / `-core` | Apache-2.0 |
+| 词幕接入（`LyriconBridge` / `LyriconMapper`） | 本项目代码，依赖 [词幕 Lyricon](https://github.com/proify/lyricon) 的 Provider 接口 | Apache-2.0 |
 | 其余界面 / 数据 / 网络 / 播放 | 本项目 | 见下 |
 
 ### 许可证

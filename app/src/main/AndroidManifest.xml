@@ -39,6 +39,26 @@
             </intent-filter>
         </service>
 
+        <!--
+          词幕 (Lyricon) provider registration.
+
+          Lyricon scans for apps carrying these meta-data entries and lists them as lyric sources;
+          without `lyricon_module` it will not recognise this app at all. The bridge is optional at
+          runtime — the app behaves identically when Lyricon is not installed.
+        -->
+        <meta-data
+            android:name="lyricon_module"
+            android:value="true" />
+        <meta-data
+            android:name="lyricon_module_author"
+            android:value="云音" />
+        <meta-data
+            android:name="lyricon_module_description"
+            android:value="云音的逐字歌词与播放状态" />
+        <meta-data
+            android:name="lyricon_module_tags"
+            android:resource="@array/lyricon_module_tags" />
+
     </application>
 
 </manifest>

@@ -8,6 +8,7 @@ import com.yunyin.music.data.PlayHistoryStore
 import com.yunyin.music.data.SearchHistoryStore
 import com.yunyin.music.data.SettingsStore
 import com.yunyin.music.data.CoverDownloader
+import com.yunyin.music.data.LyriconBridge
 import com.yunyin.music.data.net.NeteaseClient
 import com.yunyin.music.playback.PlayerController
 
@@ -35,6 +36,9 @@ class AppContainer(val appContext: Context) {
 
     /** Saves album covers into the device's picture collection. */
     val covers: CoverDownloader by lazy { CoverDownloader(appContext) }
+
+    /** Publishes song/lyrics/playback state to 词幕 (Lyricon), when it is installed. */
+    val lyricon: LyriconBridge by lazy { LyriconBridge(appContext) }
 
     val player: PlayerController by lazy {
         PlayerController(appContext) { trackId ->

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Capabilities advertised to 词幕 (Lyricon), shown in its provider list.
+
+      Declarative only: these tags tell Lyricon what this app *can* send, they do not enable it. What
+      actually arrives is decided by the lyrics document that is published.
+    -->
+    <string-array name="lyricon_module_tags">
+        <item>$syllable</item>
+        <item>$translation</item>
+    </string-array>
+</resources>

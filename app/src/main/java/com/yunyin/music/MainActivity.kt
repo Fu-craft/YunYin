@@ -367,6 +367,12 @@ class MainActivity : ComponentActivity() {
                         Toast.makeText(context, "歌词缓存已清除", Toast.LENGTH_SHORT).show()
                     },
                     onBack = { showSettings = false },
+                    // Read on each entry into Settings rather than held as state: the connection can
+                    // change while the app runs (Lyricon installed or started later), and a value
+                    // captured once would go stale exactly when the user opens this to check it.
+                    lyriconConnected = container.lyricon.connected,
+                    lyriconAvailable = container.lyricon.available,
+                    onRetryLyricon = { container.lyricon.retry() },
                 )
             }
 

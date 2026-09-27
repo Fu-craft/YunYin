@@ -52,6 +52,16 @@ fun SettingsScreen(
     onClearLyricsCache: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    /**
+     * State of the 词幕 (Lyricon) bridge, for display.
+     *
+     * Surfaced here because the integration is otherwise invisible: the status bar is rendered by
+     * another app, so without a line stating whether the bridge connected there is no way to tell
+     * "Lyricon is not installed" from "it is installed and not working".
+     */
+    lyriconConnected: Boolean = false,
+    lyriconAvailable: Boolean = false,
+    onRetryLyricon: () -> Unit = {},
 ) {
     Column(
         modifier = modifier
@@ -100,6 +110,15 @@ fun SettingsScreen(
 
             Spacer(Modifier.height(28.dp))
 
+            SectionLabel("状态栏歌词")
+            LyriconRow(
+                connected = lyriconConnected,
+                available = lyriconAvailable,
+                onRetry = onRetryLyricon,
+            )
+
+            Spacer(Modifier.height(28.dp))
+
             SectionLabel("存储")
             ActionRow(text = "清除歌词缓存", onClick = onClearLyricsCache)
 
@@ -112,6 +131,52 @@ fun SettingsScreen(
             InfoRow(text = "版本", value = com.yunyin.music.BuildConfig.VERSION_NAME)
             InfoRow(text = "歌词", value = "AMLL 逐字歌词")
         }
+    }
+}
+
+/**
+ * Status of the 词幕 (Lyricon) bridge.
+ *
+ * Three distinct states, each with different advice, which is why this is not a plain on/off row:
+ * connected (nothing to do), installed but not connected (offer a retry), and not installed (name the
+ * app the user needs, since nothing else in 云音 would ever mention it).
+ */
+@Composable
+private fun LyriconRow(connected: Boolean, available: Boolean, onRetry: () -> Unit) {
+    val (status, hint) = when {
+        connected -> "已连接" to "歌词会显示在词幕的状态栏"
+        available -> "未连接" to "点击重试连接"
+        else -> "未安装" to "需先安装「词幕」应用"
+    }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(ContinuousRoundedRectangle(10.dp))
+            .then(if (available && !connected) Modifier.clickable(onClick = onRetry) else Modifier)
+            .padding(horizontal = 12.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = "词幕状态栏歌词",
+                fontFamily = SFPro,
+                fontSize = 16.sp,
+                color = AppTheme.palette.label,
+            )
+            Text(
+                text = hint,
+                fontFamily = SFPro,
+                fontSize = 12.sp,
+                color = AppTheme.palette.secondaryLabel,
+            )
+        }
+        Text(
+            text = status,
+            fontFamily = SFPro,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium,
+            color = if (connected) AppTheme.palette.accent else AppTheme.palette.secondaryLabel,
+        )
     }
 }
 
