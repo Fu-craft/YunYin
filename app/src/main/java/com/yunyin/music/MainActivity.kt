@@ -36,6 +36,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -48,13 +51,17 @@ import com.yunyin.music.ui.AppViewModel
 import com.yunyin.music.ui.AudioQuality
 import com.yunyin.music.ui.PlayerViewModel
 import com.yunyin.music.ui.components.CrossfadeContent
+import com.yunyin.music.ui.components.FloatingCover
 import com.yunyin.music.ui.components.FloatingMiniPlayer
 import com.yunyin.music.ui.components.FloatingTabBar
+import com.yunyin.music.ui.components.MiniArtworkCorner
 import com.yunyin.music.ui.components.PlayerTab
-import com.yunyin.music.ui.components.PlayerExpandOverlay
 import com.yunyin.music.ui.components.QueueSheet
+import com.yunyin.music.ui.components.backdropBlurRadius
+import com.yunyin.music.ui.components.backdropDimAlpha
+import com.yunyin.music.ui.components.playerCoverAlpha
+import com.yunyin.music.ui.components.playerScreenAlpha
 import com.yunyin.music.ui.components.rememberExpandProgress
-import com.yunyin.music.ui.components.expandCardAlpha
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.yunyin.music.ui.screens.CollectionScreen
@@ -62,6 +69,7 @@ import com.yunyin.music.ui.screens.HomeScreen
 import com.yunyin.music.ui.screens.LibraryScreen
 import com.yunyin.music.ui.screens.LoginScreen
 import com.yunyin.music.ui.screens.PlayerScreen
+import com.yunyin.music.ui.screens.PlayerArtworkCorner
 import com.yunyin.music.ui.screens.SearchScreen
 import com.yunyin.music.ui.screens.SettingsScreen
 import com.yunyin.music.ui.screens.SplashScreen
@@ -159,7 +167,15 @@ class MainActivity : ComponentActivity() {
          * The expand animation grows the player out of this rect, so it has to be measured; the
          * capsule's width depends on the screen, so it cannot be assumed.
          */
-        var miniPlayerBounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+        /**
+         * Measured rects for the cover's travel, in root coordinates.
+         *
+         * Both ends must be measured: the *source* is the mini player's artwork tile and the *target* is
+         * the player's full-size cover, and neither can be computed from the screen size — the target in
+         * particular depends on the layout and on which presentation is showing.
+         */
+        var miniCoverBounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+        var playerCoverBounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
 
         /**
          * 0 = the player is the mini player's size, 1 = full screen.
@@ -358,9 +374,10 @@ class MainActivity : ComponentActivity() {
             ) {
                 // Mini player floats directly above the tab bar whenever something is loaded.
                 //
-                // Visible even while the player is open, because the expand transition grows the player
-                // *out of this card*: the card has to still be on screen, fading, for the start of that
-                // animation to read as the card itself expanding.
+                // Kept composed while the player is open: the expand transition grows the player's cover
+                // *out of this capsule's artwork*, so the source has to still be measured for the start
+                // of that animation to be anchored to it. It does not need hiding — the player screen is
+                // drawn after it and is opaque once the transition completes.
                 AnimatedVisibility(
                     visible = hasTrack,
                     enter = fadeIn(tween(200)) + slideInVertically { it / 2 },
@@ -372,8 +389,7 @@ class MainActivity : ComponentActivity() {
                         backdrop = bottomBackdrop,
                         onExpand = { showPlayer = true },
                         onTogglePlay = container.player::togglePlayPause,
-                        onBoundsChanged = { miniPlayerBounds = it },
-                        alpha = if (showPlayer) expandCardAlpha(expandProgress.value) else 1f,
+                        onCoverBoundsChanged = { miniCoverBounds = it },
                     )
                 }
 
@@ -476,30 +492,48 @@ class MainActivity : ComponentActivity() {
                 )
             }
 
-            // Full-screen player, grown out of the mini player card rather than slid in.
+            // Full-screen player, grown out of the mini player's cover.
             //
-            // The whole point of the gesture: tapping the card must make *that card* become the
-            // player, the way a system container transform does, rather than pushing a new screen up
-            // from the bottom edge. The overlay starts at the card's rect and springs to full size;
-            // closing runs the same spring back into the card.
+            // The cover is the element that travels: one image, always on screen, whose rect is
+            // interpolated between the mini player's artwork and the player's cover. The player screen
+            // fades in around it, and the app behind dims and blurs. This is the system container
+            // transition the user asked for — and unlike scaling a whole screen (which needs a
+            // (0.91, 0.075) squash and therefore shows a flattened ribbon), it has no geometric
+            // failure mode.
             //
-            // Unlike the other overlays this one keeps no AnimatedVisibility: it must stay composed
-            // while animating out, which a visibility scope would remove.
-            PlayerExpandOverlay(
-                progress = expandProgress.value,
-                sourceBounds = miniPlayerBounds,
-            ) {
-                if (showPlayer || expandProgress.value > 0.001f) {
-                    // Collected here, inside the player's own branch, so the 4x/second position tick
-                    // invalidates only the player screen and never the browsing tabs behind it.
-                    val playback by container.player.state.collectAsState()
+            // No AnimatedVisibility: the player must stay composed while animating *out*, which a
+            // visibility scope would remove.
+            val expand = expandProgress.value
+            if (showPlayer || expand > 0.001f) {
+                // Collected here, inside the player's own branch, so the 4x/second position tick
+                // invalidates only the player screen and never the browsing tabs behind it.
+                val playback by container.player.state.collectAsState()
+
+                // Dim + blur the browsing app as the player takes over: the "something is opening over
+                // this" cue. Both derive from the same progress, so they cannot disagree.
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            alpha = backdropDimAlpha(expand)
+                            clip = false
+                        }
+                        .blur(backdropBlurRadius(expand))
+                        .background(Color.Black),
+                )
+
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .graphicsLayer { alpha = playerScreenAlpha(expand) },
+                ) {
                     PlayerScreen(
                         state = playback,
                         cover = playerViewModel.coverBitmap,
                         palette = playerViewModel.palette,
                         lyrics = playerViewModel.lyrics,
                         lyricsLoading = playerViewModel.lyricsLoading,
-                        loader = container.artwork,
+                    loader = container.artwork,
                     quality = quality,
                     onQualityChange = { tier ->
                         quality = tier
@@ -544,10 +578,26 @@ class MainActivity : ComponentActivity() {
                             Toast.makeText(context, "已复制歌词", Toast.LENGTH_SHORT).show()
                         }
                     },
+                    // The player hides its own cover for most of the transition: the covering copy is
+                    // already on screen and travelling to exactly this rect, and the handover at the end
+                    // is invisible because both are the same bitmap at the same rect by then.
+                    coverAlpha = if (showPlayer) playerCoverAlpha(expand) else 1f,
+                    onCoverBoundsChanged = { playerCoverBounds = it },
                     positionProvider = container.player::positionMsNow,
-                    )
-                }
+                )
             }
+        }
+
+        // The travelling cover, drawn over both the app and the player so it is never clipped by
+        // either, and never re-created mid-flight.
+        FloatingCover(
+            source = miniCoverBounds,
+            target = playerCoverBounds,
+            progress = expandProgress.value,
+            cover = playerViewModel.coverBitmap,
+            cornerStart = MiniArtworkCorner,
+            cornerEnd = PlayerArtworkCorner,
+        )
 
             // Transient messages from the player (a refused like, a failed share).
             LaunchedEffect(playerViewModel.notice) {

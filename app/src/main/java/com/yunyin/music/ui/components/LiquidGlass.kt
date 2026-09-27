@@ -31,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.boundsInRoot
@@ -77,10 +78,18 @@ enum class PlayerTab(val label: String, val icon: androidx.compose.ui.graphics.v
  * through. That is the difference between glass and a grey rectangle at 40% opacity, and it is why the
  * reference library is used here rather than another translucent fill.
  *
+ * Two things about this are easy to get wrong and were:
+ *
+ *  - **The surface tint is required.** `drawBackdrop` on its own produces *only* the refracted
+ *    backdrop — with no `onDrawSurface` the result is nearly invisible over a busy list, which is the
+ *    "too transparent" the user reported. The reference passes a `containerColor` for exactly this
+ *    reason; here it is the theme's own surface at an alpha that frosts without hiding.
+ *  - **The blur has to be substantial.** A few dp of blur leaves the sampled content legible through
+ *    the glass, which reads as a smudge rather than as frosted glass.
+ *
  * @param shape the surface outline. The app's own continuous-corner shape is used so the chrome matches
  *        the rest of the UI instead of the library's default capsule.
- * @param blurRadius how much the backdrop is diffused — enough to lose detail, little enough that the
- *        colour field behind stays legible as *something*.
+ * @param blurRadius how much the backdrop is diffused.
  * @param refraction how far the lens bends the backdrop near the edge, which is what makes the surface
  *        read as a physical object with an edge rather than as a rectangle of frosted colour.
  * @param pressed increases the bend and the highlight, so the glass reacts to the touch that is about
@@ -89,9 +98,10 @@ enum class PlayerTab(val label: String, val icon: androidx.compose.ui.graphics.v
 fun Modifier.liquidGlass(
     backdrop: Backdrop,
     shape: () -> Shape,
+    tint: Color,
     pressed: Boolean = false,
-    blurRadius: Dp = 12.dp,
-    refraction: Dp = 20.dp,
+    blurRadius: Dp = GlassBlur,
+    refraction: Dp = 18.dp,
 ): Modifier = drawBackdrop(
     backdrop = backdrop,
     shape = shape,
@@ -99,14 +109,31 @@ fun Modifier.liquidGlass(
         vibrancy()
         blur(blurRadius.toPx())
         // At rest the bend is one third of the pressed amount: calm when idle, visibly reactive when
-        // touched. Applying the full lens at rest made the chrome look warped for no reason.
+        // touched. The full lens at rest made the chrome look warped for no reason.
         val amount = if (pressed) 1f else 0.34f
         lens(refraction.toPx() * amount, refraction.toPx() * amount)
     },
     highlight = { Highlight.Default.copy(alpha = if (pressed) 1f else 0.5f) },
     shadow = { Shadow.Default },
     innerShadow = { InnerShadow(radius = 6.dp, alpha = if (pressed) 1f else 0.45f) },
+    // The frosting. Without this the surface is only the refracted backdrop and all but disappears
+    // over a bright or busy list.
+    onDrawSurface = { drawRect(tint) },
 )
+
+/** Blur radius for the frosted chrome. Large enough that the content behind is a colour field. */
+private val GlassBlur = 26.dp
+
+/**
+ * The frosting laid over the refracted backdrop.
+ *
+ * Derived from the theme's own background so the chrome belongs to the app in either appearance, and
+ * heavily weighted toward opaque: at ~72% the content behind is still visible as colour and shape but
+ * the surface reads as frosted glass rather than as a window. An earlier version passed no tint at all,
+ * which is why the glass looked almost invisible over a busy list.
+ */
+@Composable
+private fun glassTint(): Color = AppTheme.palette.background.copy(alpha = 0.72f)
 
 /**
  * Floating tab bar: a glass pill with an accent selection sliding between tabs.
@@ -152,6 +179,7 @@ fun FloatingTabBar(
                 .liquidGlass(
                     backdrop = backdrop,
                     shape = { ContinuousRoundedRectangle(TabBarCorner) },
+                    tint = glassTint(),
                 ),
         ) {
             Box(
@@ -200,8 +228,15 @@ private fun TabItem(
     Column(
         modifier = modifier
             .fillMaxHeight()
+            // **Unbounded** ripple, deliberately.
+            //
+            // `bounded = true` clips the indication to this Column's rectangle, and a rectangle of
+            // ripple inside the glass pill is the "small square" that appears behind a tapped tab. This
+            // is the same class of bug as the player controls' earlier black rectangle, with the
+            // clipping rather than the colour being the visible part. Unbounded gives a soft circular
+            // glow that suits a glass surface.
             .clickable(
-                indication = rememberControlRipple(bounded = true),
+                indication = rememberControlRipple(bounded = false),
                 interactionSource = null,
                 onClick = onClick,
             ),
@@ -247,19 +282,13 @@ fun FloatingMiniPlayer(
     onTogglePlay: () -> Unit,
     modifier: Modifier = Modifier,
     /**
-     * Called with the capsule's bounds in root coordinates.
+     * Called with the **artwork tile's** bounds in root coordinates.
      *
-     * The expand animation starts the player from exactly where the capsule is, so it needs the rect —
-     * and it cannot be hard-coded because the capsule's width depends on the screen.
+     * The tile, not the capsule: the expand transition grows this image into the player's cover, so the
+     * animation has to start from the thing the finger was actually on. Measured rather than computed,
+     * because the tile's position depends on the screen and on the capsule's layout.
      */
-    onBoundsChanged: (Rect) -> Unit = {},
-    /**
-     * Opacity, used to fade the card out under the growing player.
-     *
-     * Applied to the whole capsule rather than by removing it from composition, because it must stay
-     * *visible* while the player grows out of it — see `expandCardAlpha`.
-     */
-    alpha: Float = 1f,
+    onCoverBoundsChanged: (Rect) -> Unit = {},
 ) {
     val track = state.current ?: return
     val interaction = remember { MutableInteractionSource() }
@@ -278,11 +307,11 @@ fun FloatingMiniPlayer(
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
-                this.alpha = alpha
             }
             .liquidGlass(
                 backdrop = backdrop,
                 shape = { ContinuousRoundedRectangle(MiniPlayerCorner) },
+                tint = glassTint(),
                 pressed = pressed,
             )
             .clickable(
@@ -290,18 +319,21 @@ fun FloatingMiniPlayer(
                 indication = null,
                 onClick = onExpand,
             )
-            .onGloballyPositioned { coordinates ->
-                onBoundsChanged(coordinates.boundsInRoot())
-            }
             .padding(horizontal = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Artwork(
             url = track.coverUrl,
             loader = loader,
-            corner = 8.dp,
+            corner = MiniArtworkCorner,
             requestSize = 200,
-            modifier = Modifier.size(MiniArtworkSize),
+            modifier = Modifier
+                .size(MiniArtworkSize)
+                // The *artwork's* rect, not the capsule's: the transition grows this tile into the
+                // player's cover, so the animation starts from the tile the finger was on.
+                .onGloballyPositioned { coordinates ->
+                    onCoverBoundsChanged(coordinates.boundsInRoot())
+                },
         )
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
@@ -340,7 +372,14 @@ fun FloatingMiniPlayer(
             Modifier
                 .size(38.dp)
                 .clip(CircleShape)
-                .clickable(onClick = onTogglePlay),
+                // The white control ripple, not the default: the default is the theme's near-black
+                // on-surface colour and bounded, so on this dark glass it drew a dark clipped square —
+                // the "black square" this app has hit before, here on the glass chrome.
+                .clickable(
+                    indication = rememberControlRipple(bounded = false),
+                    interactionSource = null,
+                    onClick = onTogglePlay,
+                ),
             contentAlignment = Alignment.Center,
         ) {
             CrossfadeContent(
@@ -382,3 +421,11 @@ private val MiniPlayerHeight = 60.dp
 
 /** Artwork size inside the capsule. */
 private val MiniArtworkSize = 42.dp
+
+/**
+ * Corner radius of the mini player's artwork.
+ *
+ * Public because the cover transition interpolates from it to the player cover's radius, and the two
+ * values have to agree with what is actually drawn or the corner would jump at either end.
+ */
+val MiniArtworkCorner = 8.dp

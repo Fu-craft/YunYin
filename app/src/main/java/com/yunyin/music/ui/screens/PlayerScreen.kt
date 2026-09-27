@@ -72,6 +72,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.Player
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import com.yunyin.music.core.Track
 import com.yunyin.music.core.player.effects.AudioReactive
 import com.yunyin.music.data.ArtworkLoader
@@ -148,6 +151,22 @@ fun PlayerScreen(
     onShareTrack: () -> Unit = {},
     /** Called with a long-pressed lyric's text; null when the line had nothing to copy. */
     onCopyLyric: (String?) -> Unit = {},
+    /**
+     * Opacity of the player's own cover.
+     *
+     * 0 while the cover that grew out of the mini player is still travelling, 1 once it has been handed
+     * over. The player must *hide* its own cover for most of that, or the same artwork would be on
+     * screen twice at two different sizes.
+     */
+    coverAlpha: Float = 1f,
+    /**
+     * Reports the cover's rect in root coordinates.
+     *
+     * The transition's destination: the travelling cover animates to exactly this rect, so it has to be
+     * measured rather than computed from the screen size — it depends on the layout, the aspect ratio
+     * and the presentation.
+     */
+    onCoverBoundsChanged: (androidx.compose.ui.geometry.Rect) -> Unit = {},
     positionProvider: () -> Long,
     modifier: Modifier = Modifier,
 ) {
@@ -535,6 +554,8 @@ fun PlayerScreen(
                                     onCollapse = onCollapse,
                                     dragDistance = { dragDistance },
                                     setDragDistance = { dragDistance = it },
+                                    coverAlpha = coverAlpha,
+                                    onCoverBoundsChanged = onCoverBoundsChanged,
                                     sharedScope = this@SharedTransitionLayout,
                                     visibilityScope = this@AnimatedContent,
                                 )
@@ -801,6 +822,8 @@ fun PlayerScreen(
                                 onCollapse = onCollapse,
                                 dragDistance = { dragDistance },
                                 setDragDistance = { dragDistance = it },
+                                coverAlpha = coverAlpha,
+                                onCoverBoundsChanged = onCoverBoundsChanged,
                                 sharedScope = this@SharedTransitionLayout,
                                 visibilityScope = this@AnimatedContent,
                             )
@@ -917,6 +940,9 @@ private fun ArtworkWithGestures(
     onCollapse: () -> Unit,
     dragDistance: () -> Float,
     setDragDistance: (Float) -> Unit,
+    /** Opacity of the cover itself, so the transition can hide it while another copy travels. */
+    coverAlpha: Float = 1f,
+    onCoverBoundsChanged: (androidx.compose.ui.geometry.Rect) -> Unit = {},
     // Receiver scopes are passed in rather than captured: this is a separate composable, so the
     // caller's `this@SharedTransitionLayout` / `this@AnimatedContent` are not in scope here.
     sharedScope: SharedTransitionScope,
@@ -956,6 +982,10 @@ private fun ArtworkWithGestures(
             preloaded = cover,
             modifier = Modifier
                 .size(artSize)
+                .onGloballyPositioned { coordinates ->
+                    onCoverBoundsChanged(coordinates.boundsInRoot())
+                }
+                .alpha(coverAlpha)
                 // The other half of the shared cover: switching to the lyrics presentation shrinks
                 // this into the header thumbnail.
                 .then(
@@ -2101,6 +2131,14 @@ private const val COVER_SHARED_KEY = "album-cover"
 /** Corner radius of the full-size artwork, and of the header thumbnail it shrinks into. */
 private val ARTWORK_CORNER = 14.dp
 private val HEADER_COVER_CORNER = 10.dp
+
+/**
+ * The full-size cover's corner radius, exposed for the cover transition.
+ *
+ * Its destination radius, so the travelling cover arrives at the exact radius the player would have
+ * drawn. Duplicating the number would let the two drift, and the jump would show at the handover.
+ */
+val PlayerArtworkCorner = ARTWORK_CORNER
 
 /** How long the backdrop stays frozen after a presentation change begins. */
 private const val TRANSITION_SETTLE_MS = 600L
