@@ -135,7 +135,7 @@ fun CollectionScreen(
     // bar takes on the page background. Keyed to the bar's own travel rather than to the first
     // visible *item*, because the header is one tall item and would otherwise leave a transparent
     // bar sitting over the title for a long stretch of scrolling.
-    val barSolidThreshold = with(density) { (TopBarHeight + TopBarTopGap + 24.dp).toPx() }
+    val barSolidThreshold = with(density) { (TopBarHeight + BarClearance + 24.dp).toPx() }
     val barSolid by remember(listState) {
         derivedStateOf {
             listState.firstVisibleItemIndex > 0 ||
@@ -294,7 +294,7 @@ private fun Header(
         Column(Modifier.fillMaxWidth().padding(horizontal = PageInset)) {
             // Reserve exactly what the pinned bar occupies, from the same constants the bar uses.
             Spacer(Modifier.statusBarsPadding())
-            Spacer(Modifier.height(TopBarTopGap + TopBarHeight))
+            Spacer(Modifier.height(TopBarHeight + BarClearance))
             Spacer(Modifier.height(20.dp))
 
             Artwork(
@@ -410,7 +410,16 @@ private fun ExpandableDescription(text: String, onCover: Color, key: Any?) {
             Spacer(Modifier.height(4.dp))
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.clickable { expanded = !expanded },
+                modifier = Modifier.clickable(
+                    // On the raw colour field, so the theme's ink would be wrong here — it is
+                    // whatever the page background needs, not whatever this artwork needs.
+                    indication = rememberControlRipple(
+                        bounded = true,
+                        color = onCover.copy(alpha = 0.18f),
+                    ),
+                    interactionSource = null,
+                    onClick = { expanded = !expanded },
+                ),
             ) {
                 Text(
                     text = if (expanded) "收起" else "更多",
@@ -452,7 +461,14 @@ private fun HeaderAction(
                 if (border == Color.Transparent) Modifier
                 else Modifier.border(0.5.dp, border, ContinuousRoundedRectangle(AppleShapes.pill)),
             )
-            .clickable(onClick = onClick),
+            // The press ink is the pill's own content colour: on the solid pill that is dark-on-light
+            // and on the glass pill light-on-dark, so one value is correct for both. Taken from the
+            // artwork-derived ink rather than the theme, which is what makes it visible on either.
+            .clickable(
+                indication = rememberControlRipple(bounded = true, color = content.copy(alpha = 0.18f)),
+                interactionSource = null,
+                onClick = onClick,
+            ),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -699,8 +715,8 @@ private const val CoverWidthFraction = 0.56f
 /** Height of the pinned bar's button row, excluding the status bar inset. */
 private val TopBarHeight = 44.dp
 
-/** Gap between the status bar and that row. */
-private val TopBarTopGap = 6.dp
+/** Clearance between the bottom of that row and the first thing in the hero (the cover). */
+private val BarClearance = 6.dp
 
 /**
  * Height of the band in which the colour field ramps into the page background.

@@ -1412,7 +1412,11 @@ private fun TrackActionsSheet(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(ContinuousRoundedRectangle(AppleShapes.control))
-                        .clickable(onClick = onDismiss)
+                        .clickable(
+                            indication = rememberControlRipple(bounded = true),
+                            interactionSource = null,
+                            onClick = onDismiss,
+                        )
                         .padding(vertical = 14.dp),
                 )
             }
@@ -1432,7 +1436,14 @@ private fun ActionRow(
     Row(
         Modifier
             .fillMaxWidth()
-            .clickable(enabled = enabled, onClick = onClick)
+            .clickable(
+                // The sheet is a fixed dark surface with white ink in either appearance, so the
+                // theme's own ink would paint a dark ripple here on a light theme.
+                indication = rememberControlRipple(bounded = true),
+                interactionSource = null,
+                enabled = enabled,
+                onClick = onClick,
+            )
             .padding(horizontal = 18.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
