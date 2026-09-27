@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -22,6 +23,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -54,6 +56,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -131,12 +134,26 @@ fun CollectionScreen(
 
     val listState = rememberLazyListState()
     val density = LocalDensity.current
-    // Once the artwork has scrolled up behind the bar there is no longer a photo to sit on, so the
-    // bar takes on the page background. Keyed to the bar's own travel rather than to the first
-    // visible *item*, because the header is one tall item and would otherwise leave a transparent
-    // bar sitting over the title for a long stretch of scrolling.
-    val barSolidThreshold = with(density) { (TopBarHeight + BarClearance + 24.dp).toPx() }
-    val barSolid by remember(listState) {
+
+    // The header reports its measured height so the bar knows exactly when to take on a surface.
+    var headerHeightPx by remember(state.coverUrl) { mutableIntStateOf(0) }
+
+    /**
+     * When the pinned bar stops floating on artwork and becomes an opaque bar.
+     *
+     * The header's last band is the ramp into the page background, so the bar must go opaque the
+     * moment that band reaches it — before then everything behind the bar is cover artwork with the
+     * measured ink on top, and after it everything behind is the page background the list sits on.
+     *
+     * This is computed, not tuned. An earlier fixed 74dp made the bar turn solid while the cover was
+     * still plainly on screen: a white slab appearing across the middle of the artwork. Deriving it
+     * from the measured header height and the ramp's own height means the switch lands on the exact
+     * frame where the colour under the bar stops being the cover.
+     */
+    val rampPx = with(density) { RampBand.toPx() }
+    val barBottomPx = WindowInsets.systemBars.getTop(density) + with(density) { TopBarHeight.toPx() }
+    val barSolidThreshold = (headerHeightPx - rampPx - barBottomPx).coerceAtLeast(0f)
+    val barSolid by remember(listState, barSolidThreshold) {
         derivedStateOf {
             listState.firstVisibleItemIndex > 0 ||
                 listState.firstVisibleItemScrollOffset > barSolidThreshold
@@ -159,12 +176,13 @@ fun CollectionScreen(
                     inverseOnCover = inverseOnCover,
                     onPlayAll = onPlayAll,
                     onShufflePlay = onShufflePlay,
+                    onHeightChanged = { headerHeightPx = it },
                 )
             }
 
             if (state.loading) {
                 item("loading") {
-                    Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) {
+                    Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(
                             color = palette.accent,
                             strokeWidth = 2.5.dp,
@@ -180,7 +198,7 @@ fun CollectionScreen(
                         count = state.tracks.size,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(start = PageInset, end = PageInset, top = 18.dp, bottom = 4.dp),
+                            .padding(start = PageInset, end = PageInset, top = 14.dp, bottom = 2.dp),
                     )
                 }
                 // Index-based so duplicate songs in a playlist still resolve to the row that was
@@ -206,6 +224,9 @@ fun CollectionScreen(
         // Pinned last so it draws over the scrolling artwork.
         TopBar(
             onCover = onCover,
+            // The opposite of the ink, so the scrim always separates the controls from whatever
+            // scrolls under them regardless of which ink the cover chose.
+            scrimTint = if (coverIsDark) Color.Black else Color.White,
             solid = barSolid,
             onBack = onBack,
             onShare = onShare,
@@ -230,12 +251,21 @@ private fun Header(
     inverseOnCover: Color,
     onPlayAll: () -> Unit,
     onShufflePlay: () -> Unit,
+    /** Reports the measured height so the pinned bar can time its surface to the ramp. */
+    onHeightChanged: (Int) -> Unit,
 ) {
     val palette = AppTheme.palette
     val density = LocalDensity.current
     var headerHeightPx by remember { mutableIntStateOf(0) }
 
-    Box(Modifier.fillMaxWidth().onSizeChanged { headerHeightPx = it.height }) {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .onSizeChanged {
+                headerHeightPx = it.height
+                onHeightChanged(it.height)
+            },
+    ) {
         // ---------------------------------------------------------------- colour field
         Box(Modifier.matchParentSize().clipToBounds()) {
             if (backdrop != null) {
@@ -291,11 +321,17 @@ private fun Header(
         }
 
         // ---------------------------------------------------------------- content
-        Column(Modifier.fillMaxWidth().padding(horizontal = PageInset)) {
+        //
+        // Centred, because the cover is: a centred image with a left-ranged title reads as two
+        // unrelated columns rather than one stacked identity.
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = PageInset),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
             // Reserve exactly what the pinned bar occupies, from the same constants the bar uses.
             Spacer(Modifier.statusBarsPadding())
             Spacer(Modifier.height(TopBarHeight + BarClearance))
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(8.dp))
 
             Artwork(
                 url = state.coverUrl,
@@ -303,7 +339,6 @@ private fun Header(
                 corner = AppleShapes.cardLarge,
                 requestSize = 800,
                 modifier = Modifier
-                    .align(Alignment.CenterHorizontally)
                     .fillMaxWidth(CoverWidthFraction)
                     .aspectRatio(1f)
                     .shadow(
@@ -315,7 +350,7 @@ private fun Header(
                     ),
             )
 
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(20.dp))
 
             Text(
                 text = state.title,
@@ -324,8 +359,10 @@ private fun Header(
                 fontSize = 27.sp,
                 lineHeight = 33.sp,
                 color = onCover,
+                textAlign = TextAlign.Center,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth(),
             )
 
             val description = state.description
@@ -338,20 +375,25 @@ private fun Header(
 
             val meta = metaLine(state)
             if (meta.isNotEmpty()) {
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(8.dp))
                 Text(
                     text = meta,
                     fontFamily = SFPro,
                     fontSize = 14.sp,
                     color = onCover.copy(alpha = 0.72f),
+                    textAlign = TextAlign.Center,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
 
-            Spacer(Modifier.height(22.dp))
+            Spacer(Modifier.height(18.dp))
 
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
                 // Play all leads: it is the action people come here for, so it takes the solid fill
                 // and shuffle takes the glass one. Both are pills, as in iOS's media headers.
                 HeaderAction(
@@ -392,13 +434,14 @@ private fun ExpandableDescription(text: String, onCover: Color, key: Any?) {
     var expanded by remember(key) { mutableStateOf(false) }
     var overflows by remember(key) { mutableStateOf(false) }
 
-    Column {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
             text = text,
             fontFamily = SFPro,
             fontSize = 14.sp,
             lineHeight = 20.sp,
             color = onCover.copy(alpha = 0.72f),
+            textAlign = TextAlign.Center,
             maxLines = if (expanded) Int.MAX_VALUE else 2,
             overflow = TextOverflow.Ellipsis,
             onTextLayout = { result ->
@@ -489,10 +532,17 @@ private fun HeaderAction(
  *
  * [solid] fades it onto the page background; the ink crossfades with it, because the colour that
  * reads on a photo is not the one that reads on the page background.
+ *
+ * While transparent it also lays a soft scrim in [scrimTint] — the opposite of the ink, so black
+ * under white ink and white under dark ink. This is not decoration: the header scrolls *behind* this
+ * bar, and since the title uses the same measured ink as the bar's glyphs, the title sliding past
+ * would swallow them. The scrim keeps the controls separated from whatever travels underneath, and
+ * fades out as the opaque surface comes in.
  */
 @Composable
 private fun TopBar(
     onCover: Color,
+    scrimTint: Color,
     solid: Boolean,
     onBack: () -> Unit,
     onShare: () -> Unit,
@@ -510,29 +560,42 @@ private fun TopBar(
         label = "topbar-surface",
     )
 
-    Column(modifier.fillMaxWidth().statusBarsPadding()) {
-        Box(Modifier.fillMaxWidth().height(TopBarHeight)) {
-            Box(
-                Modifier
-                    .matchParentSize()
-                    .background(palette.background.copy(alpha = surface)),
-            )
-            Row(
-                Modifier.fillMaxSize().padding(horizontal = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                BarIconButton(SfIcons.ChevronDown, "返回", ink, onBack)
-                Spacer(Modifier.weight(1f))
-                BarIconButton(SfIcons.SquareAndArrowUp, "分享", ink, onShare)
+    // The surface spans the *whole* bar including the status bar inset.
+    //
+    // An earlier version padded the outer Column for the inset, which left the top ~24dp of the bar
+    // unfilled: once the bar went solid, the status strip above it stayed a different colour and read
+    // as a separate white band sitting on top of the app. Insets belong inside the filled area, not
+    // around it.
+    Box(modifier.fillMaxWidth().background(palette.background.copy(alpha = surface))) {
+        Box(
+            Modifier
+                .matchParentSize()
+                .background(
+                    Brush.verticalGradient(
+                        0f to scrimTint.copy(alpha = TopBarScrim * (1f - surface)),
+                        1f to Color.Transparent,
+                    ),
+                ),
+        )
+        Column(Modifier.fillMaxWidth().statusBarsPadding()) {
+            Box(Modifier.fillMaxWidth().height(TopBarHeight)) {
+                Row(
+                    Modifier.fillMaxSize().padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    BarIconButton(SfIcons.ChevronDown, "返回", ink, onBack)
+                    Spacer(Modifier.weight(1f))
+                    BarIconButton(SfIcons.SquareAndArrowUp, "分享", ink, onShare)
+                }
+                // Hairline only once there is a surface for it to sit on.
+                Box(
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .height(0.5.dp)
+                        .background(palette.separator.copy(alpha = surface)),
+                )
             }
-            // Hairline only once there is a surface for it to sit on.
-            Box(
-                Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .height(0.5.dp)
-                    .background(palette.separator.copy(alpha = surface)),
-            )
         }
     }
 }
@@ -718,15 +781,21 @@ private val TopBarHeight = 44.dp
 /** Clearance between the bottom of that row and the first thing in the hero (the cover). */
 private val BarClearance = 6.dp
 
+/** Peak alpha of the bar's scrim while it floats over artwork. */
+private const val TopBarScrim = 0.34f
+
 /**
  * Height of the band in which the colour field ramps into the page background.
  *
- * Sits entirely below the action pills, so no text ever sits on a partially-ramped field.
+ * Sits entirely below the action pills, so no text ever sits on a partially-ramped field — which
+ * also means it is unavoidably empty space, and its height is the gap the user sees between the
+ * actions and the list. At 120dp that read as a large blank band rather than as a fade; 28dp is
+ * still a gradient (84px at 3x, so no visible seam) while keeping the gap to list spacing.
  */
-private val RampBand = 120.dp
+private val RampBand = 28.dp
 
 /** Clearance between the action pills and the start of the ramp. */
-private val RampMargin = 16.dp
+private val RampMargin = 8.dp
 
 /** Width reserved for the row position / now-playing marker. Fits three digits. */
 private val IndexWidth = 30.dp
