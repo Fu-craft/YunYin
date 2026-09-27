@@ -30,9 +30,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.addOutline
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -67,30 +72,31 @@ enum class PlayerTab(val label: String, val icon: androidx.compose.ui.graphics.v
 }
 
 /**
- * The liquid-glass surface used by the floating bottom chrome.
+ * The glass surface used by the floating bottom chrome.
  *
- * ## It is a *solid* surface, and that is the point
+ * ## It is a *solid* panel, and that is the point
  *
  * Two rounds of tuning went the wrong way on this, so the target is worth stating plainly: the reference
- * bar is an opaque light-grey surface. You cannot see the list through it at all — no text, no artwork
- * edges. What makes it read as material rather than as a plain rectangle is that it still **samples what
- * is behind it** ([Backdrop] records the content; `drawBackdrop` blurs and saturates it), so the surface
- * carries a faint tint of the artwork underneath, plus the edge highlight and depth.
+ * bar is an **opaque** light-grey surface. You cannot see the list through it at all — no text, no
+ * artwork edges. What makes it read as material rather than as a plain rectangle is (a) the vertical
+ * sheen on the fill, (b) the top rim highlight, and (c) the inner shadow; all three are drawn *on top of*
+ * the fill, so an opaque fill does not hide them.
  *
- * So the fill is deliberately heavy — around 90% of the theme's own surface colour. This is the
- * opposite of the previous revision, which lowered the fill to ~34% to let the blur show through; that
- * produced a translucent panel with content legible behind it, which is what the user rejected twice.
- * The blur and refraction are still applied and still contribute (the remaining ~10%, the edges, the
- * pressed-state lens), but they are now a subtlety rather than the main event.
+ * This replaced a translucent fill (0.34, then 0.92), which the user rejected twice as "still too
+ * transparent" over bright artwork — the conclusion being that liquid glass is not what this bar should
+ * be. The refracted [Backdrop] is still sampled and blurred, but only the sliver that survives an opaque
+ * fill now contributes, so it is a faint cast rather than the main event.
  *
- * The library's draw order matters to that reading: blurred backdrop, then this fill, then the content.
- * A heavy fill therefore *paints over* the blur — which is exactly how a solid surface is achieved here.
+ * The library's draw order is why the surface can be opaque and still read as glass: it draws the
+ * refracted backdrop, then this fill, then the content; the highlight and inner shadow nodes then draw
+ * themselves over the top, each clipping to [shape] on its own.
  *
  * @param shape the surface outline. The app's own continuous-corner shape is used so the chrome matches
- *        the rest of the UI instead of the library's default capsule.
- * @param blurRadius how much the backdrop is diffused before the fill covers most of it.
- * @param refraction how far the lens bends the backdrop near the edge, which is what gives the surface a
- *        lit rim rather than a flat cut.
+ *        the rest of the UI instead of the library's default capsule. The fill is clipped to it here,
+ *        because the library does not clip `onDrawSurface`.
+ * @param blurRadius how much the backdrop is diffused before the fill covers it.
+ * @param refraction how far the lens bends the backdrop near the edge. Mostly covered by the opaque fill
+ *        now, but it still softens the outermost pixel or two so the edge is not a hard cut.
  * @param pressed increases the bend and the highlight, so the glass reacts to the touch that is about to
  *        move it.
  */
@@ -115,30 +121,53 @@ fun Modifier.liquidGlass(
     highlight = { Highlight.Default.copy(alpha = if (pressed) 1f else 0.5f) },
     shadow = { Shadow.Default },
     innerShadow = { InnerShadow(radius = 6.dp, alpha = if (pressed) 1f else 0.45f) },
-    // The surface itself. Heavy on purpose: see the note above.
-    onDrawSurface = { drawRect(tint) },
+    // The surface itself: an opaque panel, painted over the refracted backdrop.
+    //
+    // Two details here are load-bearing:
+    //
+    //  - **It has to be clipped to `shape`.** The library clips only what *it* draws (the highlight and
+    //    the inner shadow call `clipOutline` themselves); `onDrawSurface` is handed a bare draw scope, so
+    //    an unclipped `drawRect` spills a square rect into the squircle's corner cut-outs. That is a real
+    //    bug, not a style choice.
+    //  - **The fill is opaque, with a slight vertical sheen.** At 0.92 alpha the user could still read the
+    //    list through it over bright artwork. A flat opaque rect would be dead grey though, so the top is
+    //    lifted a touch and the bottom shaded: that gradient is what reads as *material* rather than as
+    //    paint, and it replaces the frost that a translucent fill used to provide.
+    onDrawSurface = {
+        val path = Path()
+        path.addOutline(shape().createOutline(size, layoutDirection, this))
+        clipPath(path) {
+            drawRect(
+                Brush.verticalGradient(
+                    0f to lerp(tint, Color.White, 0.06f),
+                    0.5f to tint,
+                    1f to lerp(tint, Color.Black, 0.06f),
+                )
+            )
+        }
+    },
 )
 
 /**
  * Blur radius for the backdrop under the chrome.
  *
- * No longer "the thing that produces the frost" — the surface fill is heavy enough to be solid. This
- * shapes the ~10% that does show through, so what leaks is a soft tint of the artwork rather than
- * legible rows.
+ * The surface is opaque now, so this no longer decides whether content shows through — it only shapes the
+ * sliver of texture that survives the fill, so the material picks up a faint cast from the artwork rather
+ * than being a pure theme grey.
  */
 private val GlassBlur = 22.dp
 
 /**
  * The surface fill.
  *
- * Heavy, because the target is a **solid** surface: content behind the chrome must not be readable
- * through it. It is the theme's own secondary background, so the chrome belongs to the app in either
- * appearance, and it is left a few percent short of opaque on purpose — that residue is what lets the
- * blurred artwork underneath tint the surface, which is what keeps it from looking like a flat grey
- * rectangle.
+ * Opaque, deliberately. The reference bar is a **solid** light-grey surface — no list, no artwork edges
+ * readable through it — and two earlier revisions that left the fill translucent (0.34, then 0.92) both
+ * came back as "still too transparent" over bright covers. It is the theme's own secondary background, so
+ * the chrome belongs to the app in either appearance; the sheen applied in [liquidGlass] is what keeps it
+ * from looking like a flat rectangle.
  */
 @Composable
-private fun glassTint(): Color = AppTheme.palette.secondaryBackground.copy(alpha = 0.92f)
+private fun glassTint(): Color = AppTheme.palette.secondaryBackground
 
 /**
  * Floating tab bar: a glass pill with an accent selection sliding between tabs.
@@ -271,12 +300,13 @@ private fun TabItem(
 }
 
 /**
- * Floating mini player: a glass capsule holding the current track.
+ * Floating mini player: a solid panel holding the current track.
  *
- * Glass for the same reason as the bar — it floats over the list, so the artwork and rows passing
- * beneath show through it. The whole capsule presses inward on touch, which is the affordance that
- * says *the capsule* opens the player rather than only the artwork; the play button stops the
- * propagation of its own tap by consuming it first.
+ * The same surface as the bar, for consistency — the two stack, so they have to match. It floats over the
+ * list, so the panel is opaque and the rows passing beneath are hidden rather than showing through. The
+ * whole capsule presses inward on touch, which is the affordance that says *the capsule* opens the player
+ * rather than only the artwork; the play button stops the propagation of its own tap by consuming it
+ * first.
  */
 @Composable
 fun FloatingMiniPlayer(

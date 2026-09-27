@@ -327,11 +327,12 @@ class MainActivity : ComponentActivity() {
             }
 
             /**
-             * Floating chrome: the glass samples the content recorded above.
+             * Floating chrome: solid panels that float above the content.
              *
-             * Overlaid rather than laid out in a column, which is what makes it float — the lists
-             * scroll underneath and are visible through the glass. The bottom padding of each screen
-             * keeps its last rows clear of the bars.
+             * Overlaid rather than laid out in a column, which is what makes it float — the lists scroll
+             * underneath and the panels cover them. The bottom padding of each screen keeps its last rows
+             * clear of the bars. The `bottomBackdrop` the panels sample is still recorded and blurred, but
+             * the fill is opaque, so it only tints the material rather than letting rows read through.
              */
             Column(
                 Modifier
