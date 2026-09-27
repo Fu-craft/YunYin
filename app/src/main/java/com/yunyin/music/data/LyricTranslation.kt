@@ -50,16 +50,39 @@ internal object LyricTranslation {
     }
 
     /**
-     * Parses `[mm:ss.xx]text` into timestamp → text.
+     * Parses a translation payload into timestamp → text.
      *
-     * Handles multiple timestamps on one line (a repeated chorus line is emitted as
-     * `[00:12.00][01:40.00]text`) and the 1/2/3-digit fractional-second variants.
+     * Two shapes arrive here, and both must work:
+     *
+     *  - **LRC** — `[mm:ss.xx]text`. Handles multiple timestamps on one line (a repeated chorus line is
+     *    emitted as `[00:12.00][01:40.00]text`) and the 1/2/3-digit fractional-second variants.
+     *  - **YRC** — `[lineStart,lineDuration](wordStart,wordDuration,?)word…`. This is the shape of
+     *    NetEase's `ytlrc` (the translation aligned to `yrc`), and it is what the repository prefers
+     *    for karaoke songs precisely because its timings line up exactly with the lyric lines.
+     *
+     * The YRC branch was missing, and the consequence was silent: the LRC pattern matched nothing in a
+     * `ytlrc` payload, so this returned an empty map, [merge] did nothing, and **every karaoke song
+     * lost its translation** — despite the repository having deliberately selected the better-aligned
+     * source for it. Measured on the repository's own sample: `parse(ytlrc)` returned 0 entries.
      */
     fun parse(raw: String): Map<Int, String> {
         val out = mutableMapOf<Int, String>()
-        val timeTag = Regex("""\[(\d{1,2}):(\d{1,2})(?:[.:](\d{1,3}))?]""")
+        val lrcTag = Regex("""\[(\d{1,2}):(\d{1,2})(?:[.:](\d{1,3}))?]""")
+        // `[start,duration]` at the head of a YRC line; `%d,%d` cannot be confused with `mm:ss`.
+        val yrcHead = Regex("""^\[(\d+),(\d+)]""")
+        val yrcWord = Regex("""\(\s*\d+\s*,\s*\d+\s*(?:,\s*-?\d+\s*)?\)""")
+
         raw.lineSequence().forEach { line ->
-            val tags = timeTag.findAll(line).toList()
+            val head = yrcHead.find(line.trim())
+            if (head != null) {
+                val start = head.groupValues[1].toIntOrNull() ?: return@forEach
+                // Strip every `(wordStart,wordDuration[,flags])` group, leaving just the text.
+                val text = yrcWord.replace(line.substring(head.range.last + 1), "").trim()
+                if (text.isNotEmpty()) out[start] = text
+                return@forEach
+            }
+
+            val tags = lrcTag.findAll(line).toList()
             if (tags.isEmpty()) return@forEach
             // Everything after the last tag is the text (tags may be stacked).
             val text = line.substringAfterLast(']').trim()

@@ -121,7 +121,9 @@ class LyricsRepository(
         // than making the caller wait on fetches that may fail.
         if (cached != null) {
             onFirstDoc?.invoke(cached)
-            deliverLateDocument(trackId, amllDeferred, neteaseDeferred, onUpgraded)
+            // `afterLineLevel = true`: something is already on screen, so the late delivery should
+            // only improve on it, never replace it with the same thing.
+            deliverLateDocument(trackId, amllDeferred, neteaseDeferred, onUpgraded, afterLineLevel = true)
             return cached
         }
 
@@ -136,7 +138,9 @@ class LyricsRepository(
             // changes, and its manual retry is not wired to any UI). Handing the in-flight fetch to
             // the background upgrader turns "shows nothing, forever" into "shows lyrics a moment
             // later".
-            deliverLateDocument(trackId, amllDeferred, neteaseDeferred, onUpgraded)
+            //
+            // `afterLineLevel = false`: nothing was shown, so a late line-level document is welcome.
+            deliverLateDocument(trackId, amllDeferred, neteaseDeferred, onUpgraded, afterLineLevel = false)
             return null
         }
 
@@ -149,7 +153,7 @@ class LyricsRepository(
         // because the other source may still produce a usable one.
         val resolved = resolve(first, netease)
         if (resolved == null) {
-            deliverLateDocument(trackId, amllDeferred, neteaseDeferred, onUpgraded)
+            deliverLateDocument(trackId, amllDeferred, neteaseDeferred, onUpgraded, afterLineLevel = false)
             return null
         }
         storeIfTrustworthy(trackId, resolved)
@@ -169,7 +173,7 @@ class LyricsRepository(
         // The window expired without a karaoke document. The fetch is still running on [scope], so
         // let it finish and hand the better document over. Without this the user would have to
         // replay the song to get karaoke — which is exactly the reported symptom.
-        deliverLateDocument(trackId, amllDeferred, neteaseDeferred, onUpgraded)
+        deliverLateDocument(trackId, amllDeferred, neteaseDeferred, onUpgraded, afterLineLevel = true)
         return resolved.lyrics
     }
 
@@ -182,27 +186,50 @@ class LyricsRepository(
      * having no lyrics at all — and since the view model only starts a load when the *track id*
      * changes, the failure lasted until the user skipped away and back.
      *
-     * It accepts **either** source, unlike the word-by-word-only upgrade it replaces. A late
-     * line-level NetEase document is just as much a rescue as a karaoke one when the alternative is
-     * an empty screen, and in the timeout case there is no on-screen document to protect from
-     * being replaced.
+     * **It awaits the AMLL document specifically, not a race between the two sources.** An earlier
+     * version re-ran [awaitFirstDocument] here, which was a mistake with a very visible result: when
+     * the NetEase fetch had already completed, racing returned that *line-level* document immediately,
+     * so this delivered plain lyrics and returned — while the in-flight karaoke document, the whole
+     * reason for waiting, was never delivered. Songs that should have word-by-word lyrics showed none.
+     * Awaiting the one source that can still improve the result is the point of this call.
+     *
+     * Unlike the word-by-word-only upgrade it replaced, a line-level document is still delivered when
+     * no karaoke exists: when the screen is otherwise empty, plain lyrics are the difference between a
+     * readable song and nothing.
      *
      * @param onDelivered invoked off the main thread; callers marshal to their own dispatcher.
+     * @param afterLineLevel true when the caller has already shown line-level lyrics for this track, so
+     *        only a word-by-word document is worth delivering. False when nothing was shown.
      */
     private fun deliverLateDocument(
         trackId: Long,
         amllDeferred: Deferred<SyncedLyrics?>,
         neteaseDeferred: Deferred<NeteaseSide>,
         onDelivered: ((SyncedLyrics) -> Unit)?,
+        afterLineLevel: Boolean,
     ) {
         if (onDelivered == null) return
         scope.launch {
-            val candidate = runCatching { awaitFirstDocument(neteaseDeferred, amllDeferred) }
-                .getOrNull() ?: return@launch
+            val amll = runCatching { amllDeferred.await() }.getOrNull()
             val netease = runCatching { neteaseDeferred.await() }.getOrNull() ?: NeteaseSide(null)
-            val resolved = runCatching { resolve(candidate, netease) }.getOrNull() ?: return@launch
-            storeIfTrustworthy(trackId, resolved)
-            onDelivered(resolved.lyrics)
+
+            // The better document, if there is one.
+            val upgraded = upgradeFrom(amll, netease)
+            if (upgraded != null) {
+                storeIfTrustworthy(trackId, upgraded)
+                onDelivered(upgraded.lyrics)
+                return@launch
+            }
+
+            // No karaoke document. Only fall back to the line-level one if the caller showed nothing —
+            // otherwise this would replace what the user is reading with the same thing.
+            if (afterLineLevel) return@launch
+            val fallback = netease.doc?.takeIf { it.lines.isNotEmpty() }
+                ?.let { resolve(Candidate(it, fromAmll = false), netease) }
+            if (fallback != null) {
+                storeIfTrustworthy(trackId, fallback)
+                onDelivered(fallback.lyrics)
+            }
         }
     }
 
@@ -295,14 +322,22 @@ class LyricsRepository(
         // the document that gets displayed has no metadata at its head.
         val stripped = stripMetadata(candidate.lyrics)
 
+        // Fold same-start lines into translations on the **NetEase** side only.
+        //
+        // NetEase's YRC carries a line's translation as a second line with an identical start, and
+        // without this the translation was drawn as a lyric row and given the word-by-word fill. TTML
+        // is excluded on purpose: it has agents, so a duet genuinely has two voices at one moment and
+        // folding those would delete a real lyric — see [LyricLineFolding].
+        val folded = if (candidate.fromAmll) stripped else LyricLineFolding.foldSimultaneousTranslations(stripped)
+
         val aligned = if (candidate.fromAmll) {
             LyricTimeShift.alignByAnchors(
-                lyrics = stripped,
-                currentAnchorMs = stripped.lines.firstOrNull()?.start,
+                lyrics = folded,
+                currentAnchorMs = folded.lines.firstOrNull()?.start,
                 referenceAnchorMs = netease.anchorMs,
             )
         } else {
-            stripped
+            folded
         }
 
         // Prefer the YRC-aligned translation: it lines up exactly with the lyric lines, whereas the
