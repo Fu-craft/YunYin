@@ -19,6 +19,10 @@
   横屏为「左栏控制 + 右侧歌词」。
 - **Apple 风格界面** —— SF Pro 字体、SF Symbols 同款矢量图标、iOS 系统色板、
   HIG 字号阶梯、连续圆角（squircle）、毛玻璃 chrome、底部 Sheet 队列、迷你播放器。
+- **歌单详情** —— 封面放大加模糊作为整页色场，正文颜色由封面亮度测得（暗封面白字、
+  亮封面深字），顶部返回/分享条常驻并随滚动过渡为不透明；列表标注序号与正在播放行。
+- **收藏与分享** —— 播放页爱心直接收藏/取消收藏（乐观更新，失败回滚）；长按封面保存
+  封面图到相册，长按歌词行复制歌词。
 - **开屏动画** —— 冷启动期间展示品牌开屏，待会话与首页数据就绪后交叉溶解揭开。
 - **后台播放** —— Media3 ExoPlayer + MediaSessionService，支持锁屏与通知控制。
 - **网页登录** —— 应用内嵌浏览器登录，自动获取登录态，无需手动复制 Cookie。
@@ -114,6 +118,7 @@ keytool -genkeypair -v -keystore my-release.jks -alias mykey \
 | 歌单详情 | `/playlist/detail`、`/playlist/track/all` |
 | 用户歌单 | `/user/playlist?uid=` |
 | 我喜欢的音乐 | `/likelist?uid=` |
+| 收藏 / 取消收藏 | `/like?id=&like=` |
 | 搜索 | `/search?keywords=&type=1`、`/search/hot` |
 | 歌曲详情 | `/song/detail?ids=` |
 | 歌词 | `/lyric/new?id=` |
