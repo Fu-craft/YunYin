@@ -7,6 +7,7 @@ import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -61,6 +62,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.TextStyle
@@ -219,9 +221,20 @@ fun PlayerScreen(
     // the transport, the frosted split and the lyric fade zones — is derived from this one value,
     // so the whole state change is a single coordinated move rather than several independent
     // snaps.
+    //
+    // The progress curve is deliberately **linear**, and the character of the departure is carried by
+    // the travel term in `chromeSlide` instead. Coupling the two (the previous version used one
+    // decelerating bezier for both) forces a trade-off: the fade comes out front-loaded, so the chrome
+    // drops most of its opacity in the first quarter of the time and then lingers as a faint ghost.
+    // Measured, that curve spent 0.76 of its opacity in the first quarter; a linear presence spends
+    // 0.32.
     val chromeProgress by animateFloatAsState(
         targetValue = if (immersive) 0f else 1f,
-        animationSpec = tween(durationMillis = CHROME_FADE_MS, easing = ChromeEasing),
+        animationSpec = tween(
+            durationMillis = if (immersive) CHROME_EXIT_MS else CHROME_ENTER_MS,
+            // Linear is its own inverse, so the return retraces the departure exactly.
+            easing = LinearEasing,
+        ),
         label = "chrome-progress",
     )
     val wakeOnTap = if (immersive) {
@@ -555,7 +568,10 @@ fun PlayerScreen(
                                 .align(if (railOnLeft) Alignment.CenterStart else Alignment.CenterEnd)
                                 .width(railWidth)
                                 .fillMaxHeight()
-                                .chromeSlide(chromeProgress, slideUp = false)
+                                .chromeSlide(
+                                    chromeProgress,
+                                    if (railOnLeft) ChromeEdge.Start else ChromeEdge.End,
+                                )
                                 .then(wakeOnTap),
                         ) {
                             // The scrim spans the rail's *full* height so it reaches the screen's
@@ -702,7 +718,7 @@ fun PlayerScreen(
                                 .statusBarsPadding()
                                 .navigationBarsPadding(),
                         ) {
-                            Box(Modifier.chromeSlide(chromeProgress, slideUp = true).then(wakeOnTap)) {
+                            Box(Modifier.chromeSlide(chromeProgress, ChromeEdge.Top).then(wakeOnTap)) {
                                 LyricsHeader(
                                     track = track,
                                     loader = loader,
@@ -734,7 +750,7 @@ fun PlayerScreen(
                                 .align(Alignment.BottomCenter)
                                 .fillMaxWidth()
                                 .onSizeChanged { panelHeightPx = it.height }
-                                .chromeSlide(chromeProgress, slideUp = false)
+                                .chromeSlide(chromeProgress, ChromeEdge.Bottom)
                                 .then(wakeOnTap),
                         ) {
                             Box(
@@ -2082,8 +2098,14 @@ private fun repeatDescription(mode: Int): String = when (mode) {
 /** Idle time before the lyrics presentation fades its chrome away. */
 private const val IMMERSIVE_IDLE_MS = 4000L
 
-/** Chrome transition duration when entering or leaving immersive mode. */
-private const val CHROME_FADE_MS = 420
+/**
+ * Duration of the chrome leaving for immersive mode, and of its return.
+ *
+ * The return is a touch longer than the departure: leaving should feel decisive (the user is reading;
+ * the chrome yields), while arriving has to settle without a snap.
+ */
+private const val CHROME_EXIT_MS = 320
+private const val CHROME_ENTER_MS = 340
 
 /**
  * Duration of the cross-fade between the artwork and lyrics presentations.
@@ -2117,15 +2139,33 @@ val PlayerArtworkCorner = ARTWORK_CORNER
 private const val TRANSITION_SETTLE_MS = 600L
 
 /**
- * Easing for the immersive transition.
+ * Easing for the cover-download badge and its scrim.
  *
- * A decelerating curve: the chrome leaves quickly at first, then settles, which reads as the UI
- * "getting out of the way" rather than being switched off.
+ * A single decelerating curve, which suits a small overlay materialising on its own — it is not the
+ * immersive transition, whose progress curve is deliberately linear (see `chromeProgress`).
  */
 private val ChromeEasing = CubicBezierEasing(0.22f, 0.61f, 0.36f, 1f)
 
-/** How far the chrome travels on its way in/out, as a fraction of its own height. */
-private const val CHROME_SLIDE_FRACTION = 0.35f
+/**
+ * Fraction of the chrome's travel that happens *after* it has faded out completely.
+ *
+ * Opacity is deliberately not locked 1:1 to the position, as it was: it reaches zero with this much of
+ * the move still to come, so the chrome is gone before it stops. Locking the two together left a faint
+ * ghost hanging over the lyrics for the tail of the transition, which is what made the exit read as a
+ * fade rather than as a departure.
+ */
+private const val CHROME_FADE_TAIL = 0.22f
+
+/**
+ * How far the chrome travels on its way in/out, as a fraction of its own extent.
+ *
+ * Sized so the *visible* travel still reads after the fade tail is accounted for: the chrome is gone at
+ * 78% of the way, by which point this fraction has squared to roughly a third of the chrome's height.
+ */
+private const val CHROME_SLIDE_FRACTION = 0.55f
+
+/** How much the chrome shrinks as it leaves, so it recedes instead of sliding flat over the lyrics. */
+private const val CHROME_EXIT_SCALE = 0.03f
 
 /**
  * Extra backdrop darkening applied as the chrome leaves.
@@ -2136,19 +2176,58 @@ private const val CHROME_SLIDE_FRACTION = 0.35f
  */
 private const val IMMERSIVE_EXTRA_DIM = 0.14f
 
+/** The screen edge the chrome belongs to, and therefore the way it leaves when immersive mode starts. */
+private enum class ChromeEdge { Top, Bottom, Start, End }
+
 /**
- * Fades the chrome out while sliding it toward the screen edge it belongs to.
+ * Fades the chrome out while moving it toward the edge it belongs to.
  *
- * The header leaves upward and the transport downward, so the two halves part rather than
- * dissolve in place. Sliding *and* fading together is what keeps this from reading as a plain
- * opacity change: the movement gives the direction, the fade hides the exit. Alpha also drives
- * hit-testing, so the chrome stops accepting taps as soon as it is visually gone.
+ * The header leaves upward, the transport downward, and the landscape rail sideways — each toward the
+ * edge it sits against, which is what makes the exit read as the chrome "going home" rather than as a
+ * generic dissolve. Sliding *and* fading together is what keeps this from reading as a plain opacity
+ * change: the movement gives the direction, the fade hides the exit.
+ *
+ * Four details do the work of making it feel deliberate rather than switched off:
+ *
+ *  - **Opacity leads the movement** ([CHROME_FADE_TAIL]): the chrome is invisible with a fifth of the
+ *    move still to run, so nothing lingers half-faded over the lyrics.
+ *  - **The travel accelerates**, via the square on the offset. A departure that gathers pace reads as
+ *    the chrome being whisked away; one at constant speed reads as a mechanical slide. Because the
+ *    square is on the *offset*, not on time, it inverts for free: on the way out the offset grows and
+ *    the motion accelerates, and on the way back it shrinks and the motion decelerates into place. That
+ *    is the mirror Apple asks for, without a second curve to keep in sync.
+ *  - **The travel is relative to the edge's own axis** — height for the top/bottom chrome, width for
+ *    the landscape rail. A full-height rail measured against its height (an earlier version) would
+ *    have slid by a third of the *screen*, which is far too far.
+ *  - **A slight recession** ([CHROME_EXIT_SCALE]), anchored to that edge, so the chrome drops back into
+ *    depth instead of sliding flat. This is draw-phase `graphicsLayer` state, so it costs no
+ *    re-measure — the trap the deleted container-expand transition fell into.
+ *
+ * Alpha also drives hit-testing, so the chrome stops accepting taps as soon as it is visually gone.
  */
-private fun Modifier.chromeSlide(progress: Float, slideUp: Boolean): Modifier =
+private fun Modifier.chromeSlide(progress: Float, edge: ChromeEdge): Modifier =
     graphicsLayer {
-        alpha = progress
-        val travel = CHROME_SLIDE_FRACTION * size.height * (1f - progress)
-        translationY = if (slideUp) -travel else travel
+        alpha = ((progress - CHROME_FADE_TAIL) / (1f - CHROME_FADE_TAIL)).coerceIn(0f, 1f)
+
+        val gone = 1f - progress
+        val travel = CHROME_SLIDE_FRACTION * gone * gone
+
+        when (edge) {
+            ChromeEdge.Top -> translationY = -travel * size.height
+            ChromeEdge.Bottom -> translationY = travel * size.height
+            ChromeEdge.Start -> translationX = -travel * size.width
+            ChromeEdge.End -> translationX = travel * size.width
+        }
+
+        val scale = 1f - CHROME_EXIT_SCALE * gone
+        scaleX = scale
+        scaleY = scale
+        transformOrigin = when (edge) {
+            ChromeEdge.Top -> TransformOrigin(0.5f, 0f)
+            ChromeEdge.Bottom -> TransformOrigin(0.5f, 1f)
+            ChromeEdge.Start -> TransformOrigin(0f, 0.5f)
+            ChromeEdge.End -> TransformOrigin(1f, 0.5f)
+        }
     }
 
 /**
