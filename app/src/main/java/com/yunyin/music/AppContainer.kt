@@ -7,7 +7,7 @@ import com.yunyin.music.data.MusicRepository
 import com.yunyin.music.data.PlayHistoryStore
 import com.yunyin.music.data.SearchHistoryStore
 import com.yunyin.music.data.SettingsStore
-import com.yunyin.music.data.TrackDownloader
+import com.yunyin.music.data.CoverDownloader
 import com.yunyin.music.data.net.NeteaseClient
 import com.yunyin.music.playback.PlayerController
 
@@ -33,8 +33,8 @@ class AppContainer(val appContext: Context) {
 
     val playHistory: PlayHistoryStore by lazy { PlayHistoryStore(appContext) }
 
-    /** Saves downloaded audio into the device's public music collection. */
-    val downloads: TrackDownloader by lazy { TrackDownloader(appContext) }
+    /** Saves album covers into the device's picture collection. */
+    val covers: CoverDownloader by lazy { CoverDownloader(appContext) }
 
     val player: PlayerController by lazy {
         PlayerController(appContext) { trackId ->

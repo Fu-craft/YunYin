@@ -1,5 +1,12 @@
 package com.yunyin.music.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -17,16 +24,22 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -37,7 +50,7 @@ import com.yunyin.music.core.Track
 import com.yunyin.music.data.ArtworkLoader
 import com.yunyin.music.ui.components.Artwork
 import com.yunyin.music.ui.components.PlaylistCard
-import com.yunyin.music.ui.components.SectionHeader
+import com.yunyin.music.ui.components.rememberControlRipple
 import com.yunyin.music.ui.icons.SfIcons
 import com.yunyin.music.ui.theme.AppleShapes
 import com.yunyin.music.ui.theme.AppTheme
@@ -45,11 +58,25 @@ import com.yunyin.music.ui.theme.SFPro
 import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
 
 /**
- * Library tab.
+ * Library tab ("我的").
  *
- * Follows the iOS grouped-list idiom: one large title, then a set of sections separated by
- * generous, *uniform* vertical space. Every tappable item is a plain row ending in a chevron —
- * no card backgrounds, no explanatory copy — so the page stays quiet and scannable.
+ * Rebuilt to the reference layout: one large title with a circular action button beside it, a
+ * standalone account card, then a single grouped card holding the destination rows. Three things
+ * about that structure are deliberate and worth stating, because they are what make it read as an
+ * iOS grouped list rather than as a pile of rows:
+ *
+ *  - **Cards, not a flat list.** Each group is one rounded surface on the page background, so the
+ *    grouping is carried by the shape instead of by separators. There are consequently no separator
+ *    lines at all — the reference has none, and spacing alone does the work.
+ *  - **One icon per row, one chevron per row.** Every row is the same height with the same leading
+ *    icon size and a trailing disclosure indicator, so the column of labels lines up and the eye can
+ *    scan it vertically.
+ *  - **Every row goes somewhere.** The reference's rows are all navigational; a row that only looked
+ *    like one would be worse than not having it, so the two list rows expand in place to reveal
+ *    their content rather than pretending to be pages this app does not have.
+ *
+ * [AppTheme]'s palette is used rather than the reference's fixed greys, so the screen follows the
+ * system appearance instead of being permanently light.
  */
 @Composable
 fun LibraryScreen(
@@ -66,150 +93,188 @@ fun LibraryScreen(
     modifier: Modifier = Modifier,
 ) {
     val signedIn = account != null && !account.isAnonymous
-    // NetEase returns "我喜欢的音乐" inside the playlist response; surface it separately.
     val liked = playlists.firstOrNull { it.isLikedSongs }
     val normalPlaylists = playlists.filterNot { it.isLikedSongs }
 
+    // Which expandable row is open. Only one at a time: the card is a single surface, so two open
+    // sections inside it would read as one long ungrouped list.
+    var expanded by remember { mutableStateOf<String?>(null) }
+
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 140.dp),
-        verticalArrangement = Arrangement.spacedBy(SectionGap),
+        contentPadding = PaddingValues(bottom = 150.dp),
+        verticalArrangement = Arrangement.spacedBy(CardGap),
     ) {
-        item("status") { Spacer(Modifier.statusBarsPadding().height(4.dp)) }
+        item("top") { Spacer(Modifier.statusBarsPadding().height(8.dp)) }
 
+        // ------------------------------------------------------------ title + action
         item("title") {
-            Text(
-                text = "资料库",
-                fontFamily = SFPro,
-                fontWeight = FontWeight.Bold,
-                fontSize = 34.sp,
-                color = AppTheme.palette.label,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp),
-            )
-        }
-
-        // ------------------------------------------------------------ account + settings
-        // Both are plain rows, so they share one section and read as a single group.
-        item("account-group") {
-            Column {
-                AccountRow(account = account, loader = loader, onClick = onSignIn)
-                SettingsRow(onClick = onSettings)
-            }
-        }
-
-        // ------------------------------------------------------------ my playlists
-        if (signedIn) {
-            item("liked") {
-                LikedSongsRow(
-                    trackCount = liked?.trackCount ?: 0,
-                    onClick = onLikedSongsClick,
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "我的",
+                    fontFamily = SFPro,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 34.sp,
+                    color = AppTheme.palette.label,
+                    modifier = Modifier.weight(1f),
                 )
-            }
-
-            if (normalPlaylists.isNotEmpty()) {
-                item("my-header") {
-                    SectionHeader(title = "我的歌单")
-                }
-                item("my-carousel") {
-                    LazyRow(
-                        modifier = Modifier.animateItem(
-                            fadeInSpec = tween(260),
-                            fadeOutSpec = null,
-                            placementSpec = null,
+                // The reference's circular button. Here it opens settings, which is the real
+                // destination this app has; the tinted circle is kept for the same reason it works
+                // there — a bare glyph next to a 34pt title reads as too small to be a button.
+                Box(
+                    Modifier
+                        .size(44.dp)
+                        .clip(ContinuousRoundedRectangle(AppleShapes.pill))
+                        .background(AppTheme.palette.accent.copy(alpha = 0.16f))
+                        .clickable(
+                            indication = rememberControlRipple(bounded = true),
+                            interactionSource = null,
+                            onClick = onSettings,
                         ),
-                        contentPadding = PaddingValues(horizontal = 20.dp),
-                        horizontalArrangement = Arrangement.spacedBy(14.dp),
-                    ) {
-                        items(normalPlaylists, key = { it.id }) { playlist ->
-                            PlaylistCard(
-                                playlist = playlist,
-                                loader = loader,
-                                onClick = { onPlaylistClick(playlist) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        SfIcons.Gearshape,
+                        contentDescription = "设置",
+                        tint = AppTheme.palette.accent,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+            }
+        }
+
+        // ------------------------------------------------------------ account card
+        item("account") {
+            AccountCard(account = account, loader = loader, onClick = onSignIn)
+        }
+
+        // ------------------------------------------------------------ grouped rows
+        item("rows") {
+            GroupedCard {
+                // 喜欢 — goes straight to the liked-songs list.
+                if (signedIn) {
+                    LibraryRow(
+                        icon = SfIcons.Heart,
+                        label = "喜欢",
+                        trailing = liked?.trackCount?.takeIf { it > 0 }?.let { "$it 首" },
+                        onClick = onLikedSongsClick,
+                    )
+                }
+
+                // 我的歌单 — expands to the carousel in place.
+                LibraryRow(
+                    icon = SfIcons.ListBullet,
+                    label = "我的歌单",
+                    trailing = if (normalPlaylists.isNotEmpty()) "${normalPlaylists.size}" else null,
+                    expandable = true,
+                    expanded = expanded == "playlists",
+                    onClick = {
+                        expanded = if (expanded == "playlists") null else "playlists"
+                    },
+                )
+                ExpandableSection(visible = expanded == "playlists") {
+                    when {
+                        normalPlaylists.isNotEmpty() -> LazyRow(
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        ) {
+                            items(normalPlaylists, key = { it.id }) { playlist ->
+                                PlaylistCard(
+                                    playlist = playlist,
+                                    loader = loader,
+                                    onClick = { onPlaylistClick(playlist) },
+                                )
+                            }
+                        }
+
+                        playlistsLoading -> Box(
+                            Modifier.fillMaxWidth().padding(vertical = 20.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            CircularProgressIndicator(
+                                color = AppTheme.palette.accent,
+                                strokeWidth = 2.5.dp,
+                                modifier = Modifier.size(22.dp),
                             )
                         }
-                    }
-                }
-            } else if (playlistsLoading) {
-                item("my-loading") {
-                    Box(
-                        Modifier
-                            .fillMaxWidth()
-                            .animateItem(
-                                fadeInSpec = tween(260),
-                                fadeOutSpec = null,
-                                placementSpec = null,
-                            )
-                            .padding(vertical = 24.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        CircularProgressIndicator(
-                            color = AppTheme.palette.accent,
-                            strokeWidth = 2.5.dp,
-                            modifier = Modifier.size(24.dp),
+
+                        else -> EmptyHint(
+                            if (signedIn) "还没有歌单" else "登录后可同步你的歌单",
                         )
                     }
                 }
-            }
-        }
 
-        // ------------------------------------------------------------ recently played
-        if (recentTracks.isNotEmpty()) {
-            item("recent-header") { SectionHeader(title = "最近播放") }
-            items(recentTracks, key = { "recent-${it.id}" }) { track ->
-                RecentTrackRow(
-                    track = track,
-                    loader = loader,
-                    onClick = { onTrackClick(track) },
-                    // Fade rows in as they enter composition, so a newly recorded play
-                    // appears rather than popping into the list.
-                    modifier = Modifier.animateItem(
-                        fadeInSpec = tween(260),
-                        fadeOutSpec = null,
-                        placementSpec = null,
-                    ),
+                // 最近播放 — expands to the list in place.
+                LibraryRow(
+                    icon = SfIcons.Clock,
+                    label = "最近播放",
+                    trailing = if (recentTracks.isNotEmpty()) "${recentTracks.size}" else null,
+                    expandable = true,
+                    expanded = expanded == "recent",
+                    onClick = { expanded = if (expanded == "recent") null else "recent" },
                 )
-            }
-        }
-
-        if (recentTracks.isEmpty() && !signedIn) {
-            item("empty") {
-                Column(
-                    Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    Icon(
-                        SfIcons.MusicNote,
-                        contentDescription = null,
-                        tint = AppTheme.palette.tertiaryLabel,
-                        modifier = Modifier.size(32.dp),
-                    )
-                    Text(
-                        text = "登录后可查看你的歌单",
-                        fontFamily = SFPro,
-                        fontSize = 14.sp,
-                        color = AppTheme.palette.secondaryLabel,
-                    )
+                ExpandableSection(visible = expanded == "recent") {
+                    if (recentTracks.isEmpty()) {
+                        EmptyHint("还没有播放记录")
+                    } else {
+                        Column(Modifier.padding(bottom = 4.dp)) {
+                            recentTracks.forEach { track ->
+                                RecentTrackRow(
+                                    track = track,
+                                    loader = loader,
+                                    onClick = { onTrackClick(track) },
+                                    modifier = Modifier.animateItem(
+                                        fadeInSpec = tween(240),
+                                        fadeOutSpec = null,
+                                        placementSpec = null,
+                                    ),
+                                )
+                            }
+                        }
+                    }
                 }
+
+                // 设置 — the same destination as the title button, listed because the reference has
+                // a row here and users scan the list before the header.
+                LibraryRow(
+                    icon = SfIcons.Gearshape,
+                    label = "设置",
+                    onClick = onSettings,
+                )
             }
         }
     }
 }
 
-/** Avatar, name and a one-line state hint, ending in a chevron. */
+/**
+ * The account card: avatar, identity, one line of state, and a disclosure chevron.
+ *
+ * Always tappable. The app starts on an anonymous session, so if this row were disabled for guests
+ * there would be no way in to sign-in at all.
+ */
 @Composable
-private fun AccountRow(
+private fun AccountCard(
     account: Account?,
     loader: ArtworkLoader,
     onClick: () -> Unit,
 ) {
     Row(
-        modifier = Modifier
+        Modifier
             .fillMaxWidth()
-            // Always tappable: the app starts on an anonymous session, so this row is the way
-            // in to sign-in and account switching.
-            .clickable(onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 10.dp),
+            .padding(horizontal = 20.dp)
+            .clip(ContinuousRoundedRectangle(CardCorner))
+            .background(AppTheme.palette.secondaryBackground)
+            .clickable(
+                indication = rememberControlRipple(bounded = true),
+                interactionSource = null,
+                onClick = onClick,
+            )
+            .padding(horizontal = 16.dp, vertical = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (account?.avatarUrl != null) {
@@ -219,132 +284,167 @@ private fun AccountRow(
                 corner = AppleShapes.pill,
                 requestSize = 200,
                 placeholderIcon = SfIcons.Person,
-                modifier = Modifier.size(52.dp),
+                modifier = Modifier.size(56.dp),
             )
         } else {
+            // A tinted circle with the glyph, as in the reference: reads as a placeholder avatar
+            // rather than as a missing image.
             Box(
                 Modifier
-                    .size(52.dp)
+                    .size(56.dp)
                     .clip(ContinuousRoundedRectangle(AppleShapes.pill))
-                    .background(AppTheme.palette.secondaryBackground),
+                    .background(AppTheme.palette.accent.copy(alpha = 0.18f)),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     SfIcons.Person,
                     contentDescription = null,
-                    tint = AppTheme.palette.secondaryLabel,
-                    modifier = Modifier.size(24.dp),
+                    tint = AppTheme.palette.accent,
+                    modifier = Modifier.size(26.dp),
                 )
             }
         }
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(
-                text = account?.nickname ?: "未登录",
+                text = when {
+                    account == null -> "点击登录"
+                    account.isAnonymous -> "点击登录"
+                    else -> account.nickname.ifBlank { "已登录" }
+                },
                 fontFamily = SFPro,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                fontSize = 20.sp,
                 color = AppTheme.palette.label,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            Spacer(Modifier.height(2.dp))
             Text(
                 text = when {
-                    account == null -> "点击登录"
-                    account.isAnonymous -> "游客模式"
-                    else -> "${account.userId}"
+                    account == null || account.isAnonymous -> "登录后可体验更多功能"
+                    else -> "已同步你的歌单"
                 },
                 fontFamily = SFPro,
-                fontSize = 13.sp,
-                color = if (account == null || account.isAnonymous) {
-                    AppTheme.palette.accent
-                } else {
-                    AppTheme.palette.secondaryLabel
-                },
+                fontSize = 14.sp,
+                color = AppTheme.palette.secondaryLabel,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
         Chevron()
     }
 }
 
-/** The liked-songs entry, styled like every other row for consistency. */
+/** One rounded surface holding a set of rows, so the grouping is carried by the shape. */
 @Composable
-private fun LikedSongsRow(trackCount: Int, onClick: () -> Unit) {
-    Row(
+private fun GroupedCard(content: @Composable () -> Unit) {
+    Column(
         Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(horizontal = 20.dp)
+            .clip(ContinuousRoundedRectangle(CardCorner))
+            .background(AppTheme.palette.secondaryBackground)
+            .padding(vertical = 6.dp),
     ) {
-        Box(
-            Modifier
-                .size(52.dp)
-                .clip(ContinuousRoundedRectangle(AppleShapes.card))
-                .background(AppTheme.palette.accent.copy(alpha = 0.16f)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                SfIcons.HeartFill,
-                contentDescription = null,
-                tint = AppTheme.palette.accent,
-                modifier = Modifier.size(24.dp),
-            )
-        }
-        Spacer(Modifier.width(14.dp))
-        Column(Modifier.weight(1f)) {
-            Text(
-                text = "我喜欢的音乐",
-                fontFamily = SFPro,
-                fontWeight = FontWeight.Medium,
-                fontSize = 17.sp,
-                color = AppTheme.palette.label,
-            )
-            if (trackCount > 0) {
-                Text(
-                    text = "$trackCount 首",
-                    fontFamily = SFPro,
-                    fontSize = 13.sp,
-                    color = AppTheme.palette.secondaryLabel,
-                )
-            }
-        }
-        Chevron()
+        content()
     }
 }
 
+/**
+ * A single row: leading icon, label, optional value, and a chevron.
+ *
+ * Expandable rows rotate their chevron a quarter turn when open, which is the standard iOS cue that
+ * the row unfolds rather than navigates.
+ */
 @Composable
-private fun SettingsRow(onClick: () -> Unit) {
+private fun LibraryRow(
+    icon: ImageVector,
+    label: String,
+    trailing: String? = null,
+    expandable: Boolean = false,
+    expanded: Boolean = false,
+    onClick: () -> Unit,
+) {
+    val rotation by animateFloatAsState(
+        targetValue = if (expanded) 90f else 0f,
+        animationSpec = tween(220),
+        label = "row-chevron",
+    )
     Row(
         Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 14.dp),
+            .clickable(
+                indication = rememberControlRipple(bounded = true),
+                interactionSource = null,
+                onClick = onClick,
+            )
+            .padding(horizontal = 16.dp, vertical = 15.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            SfIcons.Gearshape,
+            imageVector = icon,
             contentDescription = null,
-            tint = AppTheme.palette.secondaryLabel,
-            modifier = Modifier.size(22.dp),
+            tint = AppTheme.palette.label,
+            modifier = Modifier.size(24.dp),
         )
-        Spacer(Modifier.width(14.dp))
+        Spacer(Modifier.width(16.dp))
         Text(
-            text = "设置",
+            text = label,
             fontFamily = SFPro,
+            fontWeight = FontWeight.Medium,
             fontSize = 17.sp,
             color = AppTheme.palette.label,
             modifier = Modifier.weight(1f),
         )
-        Chevron()
+        if (trailing != null) {
+            Text(
+                text = trailing,
+                fontFamily = SFPro,
+                fontSize = 15.sp,
+                color = AppTheme.palette.secondaryLabel,
+            )
+            Spacer(Modifier.width(8.dp))
+        }
+        Icon(
+            imageVector = SfIcons.ChevronRight,
+            contentDescription = null,
+            tint = AppTheme.palette.tertiaryLabel,
+            modifier = Modifier
+                .size(16.dp)
+                .graphicsLayer { rotationZ = if (expandable) rotation else 0f },
+        )
     }
+}
+
+/** Reveals a row's content in place, growing and fading so the card does not jump open. */
+@Composable
+private fun ExpandableSection(visible: Boolean, content: @Composable () -> Unit) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = expandVertically(tween(260)) + fadeIn(tween(200)),
+        exit = shrinkVertically(tween(220)) + fadeOut(tween(140)),
+    ) {
+        Box(Modifier.padding(bottom = 6.dp)) { content() }
+    }
+}
+
+/** A short line of grey text for an expanded section with nothing in it. */
+@Composable
+private fun EmptyHint(text: String) {
+    Text(
+        text = text,
+        fontFamily = SFPro,
+        fontSize = 14.sp,
+        color = AppTheme.palette.secondaryLabel,
+        modifier = Modifier.padding(start = 56.dp, end = 16.dp, top = 4.dp, bottom = 10.dp),
+    )
 }
 
 /**
  * One recently-played entry: artwork on the left, title and artist on the right.
  *
- * A plain list row — no card, no background — so the section reads as a list rather than a
- * strip of tiles.
+ * A plain row with no card of its own, since it already sits inside the grouped card.
  */
 @Composable
 private fun RecentTrackRow(
@@ -356,8 +456,12 @@ private fun RecentTrackRow(
     Row(
         modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 7.dp),
+            .clickable(
+                indication = rememberControlRipple(bounded = true),
+                interactionSource = null,
+                onClick = onClick,
+            )
+            .padding(horizontal = 16.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Artwork(
@@ -366,9 +470,7 @@ private fun RecentTrackRow(
             corner = 8.dp,
             requestSize = 300,
             modifier = Modifier
-                .size(48.dp)
-                // Soft, low-elevation shadow: enough to lift the tile off the background
-                // without drawing attention to itself.
+                .size(46.dp)
                 .shadow(2.dp, ContinuousRoundedRectangle(8.dp)),
         )
         Spacer(Modifier.width(12.dp))
@@ -405,5 +507,8 @@ private fun Chevron() {
     )
 }
 
-/** Vertical space between sections; one value everywhere so the rhythm is even. */
-private val SectionGap = 22.dp
+/** Corner radius of the cards; the reference's cards are generously rounded. */
+private val CardCorner = 20.dp
+
+/** Vertical space between cards. One value, so the page rhythm is even. */
+private val CardGap = 14.dp

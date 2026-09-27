@@ -127,10 +127,15 @@ fun PlayerScreen(
     /** Current per-track lyric offset, and its setter, for the manual timing control. */
     lyricOffsetMs: Long = 0L,
     onLyricOffsetChange: (Long) -> Unit = {},
-    /** State of a long-press-to-download, and the two actions that drive it. */
+    /** State of a long-press-to-save (the cover image), and the actions that drive it. */
     download: DownloadState = DownloadState.Idle,
-    onDownload: () -> Unit = {},
+    onSaveCover: () -> Unit = {},
     onDownloadDismissed: () -> Unit = {},
+    /** Whether the current track is liked, and its toggle (the heart). */
+    liked: Boolean = false,
+    onToggleLike: () -> Unit = {},
+    /** Shares the current track: the caller owns the clipboard and the chooser. */
+    onShareTrack: () -> Unit = {},
     /** Called with a long-pressed lyric's text; null when the line had nothing to copy. */
     onCopyLyric: (String?) -> Unit = {},
     positionProvider: () -> Long,
@@ -141,7 +146,8 @@ fun PlayerScreen(
     // Battery-saver state, observed so toggling it takes effect without leaving the screen.
     val powerSaveMode = rememberPowerSaveMode()
 
-    // Manual lyric-timing sheet, opened from the header's ellipsis button.
+    // The actions sheet (ellipsis) and the lyric-timing sheet it can open.
+    var showActions by remember { mutableStateOf(false) }
     var showLyricOffset by remember { mutableStateOf(false) }
 
     /**
@@ -512,7 +518,7 @@ fun PlayerScreen(
                                     loader = loader,
                                     download = download,
                                     onToggleLyrics = { interaction++; onToggleLyrics() },
-                                    onDownload = { interaction++; onDownload() },
+                                    onSaveCover = { interaction++; onSaveCover() },
                                     onDownloadDismissed = onDownloadDismissed,
                                     onCollapse = onCollapse,
                                     dragDistance = { dragDistance },
@@ -578,8 +584,10 @@ fun PlayerScreen(
                                         loader = loader,
                                         onMoreClick = {
                                             interaction++
-                                            showLyricOffset = true
+                                            showActions = true
                                         },
+                                        liked = liked,
+                                        onToggleLike = { interaction++; onToggleLike() },
                                         cover = cover,
                                         onCoverClick = {
                                             interaction++
@@ -589,7 +597,15 @@ fun PlayerScreen(
                                         visibilityScope = this@AnimatedContent,
                                     )
                                 } else {
-                                    TitleBlock(track = track)
+                                    TitleBlock(
+                                        track = track,
+                                        liked = liked,
+                                        onToggleLike = { interaction++; onToggleLike() },
+                                        onMoreClick = {
+                                            interaction++
+                                            showActions = true
+                                        },
+                                    )
                                 }
                                 Spacer(Modifier.height(16.dp))
                                 PlayerControls(
@@ -673,8 +689,10 @@ fun PlayerScreen(
                                     loader = loader,
                                     onMoreClick = {
                                         interaction++
-                                        showLyricOffset = true
+                                        showActions = true
                                     },
+                                    liked = liked,
+                                    onToggleLike = { interaction++; onToggleLike() },
                                     cover = cover,
                                     onCoverClick = {
                                         interaction++
@@ -758,7 +776,7 @@ fun PlayerScreen(
                                 loader = loader,
                                 download = download,
                                 onToggleLyrics = { interaction++; onToggleLyrics() },
-                                onDownload = { interaction++; onDownload() },
+                                onSaveCover = { interaction++; onSaveCover() },
                                 onDownloadDismissed = onDownloadDismissed,
                                 onCollapse = onCollapse,
                                 dragDistance = { dragDistance },
@@ -768,7 +786,16 @@ fun PlayerScreen(
                             )
                         }
 
-                        TitleBlock(track = track, modifier = Modifier.padding(horizontal = 24.dp))
+                        TitleBlock(
+                            track = track,
+                            liked = liked,
+                            onToggleLike = { interaction++; onToggleLike() },
+                            onMoreClick = {
+                                interaction++
+                                showActions = true
+                            },
+                            modifier = Modifier.padding(horizontal = 24.dp),
+                        )
                         Spacer(Modifier.height(18.dp))
 
                         PlayerControls(
@@ -797,7 +824,25 @@ fun PlayerScreen(
             }
         }
 
-        // Manual lyric-timing sheet. Rendered last so it layers over both presentations.
+        // Both sheets are rendered last so they layer over whichever presentation is showing.
+        if (showActions) {
+            TrackActionsSheet(
+                track = track,
+                hasLyrics = lyrics != null,
+                onDismiss = { showActions = false },
+                onSaveCover = onSaveCover,
+                onShare = onShareTrack,
+                onCalibrateLyrics = {
+                    interaction++
+                    showLyricOffset = true
+                },
+                onShowQueue = {
+                    interaction++
+                    onShowQueue()
+                },
+            )
+        }
+
         if (showLyricOffset) {
             LyricOffsetSheet(
                 offsetMs = lyricOffsetMs,
@@ -820,7 +865,7 @@ fun PlayerScreen(
  *
  * Gestures on the cover, in the order the user meets them:
  *  - **tap** switches to the lyrics presentation;
- *  - **long press** downloads the track ([onDownload]), with the state surfaced over the cover;
+ *  - **long press** saves the cover art ([onSaveCover]), with the state surfaced over it;
  *  - **drag down** dismisses the player.
  */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
@@ -832,7 +877,7 @@ private fun ArtworkWithGestures(
     loader: ArtworkLoader,
     download: DownloadState,
     onToggleLyrics: () -> Unit,
-    onDownload: () -> Unit,
+    onSaveCover: () -> Unit,
     onDownloadDismissed: () -> Unit,
     onCollapse: () -> Unit,
     dragDistance: () -> Float,
@@ -855,7 +900,7 @@ private fun ArtworkWithGestures(
             // `pressableGestures` owns the pointer from down to up, so exactly one outcome wins.
             .pressableGestures(
                 onTap = onToggleLyrics,
-                onLongPress = onDownload,
+                onLongPress = onSaveCover,
                 dragDistance = dragDistance,
                 setDragDistance = setDragDistance,
                 onDragEnd = { distance ->
@@ -1222,6 +1267,9 @@ private fun LyricsHeader(
     track: Track?,
     loader: ArtworkLoader,
     onMoreClick: () -> Unit,
+    /** Whether this track is in the user's liked songs, and the toggle. */
+    liked: Boolean,
+    onToggleLike: () -> Unit,
     /** Tapping the thumbnail returns to the artwork presentation. */
     onCoverClick: () -> Unit,
     /** The already-decoded cover, so the thumbnail never shows a placeholder mid-transition. */
@@ -1282,9 +1330,125 @@ private fun LyricsHeader(
             )
         }
         Spacer(Modifier.width(10.dp))
-        CircleGlassIcon(SfIcons.Heart, "喜欢", 44.dp) { }
+        LikeButton(liked = liked, size = 44.dp, onClick = onToggleLike)
         Spacer(Modifier.width(10.dp))
-        CircleGlassIcon(SfIcons.Ellipsis, "歌词校准", 44.dp, onClick = onMoreClick)
+        CircleGlassIcon(SfIcons.Ellipsis, "更多操作", 44.dp, onClick = onMoreClick)
+    }
+}
+
+/**
+ * Actions for the current track, opened from the ellipsis.
+ *
+ * A plain iOS action sheet: a list of rows in a rounded card over a scrim. Deliberately not a
+ * platform `DropdownMenu` — the player is full-bleed and a floating menu anchored to a small circle
+ * reads as an Android artefact, whereas a sheet from the bottom is what the rest of this app already
+ * does (the queue, lyric calibration).
+ *
+ * Every row performs a real action; none is decorative. Rows that cannot work in the current state
+ * (no lyrics to calibrate) are shown disabled rather than hidden, so the sheet's shape does not
+ * change under the user between songs.
+ */
+@Composable
+private fun TrackActionsSheet(
+    track: Track?,
+    hasLyrics: Boolean,
+    onDismiss: () -> Unit,
+    onSaveCover: () -> Unit,
+    onShare: () -> Unit,
+    onCalibrateLyrics: () -> Unit,
+    onShowQueue: () -> Unit,
+) {
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.45f))
+                .clickable(indication = null, interactionSource = null, onClick = onDismiss),
+            contentAlignment = Alignment.BottomCenter,
+        ) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 12.dp, vertical = 12.dp)
+                    .clip(ContinuousRoundedRectangle(AppleShapes.sheet))
+                    .background(Color(0xFF1C1C1E))
+                    .clickable(enabled = false, indication = null, interactionSource = null) { }
+                    .padding(vertical = 6.dp),
+            ) {
+                Text(
+                    text = track?.name ?: "未在播放",
+                    fontFamily = SFPro,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 15.sp,
+                    color = Color.White.copy(alpha = 0.6f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
+                )
+                ActionRow(SfIcons.SquareAndArrowUp, "保存封面", true) {
+                    onDismiss(); onSaveCover()
+                }
+                ActionRow(SfIcons.QuoteOpening, "分享歌曲", track != null) {
+                    onDismiss(); onShare()
+                }
+                ActionRow(SfIcons.Clock, "歌词校准", hasLyrics) {
+                    onDismiss(); onCalibrateLyrics()
+                }
+                ActionRow(SfIcons.ListBullet, "播放队列", true) {
+                    onDismiss(); onShowQueue()
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = "取消",
+                    fontFamily = SFPro,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 17.sp,
+                    color = Color.White,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(ContinuousRoundedRectangle(AppleShapes.control))
+                        .clickable(onClick = onDismiss)
+                        .padding(vertical = 14.dp),
+                )
+            }
+        }
+    }
+}
+
+/** One row of the actions sheet: icon, label, chevron-free, disabled when unavailable. */
+@Composable
+private fun ActionRow(
+    icon: ImageVector,
+    label: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val alpha = if (enabled) 1f else 0.35f
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 18.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = Color.White.copy(alpha = alpha),
+            modifier = Modifier.size(22.dp),
+        )
+        Spacer(Modifier.width(16.dp))
+        Text(
+            text = label,
+            fontFamily = SFPro,
+            fontSize = 17.sp,
+            color = Color.White.copy(alpha = alpha),
+        )
     }
 }
 
@@ -1423,7 +1587,13 @@ private fun LyricOffsetSheet(
 
 /** Title + artist block shown under the artwork. */
 @Composable
-private fun TitleBlock(track: Track?, modifier: Modifier = Modifier) {
+private fun TitleBlock(
+    track: Track?,
+    liked: Boolean = false,
+    onToggleLike: () -> Unit = {},
+    onMoreClick: () -> Unit = {},
+    modifier: Modifier = Modifier,
+) {
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             // Cross-faded on track id, matching the mini player: skipping a track should read as
@@ -1458,9 +1628,48 @@ private fun TitleBlock(track: Track?, modifier: Modifier = Modifier) {
             }
         }
         Spacer(Modifier.width(14.dp))
-        CircleGlassIcon(SfIcons.Heart, "喜欢", 36.dp) { }
+        LikeButton(liked = liked, size = 36.dp, onClick = onToggleLike)
         Spacer(Modifier.width(10.dp))
-        CircleGlassIcon(SfIcons.Ellipsis, "更多", 36.dp) { }
+        CircleGlassIcon(SfIcons.Ellipsis, "更多操作", 36.dp, onClick = onMoreClick)
+    }
+}
+
+/**
+ * The heart, with a filled/outline state and a spring that makes the toggle felt.
+ *
+ * The icon cross-fades rather than swapping between two [Icon]s so the change reads as the same
+ * control changing state, and the small scale pop gives the tap a physical acknowledgement — a heart
+ * is the one control in the player whose whole job is to feel responsive.
+ */
+@Composable
+private fun LikeButton(
+    liked: Boolean,
+    size: androidx.compose.ui.unit.Dp,
+    onClick: () -> Unit,
+) {
+    val scale by animateFloatAsState(
+        targetValue = if (liked) 1.12f else 1f,
+        animationSpec = androidx.compose.animation.core.spring(
+            dampingRatio = 0.42f,
+            stiffness = 900f,
+        ),
+        label = "like-pop",
+    )
+    Box(
+        Modifier
+            .size(size)
+            .graphicsLayer { scaleX = scale; scaleY = scale },
+    ) {
+        CircleGlassIcon(SfIcons.Heart, "喜欢", size, onClick = onClick)
+        // The filled heart is drawn on top and cross-faded in, so the two glyphs never both show at
+        // an intermediate opacity that would look like a half-filled heart.
+        androidx.compose.animation.AnimatedVisibility(
+            visible = liked,
+            enter = fadeIn(tween(180)),
+            exit = fadeOut(tween(120)),
+        ) {
+            CircleGlassIcon(SfIcons.HeartFill, "取消喜欢", size, onClick = onClick)
+        }
     }
 }
 

@@ -400,8 +400,28 @@ class MainActivity : ComponentActivity() {
                     lyricOffsetMs = playerViewModel.lyricOffsetMs,
                     onLyricOffsetChange = playerViewModel::setLyricOffset,
                     download = playerViewModel.download,
-                    onDownload = playerViewModel::downloadCurrent,
+                    onSaveCover = playerViewModel::saveCover,
                     onDownloadDismissed = playerViewModel::clearDownloadState,
+                    liked = playerViewModel.liked,
+                    onToggleLike = playerViewModel::toggleLike,
+                    onShareTrack = {
+                        // Share the text, not an intent to the NetEase app: the track has no public
+                        // URL to hand over, so a "name - artist" line is what is actually useful.
+                        val text = playerViewModel.currentShareText()
+                        if (text.isNullOrBlank()) {
+                            Toast.makeText(context, "没有可分享的内容", Toast.LENGTH_SHORT).show()
+                        } else {
+                            val send = android.content.Intent(
+                                android.content.Intent.ACTION_SEND,
+                            ).apply {
+                                type = "text/plain"
+                                putExtra(android.content.Intent.EXTRA_TEXT, text)
+                            }
+                            context.startActivity(
+                                android.content.Intent.createChooser(send, "分享歌曲"),
+                            )
+                        }
+                    },
                     onCopyLyric = { text ->
                         if (text.isNullOrBlank()) {
                             Toast.makeText(context, "这一行没有可复制的文字", Toast.LENGTH_SHORT).show()
@@ -417,6 +437,13 @@ class MainActivity : ComponentActivity() {
                     },
                     positionProvider = container.player::positionMsNow,
                 )
+            }
+
+            // Transient messages from the player (a refused like, a failed share).
+            LaunchedEffect(playerViewModel.notice) {
+                val message = playerViewModel.notice ?: return@LaunchedEffect
+                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                playerViewModel.clearNotice()
             }
 
             AnimatedVisibility(

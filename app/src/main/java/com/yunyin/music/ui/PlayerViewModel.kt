@@ -9,7 +9,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.yunyin.music.AppContainer
-import com.yunyin.music.data.TrackDownloader
+import com.yunyin.music.data.CoverDownloader
 import com.yunyin.music.playback.PlaybackUiState
 import com.yunyin.music.ui.background.DynamicBackgroundPalette
 import com.mocharealm.accompanist.lyrics.core.model.SyncedLyrics
@@ -55,50 +55,65 @@ class PlayerViewModel(private val container: AppContainer) : ViewModel() {
         private set
 
     /**
-     * Progress of a long-press-to-download on the artwork.
+     * Progress of a long-press-to-save on the artwork.
      *
      * Held here rather than in the screen so it survives a recomposition of the player (and the
-     * lyric/artwork presentation switch), and so the download is not cancelled by the user rotating
-     * or navigating the player's own UI.
+     * lyric/artwork presentation switch).
      */
     var download by mutableStateOf<DownloadState>(DownloadState.Idle)
         private set
 
-    private var downloadJob: Job? = null
+    /**
+     * Whether the current track is in the user's liked songs.
+     *
+     * Read from the service rather than cached locally: liking can also happen in the NetEase app,
+     * so a local guess would drift. Refreshed per track, and applied optimistically while a toggle is
+     * in flight so the heart responds immediately.
+     */
+    var liked by mutableStateOf(false)
+        private set
+
+    /** True while a like toggle is in flight, to ignore repeat taps. */
+    var likePending by mutableStateOf(false)
+        private set
 
     /**
-     * Downloads the current track and files it in the device's music collection.
+     * A one-shot message for the UI (failed like, failed share, …).
      *
-     * Resolves the stream URL first: NetEase hands out short-lived signed links, so the URL is not
-     * reusable and cannot be pre-fetched. The state machine is deliberately coarse (downloading →
-     * saved / failed) because the transfer reports no progress of its own, and a fake percentage
-     * would be worse than an honest indeterminate indicator.
+     * The player has no room for inline error text for these actions, so failures are surfaced as a
+     * transient message and the value is cleared once consumed.
      */
-    fun downloadCurrent() {
+    var notice by mutableStateOf<String?>(null)
+        private set
+
+    fun clearNotice() {
+        notice = null
+    }
+
+    private var downloadJob: Job? = null
+    private var likeJob: Job? = null
+
+    /**
+     * Saves the current track's **cover art** to the device's pictures.
+     *
+     * Not the audio: the gesture is a long press on the artwork, so what it saves is the image on
+     * screen. The cover URL goes straight to the image CDN — no stream URL is resolved, since the
+     * cover is a plain public image and has nothing to do with playback.
+     */
+    fun saveCover() {
         val track = container.player.state.value.current ?: return
         if (download is DownloadState.Downloading) return
         downloadJob?.cancel()
         download = DownloadState.Downloading
         downloadJob = viewModelScope.launch {
-            val quality = container.settings.quality
-            val resolved = container.music.streamUrl(track.id, quality)
-            val url = resolved?.url
-            if (url.isNullOrBlank()) {
-                download = DownloadState.Failed(
-                    when {
-                        resolved == null -> "无法获取下载地址"
-                        resolved.isTrial -> "会员歌曲仅可试听，无法下载"
-                        else -> "该歌曲当前不可下载"
-                    },
-                )
-                return@launch
-            }
-            // The session cookie goes with the request: NetEase's CDN refuses an anonymous fetch of a
-            // signed audio URL, which is what made the download fail while the URL itself resolved.
-            val outcome = container.downloads.save(url, track, container.settings.cookie)
+            val outcome = container.covers.save(
+                coverUrl = track.coverUrl,
+                track = track,
+                cookie = container.settings.cookie,
+            )
             download = when (outcome) {
-                is TrackDownloader.Outcome.Saved -> DownloadState.Saved(outcome.fileName)
-                is TrackDownloader.Outcome.Failed -> DownloadState.Failed(outcome.reason)
+                is CoverDownloader.Outcome.Saved -> DownloadState.Saved(outcome.fileName)
+                is CoverDownloader.Outcome.Failed -> DownloadState.Failed(outcome.reason)
             }
         }
     }
@@ -106,6 +121,59 @@ class PlayerViewModel(private val container: AppContainer) : ViewModel() {
     /** Clears the transient saved/failed badge once it has been seen. */
     fun clearDownloadState() {
         if (download !is DownloadState.Downloading) download = DownloadState.Idle
+    }
+
+    /**
+     * Toggles the like state of the current track.
+     *
+     * Optimistic: the heart flips immediately and is rolled back if the service refuses, because a
+     * 200ms wait on a heart tap reads as a dropped tap. A guest session gets a message pointing at
+     * sign-in, which is the actual remedy.
+     */
+    fun toggleLike() {
+        val track = container.player.state.value.current ?: return
+        val account = container.settings.account
+        if (account == null || account.isAnonymous) {
+            notice = "登录后才能收藏歌曲"
+            return
+        }
+        if (likePending) return
+
+        val target = !liked
+        liked = target
+        likePending = true
+        likeJob = viewModelScope.launch {
+            val error = container.music.setLiked(track.id, target)
+            likePending = false
+            if (error != null) {
+                liked = !target
+                notice = error
+            }
+        }
+    }
+
+    /** Copies a shareable line for the current track to the clipboard. */
+    fun currentShareText(): String? {
+        val track = container.player.state.value.current ?: return null
+        val artist = track.artistLine
+        return if (artist.isBlank()) track.name else "${track.name} - $artist"
+    }
+
+    /** The name of the current track's album, for the info action. */
+    fun currentTrack(): com.yunyin.music.core.Track? = container.player.state.value.current
+
+    /** Refreshes [liked] for [trackId], ignoring a result that arrives after the track changed. */
+    private fun refreshLiked(trackId: Long) {
+        val account = container.settings.account ?: return
+        if (account.isAnonymous) {
+            liked = false
+            return
+        }
+        likeJob?.cancel()
+        likeJob = viewModelScope.launch {
+            val value = container.music.isLiked(account.userId, trackId)
+            if (lastTrackId == trackId) liked = value
+        }
     }
 
     /** Applies and persists an offset for the current track. */
@@ -131,6 +199,7 @@ class PlayerViewModel(private val container: AppContainer) : ViewModel() {
                 lyricOffsetMs = container.settings.lyricOffsetMs(track.id)
                 loadArtwork(track.coverUrl)
                 loadLyrics(track.id)
+                refreshLiked(track.id)
                 prefetchUpcoming(state)
             }
         }

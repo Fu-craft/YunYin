@@ -81,6 +81,22 @@ class MusicRepository(private val client: NeteaseClient) {
     }
 
     suspend fun artistTopSongs(artistId: Long): List<Track> = client.artistTopSongs(artistId).listOrEmpty()
+
+    /**
+     * Likes or unlikes [id], returning an error message on failure.
+     *
+     * Returns the reason as a string rather than a boolean so the caller can say *why* the toggle did
+     * not stick — a guest session and a network failure need different wording.
+     */
+    suspend fun setLiked(id: Long, like: Boolean): String? =
+        when (val result = client.likeSong(id, like)) {
+            is NetResult.Ok -> null
+            is NetResult.Err -> result.message
+        }
+
+    /** Whether [id] is liked; false when the session cannot answer (guest, or the call failed). */
+    suspend fun isLiked(uid: Long, id: Long): Boolean =
+        client.isLiked(uid, id).valueOrNull() ?: false
 }
 
 /** Unwraps a list result, treating any failure as "no items". */

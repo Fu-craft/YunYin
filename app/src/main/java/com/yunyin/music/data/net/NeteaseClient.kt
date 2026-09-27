@@ -478,6 +478,29 @@ class NeteaseClient(private val settings: SettingsStore) {
         return NetResult.Ok(out)
     }
 
+    /**
+     * Likes or unlikes a song.
+     *
+     * Requires a real (non-anonymous) session: a guest gets `code=301` ("need login") from the
+     * service, which is surfaced as a message rather than treated as a network failure.
+     *
+     * `/like` is a mutating endpoint, so a `timestamp` is included — the same reason the login calls
+     * need one. Without it the API server's two-minute URL cache can swallow the request and the
+     * toggle silently does nothing.
+     */
+    suspend fun likeSong(id: Long, like: Boolean): NetResult<Unit> = request(
+        "/like",
+        query = mapOf(
+            "id" to "$id",
+            "like" to like.toString(),
+            "timestamp" to System.currentTimeMillis().toString(),
+        ),
+    ).map { }
+
+    /** Whether [id] is in the signed-in user's liked songs. */
+    suspend fun isLiked(uid: Long, id: Long): NetResult<Boolean> =
+        likedSongIds(uid).map { it.contains(id) }
+
 
     // ---------------------------------------------------------------- mapping
 
