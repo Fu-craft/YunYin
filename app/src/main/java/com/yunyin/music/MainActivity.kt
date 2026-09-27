@@ -143,6 +143,20 @@ class MainActivity : ComponentActivity() {
         var showLogin by remember { mutableStateOf(false) }
         var account by remember { mutableStateOf(container.settings.account) }
 
+        /**
+         * The settings the Settings screen both renders and edits.
+         *
+         * Held as Compose state because the store is plain `SharedPreferences`: writing a preference
+         * does not invalidate composition, so a switch or checkmark bound straight to the stored value
+         * reads the old value back on the next recomposition and never moves — which is exactly the
+         * "toggle is stuck" symptom. Every write goes to both this state and the store, so the screen
+         * reflects the change immediately and it still persists.
+         *
+         * Seeded from the store rather than hard-coded so a re-entry shows the saved values.
+         */
+        var qualitySetting by remember { mutableStateOf(container.settings.quality) }
+        var statusBarLyricsEnabled by remember { mutableStateOf(container.settings.statusBarLyrics) }
+
         // Set once the first-launch session work below finishes. The splash waits on it (and on the
         // home feed) so the app is never revealed in a half-initialised state.
         var sessionReady by remember { mutableStateOf(false) }
@@ -360,8 +374,11 @@ class MainActivity : ComponentActivity() {
                 exit = slideOutVertically(tween(280)) { it },
             ) {
                 SettingsScreen(
-                    quality = container.settings.quality,
-                    onQualityChange = { container.settings.quality = it },
+                    quality = qualitySetting,
+                    onQualityChange = {
+                        qualitySetting = it
+                        container.settings.quality = it
+                    },
                     onClearLyricsCache = {
                         container.lyrics.clearCache()
                         Toast.makeText(context, "歌词缓存已清除", Toast.LENGTH_SHORT).show()
@@ -374,8 +391,9 @@ class MainActivity : ComponentActivity() {
                     lyriconAvailable = container.lyricon.available,
                     onRetryLyricon = { container.lyricon.retry() },
                     flymeSupported = container.tickerLyrics.isSupported(),
-                    statusBarLyrics = container.settings.statusBarLyrics,
+                    statusBarLyrics = statusBarLyricsEnabled,
                     onStatusBarLyricsChange = { enabled ->
+                        statusBarLyricsEnabled = enabled
                         container.settings.statusBarLyrics = enabled
                         // Turning it off must remove the resident notification immediately rather
                         // than leaving it in the shade until the next track change.

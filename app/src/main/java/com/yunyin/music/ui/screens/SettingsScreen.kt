@@ -203,6 +203,11 @@ private fun LyriconRow(connected: Boolean, available: Boolean, onRetry: () -> Un
  * notification flags Flyme requires). Elsewhere it states that plainly instead of offering a switch
  * that would do nothing — the feature is implemented by the ROM's ticker, so there is nothing the app
  * can substitute.
+ *
+ * The **row** owns the tap and the switch is presentational (`onCheckedChange = null`). Giving both a
+ * handler means the switch and the row both act on one tap, and which of the two wins depends on hit
+ * testing — so the toggle could fire twice or be swallowed. One target, one handler; the whole row is
+ * the target, which is also the larger and more forgiving one.
  */
 @Composable
 private fun FlymeTickerRow(
@@ -245,7 +250,8 @@ private fun FlymeTickerRow(
         if (supported) {
             Switch(
                 checked = enabled,
-                onCheckedChange = onChange,
+                // Null so the row above is the only handler; see the note on this function.
+                onCheckedChange = null,
                 colors = SwitchDefaults.colors(
                     checkedThumbColor = androidx.compose.ui.graphics.Color.White,
                     checkedTrackColor = AppTheme.palette.accent,
