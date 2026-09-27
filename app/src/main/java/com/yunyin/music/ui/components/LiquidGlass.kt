@@ -30,12 +30,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.boundsInRoot
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -291,14 +288,6 @@ fun FloatingMiniPlayer(
     onExpand: () -> Unit,
     onTogglePlay: () -> Unit,
     modifier: Modifier = Modifier,
-    /**
-     * Called with the **capsule's** bounds in root coordinates.
-     *
-     * The capsule, not its artwork: the expanding container starts as the surface the user touched, and
-     * its pill radius becomes the container's initial radius. Measured rather than computed because the
-     * width depends on the screen.
-     */
-    onCoverBoundsChanged: (Rect) -> Unit = {},
 ) {
     val track = state.current ?: return
     val interaction = remember { MutableInteractionSource() }
@@ -329,10 +318,6 @@ fun FloatingMiniPlayer(
                 indication = null,
                 onClick = onExpand,
             )
-            // The capsule's own rect: the expand transition starts from the surface that was touched.
-            .onGloballyPositioned { coordinates ->
-                onCoverBoundsChanged(coordinates.boundsInRoot())
-            }
             .padding(horizontal = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

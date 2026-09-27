@@ -29,7 +29,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -51,14 +50,11 @@ import com.yunyin.music.playback.PlaybackUiState
 import com.yunyin.music.ui.AppViewModel
 import com.yunyin.music.ui.AudioQuality
 import com.yunyin.music.ui.PlayerViewModel
-import com.yunyin.music.ui.components.BackdropRecede
-import com.yunyin.music.ui.components.ContainerExpand
 import com.yunyin.music.ui.components.CrossfadeContent
 import com.yunyin.music.ui.components.FloatingMiniPlayer
 import com.yunyin.music.ui.components.FloatingTabBar
 import com.yunyin.music.ui.components.PlayerTab
 import com.yunyin.music.ui.components.QueueSheet
-import com.yunyin.music.ui.components.rememberExpandProgress
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.yunyin.music.ui.screens.CollectionScreen
@@ -159,53 +155,11 @@ class MainActivity : ComponentActivity() {
         var account by remember { mutableStateOf(container.settings.account) }
 
         /**
-         * The mini player's rect in root coordinates — where the expanding container starts.
-         *
-         * Measured rather than computed: its width depends on the screen, and the container's growth is
-         * only anchored correctly if it begins from the rect the user actually touched.
-         */
-        var miniPlayerBounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
-
-        /**
-         * The cover's centre in the player, as a fraction of the screen height.
-         *
-         * The expand transition anchors its growing window there. A constant was wrong by 0.08 of the
-         * screen — the window opened above the cover — so it is measured, and the fallback only covers
-         * the frame before the first measurement lands.
-         */
-        var coverAnchor by remember { mutableStateOf(0.30f) }
-
-        /**
-         * 0 = the container is at the mini player, 1 = full screen.
-         *
-         * A spring, so the expand and collapse are one continuous motion and can be reversed mid-flight —
-         * which is what makes it feel like the system's container transition rather than a page push.
-         *
-         * Passed to the transition as a **lambda**, never read here. Reading it in this scope would
-         * recompose this whole tree — the tabs, the lists, the chrome — on every frame of the animation,
-         * which is what made it stutter.
-         */
-        val expandProgress = rememberExpandProgress(open = showPlayer)
-
-        /**
-         * Whether the player's layer should be composed at all.
-         *
-         * `derivedStateOf` so this boolean only *changes* at the two ends. A plain `expand > 0.001f` here
-         * would be a state read in this scope, and therefore a full recomposition per frame.
-         */
-        val playerLayerVisible by remember(expandProgress) {
-            derivedStateOf { showPlayer || expandProgress.value > 0.001f }
-        }
-        val backgroundPaused by remember(expandProgress) {
-            derivedStateOf { expandProgress.value > 0.001f && expandProgress.value < 0.999f }
-        }
-
-        /**
          * The audio quality the player is set to.
          *
-         * Held as Compose state as well as persisted, because it is now changed from the player's own
-         * chip: a `SharedPreferences` write does not invalidate composition, so a chip bound straight
-         * to the stored value would keep showing the old tier after a selection.
+         * Held as Compose state as well as persisted, because it is changed from the player's own chip:
+         * a `SharedPreferences` write does not invalidate composition, so a chip bound straight to the
+         * stored value would keep showing the old tier after a selection.
          */
         var quality by remember { mutableStateOf(AudioQuality.from(container.settings.quality)) }
         var statusBarLyricsEnabled by remember { mutableStateOf(container.settings.statusBarLyrics) }
@@ -404,9 +358,6 @@ class MainActivity : ComponentActivity() {
                         backdrop = bottomBackdrop,
                         onExpand = { showPlayer = true },
                         onTogglePlay = container.player::togglePlayPause,
-                        // The whole capsule's rect, not just its artwork: the expanding container starts
-                        // as the capsule the user actually touched.
-                        onCoverBoundsChanged = { miniPlayerBounds = it },
                     )
                 }
 
@@ -509,37 +460,28 @@ class MainActivity : ComponentActivity() {
                 )
             }
 
-            // Full-screen player, grown out of the mini player as a container transition.
+            // Full-screen player, sliding up from the bottom.
             //
-            // Matches the reference recording: a rounded container grows from the mini player's rect to
-            // the full screen and the player is revealed inside it at its true size. No scaling, so no
-            // distortion — the two earlier attempts scaled (the screen, then the cover) and the squash
-            // was the visible defect.
-            //
-            // No AnimatedVisibility: the player must stay composed while animating *out*, which a
-            // visibility scope would remove.
-            if (playerLayerVisible) {
+            // This replaced a "container expand" transition (the mini player growing into the player),
+            // which was removed: it was three attempts to make one effect land, and none of them was
+            // smooth on the device. A slide is a fraction of the work — no transform, no clip path, no
+            // custom gesture coupling — and the app's own presentation switch (artwork ↔ lyrics) already
+            // gives the player its motion.
+            AnimatedVisibility(
+                visible = showPlayer,
+                enter = slideInVertically(tween(380)) { it } + fadeIn(tween(220)),
+                exit = slideOutVertically(tween(320)) { it } + fadeOut(tween(200)),
+            ) {
                 // Collected here, inside the player's own branch, so the 4x/second position tick
                 // invalidates only the player screen and never the browsing tabs behind it.
                 val playback by container.player.state.collectAsState()
-
-                // The app recedes: dimmed, the "something is opening over this" cue. Dim only — an
-                // animated full-screen blur was the other half of the stutter.
-                BackdropRecede(progress = { expandProgress.value })
-
-                ContainerExpand(
-                    progress = { expandProgress.value },
-                    source = miniPlayerBounds,
-                    background = AppTheme.palette.background,
-                    focusFraction = { coverAnchor },
-                ) {
-                    PlayerScreen(
-                        state = playback,
-                        cover = playerViewModel.coverBitmap,
-                        palette = playerViewModel.palette,
-                        lyrics = playerViewModel.lyrics,
-                        lyricsLoading = playerViewModel.lyricsLoading,
-                        loader = container.artwork,
+                PlayerScreen(
+                    state = playback,
+                    cover = playerViewModel.coverBitmap,
+                    palette = playerViewModel.palette,
+                    lyrics = playerViewModel.lyrics,
+                    lyricsLoading = playerViewModel.lyricsLoading,
+                    loader = container.artwork,
                     quality = quality,
                     onQualityChange = { tier ->
                         quality = tier
@@ -584,11 +526,8 @@ class MainActivity : ComponentActivity() {
                             Toast.makeText(context, "已复制歌词", Toast.LENGTH_SHORT).show()
                         }
                     },
-                    onCoverAnchorChanged = { coverAnchor = it },
-                    backgroundPaused = backgroundPaused,
                     positionProvider = container.player::positionMsNow,
-                    )
-                }
+                )
             }
 
             // Transient messages from the player (a refused like, a failed share).
