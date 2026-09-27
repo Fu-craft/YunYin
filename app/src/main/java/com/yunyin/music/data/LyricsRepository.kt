@@ -328,7 +328,21 @@ class LyricsRepository(
         // without this the translation was drawn as a lyric row and given the word-by-word fill. TTML
         // is excluded on purpose: it has agents, so a duet genuinely has two voices at one moment and
         // folding those would delete a real lyric — see [LyricLineFolding].
-        val folded = if (candidate.fromAmll) stripped else LyricLineFolding.foldSimultaneousTranslations(stripped)
+        val simultaneousFolded =
+            if (candidate.fromAmll) stripped else LyricLineFolding.foldSimultaneousTranslations(stripped)
+
+        // Then the other way a translation hides in the lyric track: some uploads interleave it as
+        // alternating lines instead of using a translation field at all (measured on `Purple Whisper`).
+        // See [LyricScriptFolding] for why this needs two measurements and what it cannot distinguish.
+        //
+        // Gated on the payload having **no** translation field. When one exists the translation is
+        // already expressed properly, so a genuinely bilingual song — which also looks "mixed script" —
+        // is never at risk of being folded by mistake.
+        val folded = if (candidate.fromAmll || netease.translation != null) {
+            simultaneousFolded
+        } else {
+            LyricScriptFolding.foldInterleavedTranslation(simultaneousFolded)
+        }
 
         val aligned = if (candidate.fromAmll) {
             LyricTimeShift.alignByAnchors(
