@@ -32,10 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.addOutline
-import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.font.FontWeight
@@ -147,31 +144,23 @@ fun Modifier.liquidGlass(
         )
     },
     innerShadow = { InnerShadow(radius = 6.dp, alpha = if (pressed) 1f else 0.45f) },
-    // The material: a translucent wash over the refracted backdrop.
+    // The material: an almost-opaque wash over the refracted backdrop.
     //
-    // Two details here are load-bearing:
-    //
-    //  - **It has to be clipped to `shape`.** The library clips only what *it* draws (the highlight and
-    //    the inner shadow call `clipOutline` themselves); `onDrawSurface` is handed a bare draw scope, so
-    //    an unclipped `drawRect` spills a square rect into the squircle's corner cut-outs. That is a real
-    //    bug, not a style choice.
-    //  - **The sheen must keep the fill's alpha.** Each stop is built from the *already translucent*
-    //    base and lerped toward an equally translucent white/black, so the gradient shades the material
-    //    without making it opaque. Lerping toward plain `Color.White` would raise the alpha at the top and
-    //    paint the blur out again at that edge.
+    // **No clip is needed here, and adding one was a mistake.** This node is placed into a graphics layer
+    // that the library already clips to [shape] (`DrawBackdropNode`'s `layoutLayerBlock` sets
+    // `clip = true` with the shape), so everything drawn here is inside the capsule. The previous version
+    // additionally clipped to a path built from `shape().createOutline(...)`, which is redundant at best —
+    // and if that outline ever came out degenerate it would discard the *entire* fill, leaving a fully
+    // transparent bar. Removing it removes the failure mode.
     onDrawSurface = {
-        val path = Path()
-        path.addOutline(shape().createOutline(size, layoutDirection, this))
-        clipPath(path) {
-            val base = tint.copy(alpha = MaterialFillAlpha)
-            drawRect(
-                Brush.verticalGradient(
-                    0f to lerp(base, Color.White.copy(alpha = MaterialFillAlpha), 0.07f),
-                    0.5f to base,
-                    1f to lerp(base, Color.Black.copy(alpha = MaterialFillAlpha), 0.07f),
-                )
+        val base = tint.copy(alpha = MaterialFillAlpha)
+        drawRect(
+            Brush.verticalGradient(
+                0f to lerp(base, Color.White.copy(alpha = MaterialFillAlpha), 0.07f),
+                0.5f to base,
+                1f to lerp(base, Color.Black.copy(alpha = MaterialFillAlpha), 0.07f),
             )
-        }
+        )
     },
 )
 
@@ -187,11 +176,14 @@ private val GlassBlur = 24.dp
 /**
  * Opacity of the material's fill.
  *
- * High enough that nothing behind is legible; low enough that the material still shows the blur. The
- * exact number matters far less than [glassTint] (see its note): a fill can be almost opaque and still
- * look like a plain panel if its colour matches the content behind it.
+ * **Near-opaque on purpose, and the number was wrong twice.** This has to look like a solid surface with a
+ * frosted texture, which means almost none of the content behind may show: 0.34, then 0.70, then 0.72 each
+ * came back as "too transparent", and the 0.72 was a regression I introduced myself while changing the
+ * tint (I lowered the alpha at the same time, so the two changes cancelled out and the bar looked
+ * unchanged). At [0.92] the ~8% that survives is the blurred backdrop only — a colour cast and a soft
+ * clouding, never a legible row.
  */
-private const val MaterialFillAlpha = 0.72f
+private const val MaterialFillAlpha = 0.92f
 
 /**
  * The material's base colour.
