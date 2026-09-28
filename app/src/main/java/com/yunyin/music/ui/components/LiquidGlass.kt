@@ -87,12 +87,14 @@ enum class PlayerTab(val label: String, val icon: androidx.compose.ui.graphics.v
  *    came back as "too transparent" again.
  *
  * What is wanted is the two properties together: **the blur so strong that no content is legible, and a
- * fill heavy enough (0.88, iOS "thick material") that what shows through is only a colour wash.** So the
- * two knobs are deliberately split, and both matter:
+ * fill heavy enough that what shows through is a colour wash rather than shapes.** Two knobs, and a third
+ * that dominated both of them:
  *
  *  - [GlassBlur] is strong (see its note) — the blur is what turns detail into colour in the first place.
  *  - [MaterialFillAlpha] is heavy *and carries the sheen with it*. The sheen must keep the same alpha, or
  *    an opaque top edge would paint the blur out there and reintroduce the flat-panel look.
+ *  - [glassTint] must **not equal the colour of the content behind it**, which it did for several
+ *    revisions — that, and not the alpha, is why the frost was invisible. See its note.
  *
  * `vibrancy()` (a saturation lift in the library) is what keeps the diffused colour from turning washed
  * grey — without it a strong blur desaturates the artwork behind and the material looks flat.
@@ -161,32 +163,39 @@ fun Modifier.liquidGlass(
 /**
  * Blur radius for the backdrop under the chrome — the material itself.
  *
- * Heavy on purpose: the blur is what converts the content behind the bar from *recognisable* into a
- * colour field, which is the whole difference between frosted glass and a translucent panel. 30dp is
- * roughly half the bar's own height, so nothing finer than a broad colour transition survives it.
+ * Strong, but deliberately short of a total wash: enough that no content stays legible, little enough
+ * that the surface still varies with what passes beneath it. (A very large radius blurs everything into
+ * one flat average, which reads as a plain fill — indistinguishable from having no blur at all.)
  */
-private val GlassBlur = 30.dp
+private val GlassBlur = 24.dp
 
 /**
  * Opacity of the material's fill.
  *
- * A **thick material**: opaque enough that nothing behind the bar is legible — the point the user made
- * three times now, at 0.34, 0.92-with-translucent-sheen, and 0.70 — while stopping short of a flat fill so
- * the blurred backdrop still tinted through as a colour wash. This is the iOS "thick material" zone, not
- * "regular": regular (around 0.7) still lets shapes read through, which is exactly what was rejected.
- *
- * The sheen in [liquidGlass] keeps this alpha, so the shading cannot raise it to opaque at an edge.
+ * High enough that nothing behind is legible; low enough that the material still shows the blur. The
+ * exact number matters far less than [glassTint] (see its note): a fill can be almost opaque and still
+ * look like a plain panel if its colour matches the content behind it.
  */
-private const val MaterialFillAlpha = 0.88f
+private const val MaterialFillAlpha = 0.72f
 
 /**
  * The material's base colour.
  *
- * The theme's own secondary background, left opaque here: the translucency is a property of the material
- * ([MaterialFillAlpha]), not of the colour, so the two do not have to be kept in step at the call sites.
+ * **This is the part that was actually wrong, and it was wrong in a way no amount of tuning the alpha
+ * could fix.** It used to be the theme's `secondaryBackground` — which is precisely the colour of the
+ * cards and lists the bar floats over (`Cards.kt` uses it for every row). A blur of a surface whose colour
+ * equals the fill, composited under a fill of that colour, returns that colour: the frosted effect is
+ * mathematically invisible no matter what the blur radius or alpha are. That is why the bar looked
+ * unchanged across several revisions, and why the offline previews kept looking right — they were drawn
+ * over vivid album art, never over the app's real near-monochrome surfaces.
+ *
+ * So the chrome takes the theme's **tertiary** background instead: one elevation step above the content,
+ * exactly as a raised material should be. It is visibly distinct from the rows behind it in both
+ * appearances (light: white over #F2F2F7 rows; dark: #2C2C2E over #1C1C1E rows and a #000 page), so the
+ * blur has a colour difference to actually show.
  */
 @Composable
-private fun glassTint(): Color = AppTheme.palette.secondaryBackground
+private fun glassTint(): Color = AppTheme.palette.tertiaryBackground
 
 /**
  * Floating tab bar: a glass pill with an accent selection sliding between tabs.

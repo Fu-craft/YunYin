@@ -272,15 +272,20 @@ class PlayerController(
     }
 
     fun seekTo(ms: Long) {
-        // Bounded by the *known* duration, so a tap on the progress bar can never ask for a position
-        // past the end of the track. Requesting one lands the player at the end, which ends the item and
-        // advances to the next song — the "tap near the end skips the track" report. Fraction-based
-        // callers already clamp, but the bound belongs here too, because a stale or rounded duration
-        // upstream would otherwise reach the player unchecked.
+        // Bounded by the *known* duration, and held short of the very end.
+        //
+        // The bound fixes "tapping near the end skips the track": asking for a position past the end
+        // lands the player at the end, which ends the item and advances. The end guard is the second half
+        // of that: `duration` is metadata, and the streamed audio can be a little shorter than it, so a
+        // request *at* the duration can still be past the last decodable frame. Landing a short guard
+        // before the end leaves audible audio after the seek, so a near-end tap plays rather than ends.
+        //
+        // A stale or rounded duration upstream would otherwise reach the player unchecked, which is why
+        // the bound lives here as well as at the fraction-based call sites.
         val knownDuration = controller?.duration
             ?.takeIf { it != androidx.media3.common.C.TIME_UNSET && it > 0L } ?: 0L
-        val target = if (knownDuration > 0L) {
-            ms.coerceIn(0L, knownDuration)
+        val target = if (knownDuration > SEEK_END_GUARD_MS) {
+            ms.coerceIn(0L, knownDuration - SEEK_END_GUARD_MS)
         } else {
             ms.coerceAtLeast(0L)
         }
@@ -406,5 +411,14 @@ class PlayerController(
 
     private companion object {
         const val TAG = "YunYin/Player"
+
+        /**
+         * How far short of the end a seek is held.
+         *
+         * Long enough to guarantee audible audio after a near-end seek (the streamed file can be shorter
+         * than its metadata duration, and a seek onto or past the last frame ends the item), short enough
+         * that "jump to the end" still visibly reaches the end of the bar.
+         */
+        const val SEEK_END_GUARD_MS = 600L
     }
 }
