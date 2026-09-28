@@ -61,6 +61,7 @@ import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeLine
 import com.mocharealm.accompanist.lyrics.core.model.synced.SyncedLine
 import com.yunyin.music.lyrics.utils.isRtl
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import kotlin.math.absoluteValue
@@ -87,6 +88,15 @@ internal data class FocusState(
  * normal one step to read as "not started yet" rather than as the current lyric.
  */
 private const val INTRO_BLUR_STEPS = 3
+
+/**
+ * Position jump treated as a seek rather than as playback advancing.
+ *
+ * Playback moves the clock by at most a frame's worth between ticks, so a jump this size can only be the
+ * user scrubbing the progress bar or tapping a line. `PositionInterpolator` uses the same threshold for
+ * the same reason (see its `DISCONTINUITY_MS`), so the two agree on what a seek looks like.
+ */
+private const val SEEK_DISCONTINUITY_MS = 800
 
 /**
  * Opacity of the focused line's **not-yet-sung** words.
@@ -525,9 +535,21 @@ fun KaraokeLyricsView(
      */
     LaunchedEffect(listState) {
         val decider = LyricScrollDecider()
+        var lastPositionMs = currentPosition()
 
         while (true) {
             withFrameNanos { }
+
+            // A seek arrives as a large jump in the position. Playback never moves the clock by more
+            // than a frame or so, so anything this large is the user having scrubbed — and the list
+            // must follow it *now*, as a jump, rather than being left where it was or treating the far
+            // target as another animated line change. Resetting the decider makes the placement that
+            // follows a first placement, which is the non-animated one.
+            val positionMs = currentPosition()
+            if (kotlin.math.abs(positionMs - lastPositionMs) > SEEK_DISCONTINUITY_MS) {
+                decider.reset()
+            }
+            lastPositionMs = positionMs
 
             val focus = currentFocus
             // Nothing to follow during the lead-in: the dots represent the position and the first
@@ -539,6 +561,7 @@ fun KaraokeLyricsView(
                 index = target,
                 dragging = isDragging.value,
                 firstVisibleIndex = listState.firstVisibleItemIndex,
+                scrolling = listState.isScrollInProgress,
             )) {
                 is LyricScrollDecider.Decision.Wait -> continue
                 is LyricScrollDecider.Decision.Scroll -> {
@@ -549,10 +572,16 @@ fun KaraokeLyricsView(
                             listState.scrollToItem(decision.index)
                         }
                     } catch (cancellation: kotlin.coroutines.cancellation.CancellationException) {
-                        throw cancellation
+                        // `LazyListState` scrolls are serialised through a mutex, so a *preempting*
+                        // scroll — the user starting a drag, or a seek arriving — cancels this call and
+                        // it throws. That is routine, and the loop must survive it: rethrowing
+                        // unconditionally killed the whole `LaunchedEffect` on the first preemption,
+                        // after which the lyrics never auto-scrolled again for the rest of the song.
+                        // `ensureActive()` rethrows only when the effect itself is being cancelled.
+                        ensureActive()
                     } catch (_: Exception) {
-                        // A concurrent scroll can cancel this; the next frame retries, because the
-                        // decider only treats a request as settled once the list is actually there.
+                        // Any other failure is retried next frame: the decider only treats a request as
+                        // settled once the list has actually arrived (or a scroll is still in flight).
                     }
                 }
             }

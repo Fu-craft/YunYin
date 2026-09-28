@@ -107,6 +107,35 @@ class LyricScrollDeciderTest {
     }
 
     @Test
+    fun `an in-flight scroll is not re-issued`() {
+        // The list has not arrived yet because a scroll toward the target is still running. Re-issuing
+        // the request here is what restarted a long scroll underneath itself, so a far target — a seek —
+        // appeared never to move. It must be left alone until it arrives or is cancelled.
+        val d = LyricScrollDecider()
+        scrollOf(d.decide(40, dragging = false, firstVisibleIndex = 0))
+        assertEquals(
+            "a scroll in flight must not be re-requested",
+            LyricScrollDecider.Decision.Wait,
+            d.decide(40, dragging = false, firstVisibleIndex = 27, scrolling = true),
+        )
+        // Once it stops short of the target, it *is* retried.
+        val retry = scrollOf(d.decide(40, dragging = false, firstVisibleIndex = 27, scrolling = false))
+        assertEquals(40, retry.index)
+    }
+
+    @Test
+    fun `a seek re-places with a jump`() {
+        // A seek arrives as a position discontinuity, which the caller reports by resetting. The next
+        // placement must be a jump to wherever the song now is — not an animation across the gap.
+        val d = LyricScrollDecider()
+        scrollOf(d.decide(10, dragging = false, firstVisibleIndex = 0))
+        d.reset()
+        val afterSeek = scrollOf(d.decide(60, dragging = false, firstVisibleIndex = 10))
+        assertEquals(60, afterSeek.index)
+        assertEquals("a seek should snap, not animate", false, afterSeek.animate)
+    }
+
+    @Test
     fun `reset clears the hold and the placement flag`() {
         val d = LyricScrollDecider()
         scrollOf(d.decide(10, dragging = false, firstVisibleIndex = 0))

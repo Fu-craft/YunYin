@@ -168,7 +168,7 @@ class SeamlessAudioProcessor : BaseAudioProcessor() {
 @UnstableApi
 internal class SeamlessAudioProcessorChain(
     userProcessors: Array<AudioProcessor>,
-    private val silenceSkipping: SilenceSkippingAudioProcessor = SilenceSkippingAudioProcessor(),
+    private val silenceSkipping: SilenceSkippingAudioProcessor = configuredSilenceSkipping(),
     private val sonic: SonicAudioProcessor = SonicAudioProcessor(),
 ) : AudioProcessorChain {
 
@@ -192,4 +192,43 @@ internal class SeamlessAudioProcessorChain(
         if (sonic.isActive) sonic.getMediaDuration(playoutDuration) else playoutDuration
 
     override fun getSkippedOutputFrameCount(): Long = silenceSkipping.skippedFrames
+
+    private companion object {
+
+        /**
+         * Silence trimming, tuned to remove obvious dead air and nothing else.
+         *
+         * Media3's defaults are built for speech (podcasts), where aggressively stripping pauses is
+         * desirable: it starts trimming at 100 ms of silence and keeps only 20% of it. Applied to music
+         * that is too aggressive in two visible ways — a short musical rest gets shortened (audible as a
+         * clipped breath between phrases), and a *trailing* silence is cut so close to the end that
+         * seeking near the end of a track can land in already-trimmed territory, which ends the item and
+         * advances to the next song.
+         *
+         * So: only silence longer than [MIN_SILENCE_US] is touched at all, and half of it is kept. That
+         * still removes the multi-second dead air this feature exists for, while short rests and the tail
+         * survive intact. The detection level is left at Media3's default, which only flags near-digital
+         * silence — raising it would start trimming quiet music.
+         */
+        fun configuredSilenceSkipping(): SilenceSkippingAudioProcessor =
+            SilenceSkippingAudioProcessor(
+                MIN_SILENCE_US,
+                SILENCE_RETENTION,
+                MAX_SILENCE_TO_KEEP_US,
+                MIN_VOLUME_PERCENT,
+                SilenceSkippingAudioProcessor.DEFAULT_SILENCE_THRESHOLD_LEVEL,
+            )
+
+        /** Only silences longer than this are trimmed. Short musical rests are left alone. */
+        const val MIN_SILENCE_US = 500_000L
+
+        /** Fraction of a qualifying silence to keep — half, so the trim cannot clip a pause away. */
+        const val SILENCE_RETENTION = 0.5f
+
+        /** Ceiling on how much of a long silence survives, applied after the retention ratio. */
+        const val MAX_SILENCE_TO_KEEP_US = 1_000_000L
+
+        /** Keep a little level rather than hard-muting, so the result does not read as a dropout. */
+        const val MIN_VOLUME_PERCENT = 10
+    }
 }

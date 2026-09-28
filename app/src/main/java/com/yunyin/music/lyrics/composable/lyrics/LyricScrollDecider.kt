@@ -14,10 +14,13 @@ package com.yunyin.music.lyrics.composable.lyrics
  *    up from the bottom" glitch.
  *  - A **deliberate drag** takes priority and is honoured until playback moves the target line on.
  *    "Deliberate" is decided by the caller from the pointer stream; `isScrollInProgress` is not
- *    usable because it is also true during our own animation.
- *  - A line that we already requested is not requested again once the list has arrived. If the list
- *    is *not* on it — because a fling or another scroll cancelled our animation — it is re-requested,
- *    which is the retry.
+ *    usable for that, because it is also true during our own animation.
+ *  - A **large jump** (a seek, or a skip to another part of the song) is placed instantly rather than
+ *    animated. The caller does this by [reset]ting on a position discontinuity, which makes the next
+ *    placement a first placement; a jump does not belong in this state machine, because only the caller
+ *    can see that the position moved by more than playback could have.
+ *  - A request that is already **in flight** is not re-issued, so a long scroll is not restarted underneath
+ *    itself.
  */
 internal class LyricScrollDecider {
 
@@ -39,8 +42,16 @@ internal class LyricScrollDecider {
      * @param dragging whether a finger is currently dragging the list.
      * @param firstVisibleIndex the list's current anchor, used to tell "already there" from "a scroll
      *        was cancelled and needs retrying".
+     * @param scrolling whether the list is currently being scrolled by us or settling from one. A
+     *        request in flight must not be re-issued — restarting it every frame is what stopped a
+     *        seek from ever arriving.
      */
-    fun decide(index: Int?, dragging: Boolean, firstVisibleIndex: Int): Decision {
+    fun decide(
+        index: Int?,
+        dragging: Boolean,
+        firstVisibleIndex: Int,
+        scrolling: Boolean = false,
+    ): Decision {
         if (dragging) {
             // The user took over. Remember that, and let them be.
             heldByUser = true
@@ -54,8 +65,11 @@ internal class LyricScrollDecider {
             heldByUser = false
         }
 
-        // Already requested and the list is on it — nothing to do.
-        if (index == lastRequested && firstVisibleIndex == index) return Decision.Wait
+        // Already requested, and either the list is on it or a scroll toward it is in flight. The
+        // in-flight case matters: `animateScrollToItem` suspends until it settles, but a *preempting*
+        // scroll can cancel it, and without this a cancelled long scroll would be restarted from
+        // wherever it had reached each time — which is what made a far target appear never to arrive.
+        if (index == lastRequested && (firstVisibleIndex == index || scrolling)) return Decision.Wait
 
         lastRequested = index
         val animate = hasPlaced
@@ -63,7 +77,7 @@ internal class LyricScrollDecider {
         return Decision.Scroll(index, animate)
     }
 
-    /** Forget prior state, e.g. when the lyrics document is replaced. */
+    /** Forget prior state, e.g. when the lyrics document is replaced or the user seeks. */
     fun reset() {
         hasPlaced = false
         lastRequested = NONE

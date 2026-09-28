@@ -272,9 +272,21 @@ class PlayerController(
     }
 
     fun seekTo(ms: Long) {
-        controller?.seekTo(ms.coerceAtLeast(0L))
-        clock.seekTo(ms.coerceAtLeast(0L), SystemClock.elapsedRealtime())
-        _state.value = _state.value.copy(positionMs = ms.coerceAtLeast(0L))
+        // Bounded by the *known* duration, so a tap on the progress bar can never ask for a position
+        // past the end of the track. Requesting one lands the player at the end, which ends the item and
+        // advances to the next song — the "tap near the end skips the track" report. Fraction-based
+        // callers already clamp, but the bound belongs here too, because a stale or rounded duration
+        // upstream would otherwise reach the player unchecked.
+        val knownDuration = controller?.duration
+            ?.takeIf { it != androidx.media3.common.C.TIME_UNSET && it > 0L } ?: 0L
+        val target = if (knownDuration > 0L) {
+            ms.coerceIn(0L, knownDuration)
+        } else {
+            ms.coerceAtLeast(0L)
+        }
+        controller?.seekTo(target)
+        clock.seekTo(target, SystemClock.elapsedRealtime())
+        _state.value = _state.value.copy(positionMs = target)
     }
 
     fun seekToIndex(index: Int) {
@@ -332,7 +344,16 @@ class PlayerController(
                 ?: TrackMediaItem.trackOf(item)
         }
         val duration = mediaController.duration.takeIf { it != androidx.media3.common.C.TIME_UNSET } ?: 0L
-        val position = mediaController.currentPosition.coerceAtLeast(0L)
+        // Clamp into the track.
+        //
+        // The player's raw position is *not* guaranteed to be within the duration: near the end it can
+        // report a value past it (the audio sink adds skipped silence back into the position it reports,
+        // and the last written frame can land a hair beyond the metadata duration). Unclamped, that
+        // surfaced as the progress bar filling to the end on its own and the elapsed time reading longer
+        // than the track — so the bound belongs here, at the single place the value enters the app,
+        // rather than at each thing that displays it.
+        val rawPosition = mediaController.currentPosition.coerceAtLeast(0L)
+        val position = if (duration > 0L) rawPosition.coerceIn(0L, duration) else rawPosition
 
         // Track the user's real loop mode whenever no preview override is in effect, so leaving a
         // preview restores what they actually had rather than a hard-coded default.
