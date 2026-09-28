@@ -163,6 +163,7 @@ class MainActivity : ComponentActivity() {
          */
         var quality by remember { mutableStateOf(AudioQuality.from(container.settings.quality)) }
         var statusBarLyricsEnabled by remember { mutableStateOf(container.settings.statusBarLyrics) }
+        var seamlessTransition by remember { mutableStateOf(container.settings.seamlessTransition) }
 
         // Set once the first-launch session work below finishes. The splash waits on it (and on the
         // home feed) so the app is never revealed in a half-initialised state.
@@ -436,6 +437,15 @@ class MainActivity : ComponentActivity() {
                         // Turning it off must remove the resident notification immediately rather
                         // than leaving it in the shade until the next track change.
                         if (!enabled) container.tickerLyrics.clear()
+                    },
+                    seamlessTransition = seamlessTransition,
+                    onSeamlessTransitionChange = { enabled ->
+                        seamlessTransition = enabled
+                        // Writing the preference is the whole action: the service watches this key and
+                        // applies it to the running player. Reaching the player from here is not possible
+                        // — `Player` and `MediaController` expose no skip-silence control — which is why
+                        // the service owns that half.
+                        container.settings.seamlessTransition = enabled
                     },
                 )
             }

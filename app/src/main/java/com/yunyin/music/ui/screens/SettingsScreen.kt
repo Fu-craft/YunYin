@@ -72,6 +72,9 @@ fun SettingsScreen(
     flymeSupported: Boolean = false,
     statusBarLyrics: Boolean = true,
     onStatusBarLyricsChange: (Boolean) -> Unit = {},
+    /** Whether tracks run into each other without the dead air that makes them sound like files. */
+    seamlessTransition: Boolean = true,
+    onSeamlessTransitionChange: (Boolean) -> Unit = {},
 ) {
     Column(
         modifier = modifier
@@ -121,6 +124,16 @@ fun SettingsScreen(
                 supported = flymeSupported,
                 enabled = statusBarLyrics,
                 onChange = onStatusBarLyricsChange,
+            )
+
+            Spacer(Modifier.height(28.dp))
+
+            SectionLabel("播放")
+            ToggleRow(
+                title = "无缝衔接",
+                subtitle = "自动去除歌曲首尾静音，并柔化开头，切歌更连贯",
+                enabled = seamlessTransition,
+                onChange = onSeamlessTransitionChange,
             )
 
             Spacer(Modifier.height(28.dp))
@@ -261,6 +274,53 @@ private fun SectionLabel(text: String) {
         color = AppTheme.palette.secondaryLabel,
         modifier = Modifier.padding(bottom = 6.dp),
     )
+}
+
+/**
+ * A title/subtitle row with a switch.
+ *
+ * The whole row is the tap target and the switch takes a null handler, the same arrangement as
+ * [FlymeTickerRow] and for the same reason: two handlers on one tap fire twice or get swallowed,
+ * depending on hit testing.
+ */
+@Composable
+private fun ToggleRow(
+    title: String,
+    subtitle: String,
+    enabled: Boolean,
+    onChange: (Boolean) -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(ContinuousRoundedRectangle(10.dp))
+            .clickable { onChange(!enabled) }
+            .padding(horizontal = 12.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = title,
+                fontFamily = SFPro,
+                fontSize = 16.sp,
+                color = AppTheme.palette.label,
+            )
+            Text(
+                text = subtitle,
+                fontFamily = SFPro,
+                fontSize = 12.sp,
+                color = AppTheme.palette.secondaryLabel,
+            )
+        }
+        Switch(
+            checked = enabled,
+            onCheckedChange = null,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = androidx.compose.ui.graphics.Color.White,
+                checkedTrackColor = AppTheme.palette.accent,
+            ),
+        )
+    }
 }
 
 @Composable

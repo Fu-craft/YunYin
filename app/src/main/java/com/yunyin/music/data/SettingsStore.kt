@@ -42,6 +42,43 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_STATUS_BAR_LYRICS, true)
         set(value) = prefs.edit().putBoolean(KEY_STATUS_BAR_LYRICS, value).apply()
 
+    /**
+     * Whether tracks run into each other without the dead air that makes them sound like separate
+     * files: leading/trailing silence is trimmed (through the player, so the reported position stays
+     * correct) and the head of each stream is tapered.
+     *
+     * Defaults on — it is the behaviour a listener expects from continuous playback, and it is
+     * conservative: only obvious silence is trimmed. The toggle exists because trimming changes the
+     * timing of a track, which a listener who wants the original master may not want.
+     */
+    var seamlessTransition: Boolean
+        get() = prefs.getBoolean(KEY_SEAMLESS_TRANSITION, true)
+        set(value) = prefs.edit().putBoolean(KEY_SEAMLESS_TRANSITION, value).apply()
+
+    /**
+     * Watches [seamlessTransition] for changes and returns the listener for later removal.
+     *
+     * Needed because the preference is changed from the UI but consumed inside
+     * [com.yunyin.music.playback.PlaybackService], which owns the player, and the Media3 player API
+     * exposes no way to set silence skipping across the session. A preference listener is what lets the
+     * switch take effect on the current track. The key is checked here so callers cannot accidentally
+     * observe unrelated writes.
+     */
+    fun observeSeamlessTransition(
+        onChange: (Boolean) -> Unit,
+    ): SharedPreferences.OnSharedPreferenceChangeListener {
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == KEY_SEAMLESS_TRANSITION) onChange(seamlessTransition)
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        return listener
+    }
+
+    /** Removes a listener created by [observeSeamlessTransition]. */
+    fun unobserve(listener: SharedPreferences.OnSharedPreferenceChangeListener) {
+        prefs.unregisterOnSharedPreferenceChangeListener(listener)
+    }
+
     var account: Account?
         get() {
             val id = prefs.getLong(KEY_USER_ID, 0L)
@@ -120,5 +157,6 @@ class SettingsStore(context: Context) {
         private const val KEY_ANON = "anonymous"
         private const val KEY_LYRIC_OFFSETS = "lyric_offsets"
         private const val KEY_STATUS_BAR_LYRICS = "status_bar_lyrics"
+        private const val KEY_SEAMLESS_TRANSITION = "seamless_transition"
     }
 }
