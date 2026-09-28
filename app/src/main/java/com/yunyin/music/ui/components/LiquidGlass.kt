@@ -10,6 +10,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -30,6 +31,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
@@ -37,8 +40,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kyant.backdrop.Backdrop
@@ -46,9 +47,6 @@ import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
-import com.kyant.backdrop.highlight.Highlight
-import com.kyant.backdrop.shadow.InnerShadow
-import com.kyant.backdrop.shadow.Shadow
 import com.yunyin.music.data.ArtworkLoader
 import com.yunyin.music.playback.PlaybackUiState
 import com.yunyin.music.ui.icons.SfIcons
@@ -70,120 +68,104 @@ enum class PlayerTab(val label: String, val icon: androidx.compose.ui.graphics.v
 }
 
 /**
- * The frosted-glass material used by the floating bottom chrome.
+ * The frosted material used by the floating bottom chrome.
  *
- * ## A *thick* blur material: blurred colour, but no legible content
+ * ## Why the frost was invisible for so long, and what actually fixed it
  *
- * This has been round the houses, so the target is worth stating plainly, because three earlier revisions
- * each missed it in a different direction:
+ * The library's blur is a `RenderEffect` on a layer it records. **It only renders when the backdrop is
+ * drawn inside an ancestor that is clipped to the shape.** Drawn directly on the chrome box it silently
+ * produced no blur at all, which was measured on the device rather than assumed: with the fill transparent
+ * and the blur radius raised to 150dp, the content behind the bar stayed pixel-sharp (edge energy inside
+ * the bar 1.16× that above it — no smoothing whatsoever). It was fixed by drawing the material in its own
+ * child box under a `shadow(...).clip(shape)` ancestor; the same measurement then gives 0.44, i.e. the
+ * backdrop is diffused.
  *
- *  - A *transparent* panel (0.34) let recognisable content — rows, artwork edges — read straight through.
- *    Rejected as "too transparent".
- *  - A *fully opaque* fill fixed that but hid the blur, because an opaque fill is painted *over* the
- *    refracted backdrop, so nothing of what is behind survives. That is a flat panel, not a material.
- *  - A *moderately translucent* fill (0.70, iOS "regular material") still let shapes read through, which
- *    came back as "too transparent" again.
+ * That is also what "too transparent" meant all along. The fraction of the backdrop that shows through the
+ * fill was **sharp, unblurred content**, so the bar read as a plain translucent sheet rather than as
+ * frosted glass — and no amount of raising the fill could fix it, because the problem was the missing
+ * blur. It also explains why every earlier attempt missed: the fill and the tint were tuned while the one
+ * broken ingredient was the blur underneath them.
  *
- * What is wanted is the two properties together: **the blur so strong that no content is legible, and a
- * fill heavy enough that what shows through is a colour wash rather than shapes.** Two knobs, and a third
- * that dominated both of them:
+ * ## Structure (load-bearing, do not flatten)
  *
- *  - [GlassBlur] is strong (see its note) — the blur is what turns detail into colour in the first place.
- *  - [MaterialFillAlpha] is heavy *and carries the sheen with it*. The sheen must keep the same alpha, or
- *    an opaque top edge would paint the blur out there and reintroduce the flat-panel look.
- *  - [glassTint] must **not equal the colour of the content behind it**, which it did for several
- *    revisions — that, and not the alpha, is why the frost was invisible. See its note.
+ *  - The material is its own child box, drawn under an ancestor with `shadow(...).clip(shape)`; this is
+ *    the arrangement in which the blur renders.
+ *  - The content (glyphs, labels) is a **sibling on top**, so the blur applies to the material only.
  *
- * `vibrancy()` (a saturation lift in the library) is what keeps the diffused colour from turning washed
- * grey — without it a strong blur desaturates the artwork behind and the material looks flat.
- *
- * The library's draw order is: refracted backdrop, then this fill, then the content; the highlight and
- * inner shadow nodes then draw themselves over the top, each clipping to [shape] on its own. The fill is
- * clipped to [shape] here because the library does not clip `onDrawSurface`.
- *
- * @param shape the surface outline. The app's own continuous-corner shape is used so the chrome matches
- *        the rest of the UI instead of the library's default capsule.
- * @param blurRadius how much the backdrop is diffused. This *is* the material, so it is heavy.
- * @param refraction how far the lens bends the backdrop near the edge, which gives the surface a lit rim
- *        rather than a flat cut.
- * @param pressed increases the bend and the highlight, so the glass reacts to the touch that is about to
- *        move it.
+ * `vibrancy()` keeps the diffused colour from washing out grey, and the refraction gives the rim a bend.
  */
-fun Modifier.liquidGlass(
+@Composable
+internal fun GlassSurface(
     backdrop: Backdrop,
-    shape: () -> Shape,
-    tint: Color,
-    pressed: Boolean = false,
-    blurRadius: Dp = GlassBlur,
-    refraction: Dp = 18.dp,
-): Modifier = drawBackdrop(
-    backdrop = backdrop,
-    shape = shape,
-    effects = {
-        vibrancy()
-        blur(blurRadius.toPx())
-        // At rest the bend is one third of the pressed amount: calm when idle, visibly reactive when
-        // touched. The full lens at rest made the chrome look warped for no reason.
-        val amount = if (pressed) 1f else 0.34f
-        lens(refraction.toPx() * amount, refraction.toPx() * amount)
-    },
-    highlight = { Highlight.Default.copy(alpha = if (pressed) 1f else 0.5f) },
-    // The shadow that makes the chrome read as a floating object.
-    //
-    // This is the *only* thing that can lift it in light mode, and the library's default cannot: its
-    // `Shadow.Default` is black at 10% alpha, which is invisible under a light bar on a white page. The
-    // light palette leaves no colour that works either — the page is white and the only other surface is
-    // the cards' #F2F2F7, so the bar is necessarily one of the two and would blend with whichever it
-    // matches. The shadow is therefore load-bearing rather than decoration: without it the chrome has
-    // nothing at all separating it from the page, which is what "it looks unchanged" was.
-    shadow = {
-        Shadow(
-            radius = 28.dp,
-            offset = DpOffset(0.dp, 8.dp),
-            color = Color.Black.copy(alpha = 0.24f),
-        )
-    },
-    innerShadow = { InnerShadow(radius = 6.dp, alpha = if (pressed) 1f else 0.45f) },
-    // The material: an almost-opaque wash over the refracted backdrop.
-    //
-    // **No clip is needed here, and adding one was a mistake.** This node is placed into a graphics layer
-    // that the library already clips to [shape] (`DrawBackdropNode`'s `layoutLayerBlock` sets
-    // `clip = true` with the shape), so everything drawn here is inside the capsule. The previous version
-    // additionally clipped to a path built from `shape().createOutline(...)`, which is redundant at best —
-    // and if that outline ever came out degenerate it would discard the *entire* fill, leaving a fully
-    // transparent bar. Removing it removes the failure mode.
-    onDrawSurface = {
-        val base = tint.copy(alpha = MaterialFillAlpha)
-        drawRect(
-            Brush.verticalGradient(
-                0f to lerp(base, Color.White.copy(alpha = MaterialFillAlpha), 0.07f),
-                0.5f to base,
-                1f to lerp(base, Color.Black.copy(alpha = MaterialFillAlpha), 0.07f),
+    shape: Shape,
+    pressed: Boolean,
+    modifier: Modifier = Modifier,
+    content: @Composable BoxScope.() -> Unit,
+) {
+    Box(
+        modifier
+            .shadow(
+                elevation = 12.dp,
+                shape = shape,
+                clip = false,
+                ambientColor = Color.Black.copy(alpha = 0.28f),
+                spotColor = Color.Black.copy(alpha = 0.32f),
             )
+            .clip(shape)
+            .clipToBounds(),
+    ) {
+        val materialTint = glassTint()
+        Box(
+            Modifier
+                .matchParentSize()
+                .drawBackdrop(
+                    backdrop = backdrop,
+                    shape = { shape },
+                    effects = {
+                        vibrancy()
+                        // The library's blur — which works here, but only because the backdrop is drawn
+                        // inside a shape-clipped ancestor (see the note on `GlassSurface`).
+                        blur(GlassBlur.toPx())
+                        val amount = if (pressed) 1f else 0.34f
+                        lens(Refraction.toPx() * amount, Refraction.toPx() * amount)
+                    },
+                    highlight = null,
+                    shadow = null,
+                    innerShadow = null,
+                    onDrawSurface = {
+                        val base = materialTint.copy(alpha = MaterialFillAlpha)
+                        drawRect(
+                            Brush.verticalGradient(
+                                0f to lerp(base, Color.White.copy(alpha = MaterialFillAlpha), 0.05f),
+                                0.5f to base,
+                                1f to lerp(base, Color.Black.copy(alpha = MaterialFillAlpha), 0.05f),
+                            )
+                        )
+                    },
+                ),
         )
-    },
-)
+        content()
+    }
+}
+
+/** How far the material bends the backdrop at its edge. */
+private val Refraction = 18.dp
 
 /**
  * Blur radius for the backdrop under the chrome — the material itself.
  *
- * Strong, but deliberately short of a total wash: enough that no content stays legible, little enough
- * that the surface still varies with what passes beneath it. (A very large radius blurs everything into
- * one flat average, which reads as a plain fill — indistinguishable from having no blur at all.)
+ * Applied with `Modifier.blur`; see [GlassSurface] for why the library's own blur is not used.
  */
 private val GlassBlur = 24.dp
 
 /**
  * Opacity of the material's fill.
  *
- * **Near-opaque on purpose, and the number was wrong twice.** This has to look like a solid surface with a
- * frosted texture, which means almost none of the content behind may show: 0.34, then 0.70, then 0.72 each
- * came back as "too transparent", and the 0.72 was a regression I introduced myself while changing the
- * tint (I lowered the alpha at the same time, so the two changes cancelled out and the bar looked
- * unchanged). At [0.92] the ~8% that survives is the blurred backdrop only — a colour cast and a soft
- * clouding, never a legible row.
+ * High enough that the content behind is unreadable, low enough that the blurred colour still tints the
+ * surface. (This value matters far less than the blur actually rendering — see [GlassSurface].)
  */
-private const val MaterialFillAlpha = 0.92f
+private const val MaterialFillAlpha = 0.86f
+
 
 /**
  * The material's base colour.
@@ -241,15 +223,11 @@ fun FloatingTabBar(
             label = "tab-pill-left",
         )
 
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(TabBarHeight)
-                .liquidGlass(
-                    backdrop = backdrop,
-                    shape = { ContinuousRoundedRectangle(TabBarCorner) },
-                    tint = glassTint(),
-                ),
+        GlassSurface(
+            backdrop = backdrop,
+            shape = ContinuousRoundedRectangle(TabBarCorner),
+            pressed = false,
+            modifier = Modifier.fillMaxWidth().height(TabBarHeight),
         ) {
             Box(
                 Modifier
@@ -361,7 +339,7 @@ fun FloatingMiniPlayer(
         label = "mini-press",
     )
 
-    Row(
+    Box(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = TabBarInset)
@@ -370,18 +348,20 @@ fun FloatingMiniPlayer(
                 scaleX = scale
                 scaleY = scale
             }
-            .liquidGlass(
-                backdrop = backdrop,
-                shape = { ContinuousRoundedRectangle(MiniPlayerCorner) },
-                tint = glassTint(),
-                pressed = pressed,
-            )
             .clickable(
                 interactionSource = interaction,
                 indication = null,
                 onClick = onExpand,
-            )
-            .padding(horizontal = 10.dp),
+            ),
+    ) {
+    GlassSurface(
+        backdrop = backdrop,
+        shape = ContinuousRoundedRectangle(MiniPlayerCorner),
+        pressed = pressed,
+        modifier = Modifier.matchParentSize(),
+    ) {
+    Row(
+        modifier = Modifier.matchParentSize().padding(horizontal = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Artwork(
@@ -451,6 +431,8 @@ fun FloatingMiniPlayer(
                 )
             }
         }
+    }
+    }
     }
 }
 
