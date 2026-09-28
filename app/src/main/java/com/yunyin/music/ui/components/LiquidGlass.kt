@@ -74,27 +74,25 @@ enum class PlayerTab(val label: String, val icon: androidx.compose.ui.graphics.v
 /**
  * The frosted-glass material used by the floating bottom chrome.
  *
- * ## Gaussian blur is the material, the fill only tempers it
+ * ## A *thick* blur material: blurred colour, but no legible content
  *
- * This has been round the houses, so the target is worth stating plainly. The previous revision made the
- * fill fully opaque, which fixed "too transparent" but threw away the blur: an opaque fill is painted
- * *over* the refracted backdrop, so nothing of what is behind the bar survives. The ask now is a
- * **Gaussian-blur material**, which is a different thing from both:
+ * This has been round the houses, so the target is worth stating plainly, because three earlier revisions
+ * each missed it in a different direction:
  *
- *  - A *transparent* panel (the 0.34 revision) lets recognisable content — rows, artwork edges — read
- *    through it. That is what was rejected as "too transparent".
- *  - A *blurred material* (this revision) diffuses what is behind into an unreadable colour field, then
- *    tempers it with a moderately translucent fill. You see the *colour* of the artwork behind the bar,
- *    never its detail. That is the iOS material look, and it is why the two earlier extremes both missed.
+ *  - A *transparent* panel (0.34) let recognisable content — rows, artwork edges — read straight through.
+ *    Rejected as "too transparent".
+ *  - A *fully opaque* fill fixed that but hid the blur, because an opaque fill is painted *over* the
+ *    refracted backdrop, so nothing of what is behind survives. That is a flat panel, not a material.
+ *  - A *moderately translucent* fill (0.70, iOS "regular material") still let shapes read through, which
+ *    came back as "too transparent" again.
  *
- * So the two knobs are deliberately split, and both matter:
+ * What is wanted is the two properties together: **the blur so strong that no content is legible, and a
+ * fill heavy enough (0.88, iOS "thick material") that what shows through is only a colour wash.** So the
+ * two knobs are deliberately split, and both matter:
  *
- *  - [GlassBlur] is strong (see its note) — the blur is what turns detail into colour. A weak blur with a
- *    heavy fill reads as a smudged translucent panel; a strong blur with a moderate fill reads as frosted
- *    glass.
- *  - [MaterialFillAlpha] sits around 0.7 *and carries the sheen with it*. The fill must not be opaque or
- *    it hides the blur again; the sheen gradient therefore keeps the same alpha, or an opaque sheen would
- *    do exactly that.
+ *  - [GlassBlur] is strong (see its note) — the blur is what turns detail into colour in the first place.
+ *  - [MaterialFillAlpha] is heavy *and carries the sheen with it*. The sheen must keep the same alpha, or
+ *    an opaque top edge would paint the blur out there and reintroduce the flat-panel look.
  *
  * `vibrancy()` (a saturation lift in the library) is what keeps the diffused colour from turning washed
  * grey — without it a strong blur desaturates the artwork behind and the material looks flat.
@@ -172,12 +170,14 @@ private val GlassBlur = 30.dp
 /**
  * Opacity of the material's fill.
  *
- * The band matters more than the exact value: high enough that nothing behind is recognisable (the failing
- * of the 0.34 revision), low enough that the blur still reads (the failing of the opaque revision). Around
- * 0.7 is the iOS "regular material" zone. The theme supplies the colour, so the chrome belongs to the app
- * in either appearance.
+ * A **thick material**: opaque enough that nothing behind the bar is legible — the point the user made
+ * three times now, at 0.34, 0.92-with-translucent-sheen, and 0.70 — while stopping short of a flat fill so
+ * the blurred backdrop still tinted through as a colour wash. This is the iOS "thick material" zone, not
+ * "regular": regular (around 0.7) still lets shapes read through, which is exactly what was rejected.
+ *
+ * The sheen in [liquidGlass] keeps this alpha, so the shading cannot raise it to opaque at an edge.
  */
-private const val MaterialFillAlpha = 0.70f
+private const val MaterialFillAlpha = 0.88f
 
 /**
  * The material's base colour.
