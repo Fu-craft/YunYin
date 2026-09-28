@@ -327,12 +327,12 @@ class MainActivity : ComponentActivity() {
             }
 
             /**
-             * Floating chrome: solid panels that float above the content.
+             * Floating chrome: frosted-blur panels that float above the content.
              *
              * Overlaid rather than laid out in a column, which is what makes it float — the lists scroll
-             * underneath and the panels cover them. The bottom padding of each screen keeps its last rows
-             * clear of the bars. The `bottomBackdrop` the panels sample is still recorded and blurred, but
-             * the fill is opaque, so it only tints the material rather than letting rows read through.
+             * underneath and their colour comes through the material. The bottom padding of each screen
+             * keeps its last rows clear of the bars. `bottomBackdrop` records that content and the panels
+             * diffuse it, so what shows through is a blurred colour field rather than readable rows.
              */
             Column(
                 Modifier

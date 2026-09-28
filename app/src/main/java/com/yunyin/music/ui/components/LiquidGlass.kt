@@ -72,31 +72,42 @@ enum class PlayerTab(val label: String, val icon: androidx.compose.ui.graphics.v
 }
 
 /**
- * The glass surface used by the floating bottom chrome.
+ * The frosted-glass material used by the floating bottom chrome.
  *
- * ## It is a *solid* panel, and that is the point
+ * ## Gaussian blur is the material, the fill only tempers it
  *
- * Two rounds of tuning went the wrong way on this, so the target is worth stating plainly: the reference
- * bar is an **opaque** light-grey surface. You cannot see the list through it at all — no text, no
- * artwork edges. What makes it read as material rather than as a plain rectangle is (a) the vertical
- * sheen on the fill, (b) the top rim highlight, and (c) the inner shadow; all three are drawn *on top of*
- * the fill, so an opaque fill does not hide them.
+ * This has been round the houses, so the target is worth stating plainly. The previous revision made the
+ * fill fully opaque, which fixed "too transparent" but threw away the blur: an opaque fill is painted
+ * *over* the refracted backdrop, so nothing of what is behind the bar survives. The ask now is a
+ * **Gaussian-blur material**, which is a different thing from both:
  *
- * This replaced a translucent fill (0.34, then 0.92), which the user rejected twice as "still too
- * transparent" over bright artwork — the conclusion being that liquid glass is not what this bar should
- * be. The refracted [Backdrop] is still sampled and blurred, but only the sliver that survives an opaque
- * fill now contributes, so it is a faint cast rather than the main event.
+ *  - A *transparent* panel (the 0.34 revision) lets recognisable content — rows, artwork edges — read
+ *    through it. That is what was rejected as "too transparent".
+ *  - A *blurred material* (this revision) diffuses what is behind into an unreadable colour field, then
+ *    tempers it with a moderately translucent fill. You see the *colour* of the artwork behind the bar,
+ *    never its detail. That is the iOS material look, and it is why the two earlier extremes both missed.
  *
- * The library's draw order is why the surface can be opaque and still read as glass: it draws the
- * refracted backdrop, then this fill, then the content; the highlight and inner shadow nodes then draw
- * themselves over the top, each clipping to [shape] on its own.
+ * So the two knobs are deliberately split, and both matter:
+ *
+ *  - [GlassBlur] is strong (see its note) — the blur is what turns detail into colour. A weak blur with a
+ *    heavy fill reads as a smudged translucent panel; a strong blur with a moderate fill reads as frosted
+ *    glass.
+ *  - [MaterialFillAlpha] sits around 0.7 *and carries the sheen with it*. The fill must not be opaque or
+ *    it hides the blur again; the sheen gradient therefore keeps the same alpha, or an opaque sheen would
+ *    do exactly that.
+ *
+ * `vibrancy()` (a saturation lift in the library) is what keeps the diffused colour from turning washed
+ * grey — without it a strong blur desaturates the artwork behind and the material looks flat.
+ *
+ * The library's draw order is: refracted backdrop, then this fill, then the content; the highlight and
+ * inner shadow nodes then draw themselves over the top, each clipping to [shape] on its own. The fill is
+ * clipped to [shape] here because the library does not clip `onDrawSurface`.
  *
  * @param shape the surface outline. The app's own continuous-corner shape is used so the chrome matches
- *        the rest of the UI instead of the library's default capsule. The fill is clipped to it here,
- *        because the library does not clip `onDrawSurface`.
- * @param blurRadius how much the backdrop is diffused before the fill covers it.
- * @param refraction how far the lens bends the backdrop near the edge. Mostly covered by the opaque fill
- *        now, but it still softens the outermost pixel or two so the edge is not a hard cut.
+ *        the rest of the UI instead of the library's default capsule.
+ * @param blurRadius how much the backdrop is diffused. This *is* the material, so it is heavy.
+ * @param refraction how far the lens bends the backdrop near the edge, which gives the surface a lit rim
+ *        rather than a flat cut.
  * @param pressed increases the bend and the highlight, so the glass reacts to the touch that is about to
  *        move it.
  */
@@ -121,7 +132,7 @@ fun Modifier.liquidGlass(
     highlight = { Highlight.Default.copy(alpha = if (pressed) 1f else 0.5f) },
     shadow = { Shadow.Default },
     innerShadow = { InnerShadow(radius = 6.dp, alpha = if (pressed) 1f else 0.45f) },
-    // The surface itself: an opaque panel, painted over the refracted backdrop.
+    // The material: a translucent wash over the refracted backdrop.
     //
     // Two details here are load-bearing:
     //
@@ -129,19 +140,20 @@ fun Modifier.liquidGlass(
     //    the inner shadow call `clipOutline` themselves); `onDrawSurface` is handed a bare draw scope, so
     //    an unclipped `drawRect` spills a square rect into the squircle's corner cut-outs. That is a real
     //    bug, not a style choice.
-    //  - **The fill is opaque, with a slight vertical sheen.** At 0.92 alpha the user could still read the
-    //    list through it over bright artwork. A flat opaque rect would be dead grey though, so the top is
-    //    lifted a touch and the bottom shaded: that gradient is what reads as *material* rather than as
-    //    paint, and it replaces the frost that a translucent fill used to provide.
+    //  - **The sheen must keep the fill's alpha.** Each stop is built from the *already translucent*
+    //    base and lerped toward an equally translucent white/black, so the gradient shades the material
+    //    without making it opaque. Lerping toward plain `Color.White` would raise the alpha at the top and
+    //    paint the blur out again at that edge.
     onDrawSurface = {
         val path = Path()
         path.addOutline(shape().createOutline(size, layoutDirection, this))
         clipPath(path) {
+            val base = tint.copy(alpha = MaterialFillAlpha)
             drawRect(
                 Brush.verticalGradient(
-                    0f to lerp(tint, Color.White, 0.06f),
-                    0.5f to tint,
-                    1f to lerp(tint, Color.Black, 0.06f),
+                    0f to lerp(base, Color.White.copy(alpha = MaterialFillAlpha), 0.07f),
+                    0.5f to base,
+                    1f to lerp(base, Color.Black.copy(alpha = MaterialFillAlpha), 0.07f),
                 )
             )
         }
@@ -149,22 +161,29 @@ fun Modifier.liquidGlass(
 )
 
 /**
- * Blur radius for the backdrop under the chrome.
+ * Blur radius for the backdrop under the chrome — the material itself.
  *
- * The surface is opaque now, so this no longer decides whether content shows through — it only shapes the
- * sliver of texture that survives the fill, so the material picks up a faint cast from the artwork rather
- * than being a pure theme grey.
+ * Heavy on purpose: the blur is what converts the content behind the bar from *recognisable* into a
+ * colour field, which is the whole difference between frosted glass and a translucent panel. 30dp is
+ * roughly half the bar's own height, so nothing finer than a broad colour transition survives it.
  */
-private val GlassBlur = 22.dp
+private val GlassBlur = 30.dp
 
 /**
- * The surface fill.
+ * Opacity of the material's fill.
  *
- * Opaque, deliberately. The reference bar is a **solid** light-grey surface — no list, no artwork edges
- * readable through it — and two earlier revisions that left the fill translucent (0.34, then 0.92) both
- * came back as "still too transparent" over bright covers. It is the theme's own secondary background, so
- * the chrome belongs to the app in either appearance; the sheen applied in [liquidGlass] is what keeps it
- * from looking like a flat rectangle.
+ * The band matters more than the exact value: high enough that nothing behind is recognisable (the failing
+ * of the 0.34 revision), low enough that the blur still reads (the failing of the opaque revision). Around
+ * 0.7 is the iOS "regular material" zone. The theme supplies the colour, so the chrome belongs to the app
+ * in either appearance.
+ */
+private const val MaterialFillAlpha = 0.70f
+
+/**
+ * The material's base colour.
+ *
+ * The theme's own secondary background, left opaque here: the translucency is a property of the material
+ * ([MaterialFillAlpha]), not of the colour, so the two do not have to be kept in step at the call sites.
  */
 @Composable
 private fun glassTint(): Color = AppTheme.palette.secondaryBackground
@@ -300,13 +319,13 @@ private fun TabItem(
 }
 
 /**
- * Floating mini player: a solid panel holding the current track.
+ * Floating mini player: the same frosted material as the bar.
  *
- * The same surface as the bar, for consistency — the two stack, so they have to match. It floats over the
- * list, so the panel is opaque and the rows passing beneath are hidden rather than showing through. The
- * whole capsule presses inward on touch, which is the affordance that says *the capsule* opens the player
- * rather than only the artwork; the play button stops the propagation of its own tap by consuming it
- * first.
+ * They stack, so they have to match — a blur material above a solid one would read as two different
+ * surfaces. What is behind the capsule is diffused into colour rather than left recognisable, so the rows
+ * passing beneath tint it without showing through. The whole capsule presses inward on touch, which is the
+ * affordance that says *the capsule* opens the player rather than only the artwork; the play button stops
+ * the propagation of its own tap by consuming it first.
  */
 @Composable
 fun FloatingMiniPlayer(
