@@ -33,11 +33,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -133,14 +131,12 @@ internal fun GlassSurface(
                     shadow = null,
                     innerShadow = null,
                     onDrawSurface = {
-                        val base = materialTint.copy(alpha = MaterialFillAlpha)
-                        drawRect(
-                            Brush.verticalGradient(
-                                0f to lerp(base, Color.White.copy(alpha = MaterialFillAlpha), 0.05f),
-                                0.5f to base,
-                                1f to lerp(base, Color.Black.copy(alpha = MaterialFillAlpha), 0.05f),
-                            )
-                        )
+                        // A plain, fully opaque white surface — requested explicitly, and it supersedes the
+                        // frosted material this used to paint. Opaque on purpose: a *translucent* white
+                        // over dark content composites to grey, so "pure white" requires full alpha. The
+                        // backdrop effects above are kept wired up (they are simply invisible under an
+                        // opaque fill) so the material can be restored by changing only these values.
+                        drawRect(materialTint)
                     },
                 ),
         )
@@ -152,39 +148,24 @@ internal fun GlassSurface(
 private val Refraction = 18.dp
 
 /**
- * Blur radius for the backdrop under the chrome — the material itself.
+ * Blur radius for the backdrop under the chrome.
  *
- * Applied with `Modifier.blur`; see [GlassSurface] for why the library's own blur is not used.
+ * Retained even though the surface is now drawn as plain opaque white: the effects are still wired up, so
+ * restoring the frosted material is a matter of changing the surface draw and the tint, not re-deriving
+ * this.
  */
 private val GlassBlur = 24.dp
 
 /**
- * Opacity of the material's fill.
+ * The material's colour: **plain white**, at the user's request.
  *
- * High enough that the content behind is unreadable, low enough that the blurred colour still tints the
- * surface. (This value matters far less than the blur actually rendering — see [GlassSurface].)
- */
-private const val MaterialFillAlpha = 0.86f
-
-
-/**
- * The material's base colour.
- *
- * **This is the part that was actually wrong, and it was wrong in a way no amount of tuning the alpha
- * could fix.** It used to be the theme's `secondaryBackground` — which is precisely the colour of the
- * cards and lists the bar floats over (`Cards.kt` uses it for every row). A blur of a surface whose colour
- * equals the fill, composited under a fill of that colour, returns that colour: the frosted effect is
- * mathematically invisible no matter what the blur radius or alpha are. That is why the bar looked
- * unchanged across several revisions, and why the offline previews kept looking right — they were drawn
- * over vivid album art, never over the app's real near-monochrome surfaces.
- *
- * So the chrome takes the theme's **tertiary** background instead: one elevation step above the content,
- * exactly as a raised material should be. It is visibly distinct from the rows behind it in both
- * appearances (light: white over #F2F2F7 rows; dark: #2C2C2E over #1C1C1E rows and a #000 page), so the
- * blur has a colour difference to actually show.
+ * This replaced the frosted material. It is deliberately not a theme colour: the request is for a pure
+ * white bar in every appearance, and the light/dark palettes have no white-on-white equivalent in dark
+ * mode. The fill is drawn opaque (see the surface draw), because a translucent white over dark content
+ * composites to grey rather than white.
  */
 @Composable
-private fun glassTint(): Color = AppTheme.palette.tertiaryBackground
+private fun glassTint(): Color = Color.White
 
 /**
  * Floating tab bar: a glass pill with an accent selection sliding between tabs.
