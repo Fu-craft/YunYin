@@ -29,23 +29,6 @@ class PlaybackService : MediaSessionService() {
 
     private var mediaSession: MediaSession? = null
 
-    /**
-     * The concrete player, kept because the seamless toggle is applied with `ExoPlayer`'s own
-     * `setSkipSilenceEnabled`. `MediaSession.player` is typed [Player], which does not expose it — only
-     * `ExoPlayer` and `SimpleExoPlayer` do — so the session cannot be the handle used for that call.
-     */
-    private var exoPlayer: ExoPlayer? = null
-
-    /**
-     * Reacts to the seamless-transition preference while the service is alive.
-     *
-     * The toggle lives in Settings and is written to [com.yunyin.music.data.SettingsStore], but the
-     * player that has to honour it is owned here — and `Player`/`MediaController` expose no skip-silence
-     * control, so there is no way to reach it from the UI directly. Listening to the preference is what
-     * makes the switch take effect on the current track instead of only after a restart.
-     */
-    private var seamlessPreferenceListener: android.content.SharedPreferences.OnSharedPreferenceChangeListener? = null
-
     override fun onCreate() {
         super.onCreate()
         val container = AppContainer.from(this)
@@ -76,7 +59,12 @@ class PlaybackService : MediaSessionService() {
             }
         }
 
-        val player = ExoPlayer.Builder(this, ReactiveRenderersFactory(this, SeamlessAudioProcessor()))
+        val player = ExoPlayer.Builder(
+            this,
+            // The preference is read live by the processor, so the Settings switch takes effect without
+            // reaching across the session — `Player`/`MediaController` expose no audio-processing control.
+            ReactiveRenderersFactory(this, SeamlessAudioProcessor { container.settings.seamlessTransition }),
+        )
             .setMediaSourceFactory(DefaultMediaSourceFactory(resolvingFactory))
             .setHandleAudioBecomingNoisy(true)
             .setAudioAttributes(
@@ -90,17 +78,11 @@ class PlaybackService : MediaSessionService() {
             .apply {
                 repeatMode = Player.REPEAT_MODE_ALL
                 setWakeMode(C.WAKE_MODE_NETWORK)
-                // Silence trimming, applied through ExoPlayer rather than by our own processor so that
-                // the skipped frames are added back into the reported position — without that the karaoke
-                // lyrics would fall behind by however much silence was trimmed.
-                setSkipSilenceEnabled(container.settings.seamlessTransition)
+                // Silence trimming is deliberately NOT enabled: it removes a song's trailing fade as
+                // well as leading dead air, so a seek into the tail ran out of audio and advanced the
+                // track. See SeamlessAudioProcessor for the full reasoning.
             }
 
-        seamlessPreferenceListener = container.settings.observeSeamlessTransition { enabled ->
-            exoPlayer?.setSkipSilenceEnabled(enabled)
-        }
-
-        exoPlayer = player
         mediaSession = MediaSession.Builder(this, player).build()
     }
 
@@ -116,8 +98,6 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
-        seamlessPreferenceListener?.let { AppContainer.from(this).settings.unobserve(it) }
-        seamlessPreferenceListener = null
         mediaSession?.run {
             player.release()
             release()

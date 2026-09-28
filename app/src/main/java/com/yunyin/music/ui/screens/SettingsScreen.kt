@@ -131,7 +131,7 @@ fun SettingsScreen(
             SectionLabel("播放")
             ToggleRow(
                 title = "无缝衔接",
-                subtitle = "自动去除歌曲首尾静音，并柔化开头，切歌更连贯",
+                subtitle = "柔化每首歌的开头，切歌不会突然出声",
                 enabled = seamlessTransition,
                 onChange = onSeamlessTransitionChange,
             )

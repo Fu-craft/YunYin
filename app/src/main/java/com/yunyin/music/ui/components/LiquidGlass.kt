@@ -41,6 +41,7 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kyant.backdrop.Backdrop
@@ -130,7 +131,21 @@ fun Modifier.liquidGlass(
         lens(refraction.toPx() * amount, refraction.toPx() * amount)
     },
     highlight = { Highlight.Default.copy(alpha = if (pressed) 1f else 0.5f) },
-    shadow = { Shadow.Default },
+    // The shadow that makes the chrome read as a floating object.
+    //
+    // This is the *only* thing that can lift it in light mode, and the library's default cannot: its
+    // `Shadow.Default` is black at 10% alpha, which is invisible under a light bar on a white page. The
+    // light palette leaves no colour that works either — the page is white and the only other surface is
+    // the cards' #F2F2F7, so the bar is necessarily one of the two and would blend with whichever it
+    // matches. The shadow is therefore load-bearing rather than decoration: without it the chrome has
+    // nothing at all separating it from the page, which is what "it looks unchanged" was.
+    shadow = {
+        Shadow(
+            radius = 28.dp,
+            offset = DpOffset(0.dp, 8.dp),
+            color = Color.Black.copy(alpha = 0.24f),
+        )
+    },
     innerShadow = { InnerShadow(radius = 6.dp, alpha = if (pressed) 1f else 0.45f) },
     // The material: a translucent wash over the refracted backdrop.
     //

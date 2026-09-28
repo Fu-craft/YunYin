@@ -2,67 +2,55 @@ package com.yunyin.music.playback
 
 import androidx.media3.common.C
 import androidx.media3.common.Format
-import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.audio.AudioProcessor
-import androidx.media3.common.audio.AudioProcessorChain
 import androidx.media3.common.audio.BaseAudioProcessor
-import androidx.media3.common.audio.SonicAudioProcessor
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.exoplayer.audio.SilenceSkippingAudioProcessor
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.roundToInt
 
 /**
- * The audio half of the "seamless" track transition.
+ * The audio half of the "seamless" track transition: tapers the head of each stream.
  *
- * Two independent artifacts make one track run into the next sound like a splice rather than a
- * continuation, and each is handled by a different part of this design:
+ * MP3 and AAC start and end mid-waveform, and a stream that begins at full amplitude clicks. Ramping the
+ * first few milliseconds removes that, so a track begins rather than switches on.
  *
- *  1. **Leading/trailing silence and encoder padding.** MP3 and AAC carry encoder delay and padding, and
- *     uploaders routinely leave seconds of dead air at the head. That silence is what you hear as a gap.
- *     This is handed to Media3's [SilenceSkippingAudioProcessor], switched on through
- *     `ExoPlayer.setSkipSilenceEnabled` — *not* reimplemented here, and that distinction is the whole
- *     reason this feature is safe in this app (see below).
- *  2. **An abrupt onset.** Even with the silence trimmed, the first sample lands at full amplitude, which
- *     can click or pop. [SeamlessAudioProcessor] tapers the first few milliseconds so the track begins
- *     rather than switches on.
+ * ## Why there is no silence trimming here (it was tried, and removed)
  *
- * ## Why the silence trimming must be Media3's, not ours
+ * A previous version also trimmed leading/trailing silence with Media3's `SilenceSkippingAudioProcessor`.
+ * That is the standard trick for speech, and it makes contiguous playback sound tighter — but it is
+ * actively wrong in a music player that supports seeking, for a reason that is easy to miss:
  *
- * This app's karaoke lyrics and progress bar are driven from the player's reported position. A processor
- * that drops samples *shortens the stream*, so a naive implementation would slide the audio out of sync
- * with the lyric timeline — the exact bug class this app has spent a lot of effort eliminating, and one
- * that would show up as every word landing late after the first length of silence.
+ *  - The trimmer removes silence *wherever it occurs*, including a song's **trailing fade-out**, which most
+ *    tracks have a second or two of. So seeking anywhere into that tail — which is exactly what "tap near
+ *    the end" does — lands in audio that the trimmer then skips. The remaining audio is consumed
+ *    instantly, the item ends, and playback advances to the next song.
+ *  - The position it reports is corrected for the skipped frames, so the two together read as the progress
+ *    bar *jumping to the very end* on a seek that was nowhere near it.
  *
- * `DefaultAudioSink` avoids it: it asks the chain for `getSkippedOutputFrameCount()` and adds that
- * duration back into the position it reports (`applySkipping`), so the media position stays on the
- * original timeline and skipping is invisible to anything reading it. [SeamlessAudioProcessorChain]
- * therefore delegates that count to the real [SilenceSkippingAudioProcessor] and keeps it in the chain,
- * rather than trimming on its own. The fade processor changes amplitude only — never length — so it needs
- * no correction at all.
+ * There is no configuration that avoids this: the trimmer does not distinguish leading from trailing
+ * silence, and keeping all silence (retention 1.0) means it does nothing at all. So the trimming is gone,
+ * and only the amplitude taper remains — which is safe, because it changes no frame counts and therefore
+ * cannot affect the media position, and which is verified by `SeamlessAudioProcessorTest`.
  *
- * The app's own [com.yunyin.music.playback.ReactiveRenderersFactory] replaces the sink's chain to add this
- * fade and the analysis tee; the chain built here reproduces Media3's default ordering
- * (`user processors → silence skipping → Sonic`) so that nothing about speed/pitch handling changes.
- */
-
-/**
- * Tapers the head of each stream.
- *
- * Amplitude-only processing: it produces exactly as many frames as it consumes, so it cannot disturb the
+ * Amplitude-only processing: this produces exactly as many frames as it consumes, so it cannot disturb the
  * media position, and it reports the passed-through format unchanged. If it is handed anything other than
  * 16-bit PCM it deactivates itself (`isActive()` false, format `NOT_SET`) rather than throwing — an
  * unsupported format must degrade to "no fade", never fail playback.
- *
- * The fade is deliberately short ([DEFAULT_FADE_MS]): long enough to remove an onset click, short enough
- * that it is not heard as a fade-in. It is applied on `flush`, and a flush happens on every load and seek,
- * so "the first frames of the stream" means the first frames you actually hear.
  */
 @UnstableApi
-class SeamlessAudioProcessor : BaseAudioProcessor() {
+class SeamlessAudioProcessor(
+    /**
+     * Whether the taper is on, read live.
+     *
+     * A lambda rather than a value, so the Settings switch takes effect without the processor having to be
+     * rebuilt: it is consulted at each flush, which is a fresh load or a seek — i.e. the moment a taper is
+     * about to be applied anyway.
+     */
+    private val enabled: () -> Boolean = { true },
+) : BaseAudioProcessor() {
 
-    /** Length of the head taper, in milliseconds. */
+    /** Length of the head taper, in milliseconds. Zero disables it. */
     private var fadeMs: Int = DEFAULT_FADE_MS
 
     /** Frames the taper spans, derived from the input sample rate on flush. */
@@ -85,7 +73,8 @@ class SeamlessAudioProcessor : BaseAudioProcessor() {
     override fun onFlush(streamMetadata: AudioProcessor.StreamMetadata) {
         // A flush is a fresh load or a seek. In both cases the next frames are ones the listener has not
         // heard, so the taper restarts: seeking into a track should fade in exactly as loading it does.
-        fadeFrames = fadeMs * inputAudioFormat.sampleRate / 1000
+        // The switch is read here, so turning it off silences the taper from the next flush onward.
+        fadeFrames = if (enabled()) fadeMs * inputAudioFormat.sampleRate / 1000 else 0
         framesEmitted = 0
     }
 
@@ -147,88 +136,5 @@ class SeamlessAudioProcessor : BaseAudioProcessor() {
 
         /** Upper bound, so a bad caller cannot turn the taper into an audible fade-in. */
         const val MAX_FADE_MS = 400
-    }
-}
-
-/**
- * The sink's processor chain: the app's own processors, then silence trimming, then speed/pitch.
- *
- * Mirrors `DefaultAudioSink.DefaultAudioProcessorChain` — same ordering, same delegation — but takes the
- * processors the app supplies instead of a fixed set. It has to exist at all because
- * `DefaultAudioSink.Builder.setAudioProcessors(...)` wraps the given processors in a *default* chain that
- * puts them **before** silence skipping, which would leave this app's head taper sitting on the leading
- * silence that the skipper then removes — the fade would be thrown away. Building the chain here pins the
- * order.
- *
- * The [getSkippedOutputFrameCount] and [getMediaDuration] delegations are not incidental: the sink
- * consults them to keep the media position on the original timeline. Skipping silence without reporting
- * the skipped frames would desync the lyrics (see the file note above), so this is the part that makes
- * trimming safe rather than merely correct-sounding.
- */
-@UnstableApi
-internal class SeamlessAudioProcessorChain(
-    userProcessors: Array<AudioProcessor>,
-    private val silenceSkipping: SilenceSkippingAudioProcessor = configuredSilenceSkipping(),
-    private val sonic: SonicAudioProcessor = SonicAudioProcessor(),
-) : AudioProcessorChain {
-
-    private val processors: Array<AudioProcessor> =
-        userProcessors + arrayOf(silenceSkipping, sonic)
-
-    override fun getAudioProcessors(): Array<AudioProcessor> = processors
-
-    override fun applyPlaybackParameters(playbackParameters: PlaybackParameters): PlaybackParameters {
-        sonic.setSpeed(playbackParameters.speed)
-        sonic.setPitch(playbackParameters.pitch)
-        return playbackParameters
-    }
-
-    override fun applySkipSilenceEnabled(skipSilenceEnabled: Boolean): Boolean {
-        silenceSkipping.setEnabled(skipSilenceEnabled)
-        return skipSilenceEnabled
-    }
-
-    override fun getMediaDuration(playoutDuration: Long): Long =
-        if (sonic.isActive) sonic.getMediaDuration(playoutDuration) else playoutDuration
-
-    override fun getSkippedOutputFrameCount(): Long = silenceSkipping.skippedFrames
-
-    private companion object {
-
-        /**
-         * Silence trimming, tuned to remove obvious dead air and nothing else.
-         *
-         * Media3's defaults are built for speech (podcasts), where aggressively stripping pauses is
-         * desirable: it starts trimming at 100 ms of silence and keeps only 20% of it. Applied to music
-         * that is too aggressive in two visible ways — a short musical rest gets shortened (audible as a
-         * clipped breath between phrases), and a *trailing* silence is cut so close to the end that
-         * seeking near the end of a track can land in already-trimmed territory, which ends the item and
-         * advances to the next song.
-         *
-         * So: only silence longer than [MIN_SILENCE_US] is touched at all, and half of it is kept. That
-         * still removes the multi-second dead air this feature exists for, while short rests and the tail
-         * survive intact. The detection level is left at Media3's default, which only flags near-digital
-         * silence — raising it would start trimming quiet music.
-         */
-        fun configuredSilenceSkipping(): SilenceSkippingAudioProcessor =
-            SilenceSkippingAudioProcessor(
-                MIN_SILENCE_US,
-                SILENCE_RETENTION,
-                MAX_SILENCE_TO_KEEP_US,
-                MIN_VOLUME_PERCENT,
-                SilenceSkippingAudioProcessor.DEFAULT_SILENCE_THRESHOLD_LEVEL,
-            )
-
-        /** Only silences longer than this are trimmed. Short musical rests are left alone. */
-        const val MIN_SILENCE_US = 500_000L
-
-        /** Fraction of a qualifying silence to keep — half, so the trim cannot clip a pause away. */
-        const val SILENCE_RETENTION = 0.5f
-
-        /** Ceiling on how much of a long silence survives, applied after the retention ratio. */
-        const val MAX_SILENCE_TO_KEEP_US = 1_000_000L
-
-        /** Keep a little level rather than hard-muting, so the result does not read as a dropout. */
-        const val MIN_VOLUME_PERCENT = 10
     }
 }
