@@ -115,8 +115,9 @@ fun LoginScreen(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // 44dp for a comfortable touch target; the glyph stays 20dp.
             Box(
-                Modifier.size(34.dp).clip(CircleShape).clickable(onClick = onDismiss),
+                Modifier.size(44.dp).clip(CircleShape).clickable(onClick = onDismiss),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(

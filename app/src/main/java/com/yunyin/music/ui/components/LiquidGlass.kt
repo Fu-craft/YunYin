@@ -385,9 +385,11 @@ fun FloatingMiniPlayer(
             }
         }
         Spacer(Modifier.width(6.dp))
+        // 44dp rather than 38: the minimum comfortable touch target. The glyph stays 20dp, so the
+        // control looks the same while becoming reliably tappable one-handed.
         Box(
             Modifier
-                .size(38.dp)
+                .size(44.dp)
                 .clip(CircleShape)
                 // The white control ripple, not the default: the default is the theme's near-black
                 // on-surface colour and bounded, so on this dark glass it drew a dark clipped square —

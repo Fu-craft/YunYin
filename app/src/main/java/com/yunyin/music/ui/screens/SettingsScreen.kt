@@ -87,8 +87,9 @@ fun SettingsScreen(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // 44dp for a comfortable touch target; the glyph stays 22dp so the header reads the same.
             Box(
-                Modifier.size(34.dp).clip(CircleShape).clickable(onClick = onBack),
+                Modifier.size(44.dp).clip(CircleShape).clickable(onClick = onBack),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(

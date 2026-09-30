@@ -620,7 +620,8 @@ private fun BarIconButton(
 ) {
     Box(
         Modifier
-            .size(40.dp)
+            // 44dp for a comfortable touch target; the glyph stays 19dp.
+            .size(44.dp)
             .clip(ContinuousRoundedRectangle(AppleShapes.pill))
             .background(ink.copy(alpha = 0.16f))
             .clickable(
