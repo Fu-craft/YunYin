@@ -197,7 +197,11 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
     fun openLikedSongs(uid: Long, coverUrl: String?) {
         collectionJob?.cancel()
         val requestId = ++collectionRequestId
-        _collection.value = CollectionUiState(title = "我喜欢的音乐", coverUrl = coverUrl)
+        // A song added locally is newer than anything the cloud cover can show, so it takes the cover.
+        // Without this the cover stayed on the cloud playlist's own artwork and liking a song here never
+        // changed it.
+        val cover = container.liked.newestAddedCoverUrl() ?: coverUrl
+        _collection.value = CollectionUiState(title = "我喜欢的音乐", coverUrl = cover)
         collectionJob = viewModelScope.launch {
             val tracks = container.liked.tracks(uid)
             val shown = _collection.value?.id

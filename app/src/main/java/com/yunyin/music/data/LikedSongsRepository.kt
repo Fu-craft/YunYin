@@ -43,6 +43,20 @@ class LikedSongsRepository(
     fun added(): List<Track> = store.load()
 
     /**
+     * Artwork for the liked list's own cover: the most recently **locally added** song, or null.
+     *
+     * The cover otherwise comes from the account's cloud playlist, which by construction cannot reflect
+     * anything liked in this app — so a song added here never became the cover, which is the reported bug.
+     *
+     * Only the local half can be ordered. NetEase's `/likelist` returns ids with no timestamps, so there is
+     * no way to compare a cloud like's time against a local one; the local additions are treated as the
+     * newest, which is exactly true for the case being fixed (the user just tapped the heart in this app)
+     * and is the only ordering the available data supports. Null means "nothing newer locally", and the
+     * caller keeps the cloud cover.
+     */
+    fun newestAddedCoverUrl(): String? = newestCoverUrl(store.load())
+
+    /**
      * The effective liked state of [id], from whatever is known right now.
      *
      * Synchronous so it can be read while composing a heart. Before the cloud half has been fetched a
@@ -133,6 +147,16 @@ class LikedSongsRepository(
         cloudUid = null
     }
 }
+
+/**
+ * The cover the liked list should show, given its locally added songs newest-first.
+ *
+ * The newest entry that actually has artwork: a track liked from a source without a cover would otherwise
+ * blank the cover out, which is worse than showing the next newest one. A pure function because "which
+ * cover is newest" is the requirement being fixed, and it is easier to trust when it is testable.
+ */
+internal fun newestCoverUrl(added: List<Track>): String? =
+    added.firstOrNull { !it.coverUrl.isNullOrBlank() }?.coverUrl
 
 /**
  * The shared liked rule: an id is liked when it was added locally, or when the cloud knows it and it was

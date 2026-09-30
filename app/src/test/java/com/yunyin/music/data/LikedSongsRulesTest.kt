@@ -136,4 +136,25 @@ class LikedSongsRulesTest {
         assertEquals(1, merged.size)
         assertEquals("本地名称", merged[0].name)
     }
+
+    // ---------------------------------------------------------------- the liked cover
+
+    @Test
+    fun `the cover is the newest locally added song`() {
+        // Stored newest-first, so the head is the song just liked — the case that never reached the cover.
+        val added = listOf(track(2L).copy(coverUrl = "new.jpg"), track(1L).copy(coverUrl = "old.jpg"))
+        assertEquals("new.jpg", newestCoverUrl(added))
+    }
+
+    @Test
+    fun `a song without artwork does not blank the cover`() {
+        val added = listOf(track(2L).copy(coverUrl = null), track(1L).copy(coverUrl = "old.jpg"))
+        assertEquals("old.jpg", newestCoverUrl(added))
+    }
+
+    @Test
+    fun `no local likes means no local cover, so the caller keeps the cloud one`() {
+        assertNull(newestCoverUrl(emptyList()))
+        assertNull(newestCoverUrl(listOf(track(1L).copy(coverUrl = null))))
+    }
 }

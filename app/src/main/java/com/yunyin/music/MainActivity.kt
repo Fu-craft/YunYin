@@ -32,6 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -56,6 +57,7 @@ import com.yunyin.music.playback.LocalPlayerController
 import com.yunyin.music.playback.PlaybackUiState
 import com.yunyin.music.ui.AppViewModel
 import com.yunyin.music.ui.AudioQuality
+import com.yunyin.music.ui.CollectionUiState
 import com.yunyin.music.ui.PlayerViewModel
 import com.yunyin.music.ui.components.CrossfadeContent
 import com.yunyin.music.ui.components.FloatingMiniPlayer
@@ -458,12 +460,21 @@ class MainActivity : ComponentActivity() {
             }
 
             // ------------------------------------------------ overlays
+            // The last non-null collection, kept for the duration of the exit animation.
+            //
+            // This is what makes the exit visible at all. The content was gated on `collectionState`
+            // directly, and closing sets it to null — so the exit transition ran on an *empty* box and the
+            // page appeared to vanish instantly, while the enter (which has a non-null state) slid in
+            // normally. Holding the previous value means the outgoing page still has something to slide.
+            var lastCollection by remember { mutableStateOf<CollectionUiState?>(null) }
+            SideEffect { collectionState?.let { lastCollection = it } }
+
             AnimatedVisibility(
                 visible = collectionState != null,
                 enter = slideInVertically(tween(320)) { it } + fadeIn(tween(200)),
                 exit = slideOutVertically(tween(260)) { it } + fadeOut(tween(160)),
             ) {
-                val state = collectionState
+                val state = lastCollection
                 if (state != null) {
                     // Stripped to just what the list marks: collecting the full state here would
                     // recompose all 500 rows four times a second while music plays.

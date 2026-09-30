@@ -1,18 +1,20 @@
 package com.yunyin.music.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -25,7 +27,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
@@ -58,7 +59,6 @@ import com.yunyin.music.core.Playlist
 import com.yunyin.music.core.Track
 import com.yunyin.music.data.ArtworkLoader
 import com.yunyin.music.ui.components.Artwork
-import com.yunyin.music.ui.components.PlaylistCard
 import com.yunyin.music.ui.components.rememberControlRipple
 import com.yunyin.music.ui.icons.SfIcons
 import com.yunyin.music.ui.theme.AppleShapes
@@ -86,9 +86,12 @@ import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
  *  - **One icon per row, one chevron per row.** Every row is the same height with the same leading
  *    icon size and a trailing disclosure indicator, so the column of labels lines up and the eye can
  *    scan it vertically.
- *  - **Every row goes somewhere.** The reference's rows are all navigational; a row that only looked
- *    like one would be worse than not having it, so the two list rows expand in place to reveal
- *    their content rather than pretending to be pages this app does not have.
+ *  - **Every row goes somewhere, and the two list rows open their own page.** They used to unfold inside
+ *    the card, which made the page's length depend on what was open (so the card below jumped), and it
+ *    meant a long "最近播放" and a long playlist collection both turned the profile page into a scroller.
+ *    They are now subpages that slide in from the trailing edge over the list — the standard push, with a
+ *    matching slide-out — so each collection gets the full height and the profile page keeps its shape.
+ *    The operation is no longer than before: one tap to open, the same back gesture to leave.
  *
  * [AppTheme]'s palette is used rather than the reference's fixed greys, so the screen follows the
  * system appearance instead of being permanently light.
@@ -126,12 +129,107 @@ fun LibraryScreen(
     val liked = playlists.firstOrNull { it.isLikedSongs }
     val normalPlaylists = playlists.filterNot { it.isLikedSongs }
 
-    // Which expandable row is open. Only one at a time: the card is a single surface, so two open
-    // sections inside it would read as one long ungrouped list.
-    var expanded by remember { mutableStateOf<String?>(null) }
+    // Which subpage is open, if any. One at a time, and held here rather than by each row so only one
+    // layer can ever be on top.
+    var openPage by remember { mutableStateOf<LibraryPage?>(null) }
+
+    // The system back gesture has to close the subpage rather than escape the whole tab: without this a
+    // pushed page is a dead end for anyone using the gesture instead of the on-screen back chip.
+    BackHandler(enabled = openPage != null) { openPage = null }
+
+    Box(modifier.fillMaxSize()) {
+    LibraryContent(
+        account = account,
+        playlists = playlists,
+        playlistsLoading = playlistsLoading,
+        recentTracks = recentTracks,
+        loader = loader,
+        signature = signature,
+        likedCount = likedCount,
+        headerBackground = headerBackground,
+        headerAvatar = headerAvatar,
+        liked = liked,
+        normalPlaylists = normalPlaylists,
+        onSignIn = onSignIn,
+        onSettings = onSettings,
+        onEditProfile = onEditProfile,
+        onPlaylistClick = onPlaylistClick,
+        onLikedSongsClick = onLikedSongsClick,
+        onTrackClick = onTrackClick,
+        onOpenPage = { openPage = it },
+    )
+
+    // The subpages themselves.
+    //
+    // An `AnimatedVisibility` per page, so each animates its own presence: only the entering page
+    // animates in, and on back the leaving page animates out with its content still composed (the route
+    // is not cleared until the transition has finished, which is the same trap that made the collection
+    // page's exit invisible).
+    AnimatedVisibility(
+        visible = openPage == LibraryPage.Playlists,
+        enter = slideInHorizontally(tween(LIB_PAGE_MS)) { it } + fadeIn(tween(200)),
+        exit = slideOutHorizontally(tween(LIB_PAGE_EXIT_MS)) { it } + fadeOut(tween(160)),
+    ) {
+        PlaylistsPage(
+            playlists = normalPlaylists,
+            loading = playlistsLoading,
+            signedIn = signedIn,
+            loader = loader,
+            onBack = { openPage = null },
+            onPlaylistClick = onPlaylistClick,
+        )
+    }
+
+    AnimatedVisibility(
+        visible = openPage == LibraryPage.Recent,
+        enter = slideInHorizontally(tween(LIB_PAGE_MS)) { it } + fadeIn(tween(200)),
+        exit = slideOutHorizontally(tween(LIB_PAGE_EXIT_MS)) { it } + fadeOut(tween(160)),
+    ) {
+        RecentPage(
+            tracks = recentTracks,
+            loader = loader,
+            onBack = { openPage = null },
+            onTrackClick = onTrackClick,
+        )
+    }
+    }
+}
+
+/** The two collections that used to unfold inside the profile card. */
+private enum class LibraryPage { Playlists, Recent }
+
+/** Slide-in duration for a library subpage; matches the app's other page pushes. */
+private const val LIB_PAGE_MS = 320
+
+/** Exit is slightly quicker than entry, as everywhere else in this app. */
+private const val LIB_PAGE_EXIT_MS = 260
+
+/** The profile page's own content, separated so the subpages can be layered over it. */
+@Composable
+private fun LibraryContent(
+    account: Account?,
+    playlists: List<Playlist>,
+    playlistsLoading: Boolean,
+    recentTracks: List<Track>,
+    loader: ArtworkLoader,
+    signature: String,
+    likedCount: Int?,
+    headerBackground: ImageBitmap?,
+    headerAvatar: ImageBitmap?,
+    liked: Playlist?,
+    normalPlaylists: List<Playlist>,
+    onSignIn: () -> Unit,
+    onSettings: () -> Unit,
+    onEditProfile: () -> Unit,
+    onPlaylistClick: (Playlist) -> Unit,
+    onLikedSongsClick: () -> Unit,
+    onTrackClick: (Track) -> Unit,
+    onOpenPage: (LibraryPage) -> Unit,
+) {
+    val signedIn = account != null && !account.isAnonymous
 
     LazyColumn(
-        modifier = modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize(),
         // No status-bar spacer here: the profile header is the first thing on the page and runs under the
         // status bar on purpose, so the banner reads as full-bleed rather than as an inset image.
         contentPadding = PaddingValues(bottom = 150.dp),
@@ -172,73 +270,21 @@ fun LibraryScreen(
                     onClick = onLikedSongsClick,
                 )
 
-                // 我的歌单 — expands to the carousel in place.
+                // 我的歌单 — opens its own page rather than unfolding here.
                 LibraryRow(
                     icon = SfIcons.ListBullet,
                     label = "我的歌单",
                     trailing = if (normalPlaylists.isNotEmpty()) "${normalPlaylists.size}" else null,
-                    expandable = true,
-                    expanded = expanded == "playlists",
-                    onClick = {
-                        expanded = if (expanded == "playlists") null else "playlists"
-                    },
+                    onClick = { onOpenPage(LibraryPage.Playlists) },
                 )
-                ExpandableSection(visible = expanded == "playlists") {
-                    when {
-                        normalPlaylists.isNotEmpty() -> LazyRow(
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
-                            horizontalArrangement = Arrangement.spacedBy(14.dp),
-                        ) {
-                            items(normalPlaylists, key = { it.id }) { playlist ->
-                                PlaylistCard(
-                                    playlist = playlist,
-                                    loader = loader,
-                                    onClick = { onPlaylistClick(playlist) },
-                                )
-                            }
-                        }
 
-                        playlistsLoading -> Box(
-                            Modifier.fillMaxWidth().padding(vertical = 20.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            CircularProgressIndicator(
-                                color = AppTheme.palette.accent,
-                                strokeWidth = 2.5.dp,
-                                modifier = Modifier.size(22.dp),
-                            )
-                        }
-
-                        else -> EmptyHint(
-                            if (signedIn) "还没有歌单" else "登录后可同步你的歌单",
-                        )
-                    }
-                }
-
-                // 最近播放 — expands to the list in place.
+                // 最近播放 — opens its own page for the same reason.
                 LibraryRow(
                     icon = SfIcons.Clock,
                     label = "最近播放",
                     trailing = if (recentTracks.isNotEmpty()) "${recentTracks.size}" else null,
-                    expandable = true,
-                    expanded = expanded == "recent",
-                    onClick = { expanded = if (expanded == "recent") null else "recent" },
+                    onClick = { onOpenPage(LibraryPage.Recent) },
                 )
-                ExpandableSection(visible = expanded == "recent") {
-                    if (recentTracks.isEmpty()) {
-                        EmptyHint("还没有播放记录")
-                    } else {
-                        Column(Modifier.padding(bottom = 4.dp)) {
-                            recentTracks.forEach { track ->
-                                RecentTrackRow(
-                                    track = track,
-                                    loader = loader,
-                                    onClick = { onTrackClick(track) },
-                                )
-                            }
-                        }
-                    }
-                }
 
                 // 设置 is reached from the header's gear, so it is not repeated here.
             }
@@ -628,34 +674,239 @@ private fun LibraryRow(
     }
 }
 
-/** Reveals a row's content in place, growing and fading so the card does not jump open. */
+/**
+ * The subtitle line for an empty collection on one of the subpages.
+ *
+ * Centred and with no leading inset, because it stands alone on its own page rather than sitting under a
+ * row's icon.
+ */
 @Composable
-private fun ExpandableSection(visible: Boolean, content: @Composable () -> Unit) {
-    AnimatedVisibility(
-        visible = visible,
-        enter = expandVertically(tween(260)) + fadeIn(tween(200)),
-        exit = shrinkVertically(tween(220)) + fadeOut(tween(140)),
-    ) {
-        Box(Modifier.padding(bottom = 6.dp)) { content() }
+private fun EmptyHint(text: String) {
+    Box(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 48.dp), contentAlignment = Alignment.Center) {
+        Text(
+            text = text,
+            fontFamily = SFPro,
+            fontSize = 15.sp,
+            color = AppTheme.palette.secondaryLabel,
+            textAlign = TextAlign.Center,
+        )
     }
 }
 
-/** A short line of grey text for an expanded section with nothing in it. */
+/**
+ * A library subpage: the app's standard push, with a back chip instead of a system bar.
+ *
+ * Full-bleed with an opaque background on purpose — it is layered *over* the profile page, so without a
+ * background the two would show through each other during the slide. Its own `navigationBarsPadding` keeps
+ * the last row clear of the gesture area; the content padding below does the same for the floating chrome.
+ *
+ * `content` is a `ColumnScope` lambda so the page can claim the space left under the header with
+ * `weight(1f)`. A `fillMaxSize()` list would instead measure against the column's *full* height and push
+ * its last rows off the bottom — the header's height is not subtracted from a plain `fillMaxSize`.
+ */
 @Composable
-private fun EmptyHint(text: String) {
-    Text(
-        text = text,
-        fontFamily = SFPro,
-        fontSize = 14.sp,
-        color = AppTheme.palette.secondaryLabel,
-        modifier = Modifier.padding(start = 56.dp, end = 16.dp, top = 4.dp, bottom = 10.dp),
+private fun LibrarySubpage(
+    title: String,
+    onBack: () -> Unit,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(AppTheme.palette.background),
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .clickable(
+                        indication = rememberControlRipple(bounded = false),
+                        interactionSource = null,
+                        onClick = onBack,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    SfIcons.ChevronLeft,
+                    contentDescription = "返回",
+                    tint = AppTheme.palette.accent,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = title,
+                fontFamily = SFPro,
+                fontWeight = FontWeight.Bold,
+                fontSize = 28.sp,
+                color = AppTheme.palette.label,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        content()
+    }
+}
+
+/**
+ * 我的歌单 as its own page.
+ *
+ * A list rather than the carousel the row used to open: this page exists to show *all* of them, and a
+ * horizontal carousel makes a large collection tedious to scan. The count can be in the hundreds, so the
+ * list is lazy.
+ */
+@Composable
+private fun PlaylistsPage(
+    playlists: List<Playlist>,
+    loading: Boolean,
+    signedIn: Boolean,
+    loader: ArtworkLoader,
+    onBack: () -> Unit,
+    onPlaylistClick: (Playlist) -> Unit,
+) {
+    LibrarySubpage(title = "我的歌单", onBack = onBack) {
+        when {
+            playlists.isNotEmpty() -> LazyColumn(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                contentPadding = PaddingValues(bottom = 150.dp),
+            ) {
+                itemsIndexed(playlists, key = { _, p -> p.id }) { index, playlist ->
+                    PlaylistRow(
+                        playlist = playlist,
+                        loader = loader,
+                        onClick = { onPlaylistClick(playlist) },
+                    )
+                    if (index != playlists.lastIndex) {
+                        RowDivider()
+                    }
+                }
+            }
+
+            loading -> Box(
+                Modifier.weight(1f).fillMaxWidth(),
+                contentAlignment = Alignment.TopCenter,
+            ) {
+                CircularProgressIndicator(
+                    color = AppTheme.palette.accent,
+                    strokeWidth = 2.5.dp,
+                    modifier = Modifier.padding(top = 40.dp).size(24.dp),
+                )
+            }
+
+            else -> EmptyHint(if (signedIn) "还没有歌单" else "登录后可同步你的歌单")
+        }
+    }
+}
+
+/** 最近播放 as its own page. */
+@Composable
+private fun RecentPage(
+    tracks: List<Track>,
+    loader: ArtworkLoader,
+    onBack: () -> Unit,
+    onTrackClick: (Track) -> Unit,
+) {
+    LibrarySubpage(title = "最近播放", onBack = onBack) {
+        if (tracks.isEmpty()) {
+            EmptyHint("还没有播放记录")
+        } else {
+            LazyColumn(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                contentPadding = PaddingValues(bottom = 150.dp),
+            ) {
+                itemsIndexed(tracks, key = { _, t -> t.id }) { index, track ->
+                    RecentTrackRow(
+                        track = track,
+                        loader = loader,
+                        onClick = { onTrackClick(track) },
+                    )
+                    if (index != tracks.lastIndex) {
+                        RowDivider()
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** A hairline between rows, inset to line up with the row's text rather than its artwork. */
+@Composable
+private fun RowDivider() {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .padding(start = 20.dp)
+            .height(0.5.dp)
+            .background(AppTheme.palette.separator),
     )
+}
+
+/** A playlist as a full-width row: artwork, name, track count, and a chevron. */
+@Composable
+private fun PlaylistRow(
+    playlist: Playlist,
+    loader: ArtworkLoader,
+    onClick: () -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(
+                indication = rememberControlRipple(bounded = true),
+                interactionSource = null,
+                onClick = onClick,
+            )
+            .padding(horizontal = 20.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Artwork(
+            url = playlist.coverUrl,
+            loader = loader,
+            corner = 10.dp,
+            requestSize = 300,
+            modifier = Modifier.size(56.dp),
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = playlist.name,
+                fontFamily = SFPro,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium,
+                color = AppTheme.palette.label,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (playlist.trackCount > 0) {
+                Text(
+                    text = "${playlist.trackCount} 首",
+                    fontFamily = SFPro,
+                    fontSize = 13.sp,
+                    color = AppTheme.palette.secondaryLabel,
+                )
+            }
+        }
+        Spacer(Modifier.width(8.dp))
+        Icon(
+            SfIcons.ChevronRight,
+            contentDescription = null,
+            tint = AppTheme.palette.tertiaryLabel,
+            modifier = Modifier.size(16.dp),
+        )
+    }
 }
 
 /**
  * One recently-played entry: artwork on the left, title and artist on the right.
  *
- * A plain row with no card of its own, since it already sits inside the grouped card.
+ * Now used full-width on its own page, so it carries the page's horizontal inset itself.
  */
 @Composable
 private fun RecentTrackRow(
