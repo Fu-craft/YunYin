@@ -729,4 +729,31 @@ object SfIcons {
             horizontalLineTo(18.0f)
         }
     }
+
+    /**
+     * A filled pencil pointing to the lower-left, in SF's `pencil` idiom.
+     *
+     * Drawn as one closed outline (shaft plus point) rather than as a stroked line: a stroke would put a
+     * round cap on the tip, which reads as a blunt crayon. The tip is separated from the shaft by a small
+     * notch line, which is what makes it legible as a pencil rather than as a plain wedge at icon sizes.
+     */
+    val Pencil: ImageVector = icon("pencil") {
+        path(fill = SolidColor(Color.Black)) {
+            // Point of the pencil.
+            moveTo(4.6f, 19.4f)
+            // Lower edge of the shaft, up to the far end.
+            lineTo(7.72f, 14.52f)
+            lineTo(18.32f, 3.92f)
+            // Flat end (the eraser end), one half-width across.
+            lineTo(20.08f, 5.68f)
+            // Upper edge back down to the point's base.
+            lineTo(9.48f, 16.28f)
+            close()
+        }
+        // The graphite/shaft divide. Slightly inset so it reads as a notch, not as a cut through the icon.
+        mono("pencil.tip", width = 1.5f) {
+            moveTo(7.72f, 14.52f)
+            lineTo(9.48f, 16.28f)
+        }
+    }
 }

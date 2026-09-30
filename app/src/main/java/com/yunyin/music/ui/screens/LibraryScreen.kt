@@ -7,6 +7,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -26,6 +28,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -38,10 +41,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.yunyin.music.core.Account
@@ -60,10 +69,16 @@ import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
 /**
  * Library tab ("我的").
  *
- * Rebuilt to the reference layout: one large title with a circular action button beside it, a
- * standalone account card, then a single grouped card holding the destination rows. Three things
- * about that structure are deliberate and worth stating, because they are what make it read as an
- * iOS grouped list rather than as a pile of rows:
+ * Two parts, in the order the reference presents them: a **profile header** (banner, identity sheet,
+ * avatar straddling the seam) and then a single grouped card of destination rows.
+ *
+ * The profile header replaced a title row plus a standalone account card. That structure was the reason
+ * the page could not show a personalised background: a title row above a card leaves no room for a
+ * full-bleed image, and the card is an opaque box with nothing to put a picture behind. A banner the
+ * avatar sits on gives the user's own image a place to be, which is what was asked for.
+ *
+ * Three things about the row list are deliberate and are what make it read as an iOS grouped list rather
+ * than as a pile of rows:
  *
  *  - **Cards, not a flat list.** Each group is one rounded surface on the page background, so the
  *    grouping is carried by the shape instead of by separators. There are consequently no separator
@@ -85,8 +100,14 @@ fun LibraryScreen(
     playlistsLoading: Boolean,
     recentTracks: List<Track>,
     loader: ArtworkLoader,
+    signature: String = "",
+    /** The user's chosen header image, already decoded; null falls back to an accent gradient. */
+    headerBackground: ImageBitmap? = null,
+    /** The user's chosen avatar, already decoded; null falls back to the account's own. */
+    headerAvatar: ImageBitmap? = null,
     onSignIn: () -> Unit,
     onSettings: () -> Unit,
+    onEditProfile: () -> Unit = {},
     onPlaylistClick: (Playlist) -> Unit,
     onLikedSongsClick: () -> Unit,
     onTrackClick: (Track) -> Unit,
@@ -102,55 +123,23 @@ fun LibraryScreen(
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
+        // No status-bar spacer here: the profile header is the first thing on the page and runs under the
+        // status bar on purpose, so the banner reads as full-bleed rather than as an inset image.
         contentPadding = PaddingValues(bottom = 150.dp),
         verticalArrangement = Arrangement.spacedBy(CardGap),
     ) {
-        item("top") { Spacer(Modifier.statusBarsPadding().height(8.dp)) }
-
-        // ------------------------------------------------------------ title + action
-        item("title") {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = "我的",
-                    fontFamily = SFPro,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 34.sp,
-                    color = AppTheme.palette.label,
-                    modifier = Modifier.weight(1f),
-                )
-                // The reference's circular button. Here it opens settings, which is the real
-                // destination this app has; the tinted circle is kept for the same reason it works
-                // there — a bare glyph next to a 34pt title reads as too small to be a button.
-                Box(
-                    Modifier
-                        .size(44.dp)
-                        .clip(ContinuousRoundedRectangle(AppleShapes.pill))
-                        .background(AppTheme.palette.accent.copy(alpha = 0.16f))
-                        .clickable(
-                            indication = rememberControlRipple(bounded = true),
-                            interactionSource = null,
-                            onClick = onSettings,
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        SfIcons.Gearshape,
-                        contentDescription = "设置",
-                        tint = AppTheme.palette.accent,
-                        modifier = Modifier.size(22.dp),
-                    )
-                }
-            }
-        }
-
-        // ------------------------------------------------------------ account card
-        item("account") {
-            AccountCard(account = account, loader = loader, onClick = onSignIn)
+        // ------------------------------------------------------------ profile header
+        item("header") {
+            ProfileHeader(
+                account = account,
+                signature = signature,
+                background = headerBackground,
+                customAvatar = headerAvatar,
+                loader = loader,
+                onSignIn = onSignIn,
+                onEditProfile = onEditProfile,
+                onSettings = onSettings,
+            )
         }
 
         // ------------------------------------------------------------ grouped rows
@@ -234,82 +223,102 @@ fun LibraryScreen(
                     }
                 }
 
-                // 设置 — the same destination as the title button, listed because the reference has
-                // a row here and users scan the list before the header.
-                LibraryRow(
-                    icon = SfIcons.Gearshape,
-                    label = "设置",
-                    onClick = onSettings,
-                )
+                // 设置 is reached from the header's gear, so it is not repeated here.
             }
         }
     }
 }
 
 /**
- * The account card: avatar, identity, one line of state, and a disclosure chevron.
+ * The profile header, in the reference's shape: a tall banner with the account's identity on a sheet
+ * that overlaps it, and a circular avatar sitting on the seam between the two.
  *
- * Always tappable. The app starts on an anonymous session, so if this row were disabled for guests
- * there would be no way in to sign-in at all.
+ * Three details make it read as the reference rather than as a stack of boxes:
+ *
+ *  - **The banner runs under the status bar and the sheet overlaps it.** The avatar is centred on the
+ *    seam, so the header reads as one object with the identity card lifted onto it — not as an image
+ *    with a card below it.
+ *  - **The banner is the user's own image when they have chosen one**, falling back to a gradient
+ *    derived from the app's accent. A guest therefore still gets a finished header instead of an empty
+ *    grey block, and the fallback is never a broken image.
+ *  - **The icons on the banner are white with a scrim behind them.** The banner can be any image, so
+ *    fixed ink would disappear over a light one; the scrim guarantees contrast without dimming the
+ *    picture as a whole.
+ *
+ * The guest state is not a variant of the signed-in one: with no account there is no nickname to show
+ * and nothing to customise, so the header says so and offers the one action that matters (sign in).
  */
 @Composable
-private fun AccountCard(
+private fun ProfileHeader(
     account: Account?,
+    signature: String,
+    background: ImageBitmap?,
+    customAvatar: ImageBitmap?,
     loader: ArtworkLoader,
-    onClick: () -> Unit,
+    onSignIn: () -> Unit,
+    onEditProfile: () -> Unit,
+    onSettings: () -> Unit,
 ) {
-    Row(
+    val signedIn = account != null && !account.isAnonymous
+
+    Box(
         Modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp)
-            .clip(ContinuousRoundedRectangle(CardCorner))
-            .background(AppTheme.palette.secondaryBackground)
-            .clickable(
-                indication = rememberControlRipple(bounded = true),
-                interactionSource = null,
-                onClick = onClick,
-            )
-            .padding(horizontal = 16.dp, vertical = 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .height(HeaderHeight),
     ) {
-        if (account?.avatarUrl != null) {
-            Artwork(
-                url = account.avatarUrl,
-                loader = loader,
-                corner = AppleShapes.pill,
-                requestSize = 200,
-                placeholderIcon = SfIcons.Person,
-                modifier = Modifier.size(56.dp),
-            )
-        } else {
-            // A tinted circle with the glyph, as in the reference: reads as a placeholder avatar
-            // rather than as a missing image.
-            Box(
-                Modifier
-                    .size(56.dp)
-                    .clip(ContinuousRoundedRectangle(AppleShapes.pill))
-                    .background(AppTheme.palette.accent.copy(alpha = 0.18f)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    SfIcons.Person,
-                    contentDescription = null,
-                    tint = AppTheme.palette.accent,
-                    modifier = Modifier.size(26.dp),
-                )
+        // ---------------------------------------------------------------- banner
+        ProfileBanner(background)
+
+        // A scrim behind the banner icons only. Full-height dimming would wash out the picture the
+        // user chose; a short gradient at the top keeps the glyphs legible over any image.
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(96.dp)
+                .background(
+                    Brush.verticalGradient(
+                        0f to Color.Black.copy(alpha = 0.34f),
+                        1f to Color.Transparent,
+                    )
+                ),
+        )
+
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            BannerIcon(SfIcons.Gearshape, "设置", onSettings)
+            Spacer(Modifier.weight(1f))
+            if (signedIn) {
+                BannerIcon(SfIcons.Pencil, "编辑资料", onEditProfile)
             }
         }
-        Spacer(Modifier.width(14.dp))
-        Column(Modifier.weight(1f)) {
+
+        // ---------------------------------------------------------------- identity sheet
+        Column(
+            Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .clip(topRounded(SheetCorner))
+                .background(AppTheme.palette.background)
+                .padding(top = AvatarSize / 2 + 12.dp, start = 20.dp, end = 20.dp, bottom = 14.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            // `signedIn` already means a non-null, non-anonymous account, so the remaining branches can
+            // read `account` directly — the compiler establishes that, and writing `account?.` here would
+            // be a safe call the compiler flags as unnecessary.
             Text(
-                text = when {
-                    account == null -> "点击登录"
-                    account.isAnonymous -> "点击登录"
-                    else -> account.nickname.ifBlank { "已登录" }
+                text = if (signedIn) {
+                    account.nickname.ifBlank { "云音用户" }
+                } else {
+                    "未登录"
                 },
                 fontFamily = SFPro,
                 fontWeight = FontWeight.Bold,
-                fontSize = 20.sp,
+                fontSize = 28.sp,
                 color = AppTheme.palette.label,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -317,17 +326,196 @@ private fun AccountCard(
             Spacer(Modifier.height(2.dp))
             Text(
                 text = when {
-                    account == null || account.isAnonymous -> "登录后可体验更多功能"
-                    else -> "已同步你的歌单"
+                    !signedIn -> "登录后可同步歌单、头像与喜欢"
+                    signature.isNotBlank() -> signature
+                    else -> "@${account.userId}"
                 },
                 fontFamily = SFPro,
                 fontSize = 14.sp,
                 color = AppTheme.palette.secondaryLabel,
-                maxLines = 1,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+            )
+
+            Spacer(Modifier.height(14.dp))
+
+            if (signedIn) {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    ProfileAction(SfIcons.Pencil, "编辑资料", onEditProfile)
+                    ProfileAction(SfIcons.Gearshape, "设置", onSettings)
+                }
+            } else {
+                // One primary action for a guest: there is nothing else meaningful to offer.
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(46.dp)
+                        .clip(ContinuousRoundedRectangle(AppleShapes.pill))
+                        .background(AppTheme.palette.accent)
+                        .clickable(
+                            indication = rememberControlRipple(bounded = true),
+                            interactionSource = null,
+                            onClick = onSignIn,
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = "登录网易云音乐",
+                        fontFamily = SFPro,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 16.sp,
+                        color = Color.White,
+                    )
+                }
+            }
+        }
+
+        // ---------------------------------------------------------------- avatar
+        // Drawn last so it sits on top of both the banner and the sheet's top edge, which is what makes
+        // the two halves read as one header.
+        Avatar(
+            account = account,
+            custom = customAvatar,
+            loader = loader,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .offset(y = -(HeaderHeight - SheetHeight - AvatarSize / 2))
+                .size(AvatarSize),
+        )
+    }
+}
+
+/**
+ * The banner image: the user's choice when set, otherwise a gradient from the app's accent.
+ *
+ * A custom image is cropped to fill rather than letterboxed, so any aspect ratio the user picks still
+ * fills the band without distortion.
+ */
+@Composable
+private fun ProfileBanner(background: ImageBitmap?) {
+    val palette = AppTheme.palette
+    if (background != null) {
+        Image(
+            bitmap = background,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize(),
+        )
+    } else {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.linearGradient(
+                        listOf(
+                            palette.accent.copy(alpha = 0.85f),
+                            palette.accent.copy(alpha = 0.45f),
+                            palette.secondaryBackground,
+                        )
+                    )
+                ),
+        )
+    }
+}
+
+/** A circular profile picture: the custom image, the NetEase avatar, or a monogram/person glyph. */
+@Composable
+private fun Avatar(
+    account: Account?,
+    custom: ImageBitmap?,
+    loader: ArtworkLoader,
+    modifier: Modifier = Modifier,
+) {
+    val signedIn = account != null && !account.isAnonymous
+    val palette = AppTheme.palette
+    val hasPicture = custom != null || (signedIn && !account.avatarUrl.isNullOrBlank())
+    Box(
+        modifier
+            .clip(CircleShape)
+            // A ring in the page colour, which is what separates the avatar from the banner behind it.
+            .background(palette.background)
+            .padding(4.dp)
+            .clip(CircleShape)
+            // The plate behind the picture. Neutral when there is an image to show; accent-tinted when
+            // there is not, because a light grey plate with a light grey glyph on a white sheet has no
+            // contrast at all — it reads as an empty hole rather than as an avatar. The tint makes the
+            // placeholder legible in both appearances, which is what the reference's artwork does for it.
+            .background(if (hasPicture) palette.secondaryBackground else palette.accent.copy(alpha = 0.18f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        val avatarUrl = account?.avatarUrl
+        when {
+            // The user's own picture wins whenever they have chosen one; the caller only supplies it when
+            // the "follow NetEase avatar" switch is off.
+            custom != null -> Image(
+                bitmap = custom,
+                contentDescription = "头像",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+
+            signedIn && !avatarUrl.isNullOrBlank() -> Artwork(
+                url = avatarUrl,
+                loader = loader,
+                corner = AppleShapes.pill,
+                requestSize = 320,
+                placeholderIcon = SfIcons.Person,
+                modifier = Modifier.fillMaxSize(),
+            )
+
+            else -> Icon(
+                SfIcons.Person,
+                contentDescription = null,
+                tint = palette.accent,
+                modifier = Modifier.size(AvatarSize * 0.42f),
             )
         }
-        Chevron()
+    }
+}
+
+/** A white glyph on the banner, with its own hit area. */
+@Composable
+private fun BannerIcon(icon: ImageVector, description: String, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .size(44.dp)
+            .clip(CircleShape)
+            .clickable(
+                indication = rememberControlRipple(bounded = false),
+                interactionSource = null,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription = description, tint = Color.White, modifier = Modifier.size(24.dp))
+    }
+}
+
+/** One filled chip under the name, matching the reference's button row. */
+@Composable
+private fun ProfileAction(icon: ImageVector, label: String, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .clip(ContinuousRoundedRectangle(AppleShapes.pill))
+            .background(AppTheme.palette.secondaryBackground)
+            .clickable(
+                indication = rememberControlRipple(bounded = true),
+                interactionSource = null,
+                onClick = onClick,
+            )
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, contentDescription = null, tint = AppTheme.palette.label, modifier = Modifier.size(17.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = label,
+            fontFamily = SFPro,
+            fontWeight = FontWeight.Medium,
+            fontSize = 15.sp,
+            color = AppTheme.palette.label,
+        )
     }
 }
 
@@ -491,19 +679,31 @@ private fun RecentTrackRow(
     }
 }
 
-/** The trailing disclosure indicator used by every row. */
-@Composable
-private fun Chevron() {
-    Icon(
-        SfIcons.ChevronRight,
-        contentDescription = null,
-        tint = AppTheme.palette.tertiaryLabel,
-        modifier = Modifier.size(16.dp),
-    )
-}
-
 /** Corner radius of the cards; the reference's cards are generously rounded. */
 private val CardCorner = 20.dp
 
 /** Vertical space between cards. One value, so the page rhythm is even. */
 private val CardGap = 14.dp
+
+/** Total height of the profile header, banner plus sheet. */
+private val HeaderHeight = 300.dp
+
+/** Height of the identity sheet inside the header; the banner occupies the rest. */
+private val SheetHeight = 176.dp
+
+/** Diameter of the header avatar, including its ring. */
+private val AvatarSize = 104.dp
+
+/** Corner radius of the header sheet's top edge. */
+private val SheetCorner = 24.dp
+
+/**
+ * A rounded rectangle with only its top corners rounded.
+ *
+ * The header sheet needs this: it is the top half of a card whose bottom half is the page, so rounding
+ * the bottom corners would cut notches out of content that is not there. Built from the shape library's
+ * per-corner constructor so it keeps the same continuous-curvature corners as the rest of the app rather
+ * than switching to a plain circular one.
+ */
+private fun topRounded(corner: Dp) =
+    ContinuousRoundedRectangle(corner.value, corner.value, 0f, 0f)

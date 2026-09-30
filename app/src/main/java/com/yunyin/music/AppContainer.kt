@@ -5,6 +5,7 @@ import com.yunyin.music.data.ArtworkLoader
 import com.yunyin.music.data.LyricsRepository
 import com.yunyin.music.data.MusicRepository
 import com.yunyin.music.data.PlayHistoryStore
+import com.yunyin.music.data.ProfileStore
 import com.yunyin.music.data.SearchHistoryStore
 import com.yunyin.music.data.SettingsStore
 import com.yunyin.music.data.CoverDownloader
@@ -34,6 +35,9 @@ class AppContainer(val appContext: Context) {
     val searchHistory: SearchHistoryStore by lazy { SearchHistoryStore(appContext) }
 
     val playHistory: PlayHistoryStore by lazy { PlayHistoryStore(appContext) }
+
+    /** The user's own avatar/background/signature for the profile header. */
+    val profile: ProfileStore by lazy { ProfileStore(appContext, settings) }
 
     /** Saves album covers into the device's picture collection. */
     val covers: CoverDownloader by lazy { CoverDownloader(appContext) }

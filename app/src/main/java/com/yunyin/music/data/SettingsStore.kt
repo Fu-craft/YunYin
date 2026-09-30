@@ -53,6 +53,50 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_SEAMLESS_TRANSITION, true)
         set(value) = prefs.edit().putBoolean(KEY_SEAMLESS_TRANSITION, value).apply()
 
+    // ------------------------------------------------------------ profile
+
+    /**
+     * Free-text signature shown under the nickname on the profile header.
+     *
+     * Empty by default: the header falls back to the account's id rather than showing a blank line.
+     */
+    var profileSignature: String
+        get() = prefs.getString(KEY_PROFILE_SIGNATURE, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_PROFILE_SIGNATURE, value).apply()
+
+    /**
+     * Whether the avatar follows the NetEase account's own avatar.
+     *
+     * Defaults on, because that is what someone who just signed in expects to see. Turning it off keeps
+     * whatever custom image was picked, so the switch is a choice between two stored states rather than
+     * a destructive toggle.
+     */
+    var useNeteaseAvatar: Boolean
+        get() = prefs.getBoolean(KEY_USE_NETEASE_AVATAR, true)
+        set(value) = prefs.edit().putBoolean(KEY_USE_NETEASE_AVATAR, value).apply()
+
+    /**
+     * File name (not a path) of the custom avatar/background inside the app's private profile directory.
+     *
+     * A name rather than a full path so the store survives the app's data directory moving, and a copied
+     * file rather than the picker's URI because a `content://` URI from the photo picker is only
+     * guaranteed for the lifetime of the grant — persisting that string would leave the header blank once
+     * the grant expired.
+     */
+    var customAvatarFile: String?
+        get() = prefs.getString(KEY_CUSTOM_AVATAR, null)
+        set(value) = prefs.edit().putString(KEY_CUSTOM_AVATAR, value).apply()
+
+    var customBackgroundFile: String?
+        get() = prefs.getString(KEY_CUSTOM_BACKGROUND, null)
+        set(value) = prefs.edit().putString(KEY_CUSTOM_BACKGROUND, value).apply()
+
+    /**
+     * The signed-in account's own details, mirrored locally.
+     *
+     * NetEase does not expose a profile "signature" through the endpoints this app calls, so a signature
+     * the user types is stored here and treated as the local override.
+     */
     var account: Account?
         get() {
             val id = prefs.getLong(KEY_USER_ID, 0L)
@@ -132,5 +176,9 @@ class SettingsStore(context: Context) {
         private const val KEY_LYRIC_OFFSETS = "lyric_offsets"
         private const val KEY_STATUS_BAR_LYRICS = "status_bar_lyrics"
         private const val KEY_SEAMLESS_TRANSITION = "seamless_transition"
+        private const val KEY_PROFILE_SIGNATURE = "profile_signature"
+        private const val KEY_USE_NETEASE_AVATAR = "use_netease_avatar"
+        private const val KEY_CUSTOM_AVATAR = "custom_avatar_file"
+        private const val KEY_CUSTOM_BACKGROUND = "custom_background_file"
     }
 }

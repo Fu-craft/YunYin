@@ -1,13 +1,17 @@
 package com.yunyin.music
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.os.SystemClock
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -28,6 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -38,6 +43,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
@@ -62,6 +69,7 @@ import com.yunyin.music.ui.screens.HomeScreen
 import com.yunyin.music.ui.screens.LibraryScreen
 import com.yunyin.music.ui.screens.LoginScreen
 import com.yunyin.music.ui.screens.PlayerScreen
+import com.yunyin.music.ui.screens.ProfileEditSheet
 import com.yunyin.music.ui.screens.PlayerArtworkCorner
 import com.yunyin.music.ui.screens.SearchScreen
 import com.yunyin.music.ui.screens.SettingsScreen
@@ -164,6 +172,53 @@ class MainActivity : ComponentActivity() {
         var quality by remember { mutableStateOf(AudioQuality.from(container.settings.quality)) }
         var statusBarLyricsEnabled by remember { mutableStateOf(container.settings.statusBarLyrics) }
         var seamlessTransition by remember { mutableStateOf(container.settings.seamlessTransition) }
+
+        // ------------------------------------------------------------ profile
+        var showProfileEdit by remember { mutableStateOf(false) }
+        var signature by remember { mutableStateOf(container.settings.profileSignature) }
+        var useNeteaseAvatar by remember { mutableStateOf(container.settings.useNeteaseAvatar) }
+        // Bumped after a picture is chosen, so the header reloads even though the setting itself is what
+        // changed and it is not part of this composition's state.
+        var profileRevision by remember { mutableIntStateOf(0) }
+        var avatarBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
+        var backgroundBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
+
+        // The photo picker, not `GetContent`: no storage permission is involved and the system provides the
+        // UI. Each picker is a separate launcher because the two destinations are separate choices.
+        val avatarPicker = rememberLauncherForActivityResult(
+            ActivityResultContracts.PickVisualMedia(),
+        ) { uri: Uri? ->
+            if (uri != null) {
+                scope.launch {
+                    if (container.profile.setAvatar(context, uri)) {
+                        useNeteaseAvatar = false
+                        profileRevision++
+                    }
+                }
+            }
+        }
+        val backgroundPicker = rememberLauncherForActivityResult(
+            ActivityResultContracts.PickVisualMedia(),
+        ) { uri: Uri? ->
+            if (uri != null) {
+                scope.launch {
+                    if (container.profile.setBackground(context, uri)) profileRevision++
+                }
+            }
+        }
+
+        // Re-resolved whenever a picture is chosen or the header's inputs change. Decoding happens in the
+        // loader (off the main thread), so a 4000px photo never blocks the frame that opens the sheet.
+        LaunchedEffect(profileRevision, useNeteaseAvatar, showProfileEdit) {
+            backgroundBitmap = container.profile.backgroundFile()
+                ?.let { container.artwork.loadLocal(it, size = 1080)?.asImageBitmap() }
+            avatarBitmap = if (!useNeteaseAvatar) {
+                container.profile.avatarFile()
+                    ?.let { container.artwork.loadLocal(it, size = 320)?.asImageBitmap() }
+            } else {
+                null
+            }
+        }
 
         // Set once the first-launch session work below finishes. The splash waits on it (and on the
         // home feed) so the app is never revealed in a half-initialised state.
@@ -330,8 +385,12 @@ class MainActivity : ComponentActivity() {
                             playlistsLoading = appViewModel.userPlaylistsLoading,
                             recentTracks = appViewModel.recentTracks,
                             loader = container.artwork,
+                            signature = signature,
+                            headerBackground = backgroundBitmap,
+                            headerAvatar = avatarBitmap,
                             onSignIn = { showLogin = true },
                             onSettings = { showSettings = true },
+                            onEditProfile = { showProfileEdit = true },
                             onPlaylistClick = { appViewModel.openPlaylist(it) },
                             onLikedSongsClick = {
                                 appViewModel.openLikedSongs(
@@ -470,12 +529,51 @@ class MainActivity : ComponentActivity() {
                 )
             }
 
+            // The profile editor. Only reachable while signed in, since every control in it writes to the
+            // signed-in identity.
+            if (showProfileEdit) {
+                ProfileEditSheet(
+                    nickname = account?.nickname.orEmpty(),
+                    signature = signature,
+                    useNeteaseAvatar = useNeteaseAvatar,
+                    hasCustomAvatar = container.profile.avatarFile() != null,
+                    hasCustomBackground = container.profile.backgroundFile() != null,
+                    onSignatureChange = { value ->
+                        signature = value
+                        container.settings.profileSignature = value
+                    },
+                    onPickAvatar = {
+                        avatarPicker.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                        )
+                    },
+                    onPickBackground = {
+                        backgroundPicker.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                        )
+                    },
+                    onClearAvatar = {
+                        container.profile.clearAvatar()
+                        useNeteaseAvatar = true
+                        profileRevision++
+                    },
+                    onClearBackground = {
+                        container.profile.clearBackground()
+                        profileRevision++
+                    },
+                    onUseNeteaseAvatarChange = { enabled ->
+                        useNeteaseAvatar = enabled
+                        container.settings.useNeteaseAvatar = enabled
+                    },
+                    onDismiss = { showProfileEdit = false },
+                )
+            }
+
             AnimatedVisibility(
                 visible = showLogin,
                 enter = slideInVertically(tween(320)) { it },
                 exit = slideOutVertically(tween(280)) { it },
-            ) {
-                LoginScreen(
+            ) {                LoginScreen(
                     currentAccount = account,
                     client = container.client,
                     artworkLoader = container.artwork,

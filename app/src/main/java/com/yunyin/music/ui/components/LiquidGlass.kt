@@ -157,15 +157,20 @@ private val Refraction = 18.dp
 private val GlassBlur = 24.dp
 
 /**
- * The material's colour: **plain white**, at the user's request.
+ * The material's colour: plain white in light mode, the raised dark surface in dark mode.
  *
- * This replaced the frosted material. It is deliberately not a theme colour: the request is for a pure
- * white bar in every appearance, and the light/dark palettes have no white-on-white equivalent in dark
- * mode. The fill is drawn opaque (see the surface draw), because a translucent white over dark content
- * composites to grey rather than white.
+ * White was requested explicitly, and it is kept for light mode. A white bar in dark mode was a bug:
+ * it stayed a bright white slab against a black page, which reads as a rendering mistake and, being
+ * opaque, hid the content behind it while every other surface went dark. The dark appearance therefore
+ * uses the palette's raised surface — the same one step above the content an elevated material should
+ * sit at, and the colour that makes the chrome belong to the dark theme instead of fighting it.
+ *
+ * Drawn opaque in both appearances (see the surface draw): a translucent white over dark content
+ * composites to grey rather than white, and a translucent dark fill would let the rows read through.
  */
 @Composable
-private fun glassTint(): Color = Color.White
+private fun glassTint(): Color =
+    if (AppTheme.palette.isDark) AppTheme.palette.tertiaryBackground else Color.White
 
 /**
  * Floating tab bar: a glass pill with an accent selection sliding between tabs.

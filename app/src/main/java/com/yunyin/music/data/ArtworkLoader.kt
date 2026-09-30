@@ -65,6 +65,44 @@ class ArtworkLoader(context: Context) {
         }
     }
 
+    /**
+     * Decodes a local image file (the user's chosen avatar or header background).
+     *
+     * Kept in this class so it shares the memory cache and the off-main-thread decode; the network tiers
+     * are simply skipped, since the bytes are already local. The cache key includes the file's length and
+     * last-modified time, so replacing the file with new content at the same path cannot serve a stale
+     * bitmap from memory.
+     */
+    suspend fun loadLocal(file: File?, size: Int = 600): Bitmap? {
+        if (file == null || !file.isFile) return null
+        val key = "file:${file.absolutePath}:${file.length()}:${file.lastModified()}"
+        memory.get(key)?.let { return it }
+        val bitmap = withContext(Dispatchers.IO) {
+            runCatching { decodeDownsampled(file, size) }.getOrNull()
+        } ?: return null
+        memory.put(key, bitmap)
+        return bitmap
+    }
+
+    /**
+     * Decodes with a power-of-two `inSampleSize`, so a 4000px photo does not allocate a full-size bitmap
+     * just to be drawn in a 96dp circle.
+     */
+    private fun decodeDownsampled(file: File, size: Int): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+
+        var sample = 1
+        while (bounds.outWidth / (sample * 2) >= size && bounds.outHeight / (sample * 2) >= size) {
+            sample *= 2
+        }
+        return BitmapFactory.decodeFile(
+            file.absolutePath,
+            BitmapFactory.Options().apply { inSampleSize = sample },
+        )
+    }
+
     // ---------------------------------------------------------------- disk tier
 
     private fun cacheFile(key: String): File = File(diskDir, hash(key))
