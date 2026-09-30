@@ -66,13 +66,11 @@ class PlayerViewModel(private val container: AppContainer) : ViewModel() {
         private set
 
     /**
-     * Whether the current track is in the user's liked songs.
+     * Whether the current track is liked, from the shared liked rule.
      *
-     * A local answer, not a cloud one: liking now records into the on-device list (see
-     * [com.yunyin.music.data.LikedSongsStore]), so the heart reflects what the app will actually show in
-     * the liked list. It used to query NetEase, which made the heart depend on the network *and* on a
-     * signed-in account — and since the library's list is built from the cloud, tapping it with no
-     * account changed nothing the user could see.
+     * Read from [com.yunyin.music.data.LikedSongsRepository] rather than from the local list, because the
+     * account's own likes count too: a song liked on NetEase used to show an empty heart here (it is not a
+     * local addition) while appearing in the list, which is the inconsistency this settles.
      */
     var liked by mutableStateOf(false)
         private set
@@ -126,20 +124,17 @@ class PlayerViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     /**
-     * Toggles whether the current track is in the liked songs.
+     * Toggles whether the current track is liked.
      *
-     * Local and immediate: the store is written synchronously, so the heart and the library's list are
-     * consistent the moment the tap lands, and it works for a guest session — which is the point, since
-     * the previous implementation needed an account and a reachable server to do anything at all.
-     *
-     * The write is a `SharedPreferences` commit of a short list, which is fast enough to do on the tap's
-     * own frame; there is consequently no optimistic-then-rollback dance, and nothing to fail.
+     * Local and immediate — no network, no account required, nothing to roll back — but the *operation*
+     * depends on the effective state, which is why it goes through the repository rather than adding or
+     * removing directly: un-liking a song that is liked on NetEase has to record a local removal (there is
+     * nothing in the local list to delete), and re-liking a removed song has to clear that mark.
      */
     fun toggleLike() {
         val track = container.player.state.value.current ?: return
-        val target = !liked
-        container.likedSongs.setLiked(track, target)
-        liked = target
+        container.liked.toggle(track)
+        liked = container.liked.isLiked(track.id)
         onLikedChanged?.invoke()
     }
 
@@ -162,14 +157,23 @@ class PlayerViewModel(private val container: AppContainer) : ViewModel() {
     fun currentTrack(): com.yunyin.music.core.Track? = container.player.state.value.current
 
     /**
-     * Refreshes [liked] for [trackId] from the local store.
+     * Refreshes [liked] for [trackId], and makes sure the cloud half of the rule is available.
      *
-     * `trackId` is the parameter rather than a field read, so a result cannot be applied to a track the
-     * caller was not asking about — the stale-answer class this app has been bitten by.
+     * Set synchronously first (the local half alone is already the right answer for local likes), then
+     * again after the cloud list arrives, so a cloud-only like settles to `true` rather than staying empty.
      */
     private fun refreshLiked(trackId: Long) {
         if (lastTrackId != trackId) return
-        liked = container.likedSongs.contains(trackId)
+        liked = container.liked.isLiked(trackId)
+        val uid = container.settings.account
+            ?.takeUnless { it.isAnonymous }
+            ?.userId
+            ?: 0L
+        viewModelScope.launch {
+            if (container.liked.ensureCloud(uid) && lastTrackId == trackId) {
+                liked = container.liked.isLiked(trackId)
+            }
+        }
     }
 
     /** Applies and persists an offset for the current track. */

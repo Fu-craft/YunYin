@@ -29,7 +29,7 @@ class LikedSongsStore(context: Context) {
     private val prefs: SharedPreferences =
         context.getSharedPreferences("amll_liked", Context.MODE_PRIVATE)
 
-    /** Liked tracks, most recently liked first. */
+    /** Tracks liked in this app, most recently liked first. */
     fun load(): List<Track> =
         prefs.getString(KEY, null)
             ?.lineSequence()
@@ -37,29 +37,54 @@ class LikedSongsStore(context: Context) {
             ?.toList()
             .orEmpty()
 
-    /** Whether [id] is in the local list. */
-    fun contains(id: Long): Boolean = load().any { it.id == id }
-
     /**
-     * Adds [track] to the front of the list, or removes it when [like] is false.
+     * Ids the user has **un-liked locally**.
      *
-     * Re-liking an existing track moves it to the front rather than duplicating it, which keeps the list a
-     * set with a most-recent-first order.
+     * Needed because a song that is liked on NetEase cannot be un-liked by removing it from [load]: that
+     * list only holds local additions, so removing an id that was never there is a no-op and the cloud
+     * half would put the song straight back — the heart would visibly bounce on and off again. This set is
+     * the local record of "not this one", and the effective liked state is
+     * `added ∪ (cloud − removed)`.
+     *
+     * Stored as plain ids rather than tracks: a removal only ever needs to name a song.
      */
-    fun setLiked(track: Track, like: Boolean) {
+    fun removedIds(): Set<Long> =
+        prefs.getString(KEY_REMOVED, null)
+            ?.lineSequence()
+            ?.mapNotNull { it.trim().toLongOrNull() }
+            ?.filter { it != 0L }
+            ?.toHashSet()
+            .orEmpty()
+
+    /** Adds [track] to the front of the liked list and clears any local un-like mark for it. */
+    fun add(track: Track) {
         if (track.id == 0L) return
-        val current = load()
-        val updated = if (like) {
-            listOf(track) + current.filterNot { it.id == track.id }
-        } else {
-            current.filterNot { it.id == track.id }
-        }
-        write(updated)
+        val updated = listOf(track) + load().filterNot { it.id == track.id }
+        writeTracks(updated)
+        markRemoved(track.id, removed = false)
     }
 
-    fun clear() = prefs.edit().remove(KEY).apply()
+    /** Removes [id] from the liked list and records that it was un-liked locally. */
+    fun remove(id: Long) {
+        if (id == 0L) return
+        writeTracks(load().filterNot { it.id == id })
+        markRemoved(id, removed = true)
+    }
 
-    private fun write(tracks: List<Track>) {
+    fun clear() {
+        prefs.edit().remove(KEY).remove(KEY_REMOVED).apply()
+    }
+
+    private fun markRemoved(id: Long, removed: Boolean) {
+        val updated = removedIds().toMutableSet().apply {
+            if (removed) add(id) else remove(id)
+        }
+        // Bounded for the same reason as the track list: this is a convenience record, not a ledger.
+        val text = updated.take(MAX).joinToString("\n")
+        prefs.edit().putString(KEY_REMOVED, text).apply()
+    }
+
+    private fun writeTracks(tracks: List<Track>) {
         // Bounded like the history list: this is a convenience list, not the authoritative copy, so an
         // unbounded growth of a delimited preference string is not worth the risk.
         val text = tracks.take(MAX).joinToString("\n") { TrackText.encode(it) }
@@ -68,6 +93,7 @@ class LikedSongsStore(context: Context) {
 
     private companion object {
         const val KEY = "liked"
+        const val KEY_REMOVED = "liked_removed"
         const val MAX = 2000
     }
 }

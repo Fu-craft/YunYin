@@ -69,45 +69,22 @@ class MusicRepository(private val client: NeteaseClient) {
     suspend fun userPlaylists(uid: Long): NetResult<List<Playlist>> = client.userPlaylists(uid)
 
     /**
-     * The liked-songs list: local likes merged with the account's cloud likes.
+     * The account's own liked songs, as a result rather than a bare list.
      *
-     * Three details are deliberate.
-     *
-     *  - **Local likes come first.** The user just tapped the heart on them, so they belong at the top
-     *    where the action is visible; the cloud list is history and follows.
-     *  - **Cloud failures are not fatal.** A guest has no cloud list at all and a signed-in user may be
-     *    offline, so the cloud half is best-effort: whatever it does or does not return, the local likes
-     *    are still shown. Showing nothing because the network failed is the behaviour being removed.
-     *  - **De-duplication is by id**, keeping the local copy when both know a track: the local one was
-     *    stored from a full [Track] the app was actually playing, whereas the cloud mapping is a snapshot.
+     * A `NetResult` on purpose: the caller (the liked-songs repository) has to tell "the account has no
+     * cloud likes" from "the request failed", because only the first may be counted as zero. Collapsing
+     * both to an empty list is what would make an un-liked song reappear or a count understate.
      */
-    suspend fun likedSongs(uid: Long, local: List<Track>): List<Track> {
-        val cloud = if (uid == 0L) emptyList() else cloudLikedSongs(uid)
-        return mergeLiked(local, cloud)
-    }
-
-    /**
-     * The ids in the account's cloud liked list.
-     *
-     * Exposed so a caller can compute the *merged* count cheaply: the id set is enough to know which
-     * local likes are new, and it avoids fetching every track's detail just to count them. Returns an
-     * empty set for a guest, and an empty set if the request fails — the local half is what must not be
-     * lost, and the caller treats an unknown cloud half as "no extras" rather than as a reason to hide
-     * the list.
-     */
-    suspend fun cloudLikedIds(uid: Long): Set<Long> =
-        if (uid == 0L) emptySet() else client.likedSongIds(uid).listOrEmpty().toHashSet()
-
-    /**
-     * The account's own liked songs, resolved through `/likelist` + batched `/song/detail`.
-     *
-     * Preferred over `/playlist/track/all` for the built-in liked playlist: its virtual id
-     * is not a normal playlist, while `likelist` is the authoritative source.
-     */
-    private suspend fun cloudLikedSongs(uid: Long): List<Track> {
-        val ids = client.likedSongIds(uid).listOrEmpty()
-        if (ids.isEmpty()) return emptyList()
-        return client.songsByIds(ids).listOrEmpty()
+    suspend fun cloudLikedTracks(uid: Long): NetResult<List<Track>> {
+        if (uid == 0L) return NetResult.Ok(emptyList())
+        return when (val ids = client.likedSongIds(uid)) {
+            is NetResult.Err -> ids
+            is NetResult.Ok -> if (ids.value.isEmpty()) {
+                NetResult.Ok(emptyList())
+            } else {
+                client.songsByIds(ids.value)
+            }
+        }
     }
 
     suspend fun artistTopSongs(artistId: Long): List<Track> = client.artistTopSongs(artistId).listOrEmpty()
@@ -125,36 +102,11 @@ class MusicRepository(private val client: NeteaseClient) {
 }
 
 /**
- * The liked list's merge rule: local likes first, then cloud likes that are not already known locally.
+ * Unwraps a list result, treating any failure as "no items".
  *
- * Extracted as a pure function so the three requirements behind it — the local list is authoritative and
- * comes first, a track in both sources appears once, and an empty half never empties the result — are
- * unit-tested rather than only observable by using the app.
- *
- * The local copy is kept when both know a track: it was stored from the [Track] the app was actually
- * playing (with its real cover and duration), whereas the cloud mapping is a list snapshot.
+ * The liked-list logic deliberately does *not* use this: it needs failures to stay visible (see
+ * `cloudLikedTracks`). It is for the callers where "no items" is the right degradation.
  */
-internal fun mergeLiked(local: List<Track>, cloud: List<Track>): List<Track> {
-    val localIds = local.mapTo(HashSet()) { it.id }
-    return local + cloud.filterNot { it.id in localIds }
-}
-
-/**
- * How many songs the liked list holds, given the local list and the account's cloud ids.
- *
- * This exists so the number shown next to the 喜欢 row is the *size of the list the user will get when
- * they open it*, rather than the size of one of its halves. The bug it fixes: the row counted only the
- * locally added songs, so liking one song on top of 563 cloud likes displayed "1 首".
- *
- * Counted from ids rather than by building the list because the cloud tracks' details are not needed to
- * count them — only to display them — so this stays cheap enough to run on every like change.
- */
-internal fun mergedLikedCount(local: List<Track>, cloudIds: Set<Long>): Int {
-    val localIds = local.mapTo(HashSet()) { it.id }
-    return local.size + cloudIds.count { it !in localIds }
-}
-
-/** Unwraps a list result, treating any failure as "no items". */
 internal fun <T> NetResult<List<T>>.listOrEmpty(): List<T> = when (this) {
     is NetResult.Ok -> value
     is NetResult.Err -> emptyList()

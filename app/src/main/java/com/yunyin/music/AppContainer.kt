@@ -2,6 +2,7 @@ package com.yunyin.music
 
 import android.content.Context
 import com.yunyin.music.data.ArtworkLoader
+import com.yunyin.music.data.LikedSongsRepository
 import com.yunyin.music.data.LikedSongsStore
 import com.yunyin.music.data.LyricsRepository
 import com.yunyin.music.data.MusicRepository
@@ -37,8 +38,16 @@ class AppContainer(val appContext: Context) {
 
     val playHistory: PlayHistoryStore by lazy { PlayHistoryStore(appContext) }
 
-    /** Songs liked inside this app; the liked list shows these merged with the account's cloud likes. */
+    /** Songs liked inside this app, plus the removals that mark cloud likes as un-liked here. */
     val likedSongs: LikedSongsStore by lazy { LikedSongsStore(appContext) }
+
+    /**
+     * The liked rule shared by the heart, the liked list and its count.
+     *
+     * One object rather than the store being read from three places: the three views have to agree, and
+     * keeping the rule here is what makes that structural instead of coincidental.
+     */
+    val liked: LikedSongsRepository by lazy { LikedSongsRepository(likedSongs, music) }
 
     /** The user's own avatar/background/signature for the profile header. */
     val profile: ProfileStore by lazy { ProfileStore(appContext, settings) }
