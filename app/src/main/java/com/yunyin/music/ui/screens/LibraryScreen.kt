@@ -261,128 +261,139 @@ private fun ProfileHeader(
 ) {
     val signedIn = account != null && !account.isAnonymous
 
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .height(HeaderHeight),
-    ) {
+    // The header is laid out as a column of two bands, not as one fixed-height box with an avatar
+    // positioned by arithmetic.
+    //
+    // That distinction is the whole fix for the name being drawn underneath the avatar: the previous
+    // version placed the avatar at `HeaderHeight - SheetHeight`, but the identity sheet's height is
+    // decided by its *content* (a two-line signature is taller than a one-line one), so subtracting a
+    // constant put the avatar in the wrong place as soon as the content was not the assumed size.
+    // Here the sheet reserves exactly half the avatar's height at its top and the avatar is offset up by
+    // that same half, so the two meet at the seam whatever the content is: no constant to get wrong.
+    Column(Modifier.fillMaxWidth()) {
         // ---------------------------------------------------------------- banner
-        ProfileBanner(background)
-
-        // A scrim behind the banner icons only. Full-height dimming would wash out the picture the
-        // user chose; a short gradient at the top keeps the glyphs legible over any image.
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(96.dp)
-                .background(
-                    Brush.verticalGradient(
-                        0f to Color.Black.copy(alpha = 0.34f),
-                        1f to Color.Transparent,
-                    )
-                ),
-        )
-
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .statusBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .height(BannerHeight),
         ) {
-            BannerIcon(SfIcons.Gearshape, "设置", onSettings)
-            Spacer(Modifier.weight(1f))
-            if (signedIn) {
-                BannerIcon(SfIcons.Pencil, "编辑资料", onEditProfile)
+            ProfileBanner(background)
+
+            // A scrim behind the banner icons only. Full-height dimming would wash out the picture the
+            // user chose; a short gradient at the top keeps the glyphs legible over any image.
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(96.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            0f to Color.Black.copy(alpha = 0.34f),
+                            1f to Color.Transparent,
+                        )
+                    ),
+            )
+
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                BannerIcon(SfIcons.Gearshape, "设置", onSettings)
+                Spacer(Modifier.weight(1f))
+                if (signedIn) {
+                    BannerIcon(SfIcons.Pencil, "编辑资料", onEditProfile)
+                }
             }
         }
 
         // ---------------------------------------------------------------- identity sheet
-        Column(
-            Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .clip(topRounded(SheetCorner))
-                .background(AppTheme.palette.background)
-                .padding(top = AvatarSize / 2 + 12.dp, start = 20.dp, end = 20.dp, bottom = 14.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            // `signedIn` already means a non-null, non-anonymous account, so the remaining branches can
-            // read `account` directly — the compiler establishes that, and writing `account?.` here would
-            // be a safe call the compiler flags as unnecessary.
-            Text(
-                text = if (signedIn) {
-                    account.nickname.ifBlank { "云音用户" }
+        Box(Modifier.fillMaxWidth()) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(topRounded(SheetCorner))
+                    .background(AppTheme.palette.background)
+                    .padding(start = 20.dp, end = 20.dp, bottom = 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                // Reserves the lower half of the avatar, so the identity starts exactly where the avatar
+                // ends.
+                Spacer(Modifier.height(AvatarSize / 2))
+
+                // `signedIn` already means a non-null, non-anonymous account, so the remaining branch can
+                // read `account` directly — the compiler establishes that, and an `account?.` here would be
+                // a safe call it flags as unnecessary.
+                Text(
+                    text = if (signedIn) account.nickname.ifBlank { "云音用户" } else "未登录",
+                    fontFamily = SFPro,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 26.sp,
+                    color = AppTheme.palette.label,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = when {
+                        !signedIn -> "登录后可同步歌单、头像与喜欢"
+                        signature.isNotBlank() -> signature
+                        else -> "@${account.userId}"
+                    },
+                    fontFamily = SFPro,
+                    fontSize = 14.sp,
+                    color = AppTheme.palette.secondaryLabel,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                )
+
+                Spacer(Modifier.height(16.dp))
+
+                if (signedIn) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        ProfileAction(SfIcons.Pencil, "编辑资料", onEditProfile)
+                        ProfileAction(SfIcons.Gearshape, "设置", onSettings)
+                    }
                 } else {
-                    "未登录"
-                },
-                fontFamily = SFPro,
-                fontWeight = FontWeight.Bold,
-                fontSize = 28.sp,
-                color = AppTheme.palette.label,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text = when {
-                    !signedIn -> "登录后可同步歌单、头像与喜欢"
-                    signature.isNotBlank() -> signature
-                    else -> "@${account.userId}"
-                },
-                fontFamily = SFPro,
-                fontSize = 14.sp,
-                color = AppTheme.palette.secondaryLabel,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
-            )
-
-            Spacer(Modifier.height(14.dp))
-
-            if (signedIn) {
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    ProfileAction(SfIcons.Pencil, "编辑资料", onEditProfile)
-                    ProfileAction(SfIcons.Gearshape, "设置", onSettings)
-                }
-            } else {
-                // One primary action for a guest: there is nothing else meaningful to offer.
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .height(46.dp)
-                        .clip(ContinuousRoundedRectangle(AppleShapes.pill))
-                        .background(AppTheme.palette.accent)
-                        .clickable(
-                            indication = rememberControlRipple(bounded = true),
-                            interactionSource = null,
-                            onClick = onSignIn,
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = "登录网易云音乐",
-                        fontFamily = SFPro,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 16.sp,
-                        color = Color.White,
-                    )
+                    // One primary action for a guest: there is nothing else meaningful to offer.
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(46.dp)
+                            .clip(ContinuousRoundedRectangle(AppleShapes.pill))
+                            .background(AppTheme.palette.accent)
+                            .clickable(
+                                indication = rememberControlRipple(bounded = true),
+                                interactionSource = null,
+                                onClick = onSignIn,
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = "登录网易云音乐",
+                            fontFamily = SFPro,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 16.sp,
+                            color = Color.White,
+                        )
+                    }
                 }
             }
-        }
 
-        // ---------------------------------------------------------------- avatar
-        // Drawn last so it sits on top of both the banner and the sheet's top edge, which is what makes
-        // the two halves read as one header.
-        Avatar(
-            account = account,
-            custom = customAvatar,
-            loader = loader,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .offset(y = -(HeaderHeight - SheetHeight - AvatarSize / 2))
-                .size(AvatarSize),
-        )
+            // Straddles the seam: offset up by exactly half its height, which is the space the sheet
+            // reserved for it above.
+            Avatar(
+                account = account,
+                custom = customAvatar,
+                loader = loader,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .offset(y = -(AvatarSize / 2))
+                    .size(AvatarSize),
+            )
+        }
     }
 }
 
@@ -685,13 +696,13 @@ private val CardCorner = 20.dp
 /** Vertical space between cards. One value, so the page rhythm is even. */
 private val CardGap = 14.dp
 
-/** Total height of the profile header, banner plus sheet. */
-private val HeaderHeight = 300.dp
+/**
+ * Height of the banner band. The identity sheet is *not* given a height: it sizes to its content and the
+ * header grows with it, so a two-line signature cannot overflow into the list below.
+ */
+private val BannerHeight = 180.dp
 
-/** Height of the identity sheet inside the header; the banner occupies the rest. */
-private val SheetHeight = 176.dp
-
-/** Diameter of the header avatar, including its ring. */
+/** Diameter of the header avatar, including its ring. The sheet reserves half of this at its top. */
 private val AvatarSize = 104.dp
 
 /** Corner radius of the header sheet's top edge. */
