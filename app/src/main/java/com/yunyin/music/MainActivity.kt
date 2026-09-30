@@ -179,8 +179,28 @@ class MainActivity : ComponentActivity() {
                     is NetResult.Err -> account = null
                 }
             } else {
-                account = (container.client.loginStatus() as? NetResult.Ok)?.value
-                    ?: container.settings.account
+                // Distinguish a definitive "not signed in" from a transport failure.
+                //
+                // `loginStatus()` returns Ok(null) when the server accepted the request but the cookie
+                // carries no profile — i.e. the session has expired. Treating that as "unknown" and
+                // falling back to the cached account (the previous behaviour) kept showing the user as
+                // signed in and loaded a library the expired cookie could no longer reach. Ok(null) is an
+                // answer, so it is honoured: the stale session is cleared and the app asks to sign in
+                // again. Only a genuine error keeps the cached account, so a flaky network does not log
+                // the user out.
+                when (val status = container.client.loginStatus()) {
+                    is NetResult.Ok -> {
+                        if (status.value == null) {
+                            // Expired session: clear it and fall back to a guest session so playback
+                            // still works, exactly as an explicit sign-out does.
+                            container.settings.clearSession()
+                            account = (container.client.registerAnonymous() as? NetResult.Ok)?.value
+                        } else {
+                            account = status.value
+                        }
+                    }
+                    is NetResult.Err -> account = container.settings.account
+                }
             }
             // Pull the user's playlists once the real account is known (no-op for guests).
             appViewModel.loadUserPlaylists(account)

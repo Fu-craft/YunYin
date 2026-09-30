@@ -76,6 +76,8 @@ class PlayerController(
 
     private var controller: MediaController? = null
     private var positionJob: Job? = null
+    private var trialJob: Job? = null
+    private var trialRequestId = 0L
 
     // The player publishes at 4 Hz, far too coarse to drive karaoke timing, so the UI asks
     // this for a per-frame interpolated position. See [PositionInterpolator] for why it must
@@ -108,10 +110,14 @@ class PlayerController(
         override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) = publish()
 
         override fun onMediaItemTransition(mediaItem: androidx.media3.common.MediaItem?, reason: Int) {
-            // Reset the trial window on every track change, then re-resolve for the new one.
+            // Clear per-track trial state immediately so the previous song's notice cannot leak across a
+            // transition. The resolver below then fills in the new track's state if needed.
+            _state.value = _state.value.copy(trialEndMs = null, notice = null)
             publish()
             val trackId = mediaItem?.mediaId?.toLongOrNull()
-            scope.launch { refreshTrialAndQueueMode(trackId) }
+            trialJob?.cancel()
+            val requestId = ++trialRequestId
+            trialJob = scope.launch { refreshTrialAndQueueMode(trackId, requestId = requestId) }
         }
 
         override fun onPlayerError(error: PlaybackException) {
@@ -150,14 +156,28 @@ class PlayerController(
     private suspend fun refreshTrialAndQueueMode(
         trackId: Long?,
         resolved: NeteaseClient.SongUrl? = null,
+        requestId: Long = ++trialRequestId,
     ) {
         if (trackId == null) {
-            _state.value = _state.value.copy(trialEndMs = null)
+            if (PlayerControllerRules.clearTrial(requestId, trialRequestId)) {
+                _state.value = _state.value.copy(trialEndMs = null, notice = null)
+            }
             return
         }
         val info = resolved ?: resolveStream(trackId)
+        // The stream lookup is asynchronous. Its result is valid only for the track/request that started
+        // it; never let a slow previous response overwrite the current song's state or repeat mode.
+        if (!PlayerControllerRules.trialResultApplies(
+                requestId = requestId,
+                currentRequestId = trialRequestId,
+                forTrackId = trackId,
+                currentTrackId = controller?.currentMediaItem?.mediaId?.toLongOrNull(),
+            )
+        ) {
+            return
+        }
         if (info == null) {
-            _state.value = _state.value.copy(trialEndMs = null)
+            _state.value = _state.value.copy(trialEndMs = null, notice = null)
             return
         }
         val trial = info.trialEndMs
@@ -170,9 +190,11 @@ class PlayerController(
             },
         )
         controller?.let { c ->
-            // Repeat-one on a fragment is an infinite loop; repeat-all would also restart
-            // the 45s preview rather than moving on.
-            c.repeatMode = if (trial != null) Player.REPEAT_MODE_OFF else savedRepeatMode
+            if (c.currentMediaItem?.mediaId?.toLongOrNull() == trackId) {
+                // Repeat-one on a fragment is an infinite loop; repeat-all would also restart
+                // the 45s preview rather than moving on.
+                c.repeatMode = if (trial != null) Player.REPEAT_MODE_OFF else savedRepeatMode
+            }
         }
     }
 
@@ -421,4 +443,30 @@ class PlayerController(
          */
         const val SEEK_END_GUARD_MS = 600L
     }
+}
+
+/**
+ * Pure identity checks for the asynchronous trial/stream lookup.
+ *
+ * Extracted so the two rules that prevent a stale response from corrupting the current track can be
+ * unit-tested directly; they were both missing, and their absence is what let a previous song's preview
+ * window and repeat-mode override land on the next song.
+ */
+internal object PlayerControllerRules {
+
+    /**
+     * Whether a resolved stream result may still be applied.
+     *
+     * False when a newer request has superseded this one, or when the player has already moved to a
+     * different track. Either means the answer describes a song that is no longer playing.
+     */
+    fun trialResultApplies(
+        requestId: Long,
+        currentRequestId: Long,
+        forTrackId: Long,
+        currentTrackId: Long?,
+    ): Boolean = requestId == currentRequestId && currentTrackId == forTrackId
+
+    /** Whether a null-track transition may clear the trial state (only when it is the current request). */
+    fun clearTrial(requestId: Long, currentRequestId: Long): Boolean = requestId == currentRequestId
 }

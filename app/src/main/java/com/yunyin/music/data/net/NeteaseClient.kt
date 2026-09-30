@@ -8,6 +8,7 @@ import com.yunyin.music.core.Playlist
 import com.yunyin.music.core.Track
 import com.yunyin.music.core.map
 import com.yunyin.music.data.SettingsStore
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.FormBody
@@ -112,6 +113,10 @@ class NeteaseClient(private val settings: SettingsStore) {
                 }
                 NetResult.Ok(json)
             }
+        } catch (e: CancellationException) {
+            // Structured cancellation is control flow, not a network failure. Re-throwing lets a
+            // cancelled search/refresh stop before it can publish stale state to its caller.
+            throw e
         } catch (e: IOException) {
             NetResult.Err(e.message ?: "网络错误")
         } catch (e: Exception) {

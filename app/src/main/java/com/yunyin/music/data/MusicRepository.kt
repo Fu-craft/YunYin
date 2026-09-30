@@ -65,8 +65,8 @@ class MusicRepository(private val client: NeteaseClient) {
 
     suspend fun playlistTracks(id: Long): List<Track> = client.playlistTracks(id).listOrEmpty()
 
-    /** The signed-in user's playlists. Empty for a guest session, which is not an error. */
-    suspend fun userPlaylists(uid: Long): List<Playlist> = client.userPlaylists(uid).listOrEmpty()
+    /** The signed-in user's playlists. Errors remain distinguishable from a genuinely empty library. */
+    suspend fun userPlaylists(uid: Long): NetResult<List<Playlist>> = client.userPlaylists(uid)
 
     /**
      * The liked-songs list, resolved through `/likelist` + batched `/song/detail`.

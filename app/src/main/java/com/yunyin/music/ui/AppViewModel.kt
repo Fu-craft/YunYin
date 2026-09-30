@@ -85,6 +85,10 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
     private var loadedForUid: Long = 0L
 
     private var searchJob: Job? = null
+    private var homeJob: Job? = null
+    private var collectionJob: Job? = null
+    private var collectionRequestId = 0L
+    private var playlistsJob: Job? = null
 
     init {
         refreshHome()
@@ -99,8 +103,9 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun refreshHome() {
+        homeJob?.cancel()
         _home.value = _home.value.copy(loading = true, error = null)
-        viewModelScope.launch {
+        homeJob = viewModelScope.launch {
             when (val result = container.music.loadHome()) {
                 is com.yunyin.music.core.NetResult.Ok ->
                     _home.value = HomeUiState(loading = false, feed = result.value)
@@ -160,6 +165,8 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
     // ---------------------------------------------------------------- detail
 
     fun openPlaylist(playlist: Playlist) {
+        collectionJob?.cancel()
+        val requestId = ++collectionRequestId
         _collection.value = CollectionUiState(
             id = playlist.id,
             title = playlist.name,
@@ -168,22 +175,33 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
             description = playlist.description,
             playCount = playlist.playCount,
         )
-        viewModelScope.launch {
+        collectionJob = viewModelScope.launch {
             val tracks = container.music.playlistTracks(playlist.id)
-            _collection.value = _collection.value?.copy(tracks = tracks, loading = false)
+            val shown = _collection.value?.id
+            if (shown != null &&
+                collectionResultApplies(requestId, collectionRequestId, shown, playlist.id)
+            ) {
+                _collection.value = _collection.value?.copy(tracks = tracks, loading = false)
+            }
         }
     }
 
     /** Opens the built-in liked list, which is resolved from `/likelist` rather than the playlist id. */
     fun openLikedSongs(uid: Long, coverUrl: String?) {
+        collectionJob?.cancel()
+        val requestId = ++collectionRequestId
         _collection.value = CollectionUiState(title = "我喜欢的音乐", coverUrl = coverUrl)
-        viewModelScope.launch {
+        collectionJob = viewModelScope.launch {
             val tracks = container.music.likedSongs(uid)
-            _collection.value = _collection.value?.copy(
-                subtitle = "${tracks.size} 首",
-                tracks = tracks,
-                loading = false,
-            )
+            val shown = _collection.value?.id
+            // The liked list has no playlist id, so it is identified by the zero id it is opened with.
+            if (shown != null && collectionResultApplies(requestId, collectionRequestId, shown, 0L)) {
+                _collection.value = _collection.value?.copy(
+                    subtitle = "${tracks.size} 首",
+                    tracks = tracks,
+                    loading = false,
+                )
+            }
         }
     }
 
@@ -200,11 +218,21 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
             loadedForUid = 0L
             return
         }
-        if (uid == loadedForUid) return
-        loadedForUid = uid
+        if (uid == loadedForUid && userPlaylists.isNotEmpty()) return
+        playlistsJob?.cancel()
         userPlaylistsLoading = true
-        viewModelScope.launch {
-            userPlaylists = container.music.userPlaylists(uid)
+        playlistsJob = viewModelScope.launch {
+            // Keep failure distinct from an empty library: only a successful (possibly empty) response may
+            // be cached against the uid, so a failed load is retried when the screen is revisited.
+            when (val result = container.music.userPlaylists(uid)) {
+                is com.yunyin.music.core.NetResult.Ok -> {
+                    userPlaylists = result.value
+                    loadedForUid = uid
+                }
+                is com.yunyin.music.core.NetResult.Err -> {
+                    userPlaylists = emptyList()
+                }
+            }
             userPlaylistsLoading = false
         }
     }
@@ -215,14 +243,38 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun openChart(id: Long, title: String, coverUrl: String?) {
+        collectionJob?.cancel()
+        val requestId = ++collectionRequestId
         _collection.value = CollectionUiState(id = id, title = title, coverUrl = coverUrl)
-        viewModelScope.launch {
+        collectionJob = viewModelScope.launch {
             val tracks = container.music.playlistTracks(id)
-            _collection.value = _collection.value?.copy(tracks = tracks, loading = false)
+            val shown = _collection.value?.id
+            if (shown != null && collectionResultApplies(requestId, collectionRequestId, shown, id)) {
+                _collection.value = _collection.value?.copy(tracks = tracks, loading = false)
+            }
         }
     }
 
     fun closeCollection() {
+        collectionJob?.cancel()
+        collectionJob = null
+        collectionRequestId++
         _collection.value = null
+    }
+
+    companion object {
+        /**
+         * Whether an async collection result may still be applied.
+         *
+         * Two ways a result is stale, and both were real: a newer request has started (the user opened
+         * something else while this one was in flight), or the page on screen is no longer the one this
+         * request was for. Applying either would put one playlist's tracks under another's header.
+         */
+        internal fun collectionResultApplies(
+            requestId: Long,
+            currentRequestId: Long,
+            shownId: Long,
+            resultId: Long,
+        ): Boolean = requestId == currentRequestId && shownId == resultId
     }
 }

@@ -19,6 +19,12 @@ import androidx.compose.ui.Modifier
  * states that a "loading finished" swap does not have, and on a list that is already scrolled a
  * movement would be disorienting. (That is why the player's lyrics/artwork swap, which *does* have
  * a spatial relationship, uses its own slide+fade instead of this.)
+ *
+ * `using null` removes `AnimatedContent`'s default `SizeTransform`. By default the container animates
+ * its size to the incoming content and **clips** while it does, so a loading→loaded swap (a short
+ * placeholder yielding to a full list) visibly re-measures and jumps. These states already fill their
+ * space, so there is no size to animate and the clip is pure noise. The player's presentation switch
+ * already disables it for the same reason.
  */
 @Composable
 fun <T> CrossfadeContent(
@@ -32,8 +38,8 @@ fun <T> CrossfadeContent(
         targetState = targetState,
         modifier = modifier,
         transitionSpec = {
-            fadeIn(tween(durationMillis)) togetherWith
-                fadeOut(tween((durationMillis - 60).coerceAtLeast(1)))
+            (fadeIn(tween(durationMillis)) togetherWith
+                fadeOut(tween((durationMillis - 60).coerceAtLeast(1)))) using null
         },
         label = label,
     ) { state ->
