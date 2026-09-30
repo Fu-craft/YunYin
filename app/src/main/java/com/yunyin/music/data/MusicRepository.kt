@@ -69,34 +69,36 @@ class MusicRepository(private val client: NeteaseClient) {
     suspend fun userPlaylists(uid: Long): NetResult<List<Playlist>> = client.userPlaylists(uid)
 
     /**
-     * The liked-songs list, resolved through `/likelist` + batched `/song/detail`.
+     * The liked-songs list: local likes merged with the account's cloud likes.
+     *
+     * Three details are deliberate.
+     *
+     *  - **Local likes come first.** The user just tapped the heart on them, so they belong at the top
+     *    where the action is visible; the cloud list is history and follows.
+     *  - **Cloud failures are not fatal.** A guest has no cloud list at all and a signed-in user may be
+     *    offline, so the cloud half is best-effort: whatever it does or does not return, the local likes
+     *    are still shown. Showing nothing because the network failed is the behaviour being removed.
+     *  - **De-duplication is by id**, keeping the local copy when both know a track: the local one was
+     *    stored from a full [Track] the app was actually playing, whereas the cloud mapping is a snapshot.
+     */
+    suspend fun likedSongs(uid: Long, local: List<Track>): List<Track> {
+        val cloud = if (uid == 0L) emptyList() else cloudLikedSongs(uid)
+        return mergeLiked(local, cloud)
+    }
+
+    /**
+     * The account's own liked songs, resolved through `/likelist` + batched `/song/detail`.
      *
      * Preferred over `/playlist/track/all` for the built-in liked playlist: its virtual id
      * is not a normal playlist, while `likelist` is the authoritative source.
      */
-    suspend fun likedSongs(uid: Long): List<Track> {
+    private suspend fun cloudLikedSongs(uid: Long): List<Track> {
         val ids = client.likedSongIds(uid).listOrEmpty()
         if (ids.isEmpty()) return emptyList()
         return client.songsByIds(ids).listOrEmpty()
     }
 
     suspend fun artistTopSongs(artistId: Long): List<Track> = client.artistTopSongs(artistId).listOrEmpty()
-
-    /**
-     * Likes or unlikes [id], returning an error message on failure.
-     *
-     * Returns the reason as a string rather than a boolean so the caller can say *why* the toggle did
-     * not stick — a guest session and a network failure need different wording.
-     */
-    suspend fun setLiked(id: Long, like: Boolean): String? =
-        when (val result = client.likeSong(id, like)) {
-            is NetResult.Ok -> null
-            is NetResult.Err -> result.message
-        }
-
-    /** Whether [id] is liked; false when the session cannot answer (guest, or the call failed). */
-    suspend fun isLiked(uid: Long, id: Long): Boolean =
-        client.isLiked(uid, id).valueOrNull() ?: false
 
     /**
      * The cover URL for [id].
@@ -108,6 +110,21 @@ class MusicRepository(private val client: NeteaseClient) {
      */
     suspend fun coverUrlFor(id: Long): String? =
         client.songDetail(listOf(id)).valueOrNull()?.firstOrNull()?.coverUrl
+}
+
+/**
+ * The liked list's merge rule: local likes first, then cloud likes that are not already known locally.
+ *
+ * Extracted as a pure function so the three requirements behind it — the local list is authoritative and
+ * comes first, a track in both sources appears once, and an empty half never empties the result — are
+ * unit-tested rather than only observable by using the app.
+ *
+ * The local copy is kept when both know a track: it was stored from the [Track] the app was actually
+ * playing (with its real cover and duration), whereas the cloud mapping is a list snapshot.
+ */
+internal fun mergeLiked(local: List<Track>, cloud: List<Track>): List<Track> {
+    val localIds = local.mapTo(HashSet()) { it.id }
+    return local + cloud.filterNot { it.id in localIds }
 }
 
 /** Unwraps a list result, treating any failure as "no items". */

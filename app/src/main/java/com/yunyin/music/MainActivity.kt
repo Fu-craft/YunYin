@@ -120,6 +120,13 @@ class MainActivity : ComponentActivity() {
         val playerViewModel: PlayerViewModel = viewModel(factory = viewModelFactory(container))
         val appViewModel: AppViewModel = viewModel(factory = viewModelFactory(container))
 
+        // Liking is local, so the library's count has to be re-read when the heart is tapped — the two
+        // are separate view models and neither observes the other.
+        DisposableEffect(playerViewModel, appViewModel) {
+            playerViewModel.onLikedChanged = { appViewModel.refreshLikedCount() }
+            onDispose { playerViewModel.onLikedChanged = null }
+        }
+
         // Playback state is read through *narrow* derived flows rather than collecting the whole
         // snapshot here.
         //
@@ -386,6 +393,7 @@ class MainActivity : ComponentActivity() {
                             recentTracks = appViewModel.recentTracks,
                             loader = container.artwork,
                             signature = signature,
+                            likedCount = appViewModel.likedCount,
                             headerBackground = backgroundBitmap,
                             headerAvatar = avatarBitmap,
                             onSignIn = { showLogin = true },

@@ -186,13 +186,19 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    /** Opens the built-in liked list, which is resolved from `/likelist` rather than the playlist id. */
+    /**
+     * Opens the built-in liked list: the local likes merged with the account's cloud likes.
+     *
+     * The local half is what makes the player's heart meaningful — it is written by tapping the heart and
+     * shows up here immediately, for a guest as well as a signed-in user. The cloud half is best-effort
+     * and simply absent when there is no account or no connection; see `MusicRepository.likedSongs`.
+     */
     fun openLikedSongs(uid: Long, coverUrl: String?) {
         collectionJob?.cancel()
         val requestId = ++collectionRequestId
         _collection.value = CollectionUiState(title = "我喜欢的音乐", coverUrl = coverUrl)
         collectionJob = viewModelScope.launch {
-            val tracks = container.music.likedSongs(uid)
+            val tracks = container.music.likedSongs(uid, container.likedSongs.load())
             val shown = _collection.value?.id
             // The liked list has no playlist id, so it is identified by the zero id it is opened with.
             if (shown != null && collectionResultApplies(requestId, collectionRequestId, shown, 0L)) {
@@ -203,6 +209,19 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
                 )
             }
         }
+    }
+
+    /**
+     * Re-reads the local liked count for the library row.
+     *
+     * The library's "喜欢" row shows a count, and since liking is local that count is now known without a
+     * network call — so it can be shown for a guest too, and refreshed the moment the heart is tapped.
+     */
+    var likedCount by mutableStateOf(container.likedSongs.load().size)
+        private set
+
+    fun refreshLikedCount() {
+        likedCount = container.likedSongs.load().size
     }
 
     /**

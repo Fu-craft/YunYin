@@ -68,19 +68,17 @@ class PlayerViewModel(private val container: AppContainer) : ViewModel() {
     /**
      * Whether the current track is in the user's liked songs.
      *
-     * Read from the service rather than cached locally: liking can also happen in the NetEase app,
-     * so a local guess would drift. Refreshed per track, and applied optimistically while a toggle is
-     * in flight so the heart responds immediately.
+     * A local answer, not a cloud one: liking now records into the on-device list (see
+     * [com.yunyin.music.data.LikedSongsStore]), so the heart reflects what the app will actually show in
+     * the liked list. It used to query NetEase, which made the heart depend on the network *and* on a
+     * signed-in account — and since the library's list is built from the cloud, tapping it with no
+     * account changed nothing the user could see.
      */
     var liked by mutableStateOf(false)
         private set
 
-    /** True while a like toggle is in flight, to ignore repeat taps. */
-    var likePending by mutableStateOf(false)
-        private set
-
     /**
-     * A one-shot message for the UI (failed like, failed share, …).
+     * A one-shot message for the UI (failed share, …).
      *
      * The player has no room for inline error text for these actions, so failures are surfaced as a
      * transient message and the value is cleared once consumed.
@@ -93,12 +91,6 @@ class PlayerViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     private var downloadJob: Job? = null
-
-    /** The in-flight like toggle, kept apart from [likedQueryJob] so neither cancels the other. */
-    private var likeJob: Job? = null
-
-    /** The in-flight "is this liked?" query, which is advisory and must never cancel a toggle. */
-    private var likedQueryJob: Job? = null
 
     /**
      * Saves the current track's **cover art** to the device's pictures.
@@ -134,37 +126,30 @@ class PlayerViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     /**
-     * Toggles the like state of the current track.
+     * Toggles whether the current track is in the liked songs.
      *
-     * Optimistic: the heart flips immediately and is rolled back if the service refuses, because a
-     * 200ms wait on a heart tap reads as a dropped tap. A guest session gets a message pointing at
-     * sign-in, which is the actual remedy.
+     * Local and immediate: the store is written synchronously, so the heart and the library's list are
+     * consistent the moment the tap lands, and it works for a guest session — which is the point, since
+     * the previous implementation needed an account and a reachable server to do anything at all.
+     *
+     * The write is a `SharedPreferences` commit of a short list, which is fast enough to do on the tap's
+     * own frame; there is consequently no optimistic-then-rollback dance, and nothing to fail.
      */
     fun toggleLike() {
         val track = container.player.state.value.current ?: return
-        val account = container.settings.account
-        if (account == null || account.isAnonymous) {
-            notice = "登录后才能收藏歌曲"
-            return
-        }
-        if (likePending) return
-
         val target = !liked
+        container.likedSongs.setLiked(track, target)
         liked = target
-        likePending = true
-        // A query started for this same track may still be in flight; its answer describes the state
-        // *before* this tap, so letting it land afterwards would flip the heart straight back.
-        likedQueryJob?.cancel()
-        likeJob?.cancel()
-        likeJob = viewModelScope.launch {
-            val error = container.music.setLiked(track.id, target)
-            likePending = false
-            if (error != null) {
-                liked = !target
-                notice = error
-            }
-        }
+        onLikedChanged?.invoke()
     }
+
+    /**
+     * Notified after a like change, so the library can re-read its list.
+     *
+     * A callback rather than a shared flow: there is exactly one observer (the app's view model) and the
+     * event is a plain "something changed", so a flow would be ceremony around a function call.
+     */
+    var onLikedChanged: (() -> Unit)? = null
 
     /** Copies a shareable line for the current track to the clipboard. */
     fun currentShareText(): String? {
@@ -176,20 +161,15 @@ class PlayerViewModel(private val container: AppContainer) : ViewModel() {
     /** The name of the current track's album, for the info action. */
     fun currentTrack(): com.yunyin.music.core.Track? = container.player.state.value.current
 
-    /** Refreshes [liked] for [trackId], ignoring a result that arrives after the track changed. */
+    /**
+     * Refreshes [liked] for [trackId] from the local store.
+     *
+     * `trackId` is the parameter rather than a field read, so a result cannot be applied to a track the
+     * caller was not asking about — the stale-answer class this app has been bitten by.
+     */
     private fun refreshLiked(trackId: Long) {
-        val account = container.settings.account ?: return
-        if (account.isAnonymous) {
-            liked = false
-            return
-        }
-        likedQueryJob?.cancel()
-        likedQueryJob = viewModelScope.launch {
-            val value = container.music.isLiked(account.userId, trackId)
-            // Ignore a stale answer: the track changed underneath us, or the user has since tapped
-            // the heart and the optimistic value must win until the service confirms it.
-            if (lastTrackId == trackId && !likePending) liked = value
-        }
+        if (lastTrackId != trackId) return
+        liked = container.likedSongs.contains(trackId)
     }
 
     /** Applies and persists an offset for the current track. */

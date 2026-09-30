@@ -12,7 +12,8 @@ import com.yunyin.music.core.Track
  * of being filled with recommendation data (which is what it previously did).
  *
  * Rows are stored as delimited text: the payload is a short, flat list of scalars, so this
- * avoids pulling in a serialization dependency for one field.
+ * avoids pulling in a serialization dependency for one field. The format itself lives in [TrackText],
+ * shared with the liked-songs store so a change to one cannot silently break the other.
  */
 class PlayHistoryStore(context: Context) {
 
@@ -22,7 +23,7 @@ class PlayHistoryStore(context: Context) {
     fun load(): List<Track> =
         prefs.getString(KEY, null)
             ?.lineSequence()
-            ?.mapNotNull(::decode)
+            ?.mapNotNull(TrackText::decode)
             ?.toList()
             .orEmpty()
 
@@ -30,43 +31,13 @@ class PlayHistoryStore(context: Context) {
     fun record(track: Track) {
         if (track.id == 0L) return
         val updated = (listOf(track) + load().filterNot { it.id == track.id }).take(MAX)
-        prefs.edit().putString(KEY, updated.joinToString("\n") { encode(it) }).apply()
+        prefs.edit().putString(KEY, updated.joinToString("\n") { TrackText.encode(it) }).apply()
     }
 
     fun clear() = prefs.edit().remove(KEY).apply()
 
-    // Field separator / list separator: control characters that cannot appear in the data.
-    private fun encode(t: Track) = listOf(
-        t.id.toString(),
-        t.name,
-        t.artists.joinToString(ARTIST_SEP),
-        t.albumName,
-        t.coverUrl.orEmpty(),
-        t.durationMs.toString(),
-        t.fee.toString(),
-    ).joinToString(FIELD_SEP)
-
-    private fun decode(line: String): Track? {
-        val parts = line.split(FIELD_SEP)
-        if (parts.size < 7) return null
-        val id = parts[0].toLongOrNull() ?: return null
-        if (id == 0L) return null
-        return Track(
-            id = id,
-            name = parts[1],
-            artists = parts[2].split(ARTIST_SEP).filter { it.isNotBlank() },
-            albumName = parts[3],
-            albumId = 0L,
-            coverUrl = parts[4].ifBlank { null },
-            durationMs = parts[5].toLongOrNull() ?: 0L,
-            fee = parts[6].toIntOrNull() ?: 0,
-        )
-    }
-
     private companion object {
         const val KEY = "recent"
         const val MAX = 60
-        const val FIELD_SEP = "\u0001"
-        const val ARTIST_SEP = "\u0002"
     }
 }

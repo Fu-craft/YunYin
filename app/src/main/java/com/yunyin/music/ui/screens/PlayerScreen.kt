@@ -1434,7 +1434,17 @@ private fun TrackActionsSheet(
 ) {
     androidx.compose.ui.window.Dialog(
         onDismissRequest = onDismiss,
-        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+        // `decorFitsSystemWindows = false` is what makes the scrim reach the screen's edges.
+        //
+        // A Compose `Dialog` gets a platform window, and by default that window is inset by the system
+        // bars — so a scrim drawn to `fillMaxSize()` inside it stops below the status bar and above the
+        // navigation bar, leaving undimmed strips. That is the bright band the user saw at the top of
+        // this sheet. With the flag off the window spans the whole screen and the scrim covers it; the
+        // sheet content compensates with its own `navigationBarsPadding()`.
+        properties = androidx.compose.ui.window.DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false,
+        ),
     ) {
         Box(
             Modifier
@@ -1556,7 +1566,17 @@ private fun LyricOffsetSheet(
     val resetRipple = rememberControlRipple(bounded = true)
     androidx.compose.ui.window.Dialog(
         onDismissRequest = onDismiss,
-        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+        // `decorFitsSystemWindows = false` is what makes the scrim reach the screen's edges.
+        //
+        // A Compose `Dialog` gets a platform window, and by default that window is inset by the system
+        // bars — so a scrim drawn to `fillMaxSize()` inside it stops below the status bar and above the
+        // navigation bar, leaving undimmed strips. That is the bright band the user saw at the top of
+        // this sheet. With the flag off the window spans the whole screen and the scrim covers it; the
+        // sheet content compensates with its own `navigationBarsPadding()`.
+        properties = androidx.compose.ui.window.DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false,
+        ),
     ) {
         Box(
             Modifier
@@ -1857,7 +1877,17 @@ private fun QualitySheet(
 ) {
     androidx.compose.ui.window.Dialog(
         onDismissRequest = onDismiss,
-        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+        // `decorFitsSystemWindows = false` is what makes the scrim reach the screen's edges.
+        //
+        // A Compose `Dialog` gets a platform window, and by default that window is inset by the system
+        // bars — so a scrim drawn to `fillMaxSize()` inside it stops below the status bar and above the
+        // navigation bar, leaving undimmed strips. That is the bright band the user saw at the top of
+        // this sheet. With the flag off the window spans the whole screen and the scrim covers it; the
+        // sheet content compensates with its own `navigationBarsPadding()`.
+        properties = androidx.compose.ui.window.DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false,
+        ),
     ) {
         Box(
             Modifier

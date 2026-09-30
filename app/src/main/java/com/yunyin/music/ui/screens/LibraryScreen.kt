@@ -101,6 +101,8 @@ fun LibraryScreen(
     recentTracks: List<Track>,
     loader: ArtworkLoader,
     signature: String = "",
+    /** How many songs are liked locally; shown on the 喜欢 row, which a guest can also use. */
+    likedCount: Int = 0,
     /** The user's chosen header image, already decoded; null falls back to an accent gradient. */
     headerBackground: ImageBitmap? = null,
     /** The user's chosen avatar, already decoded; null falls back to the account's own. */
@@ -145,15 +147,20 @@ fun LibraryScreen(
         // ------------------------------------------------------------ grouped rows
         item("rows") {
             GroupedCard {
-                // 喜欢 — goes straight to the liked-songs list.
-                if (signedIn) {
-                    LibraryRow(
-                        icon = SfIcons.Heart,
-                        label = "喜欢",
-                        trailing = liked?.trackCount?.takeIf { it > 0 }?.let { "$it 首" },
-                        onClick = onLikedSongsClick,
-                    )
-                }
+                // 喜欢 — always available. Liking is a local action now, so a guest has a real list here
+                // too; hiding the row for guests (as it was) would leave the heart with nowhere to show.
+                LibraryRow(
+                    icon = SfIcons.Heart,
+                    label = "喜欢",
+                    // Local likes are always known, so the count is shown when there are any — no account
+                    // needed and no request involved.
+                    trailing = when {
+                        likedCount > 0 -> "$likedCount 首"
+                        signedIn -> liked?.trackCount?.takeIf { it > 0 }?.let { "$it 首" }
+                        else -> null
+                    },
+                    onClick = onLikedSongsClick,
+                )
 
                 // 我的歌单 — expands to the carousel in place.
                 LibraryRow(

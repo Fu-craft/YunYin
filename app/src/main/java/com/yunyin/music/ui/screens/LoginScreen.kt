@@ -141,9 +141,12 @@ fun LoginScreen(
             }
         }
 
-        if (signedIn) {
+        if (currentAccount != null && !currentAccount.isAnonymous) {
+            // Branches on the account directly rather than on the `signedIn` boolean: the compiler then
+            // knows the account is non-null here, so neither a `!!` nor a `?.` is needed — and there is no
+            // second definition of "signed in" that could disagree with this one.
             SignedInPane(
-                account = currentAccount!!,
+                account = currentAccount,
                 artworkLoader = artworkLoader,
                 onSignOut = onSignOut,
             )

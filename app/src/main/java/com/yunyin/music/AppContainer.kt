@@ -2,6 +2,7 @@ package com.yunyin.music
 
 import android.content.Context
 import com.yunyin.music.data.ArtworkLoader
+import com.yunyin.music.data.LikedSongsStore
 import com.yunyin.music.data.LyricsRepository
 import com.yunyin.music.data.MusicRepository
 import com.yunyin.music.data.PlayHistoryStore
@@ -35,6 +36,9 @@ class AppContainer(val appContext: Context) {
     val searchHistory: SearchHistoryStore by lazy { SearchHistoryStore(appContext) }
 
     val playHistory: PlayHistoryStore by lazy { PlayHistoryStore(appContext) }
+
+    /** Songs liked inside this app; the liked list shows these merged with the account's cloud likes. */
+    val likedSongs: LikedSongsStore by lazy { LikedSongsStore(appContext) }
 
     /** The user's own avatar/background/signature for the profile header. */
     val profile: ProfileStore by lazy { ProfileStore(appContext, settings) }
