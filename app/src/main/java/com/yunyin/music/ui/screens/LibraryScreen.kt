@@ -101,8 +101,15 @@ fun LibraryScreen(
     recentTracks: List<Track>,
     loader: ArtworkLoader,
     signature: String = "",
-    /** How many songs are liked locally; shown on the 喜欢 row, which a guest can also use. */
-    likedCount: Int = 0,
+    /**
+     * Songs in the liked list, or null while it is not yet known.
+     *
+     * The merged total (local likes plus the account's cloud likes), which is exactly the number the user
+     * sees when they open the list. Null is passed through rather than defaulted to zero so a half-known
+     * count is never presented as the total — that was the bug where one freshly liked song was shown as
+     * "1 首" beside a 563-song list.
+     */
+    likedCount: Int? = null,
     /** The user's chosen header image, already decoded; null falls back to an accent gradient. */
     headerBackground: ImageBitmap? = null,
     /** The user's chosen avatar, already decoded; null falls back to the account's own. */
@@ -152,11 +159,14 @@ fun LibraryScreen(
                 LibraryRow(
                     icon = SfIcons.Heart,
                     label = "喜欢",
-                    // Local likes are always known, so the count is shown when there are any — no account
-                    // needed and no request involved.
+                    // The row shows the merged total — the same number the list itself will report.
+                    // While that total is unknown (`null`) it falls back to the cloud playlist's own
+                    // count, which is the closest thing already known; the local count is deliberately
+                    // not used as a fallback, because on its own it reads as "1 首" no matter how large
+                    // the real list is.
                     trailing = when {
-                        likedCount > 0 -> "$likedCount 首"
-                        signedIn -> liked?.trackCount?.takeIf { it > 0 }?.let { "$it 首" }
+                        likedCount != null && likedCount > 0 -> "$likedCount 首"
+                        liked?.trackCount?.takeIf { it > 0 } != null -> "${liked.trackCount} 首"
                         else -> null
                     },
                     onClick = onLikedSongsClick,

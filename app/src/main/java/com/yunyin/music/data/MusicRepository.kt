@@ -87,6 +87,18 @@ class MusicRepository(private val client: NeteaseClient) {
     }
 
     /**
+     * The ids in the account's cloud liked list.
+     *
+     * Exposed so a caller can compute the *merged* count cheaply: the id set is enough to know which
+     * local likes are new, and it avoids fetching every track's detail just to count them. Returns an
+     * empty set for a guest, and an empty set if the request fails — the local half is what must not be
+     * lost, and the caller treats an unknown cloud half as "no extras" rather than as a reason to hide
+     * the list.
+     */
+    suspend fun cloudLikedIds(uid: Long): Set<Long> =
+        if (uid == 0L) emptySet() else client.likedSongIds(uid).listOrEmpty().toHashSet()
+
+    /**
      * The account's own liked songs, resolved through `/likelist` + batched `/song/detail`.
      *
      * Preferred over `/playlist/track/all` for the built-in liked playlist: its virtual id
@@ -125,6 +137,21 @@ class MusicRepository(private val client: NeteaseClient) {
 internal fun mergeLiked(local: List<Track>, cloud: List<Track>): List<Track> {
     val localIds = local.mapTo(HashSet()) { it.id }
     return local + cloud.filterNot { it.id in localIds }
+}
+
+/**
+ * How many songs the liked list holds, given the local list and the account's cloud ids.
+ *
+ * This exists so the number shown next to the 喜欢 row is the *size of the list the user will get when
+ * they open it*, rather than the size of one of its halves. The bug it fixes: the row counted only the
+ * locally added songs, so liking one song on top of 563 cloud likes displayed "1 首".
+ *
+ * Counted from ids rather than by building the list because the cloud tracks' details are not needed to
+ * count them — only to display them — so this stays cheap enough to run on every like change.
+ */
+internal fun mergedLikedCount(local: List<Track>, cloudIds: Set<Long>): Int {
+    val localIds = local.mapTo(HashSet()) { it.id }
+    return local.size + cloudIds.count { it !in localIds }
 }
 
 /** Unwraps a list result, treating any failure as "no items". */

@@ -12,6 +12,7 @@ import com.yunyin.music.core.Account
 import com.yunyin.music.core.HomeFeed
 import com.yunyin.music.core.Playlist
 import com.yunyin.music.core.Track
+import com.yunyin.music.data.mergedLikedCount
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -93,6 +94,7 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
     init {
         refreshHome()
         refreshRecentTracks()
+        refreshLikedCount()
         _search.value = _search.value.copy(
             hot = emptyList(),
             history = container.searchHistory.load(),
@@ -212,16 +214,70 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     /**
-     * Re-reads the local liked count for the library row.
+     * The number of songs in the liked list, for the library's 喜欢 row.
      *
-     * The library's "喜欢" row shows a count, and since liking is local that count is now known without a
-     * network call — so it can be shown for a guest too, and refreshed the moment the heart is tapped.
+     * **The merged total, not the local count.** The row used to show only the locally added songs, so
+     * liking one track on top of a 563-song cloud list displayed "1 首" — a number that matched neither
+     * the list nor anything else the user could see.
+     *
+     * `null` means "not known yet", which is *not* the same as zero: while the cloud half is still being
+     * fetched, the row falls back to the cloud count it already has rather than briefly showing the local
+     * count alone. That distinction is the whole bug — a partially known number presented as the total.
      */
-    var likedCount by mutableStateOf(container.likedSongs.load().size)
+    var likedCount by mutableStateOf<Int?>(null)
         private set
 
+    /** The account's cloud liked ids, cached so the merged count is cheap to recompute. */
+    private var cloudLikedIds: Set<Long>? = null
+
+    /** Which account [cloudLikedIds] describes, so a sign-in or sign-out invalidates it. */
+    private var likedCloudUid: Long? = null
+    private var likedCountJob: Job? = null
+
+    /**
+     * Recomputes [likedCount] from the local list and the cached cloud ids.
+     *
+     * Cheap and synchronous once the cloud ids are known, which is what makes it safe to call on every
+     * like tap. When they are not known yet it fetches them once, and the result is applied only if it
+     * still describes the account that asked — the stale-answer rule used elsewhere in this class.
+     */
     fun refreshLikedCount() {
-        likedCount = container.likedSongs.load().size
+        val local = container.likedSongs.load()
+        val uid = accountUid()
+
+        // A different account's ids are not this account's: keying the cache on the uid is what stops a
+        // stale set from silently inflating or shrinking the count after signing in as someone else.
+        if (likedCloudUid != uid) {
+            cloudLikedIds = null
+            likedCloudUid = uid
+        }
+
+        if (uid == 0L) {
+            // A guest has no cloud half at all, so the local count *is* the total.
+            cloudLikedIds = emptySet()
+            likedCount = local.size
+            return
+        }
+
+        val cached = cloudLikedIds
+        if (cached != null) {
+            likedCount = mergedLikedCount(local, cached)
+            return
+        }
+
+        likedCountJob?.cancel()
+        likedCountJob = viewModelScope.launch {
+            val ids = container.music.cloudLikedIds(uid)
+            if (accountUid() != uid) return@launch
+            cloudLikedIds = ids
+            likedCount = mergedLikedCount(container.likedSongs.load(), ids)
+        }
+    }
+
+    /** The uid to key liked data on; 0 for a guest, which means "no cloud half". */
+    private fun accountUid(): Long {
+        val current = container.settings.account ?: return 0L
+        return if (current.isAnonymous) 0L else current.userId
     }
 
     /**
@@ -231,6 +287,11 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
      * repeatedly for the same account is a no-op.
      */
     fun loadUserPlaylists(account: Account?) {
+        // The liked count depends on the account too (its cloud ids), so the same entry points that
+        // refresh the playlists have to refresh it — otherwise signing in would leave the count describing
+        // the previous session.
+        refreshLikedCount()
+
         val uid = account?.userId ?: 0L
         if (account == null || account.isAnonymous || uid == 0L) {
             userPlaylists = emptyList()

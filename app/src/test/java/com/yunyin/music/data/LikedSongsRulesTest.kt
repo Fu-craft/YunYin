@@ -78,4 +78,42 @@ class LikedSongsRulesTest {
         val merged = mergeLiked(emptyList(), listOf(track(4L), track(6L)))
         assertEquals(listOf(4L, 6L), merged.map { it.id })
     }
+
+    /**
+     * The reported bug, as a test: liking one song on top of a large cloud list must show the *total*.
+     *
+     * The row displayed "1 首" because it counted only the local half. What is asserted here is the
+     * property that was violated — the displayed number equals the size of the list the user opens.
+     */
+    @Test
+    fun `the count equals the merged list size, not the local half`() {
+        val cloudIds = (100L..662L).toSet()        // 563 cloud likes
+        val local = listOf(track(1L))              // one song liked in the app
+
+        val merged = mergeLiked(local, cloudIds.map { track(it) })
+        val count = mergedLikedCount(local, cloudIds)
+
+        assertEquals(564, count)
+        assertEquals("the shown number must match the list the user opens", merged.size, count)
+    }
+
+    @Test
+    fun `liking an already-cloud-liked song does not inflate the count`() {
+        val cloudIds = setOf(1L, 2L, 3L)
+        // Track 2 is liked locally as well; it is one song, not two.
+        val count = mergedLikedCount(listOf(track(2L)), cloudIds)
+        assertEquals(3, count)
+    }
+
+    @Test
+    fun `a guest counts only the local likes`() {
+        assertEquals(2, mergedLikedCount(listOf(track(1L), track(2L)), emptySet()))
+    }
+
+    @Test
+    fun `the count tracks removal as well as addition`() {
+        val cloudIds = setOf(1L, 2L, 3L)
+        assertEquals(4, mergedLikedCount(listOf(track(9L)), cloudIds))
+        assertEquals(3, mergedLikedCount(emptyList(), cloudIds))
+    }
 }
