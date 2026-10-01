@@ -28,6 +28,15 @@ data class TogetherUiState(
      * look empty — showing the address makes that mismatch visible instead of mysterious.
      */
     val server: String? = null,
+    /**
+     * How long this transport's room codes are.
+     *
+     * Travels with the state because the *UI* has to validate input, and the answer differs per
+     * transport (six for the self-hosted relay, twelve where the code is also a topic name). Assuming
+     * one length made a six-character code permanently invalid on the other transport, so the join
+     * button could never be pressed.
+     */
+    val codeLength: Int = 12,
 ) {
     val inRoom: Boolean get() = code != null && ended == null
 }
@@ -63,7 +72,7 @@ class TogetherSession(
     private val scope: CoroutineScope,
 ) {
 
-    private val _state = MutableStateFlow(TogetherUiState(configured = transport.configured))
+    private val _state = MutableStateFlow(initialState())
     val state: StateFlow<TogetherUiState> = _state.asStateFlow()
 
     /** This device's current playback, or null when there is nothing to publish. */
@@ -199,11 +208,18 @@ class TogetherSession(
         val code = _state.value.code ?: return
         stopLoop()
         val wasHost = _state.value.isHost
-        _state.value = TogetherUiState(configured = transport.configured)
+        _state.value = initialState()
         launchWork {
             if (wasHost) transport.closeRoom(code) else transport.leave(code, uid)
         }
     }
+
+    /** A state with nothing in it but the transport's own facts — its endpoint and code format. */
+    private fun initialState() = TogetherUiState(
+        configured = transport.configured,
+        server = transport.serverLabel,
+        codeLength = transport.codeLength,
+    )
 
     /**
      * Clears a transient notice (an ended room, a failed join) **without touching the room**.

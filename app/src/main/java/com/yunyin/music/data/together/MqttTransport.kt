@@ -53,6 +53,9 @@ class MqttTransport(
     /** Always available: public brokers are reachable without registration or configuration. */
     override val configured: Boolean get() = candidates.isNotEmpty()
 
+    /** A broker room has no registry, so the code doubles as a topic name and must not be guessable. */
+    override val codeLength: Int get() = TogetherCode.LENGTH
+
     /** The address actually in use, for display and for diagnosing a mismatch between the two sides. */
     override val serverLabel: String? get() = chosen?.label
 

@@ -82,6 +82,28 @@ interface TogetherTransport {
      */
     val pollIntervalMs: Long get() = 2_000L
 
+    /**
+     * How long this transport's room codes are.
+     *
+     * A property of the *transport*, not a global constant, because the two kinds genuinely differ: the
+     * self-hosted relay allocates codes server-side (six characters are plenty — it holds the registry),
+     * while a broker-based room has no registry, so the code doubles as a topic name and needs to be long
+     * enough not to be guessable by a stranger (twelve).
+     *
+     * The UI validates against this. Hardcoding one length disabled joining entirely on the other
+     * transport — a six-character code could never satisfy a twelve-character rule, so the join button
+     * stayed dead with no explanation.
+     */
+    val codeLength: Int get() = 12
+
+    /** True when [code] is long enough to be a complete code for this transport. */
+    fun isCompleteCode(code: String): Boolean =
+        code.count { it.isLetterOrDigit() } >= codeLength
+
+    /** Trims typed input to this transport's length, ignoring separators. */
+    fun normaliseCodeInput(input: String): String =
+        input.filter { it.isLetterOrDigit() }.uppercase().take(codeLength)
+
     suspend fun createRoom(uid: String, name: String): TogetherResult<String>
 
     suspend fun roomInfo(code: String): TogetherResult<List<TogetherMember>>
@@ -123,6 +145,13 @@ class RelayTransport(
      * ships no server address, exactly as the NetEase endpoint does.
      */
     override val configured: Boolean get() = BuildConfig.TOGETHER_BASE_URL.isNotBlank()
+
+    /**
+     * Six characters: the relay allocates codes server-side and owns the registry, so the code does not
+     * have to carry any unguessability of its own. (Contrast the broker transports, where the code *is*
+     * the topic name and must be long enough that a stranger cannot find it.)
+     */
+    override val codeLength: Int get() = RELAY_CODE_LENGTH
 
     private val base: String get() = BuildConfig.TOGETHER_BASE_URL.trimEnd('/')
 
@@ -253,6 +282,9 @@ class RelayTransport(
 
     private companion object {
         val JSON = "application/json; charset=utf-8".toMediaType()
+
+        /** What `server/together-relay.js` generates. Kept in step with its CODE_LENGTH. */
+        const val RELAY_CODE_LENGTH = 6
 
         /** Short timeouts: every call is a few hundred bytes, and a slow one only delays a correction. */
         fun defaultClient(): OkHttpClient = OkHttpClient.Builder()

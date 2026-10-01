@@ -39,7 +39,16 @@ internal object TogetherCode {
     fun topic(code: String): String =
         TOPIC_PREFIX + code.filter { it.isLetterOrDigit() }.uppercase()
 
-    /** True when [code] has enough substance to be a room code rather than a half-typed one. */
-    fun isComplete(code: String): Boolean =
-        code.count { it.isLetterOrDigit() } >= LENGTH
+    /** True when [code] has enough substance to be a room code for a transport expecting [length]. */
+    fun isComplete(code: String, length: Int = LENGTH): Boolean =
+        code.count { it.isLetterOrDigit() } >= length
+
+    /**
+     * Normalises typed input for a transport expecting [length] characters.
+     *
+     * Separators are dropped rather than rejected: a code is meant to be read aloud in groups, so people
+     * type dashes and spaces into it.
+     */
+    fun normalise(input: String, length: Int = LENGTH): String =
+        input.filter { it.isLetterOrDigit() }.uppercase().take(length)
 }

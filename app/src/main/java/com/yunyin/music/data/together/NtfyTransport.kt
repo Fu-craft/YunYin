@@ -62,6 +62,9 @@ class NtfyTransport(
     /** No setup is required: the public instance is the default. */
     override val configured: Boolean get() = baseUrl.isNotBlank()
 
+    /** The room code *is* the topic name, so it must be long enough not to be guessed. */
+    override val codeLength: Int get() = TogetherCode.LENGTH
+
     /**
      * The publish heartbeat: slow on purpose.
      *

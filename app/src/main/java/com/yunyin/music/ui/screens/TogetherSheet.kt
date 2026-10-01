@@ -160,6 +160,8 @@ private fun IdleBody(
     Spacer(Modifier.height(8.dp))
 
     var code by remember { mutableStateOf("") }
+    // Complete for *this* transport's code format (six on the relay, twelve on a broker).
+    val complete = code.count { it.isLetterOrDigit() } >= state.codeLength
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(
             Modifier
@@ -175,10 +177,11 @@ private fun IdleBody(
                 // Uppercased as typed, and separators are allowed and ignored: the code is meant to be
                 // read out in groups, so someone will type "ABCD-2345-EFGH". The topic mapping strips
                 // the same characters, so what is typed still lands on the right conversation.
+                //
+                // The cap comes from the transport, not a constant: codes are six characters on the
+                // self-hosted relay and twelve where the code doubles as a topic name.
                 onValueChange = { entered ->
-                    code = entered.filter { it.isLetterOrDigit() }
-                        .uppercase()
-                        .take(TogetherCode.LENGTH)
+                    code = entered.filter { it.isLetterOrDigit() }.uppercase().take(state.codeLength)
                 },
                 singleLine = true,
                 textStyle = TextStyle(
@@ -207,10 +210,12 @@ private fun IdleBody(
                 .clip(ContinuousRoundedRectangle(AppleShapes.pill))
                 .background(
                     AppTheme.palette.accent.copy(
-                        alpha = if (TogetherCode.isComplete(code)) 1f else 0.4f,
+                        alpha = if (complete) 1f else 0.4f,
                     ),
                 )
-                .clickable(enabled = TogetherCode.isComplete(code)) { onJoin(code) }
+                // Validated against the transport's own length. A hardcoded twelve made a six-character
+                // code permanently un-joinable: the button never enabled and nothing said why.
+                .clickable(enabled = complete) { onJoin(code) }
                 .padding(horizontal = 20.dp),
             contentAlignment = Alignment.Center,
         ) {
