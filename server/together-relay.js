@@ -25,6 +25,9 @@
  *   ROOM_TTL_MS      idle room lifetime (default 30 min)
  *   MEMBER_TTL_MS    how long a member is kept without a state post (default 15 s)
  *   ALLOW_ORIGIN     CORS origin for browser testing (default *)
+ *   RELAY_TOKEN      optional shared secret. When set, every request except /health must carry it as
+ *                    the `x-relay-token` header (or a `token` query parameter). Leave it unset and the
+ *                    relay is open — which is fine on a LAN, and not fine on a public IP.
  */
 
 const http = require('node:http');
@@ -34,6 +37,7 @@ const PORT = Number(process.env.PORT || 8090);
 const ROOM_TTL_MS = Number(process.env.ROOM_TTL_MS || 30 * 60 * 1000);
 const MEMBER_TTL_MS = Number(process.env.MEMBER_TTL_MS || 15 * 1000);
 const ALLOW_ORIGIN = process.env.ALLOW_ORIGIN || '*';
+const RELAY_TOKEN = process.env.RELAY_TOKEN || '';
 const MAX_BODY = 8 * 1024;
 
 /**
@@ -89,11 +93,20 @@ function send(res, status, payload) {
     'Content-Type': 'application/json; charset=utf-8',
     'Content-Length': Buffer.byteLength(body),
     'Access-Control-Allow-Origin': ALLOW_ORIGIN,
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Headers': 'Content-Type, X-Relay-Token',
     'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
     'Cache-Control': 'no-store',
   });
   res.end(body);
+}
+
+/** Constant-time compare, so a token cannot be recovered one byte at a time by timing responses. */
+function tokenMatches(supplied) {
+  if (!RELAY_TOKEN) return true;
+  const a = Buffer.from(String(supplied || ''));
+  const b = Buffer.from(RELAY_TOKEN);
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
 }
 
 function readBody(req) {
@@ -161,9 +174,15 @@ async function handle(req, res) {
 
   if (req.method === 'OPTIONS') return send(res, 204, {});
 
-  // GET /health — deployment smoke test.
+  // GET /health — deployment smoke test. Deliberately outside the token check so an operator can
+  // verify the process is up with a plain curl.
   if (req.method === 'GET' && parts[0] === 'health') {
     return send(res, 200, { ok: true, rooms: rooms.size, now });
+  }
+
+  // Everything else needs the shared secret when one is configured.
+  if (!tokenMatches(req.headers['x-relay-token'] || url.searchParams.get('token'))) {
+    return send(res, 401, { error: 'unauthorized' });
   }
 
   // POST /room — create a room and become its host.

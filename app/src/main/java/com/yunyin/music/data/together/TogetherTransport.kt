@@ -100,6 +100,9 @@ class RelayTransport(
 
     private val base: String get() = BuildConfig.TOGETHER_BASE_URL.trimEnd('/')
 
+    /** Optional shared secret, matching the relay's `RELAY_TOKEN`. Blank means the relay is open. */
+    private val TOKEN: String get() = BuildConfig.TOGETHER_TOKEN
+
     override suspend fun createRoom(uid: String, name: String): TogetherResult<String> =
         post("/room", JSONObject().put("uid", uid).put("name", name)).map { json ->
             json.optString("code")
@@ -171,6 +174,9 @@ class RelayTransport(
     ): TogetherResult<JSONObject> = withContext(Dispatchers.IO) {
         if (!configured) return@withContext TogetherResult.Failed("未配置一起听服务地址")
         val builder = Request.Builder().url(base + path)
+        // The relay's optional shared secret. Sent when this build was given one; the relay only
+        // checks it if it was started with a token, so the two are configured together.
+        TOKEN.takeIf { it.isNotBlank() }?.let { builder.header("X-Relay-Token", it) }
         when (method) {
             "GET" -> builder.get()
             "DELETE" -> builder.delete()

@@ -61,6 +61,14 @@ android {
             "TOGETHER_BASE_URL",
             "\"${localProps.getProperty("together.base.url") ?: ""}\"",
         )
+
+        // Optional shared secret for the relay (`together.token`). Empty means the relay is open,
+        // which is correct on a LAN and wrong on a public address — see the relay's RELAY_TOKEN.
+        buildConfigField(
+            "String",
+            "TOGETHER_TOKEN",
+            "\"${localProps.getProperty("together.token") ?: ""}\"",
+        )
     }
 
     signingConfigs {

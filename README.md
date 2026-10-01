@@ -229,13 +229,28 @@ ExoPlayer 可正常处理切歌与重试。
 两端各自 `POST` 自己的歌曲与进度、`GET` 对方的；房间闲置自动回收。
 它不接触网易、不接触账号，只转发几个数字。**约 250 行，读一遍就能审计完。**
 
-部署：把 `server/` 拷到服务器，`node together-relay.js` 即可（`PORT` 环境变量选端口）；
-自测用 `node server/test_relay.js`。
+部署（把 `server/` 整个拷到服务器上执行，脚本会生成随机访问令牌并打印你要填的配置）：
 
-配置：在 `local.properties` 里加一行（与接口地址同样的机制，不进仓库）：
+```bash
+cd server && chmod +x deploy.sh && ./deploy.sh    # Linux（含宝塔面板）
+```
+
+Windows 服务器用 `server\deploy.bat`。两个脚本都会：检查 Node、生成令牌写入
+`together.env`（权限 600）、用 pm2 或 nohup 拉起、自检 `http://127.0.0.1:8090/health`，
+最后直接打印要填进 `local.properties` 的两行。
+
+**关于令牌。** 中继若要暴露在公网地址上，**务必带令牌**：`RELAY_TOKEN` 一旦设置，
+除 `/health` 外所有请求都必须带 `X-Relay-Token` 头，否则一律 401。
+（只有本机/局域网使用时可以不带。）令牌由部署脚本随机生成，
+`server/together.env` 已被 `.gitignore` 排除——它属于那台机器的本地配置，不是源码。
+
+自测：`node server/test_relay.js`（房间生命周期）、`node server/test_token.js`（令牌开关）。
+
+配置：在 `local.properties` 里加两行（与接口地址同样的机制，不进仓库）：
 
 ```properties
 together.base.url=http://your-relay-host:8090
+together.token=部署脚本打印的令牌
 ```
 
 **留空时整个功能自动隐藏**——播放器的「…」菜单里不会出现「一起听」，

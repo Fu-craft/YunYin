@@ -22,6 +22,10 @@ keystore.properties
 *.jks
 *.keystore
 *.p12
+# The relay's generated config, written by server/deploy.sh. It holds that deployment's access
+# token, which is machine-local state rather than source — committing it would hand out the key to
+# whoever runs the relay.
+server/together.env
 
 # ---------------------------------------------------------------- development scaffolding
 # The scripts in tools/ are development helpers. They hardcode this machine's paths
