@@ -79,6 +79,7 @@ import com.yunyin.music.ui.screens.PlayerArtworkCorner
 import com.yunyin.music.ui.screens.SearchScreen
 import com.yunyin.music.ui.screens.SettingsScreen
 import com.yunyin.music.ui.screens.SplashScreen
+import com.yunyin.music.ui.screens.TogetherSheet
 import com.yunyin.music.ui.theme.AmllTheme
 import com.yunyin.music.ui.theme.AppTheme
 import kotlinx.coroutines.delay
@@ -188,6 +189,7 @@ class MainActivity : ComponentActivity() {
         // publishing, and it mirrors the stored value, so the switch cannot disagree with what is running.
         var lyriconEnabled by remember { mutableStateOf(container.lyricon.enabled) }
         var seamlessTransition by remember { mutableStateOf(container.settings.seamlessTransition) }
+        var showTogether by remember { mutableStateOf(false) }
 
         // ------------------------------------------------------------ profile
         var showProfileEdit by remember { mutableStateOf(false) }
@@ -696,6 +698,13 @@ class MainActivity : ComponentActivity() {
                     onToggleShuffle = container.player::toggleShuffle,
                     onShowQueue = { showQueue = true },
                     onShowSettings = { showSettings = true; showPlayer = false },
+                    // Hidden entirely when no relay is configured: without one the feature cannot
+                    // work, so offering the row would only produce a failure.
+                    onListenTogether = if (appViewModel.togetherState.value.configured) {
+                        { showTogether = true }
+                    } else {
+                        null
+                    },
                     onArtistClick = { name ->
                         // The artist page sits above the player: closing it returns to where the tap
                         // happened, which is the least surprising layering for a page reached mid-play.
@@ -796,6 +805,45 @@ class MainActivity : ComponentActivity() {
                 )
             }
 
+            // 一起听. A plain `if`, matching the profile editor: the sheet animates itself inside the
+            // Dialog, so an outer AnimatedVisibility would be a second, redundant transition.
+            //
+            // The room state is collected here rather than at the top of the activity on purpose: it
+            // updates on every poll (twice a second), and reading it at the top would recompose the
+            // whole tab tree at that rate — the same trap the player screen documents for position.
+            if (showTogether) {
+                val room by appViewModel.togetherState.collectAsState()
+                TogetherSheet(
+                    state = room,
+                    onCreate = {
+                        appViewModel.createTogetherRoom()?.let { reason ->
+                            Toast.makeText(context, reason, Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    onJoin = { code ->
+                        appViewModel.joinTogetherRoom(code)?.let { reason ->
+                            Toast.makeText(context, reason, Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    onLeave = { appViewModel.leaveTogetherRoom() },
+                    onDismiss = {
+                        // The room keeps running when the sheet closes — it is a panel over the app,
+                        // not the feature itself. Only an explicit leave ends it.
+                        appViewModel.dismissTogetherNotice()
+                        showTogether = false
+                    },
+                    onShareCode = { code ->
+                        shareText("和我一起听歌吧，房间码：$code", "邀请一起听")
+                    },
+                    onCopyCode = { code ->
+                        val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+                            as android.content.ClipboardManager
+                        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("房间码", code))
+                        Toast.makeText(context, "房间码已复制", Toast.LENGTH_SHORT).show()
+                    },
+                )
+            }
+
             // ------------------------------------------------ launch screen (topmost)
             //
             // The last child, so it starts above every overlay. It fades and scales away rather
@@ -825,6 +873,10 @@ class MainActivity : ComponentActivity() {
         BackHandler(enabled = showSettings) { showSettings = false }
         BackHandler(enabled = showLogin) { showLogin = false }
         BackHandler(enabled = showQueue) { showQueue = false }
+        BackHandler(enabled = showTogether) {
+            appViewModel.dismissTogetherNotice()
+            showTogether = false
+        }
 
         // Surface playback errors once, then clear them.
         LaunchedEffect(playbackError) {

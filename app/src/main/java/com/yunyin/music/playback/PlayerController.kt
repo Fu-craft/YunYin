@@ -293,6 +293,20 @@ class PlayerController(
         publish()
     }
 
+    /**
+     * Discrete play/pause, for callers that must set a state rather than flip one.
+     *
+     * Listen-together needs these: the peer's state is "playing" or "paused", and toggling would
+     * invert whatever this device happens to be doing — right only half the time, and visibly wrong
+     * the other half. Idempotent, so an unchanged state is a no-op.
+     */
+    fun setPlaying(playing: Boolean) {
+        val mediaController = controller ?: return
+        if (mediaController.isPlaying == playing) return
+        if (playing) mediaController.play() else mediaController.pause()
+        publish()
+    }
+
     fun seekTo(ms: Long) {
         // Bounded by the *known* duration, and held short of the very end.
         //

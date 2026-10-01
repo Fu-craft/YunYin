@@ -107,6 +107,16 @@ class MusicRepository(private val client: NeteaseClient) {
      */
     suspend fun coverUrlFor(id: Long): String? =
         client.songDetail(listOf(id)).valueOrNull()?.firstOrNull()?.coverUrl
+
+    /**
+     * A single track by id, for listen-together.
+     *
+     * The relay carries only a song id (that is all the peer knows), so the receiving device has to
+     * turn it back into a playable [com.yunyin.music.core.Track]. Goes through `/song/detail`, the same
+     * call [coverUrlFor] uses.
+     */
+    suspend fun track(id: Long): com.yunyin.music.core.Track? =
+        client.songDetail(listOf(id)).valueOrNull()?.firstOrNull()
 }
 
 /**

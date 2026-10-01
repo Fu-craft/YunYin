@@ -14,7 +14,12 @@ import com.yunyin.music.data.CoverDownloader
 import com.yunyin.music.data.FlymeLyricNotifier
 import com.yunyin.music.data.LyriconBridge
 import com.yunyin.music.data.net.NeteaseClient
+import com.yunyin.music.data.together.RelayTransport
+import com.yunyin.music.data.together.TogetherSession
 import com.yunyin.music.playback.PlayerController
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 
 /**
  * Hand-rolled DI container.
@@ -60,6 +65,21 @@ class AppContainer(val appContext: Context) {
 
     /** Flyme's status-bar lyric, via a resident notification ticker (Flyme-family ROMs only). */
     val tickerLyrics: FlymeLyricNotifier by lazy { FlymeLyricNotifier(appContext) }
+
+    /**
+     * Listen-together room engine.
+     *
+     * Backed by the bundled relay because NetEase's own HTTP API cannot read a peer's playback state
+     * (measured: reporting succeeds, reading returns empty — the room runs over an Agora RTC channel).
+     * The endpoint comes from `local.properties`, so a build without one simply does not offer the
+     * feature.
+     */
+    val together: TogetherSession by lazy {
+        TogetherSession(
+            transport = RelayTransport(),
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
+        )
+    }
 
     val player: PlayerController by lazy {
         PlayerController(appContext) { trackId ->

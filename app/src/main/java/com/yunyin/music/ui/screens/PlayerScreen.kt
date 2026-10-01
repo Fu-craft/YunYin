@@ -139,6 +139,8 @@ fun PlayerScreen(
     onToggleShuffle: () -> Unit,
     onShowQueue: () -> Unit,
     onShowSettings: () -> Unit,
+    /** Opens the listen-together room; null when no relay is configured, which hides the row. */
+    onListenTogether: (() -> Unit)? = null,
     /** Current per-track lyric offset, and its setter, for the manual timing control. */
     lyricOffsetMs: Long = 0L,
     onLyricOffsetChange: (Long) -> Unit = {},
@@ -889,6 +891,12 @@ fun PlayerScreen(
                     interaction++
                     onShowQueue()
                 },
+                onListenTogether = onListenTogether?.let { open ->
+                    {
+                        interaction++
+                        open()
+                    }
+                },
             )
         }
 
@@ -1444,6 +1452,8 @@ private fun TrackActionsSheet(
     onShare: () -> Unit,
     onCalibrateLyrics: () -> Unit,
     onShowQueue: () -> Unit,
+    /** Absent when the feature is unavailable — no relay configured. */
+    onListenTogether: (() -> Unit)? = null,
 ) {
     androidx.compose.ui.window.Dialog(
         onDismissRequest = onDismiss,
@@ -1497,6 +1507,14 @@ private fun TrackActionsSheet(
                 }
                 ActionRow(SfIcons.ListBullet, "播放队列", true) {
                     onDismiss(); onShowQueue()
+                }
+                // Omitted entirely when no relay is configured, rather than shown disabled: without a
+                // relay the feature cannot work at all, and a row that can never succeed is worse than
+                // one that is not offered.
+                if (onListenTogether != null) {
+                    ActionRow(SfIcons.Person, "一起听", true) {
+                        onDismiss(); onListenTogether()
+                    }
                 }
                 Spacer(Modifier.height(6.dp))
                 Text(

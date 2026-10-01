@@ -12,6 +12,8 @@ import com.yunyin.music.core.Account
 import com.yunyin.music.core.HomeFeed
 import com.yunyin.music.core.Playlist
 import com.yunyin.music.core.Track
+import com.yunyin.music.data.together.LocalPlayback
+import com.yunyin.music.data.together.SyncAction
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -122,6 +124,106 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch {
             _search.value = _search.value.copy(hot = container.music.hotSearch())
         }
+        wireTogether()
+    }
+
+    // ---------------------------------------------------------------- listen together
+
+    private val together get() = container.together
+    val togetherState get() = together.state
+
+    /**
+     * Connects the room engine to the player, in both directions.
+     *
+     * Reading playback and applying a correction are supplied here rather than inside the engine so
+     * that `data.together` stays free of the playback and UI layers — it can then be exercised with a
+     * fake in a test, and the dependency arrow keeps pointing the way the rest of the app points it.
+     */
+    private fun wireTogether() {
+        together.localPlayback = {
+            val playback = container.player.state.value
+            playback.current?.let { track ->
+                LocalPlayback(
+                    songId = track.id,
+                    // `positionMsNow()` rather than the state's `positionMs`: the state only republishes
+                    // four times a second, so the published figure lags by up to 250ms, and the peer is
+                    // comparing against this.
+                    positionMs = container.player.positionMsNow(),
+                    playing = playback.isPlaying,
+                )
+            }
+        }
+        together.applyAction = { action -> applyTogetherAction(action) }
+    }
+
+    /**
+     * Applies one correction from the room.
+     *
+     * A different song has to be *resolved* first: the peer only sends an id, and the player needs a
+     * full [com.yunyin.music.core.Track]. That fetch is asynchronous, so the action is handled in a
+     * coroutine and the resulting track is checked again against what the room says before it plays —
+     * otherwise a slow lookup could start a song the room moved on from.
+     */
+    private fun applyTogetherAction(action: SyncAction) {
+        when (action) {
+            SyncAction.None -> Unit
+            SyncAction.Play -> container.player.setPlaying(true)
+            SyncAction.Pause -> container.player.setPlaying(false)
+            is SyncAction.Seek -> container.player.seekTo(action.positionMs)
+            is SyncAction.PlaySong -> {
+                val wanted = action.songId
+                viewModelScope.launch {
+                    val track = container.music.track(wanted) ?: return@launch
+                    // Re-check: the room may have moved on while the lookup was in flight.
+                    val stillWanted = together.state.value.peers.any { it.songId == wanted }
+                    if (!stillWanted) return@launch
+                    container.player.playSingle(track)
+                    container.player.seekTo(action.positionMs)
+                    container.playHistory.record(track)
+                    refreshRecentTracks()
+                }
+            }
+        }
+    }
+
+    /** Creates a room as the signed-in user, or reports that a real login is needed. */
+    fun createTogetherRoom(): String? {
+        val uid = signedInUid() ?: return "请先登录后再使用一起听"
+        together.createRoom(uid = "$uid", name = signedInName())
+        return null
+    }
+
+    fun joinTogetherRoom(code: String): String? {
+        val uid = signedInUid() ?: return "请先登录后再使用一起听"
+        together.joinRoom(code = code, uid = "$uid", name = signedInName())
+        return null
+    }
+
+    fun leaveTogetherRoom() {
+        val uid = signedInUid() ?: return
+        together.leaveRoom("$uid")
+    }
+
+    /**
+     * Clears a transient room notice (an ended room, a failed join) without leaving.
+     *
+     * Called when the sheet closes, so reopening it does not re-present a message the user has
+     * already read.
+     */
+    fun dismissTogetherNotice() {
+        together.dismissEnded()
+    }
+
+    /** The account's uid, or null for a guest — listen-together needs two identifiable people. */
+    private fun signedInUid(): Long? {
+        val account = container.settings.account ?: return null
+        if (account.isAnonymous) return null
+        return account.userId
+    }
+
+    private fun signedInName(): String {
+        val account = container.settings.account
+        return account?.nickname?.takeIf { it.isNotBlank() } ?: "云音用户"
     }
 
     fun refreshHome() {
