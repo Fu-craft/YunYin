@@ -127,21 +127,23 @@ class MqttTransport(
     // ------------------------------------------------------------------ plumbing
 
     /**
-     * Brings the subscription up, **waiting for the connection**.
+     * Brings the subscription up, **waiting for the broker to acknowledge it**.
      *
-     * Connecting is asynchronous, so publishing straight after `connect()` always failed with
-     * 尚未连接 — which is what the join used to report. Waiting here is the fix; the timeout is long
-     * enough for a slow network and short enough that a wrong broker does not hang the UI.
+     * Two separate waits, and the second is the one that matters: connecting is asynchronous, so
+     * publishing straight after `connect()` reported 尚未连接; and a subscription is not in effect until
+     * its SUBACK arrives, so publishing before that sends state into a room we cannot hear — which
+     * presents as "the room contains only me". Both are handled by waiting rather than guessing.
      */
     private suspend fun ensureSubscribed(code: String, uid: String): TogetherResult<Unit> {
         selfUid = uid
-        if (roomCode == code && client.isConnected) return TogetherResult.Ok(Unit)
+        if (roomCode == code && client.isConnected && subscribedRoom == code) return TogetherResult.Ok(Unit)
         if (roomCode != code) {
             synchronized(lock) {
                 peersByUid.clear()
                 heardAt.clear()
             }
             roomCode = code
+            subscribedRoom = null
         }
         client.connect()
         if (!client.awaitConnected(CONNECT_WAIT_MS)) {
@@ -149,11 +151,19 @@ class MqttTransport(
             // blocked port, and "无法连接 broker.hivemq.com:1883" says far more than "尚未连接".
             return TogetherResult.Failed("无法连接消息服务器 $host:$port")
         }
-        // The wildcard covers every member's slot under this room, including our own — incoming
-        // messages from ourselves are filtered in onIncoming.
-        client.subscribe("$TOPIC_ROOT/$code/+")
+        // The wildcard covers every member's slot under this room, including our own — incoming messages
+        // from ourselves are filtered in onIncoming.
+        val filter = "$TOPIC_ROOT/$code/+"
+        client.subscribe(filter)
+        if (!client.awaitSubscribed(filter, SUBSCRIBE_WAIT_MS)) {
+            return TogetherResult.Failed("消息服务器未确认订阅，请重试")
+        }
+        subscribedRoom = code
         return TogetherResult.Ok(Unit)
     }
+
+    /** The room whose subscription the broker has confirmed, so the wait happens once, not per publish. */
+    private var subscribedRoom: String? = null
 
     private fun onIncoming(topic: String, payload: String) {
         // Our own slot; the broker echoes it back to us and it is not a peer.
@@ -231,6 +241,15 @@ class MqttTransport(
 
         /** How long to wait for the broker before telling the user it could not be reached. */
         const val CONNECT_WAIT_MS = 12_000L
+
+        /**
+         * How long to wait for the subscription to be acknowledged.
+         *
+         * Generous because the client re-sends an unacknowledged SUBSCRIBE every couple of seconds, and
+         * a public broker can take a moment — but still finite, so an uncooperative broker surfaces as an
+         * error instead of a room that silently never fills.
+         */
+        const val SUBSCRIBE_WAIT_MS = 20_000L
 
         /**
          * A public broker that accepts anonymous connections and is widely reachable. Overridable via

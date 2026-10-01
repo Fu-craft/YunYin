@@ -4,6 +4,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -18,23 +20,32 @@ import java.net.Socket
  *
  * ## Why hand-rolled
  *
- * The features needs exactly four things: connect anonymously, subscribe to one topic, publish small
- * payloads, and keep the connection alive. That is a few hundred lines of a forty-year-old protocol,
- * where a library would add a dependency and an API surface far larger than the need. This project
- * already keeps its dependency list short on purpose.
+ * The feature needs exactly four things: connect anonymously, subscribe to one topic, publish small
+ * payloads, and keep the connection alive. That is a few hundred lines of a well-specified protocol,
+ * where a library would add a dependency and an API surface far larger than the need; this project
+ * keeps its dependency list short on purpose.
  *
- * What it deliberately does **not** implement: QoS 1/2 (state is re-sent periodically, so a lost
- * message costs one interval, not correctness), authentication, TLS, wildcards, last-will, session
- * resumption. Each is a real feature that this use does not need; adding them unwatched would be the
- * actual risk.
+ * Deliberately **not** implemented: QoS 1/2 (state is re-sent periodically, so a lost message costs one
+ * interval, not correctness), authentication, TLS, wildcards, last-will, session resumption. Each is a
+ * real feature this use does not need.
  *
- * ## Threading
+ * ## Threading, and the one rule that matters
  *
- * [publish] may be called from any thread and is serialised by a lock — MQTT packets must not
- * interleave on the wire. The reader runs in [scope] on IO.
+ * **Exactly one thread reads the socket** (the connection loop). MQTT has no framing other than the
+ * stream itself, so a second reader — even one that only "just checks for a SUBACK" — would consume
+ * bytes the main loop needs and corrupt every subsequent packet. Everything that needs to observe
+ * the stream does so through state that the reader loop writes:
  *
- * @param onMessage invoked for every PUBLISH received on a subscribed topic.
- * @param onConnectionChanged reports connect/disconnect, so the caller can surface state.
+ *  - incoming messages       -> [onMessage]
+ *  - subscription acks       -> [subscribedTopics]
+ *  - connection up/down      -> [connected]
+ *
+ * ## Why the subscription is tracked, not fired and forgotten
+ *
+ * A public broker intermittently accepts a SUBSCRIBE and never sends the SUBACK. The client then looks
+ * connected, keeps publishing happily, and **receives nothing** — which presents as "the room contains
+ * only me". So subscribing is a supervised activity: unacknowledged topics are re-sent until confirmed,
+ * and [awaitSubscribed] lets a caller wait for the real answer before it starts publishing.
  */
 class MqttClient(
     private val host: String,
@@ -51,36 +62,30 @@ class MqttClient(
     /** Serialises writes: a half-written packet followed by another is unparseable to the broker. */
     private val writeLock = Any()
 
-    /** Topic filters to (re)subscribe to, remembered so a reconnect restores them. */
-    private val subscriptions = linkedSetOf<String>()
-    private val subscriptionsLock = Any()
-
     private var connectionLoop: Job? = null
+    private var pinger: Job? = null
+    private var supervisor: Job? = null
 
-    /**
-     * Connection state, as observable data.
-     *
-     * Needed because connecting is **asynchronous**: `connect()` starts a coroutine and returns
-     * immediately, so a caller that publishes right after it would always find itself "not connected".
-     * That was a real bug — joining a room reported 尚未连接 every time, because the join published
-     * before the socket was up. `awaitConnected` is how a caller waits for the real answer.
-     */
-    private val _connected = kotlinx.coroutines.flow.MutableStateFlow(false)
-    val connected: kotlinx.coroutines.flow.StateFlow<Boolean> = _connected
+    /** Observes the connection so callers can wait instead of guessing. */
+    private val _connected = MutableStateFlow(false)
+    val connected: StateFlow<Boolean> = _connected
+
+    /** Topics the broker has acknowledged. Together with [desiredTopics] this drives re-subscription. */
+    private val desiredTopics = linkedSetOf<String>()
+    private val subscribed = MutableStateFlow<Set<String>>(emptySet())
+
+    /** Packet id -> topic, so a SUBACK (which carries only the id) can be attributed. */
+    private val pendingSubscribes = mutableMapOf<Int, String>()
+    private var nextPacketId = 0
+    private val stateLock = Any()
 
     val isConnected: Boolean get() = _connected.value
 
-    /**
-     * Suspends until the connection is up, or [timeoutMs] elapses.
-     *
-     * @return true when connected. A false means the broker was not reachable within the window —
-     *   which on a mobile network is quite possibly a blocked port rather than a fault, so the caller
-     *   should say so rather than reporting a generic failure.
-     */
-    suspend fun awaitConnected(timeoutMs: Long): Boolean =
-        kotlinx.coroutines.withTimeoutOrNull(timeoutMs) {
-            connected.first { it }
-        } != null
+    /** The most recent connection failure, for a caller that wants to explain *why*. */
+    var lastError: String? = null
+        private set
+
+    // ------------------------------------------------------------------ lifecycle
 
     /** Connects and stays connected, reconnecting with a backoff until [close]. Safe to call twice. */
     fun connect() {
@@ -94,56 +99,50 @@ class MqttClient(
                 } catch (e: kotlinx.coroutines.CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    // Any failure lands here: the broker refused, the network dropped, or a read failed.
                     lastError = e.message
-                    _connected.value = false
-                    onConnectionChanged(false)
                     attempt++
                 } finally {
-                    pinger?.cancel()
-                    pinger = null
-                    runCatching { socket?.close() }
-                    socket = null
-                    output = null
-                    _connected.value = false
+                    teardown()
                 }
                 if (!isActive) break
                 // Back off, but never longer than 30s: a room should recover on its own.
-                val waitMs = (1_000L shl attempt.coerceAtMost(4)).coerceAtMost(30_000L)
-                delay(waitMs)
+                delay((1_000L shl attempt.coerceAtMost(4)).coerceAtMost(30_000L))
             }
         }
     }
-
-    /** The most recent connection failure, for a caller that wants to explain *why*. */
-    var lastError: String? = null
-        private set
 
     fun close() {
         connectionLoop?.cancel()
         connectionLoop = null
         sendControlPacket(DISCONNECT)
         runCatching { socket?.close() }
-        socket = null
-        output = null
-        _connected.value = false
-        onConnectionChanged(false)
-    }
-
-    fun subscribe(topic: String) {
-        synchronized(subscriptionsLock) { subscriptions += topic }
-        // If already connected, subscribe now; otherwise openOnce will do it for every remembered topic.
-        if (isConnected) runCatching { sendSubscribe(topic) }
+        teardown()
     }
 
     /**
-     * Publishes a payload, optionally **retained**.
+     * Suspends until the connection is up, or [timeoutMs] elapses.
      *
-     * Retained is what makes a room feel instant to join: the broker keeps the last message on the
-     * topic, so a subscriber receives it the moment it subscribes instead of waiting for the next
-     * heartbeat. That is the difference between "the new member sees the current song at once" and
-     * "the new member sees nothing for up to a heartbeat".
+     * A false means the broker was not reachable within the window — on a mobile network quite possibly
+     * a blocked port rather than a fault, so the caller should say so.
      */
+    suspend fun awaitConnected(timeoutMs: Long): Boolean =
+        withTimeoutOrNull(timeoutMs) { connected.first { it } } != null
+
+    /**
+     * Suspends until [topic] is acknowledged by the broker.
+     *
+     * This is what a caller waits on before publishing: publishing on an unacknowledged subscription
+     * means the peer's messages never arrive while ours go out, so the room would look one-sided.
+     */
+    suspend fun awaitSubscribed(topic: String, timeoutMs: Long): Boolean =
+        withTimeoutOrNull(timeoutMs) { subscribed.first { topic in it } } != null
+
+    fun subscribe(topic: String) {
+        synchronized(stateLock) { desiredTopics += topic }
+        startSupervisor()
+    }
+
+    /** Publishes a payload, optionally **retained**. */
     fun publish(topic: String, payload: String, retain: Boolean) {
         if (!isConnected) return
         runCatching { sendPublish(topic, payload.toByteArray(Charsets.UTF_8), retain) }
@@ -151,33 +150,37 @@ class MqttClient(
 
     // ------------------------------------------------------------------ connection
 
-    /** Opens a socket, sends CONNECT, waits for CONNACK, then drains the stream until it ends. */
+    /** Opens a socket, handshakes, then reads the stream until it ends (throwing so we reconnect). */
     private fun openOnce() {
         val newSocket = Socket()
         newSocket.tcpNoDelay = true
         newSocket.connect(InetSocketAddress(host, port), CONNECT_TIMEOUT_MS)
         val input = DataInputStream(newSocket.getInputStream().buffered())
-        val out = newSocket.getOutputStream().buffered()
 
         socket = newSocket
-        output = out
+        output = newSocket.getOutputStream().buffered()
 
-        sendConnect(out)
+        sendConnect(output!!)
         val connackType = input.readUnsignedByte()
-        val connackLen = input.readUnsignedByte()
+        val connackLen = readRemainingLength(input)
         val connack = ByteArray(connackLen).also { input.readFully(it) }
         if (connackType != CONNACK || connack.size < 2 || connack.last() != 0.toByte()) {
             throw IllegalStateException("broker refused the connection (type=$connackType)")
         }
 
-        // Fresh connection: restore every subscription.
-        synchronized(subscriptionsLock) { subscriptions.toList() }.forEach { sendSubscribe(it) }
-        startPinger()
         lastError = null
         _connected.value = true
         onConnectionChanged(true)
 
-        // Reader loop; returns (throwing) when the stream ends so the outer loop reconnects.
+        // A fresh session has no acknowledgements; the supervisor re-sends every desired topic.
+        synchronized(stateLock) {
+            subscribed.value = emptySet()
+            pendingSubscribes.clear()
+        }
+        startSupervisor()
+        startPinger()
+
+        // The single reader loop. Returns (throwing) when the stream ends, so the outer loop reconnects.
         while (true) {
             val header = input.readUnsignedByte()
             val type = header shr 4
@@ -191,8 +194,73 @@ class MqttClient(
                     val payload = String(body, 2 + topicLength, body.size - 2 - topicLength, Charsets.UTF_8)
                     onMessage(topic, payload)
                 }
-                // PINGRESP, SUBACK, PUBACK... nothing to do for QoS 0.
+                SUBACK -> onSubAck(body)
+                // PINGRESP, PUBACK... nothing to do for QoS 0.
                 else -> Unit
+            }
+        }
+    }
+
+    /**
+     * Records a SUBACK.
+     *
+     * The body is the packet id followed by one granted-QoS byte per requested filter. A `0x80` grant
+     * means the broker *refused* that subscription — treating it as success is how a client ends up
+     * publishing into a room it can never hear.
+     */
+    private fun onSubAck(body: ByteArray) {
+        if (body.size < 3) return
+        val granted = body[2].toInt() and 0xFF
+        if (granted > 2) return
+        val id = ((body[0].toInt() and 0xFF) shl 8) or (body[1].toInt() and 0xFF)
+        synchronized(stateLock) {
+            val topic = pendingSubscribes.remove(id)
+            if (topic != null) subscribed.value = subscribed.value + topic
+        }
+    }
+
+    private fun teardown() {
+        pinger?.cancel()
+        pinger = null
+        supervisor?.cancel()
+        supervisor = null
+        runCatching { socket?.close() }
+        socket = null
+        output = null
+        _connected.value = false
+        synchronized(stateLock) {
+            subscribed.value = emptySet()
+            pendingSubscribes.clear()
+        }
+        onConnectionChanged(false)
+    }
+
+    /**
+     * Re-sends any desired-but-unacknowledged subscription until it is confirmed.
+     *
+     * The retry is the point: a public broker sometimes drops a SUBSCRIBE silently, and without this
+     * the client would stay deaf for the whole session while looking perfectly healthy.
+     */
+    private fun startSupervisor() {
+        if (supervisor?.isActive == true) return
+        supervisor = scope.launch(Dispatchers.IO) {
+            while (isActive) {
+                if (!isConnected) {
+                    delay(SUPERVISE_INTERVAL_MS)
+                    continue
+                }
+                val pending = synchronized(stateLock) {
+                    desiredTopics.filterNot { it in subscribed.value }
+                }
+                pending.forEach { topic ->
+                    val id = synchronized(stateLock) {
+                        val next = ++nextPacketId
+                        pendingSubscribes[next] = topic
+                        next
+                    }
+                    runCatching { sendSubscribe(topic, id) }
+                }
+                delay(SUPERVISE_INTERVAL_MS)
             }
         }
     }
@@ -200,9 +268,8 @@ class MqttClient(
     /**
      * Sends PINGREQ on its own timer.
      *
-     * It must not be driven by the read loop: a quiet room sends nothing for long stretches, and the
-     * broker drops a client that never pings — precisely when the connection looks healthy. Also
-     * restarted on every reconnect, so a dropped link's pinger cannot outlive it.
+     * Not driven by the read loop: a quiet room sends nothing for long stretches, and the broker drops a
+     * client that never pings — precisely when the connection looks healthy.
      */
     private fun startPinger() {
         pinger?.cancel()
@@ -214,25 +281,10 @@ class MqttClient(
         }
     }
 
-    private var pinger: Job? = null
-
-    /** MQTT's variable-length remaining-length field: 7 bits per byte, high bit means "continues". */
-    private fun readRemainingLength(input: DataInputStream): Int {
-        var multiplier = 1
-        var value = 0
-        var encoded: Int
-        do {
-            encoded = input.readUnsignedByte()
-            value += (encoded and 0x7F) * multiplier
-            multiplier *= 128
-        } while (encoded and 0x80 != 0 && multiplier <= 128 * 128 * 128)
-        return value
-    }
-
     // ------------------------------------------------------------------ packets
 
     private fun sendConnect(out: OutputStream) {
-        val clientId = "${clientIdPrefix}-${java.util.UUID.randomUUID()}".take(23)
+        val clientId = "$clientIdPrefix-${java.util.UUID.randomUUID()}".take(23)
         val keepAliveSeconds = (KEEPALIVE_MS / 1000).toInt()
         val variable = byteArrayOf(
             0x00, 0x04, 'M'.code.toByte(), 'Q'.code.toByte(), 'T'.code.toByte(), 'T'.code.toByte(),
@@ -248,42 +300,54 @@ class MqttClient(
         writePacket(out, CONNECT, variable + payload)
     }
 
-    private fun sendSubscribe(topic: String) {
-        packetId++
+    private fun sendSubscribe(topic: String, packetId: Int) {
         val body = byteArrayOf((packetId shr 8).toByte(), packetId.toByte()) +
             byteArrayOf((topic.length shr 8).toByte(), topic.length.toByte()) +
             topic.toByteArray(Charsets.UTF_8) +
             byteArrayOf(0x00)          // requested QoS 0
-        writePacket(out(), SUBSCRIBE, body, firstBytes = 0x02)  // low bits are reserved, must be 2
+        writePacket(out(), SUBSCRIBE, body, firstBits = 0x02)   // the low bits are reserved, must be 2
     }
 
     private fun sendPublish(topic: String, payload: ByteArray, retain: Boolean) {
         val body = byteArrayOf((topic.length shr 8).toByte(), topic.length.toByte()) +
             topic.toByteArray(Charsets.UTF_8) + payload
-        writePacket(out(), PUBLISH, body, firstBytes = if (retain) 0x01 else 0x00)
+        writePacket(out(), PUBLISH, body, firstBits = if (retain) 0x01 else 0x00)
     }
 
     private fun out(): OutputStream = output ?: throw IllegalStateException("not connected")
-
-    private var packetId = 0
 
     /** Sends a two-byte packet (PINGREQ / DISCONNECT): fixed header plus a zero remaining-length. */
     private fun sendControlPacket(type: Int) {
         val out = output ?: return
         synchronized(writeLock) {
-            out.write(type shl 4)
-            out.write(0)
-            out.flush()
+            runCatching {
+                out.write(type shl 4)
+                out.write(0)
+                out.flush()
+            }
         }
     }
 
-    private fun writePacket(out: OutputStream, type: Int, body: ByteArray, firstBytes: Int = 0) {
+    private fun writePacket(out: OutputStream, type: Int, body: ByteArray, firstBits: Int = 0) {
         synchronized(writeLock) {
-            out.write((type shl 4) or firstBytes)
+            out.write((type shl 4) or firstBits)
             writeRemainingLength(out, body.size)
             out.write(body)
             out.flush()
         }
+    }
+
+    /** MQTT's variable-length remaining-length field: 7 bits per byte, high bit means "continues". */
+    private fun readRemainingLength(input: DataInputStream): Int {
+        var multiplier = 1
+        var value = 0
+        var encoded: Int
+        do {
+            encoded = input.readUnsignedByte()
+            value += (encoded and 0x7F) * multiplier
+            multiplier *= 128
+        } while (encoded and 0x80 != 0 && multiplier <= 128 * 128 * 128)
+        return value
     }
 
     private fun writeRemainingLength(out: OutputStream, length: Int) {
@@ -301,10 +365,14 @@ class MqttClient(
         const val CONNACK = 2
         const val PUBLISH = 3
         const val SUBSCRIBE = 8
+        const val SUBACK = 9
         const val PINGREQ = 12
         const val DISCONNECT = 14
 
         const val CONNECT_TIMEOUT_MS = 8_000
         const val KEEPALIVE_MS = 30_000L
+
+        /** How often an unacknowledged subscription is re-sent. */
+        const val SUPERVISE_INTERVAL_MS = 2_500L
     }
 }
