@@ -63,7 +63,13 @@
 
 ## 截图
 
-> 待补充。把图片放进 `docs/screenshots/` 后在此引用即可（该目录已在 `.gitignore` 中单独放行）。
+| 播放页 | 逐字歌词 | 首页 |
+|:--:|:--:|:--:|
+| <img src="docs/screenshots/player.png" width="230" alt="播放页"> | <img src="docs/screenshots/lyrics.png" width="230" alt="逐字歌词"> | <img src="docs/screenshots/home.png" width="230" alt="首页"> |
+
+| 搜索 | 资料库 | |
+|:--:|:--:|:--:|
+| <img src="docs/screenshots/search.png" width="230" alt="搜索"> | <img src="docs/screenshots/library.png" width="230" alt="资料库"> | |
 
 ---
 
@@ -146,7 +152,7 @@ app/src/main/res/font/sf_pro.ttf
 | 图像取色 | AndroidX Palette |
 | 流动背景 | AGSL（`android.graphics.RuntimeShader`，需 API 33+） |
 | 毛玻璃 | [Backdrop](https://github.com/Kyant0/AndroidLiquidGlass)（Apache-2.0） |
-| 逐字歌词 | `accompanist-lyrics`（Apache-2.0） |
+| 逐字歌词 | [accompanist-lyrics](https://github.com/6xingyv/accompanist-lyrics-ui)（Apache-2.0） |
 | 状态栏歌词 | 词幕 Lyricon Provider（Apache-2.0）+ Flyme 通知 ticker |
 | 构建 | Gradle 9.7.1 / AGP 9.3.2 |
 | minSdk / targetSdk | 33 / 37 |
@@ -270,10 +276,6 @@ app/src/main/java/com/yunyin/music/
 单元测试覆盖歌词解析与对齐、渲染折叠、逐字滚动的纯逻辑、位置插值、收藏合并规则、
 异步结果竞态等，共 **161 项**。
 
-`tools/` 下另有一组静态校验脚本（仓库中不入版本控制，因其中会嵌专辑封面等不可再分发的素材）：
-每条「界面规则」——例如毛玻璃材质的画法、顶栏在滚动时的取色、异步结果不得覆盖新状态——
-都对应一条会在源码上失败的检查，避免修复被后续改动悄悄回退。
-
 ---
 
 ## 许可证与致谢
@@ -283,7 +285,7 @@ app/src/main/java/com/yunyin/music/
 | 部分 | 来源 | 许可证 |
 |---|---|---|
 | 流动背景（着色器、painter、调色板、音频响应） | [NeriPlayer](https://github.com/cwuom/NeriPlayer) | **GPL-3.0** |
-| 逐字歌词渲染器（`lyrics/`） | `accompanist-lyrics-ui` / `-core` | Apache-2.0 |
+| 逐字歌词渲染器（`lyrics/`） | [accompanist-lyrics-ui](https://github.com/6xingyv/accompanist-lyrics-ui) / `accompanist-lyrics-core` | Apache-2.0 |
 | 词幕接入（`LyriconBridge` / `LyriconMapper`） | 本项目代码，依赖 [词幕 Lyricon](https://github.com/proify/lyricon) 的 Provider 接口 | Apache-2.0 |
 | 毛玻璃 | [AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass) | Apache-2.0 |
 | 音质图标 | Google Material Symbols | Apache-2.0 |
@@ -303,16 +305,6 @@ app/src/main/java/com/yunyin/music/
 - **SF Pro** —— Apple 的字体，**不包含在本仓库**，请自行获取或替换（见「字体」）。
 - **SF Symbols 同款图标** —— 项目内为手绘矢量，命名对齐 SF Symbols，未使用 Apple 资产。
 - **NeteaseCloudMusicApi** —— 服务端由使用者自行部署。
-
----
-
-## 参与贡献
-
-欢迎提交 Issue 与 Pull Request。请注意：
-
-- 本项目**不附带任何服务端地址**，也不接受把服务器地址、签名材料或密钥写进源码的改动。
-- 改动界面行为时，请一并更新 `tools/` 下对应的静态校验（见[测试](#测试)），
-  否则该规则会在下次修改中被悄悄回退。
 
 ---
 
