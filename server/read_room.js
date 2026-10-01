@@ -5,6 +5,7 @@
 // Defaults to the HTTP (443) transport, matching the app's default. Never publishes, so it cannot
 // disturb a room.
 const net = require('node:net');
+const tls = require('node:tls');
 
 const args = process.argv.slice(2);
 const useMqtt = args.includes('--mqtt');
@@ -17,7 +18,8 @@ const seconds = Number(secArg || 20);
 
 const NTFY = (process.env.NTFY_URL || 'https://ntfy.sh').replace(/\/+$/, '');
 const MQTT_HOST = process.env.MQTT_HOST || 'broker.hivemq.com';
-const MQTT_PORT = Number(process.env.MQTT_PORT || 1883);
+const MQTT_TLS = process.env.MQTT_TLS !== '0';
+const MQTT_PORT = Number(process.env.MQTT_PORT || (MQTT_TLS ? 8883 : 1883));
 const ROOT = 'yunyin/together/v1';
 
 const seen = new Map();
@@ -75,7 +77,7 @@ async function watchNtfy() {
 // --------------------------------------------------------------------------- MQTT
 function watchMqtt() {
   const filter = `${ROOT}/${code}/+`;
-  console.log(`transport: MQTT ${MQTT_HOST}:${MQTT_PORT}`);
+  console.log(`transport: MQTT${MQTT_TLS ? '+TLS' : ''} ${MQTT_HOST}:${MQTT_PORT}`);
   console.log(`room:      ${code}   (subscribing to ${filter}, read-only)\n`);
 
   const mqttString = (s) => { const b = Buffer.from(s, 'utf8'); return Buffer.concat([Buffer.from([(b.length >> 8) & 0xff, b.length & 0xff]), b]); };
@@ -84,7 +86,10 @@ function watchMqtt() {
   const connectPacket = (id) => packet(1, 0, Buffer.concat([Buffer.from([0x00, 0x04, 0x4d, 0x51, 0x54, 0x54, 0x04, 0x02, 0x00, 0x1e]), mqttString(id)]));
   const subscribePacket = (id, t) => packet(8, 0x02, Buffer.concat([Buffer.from([(id >> 8) & 0xff, id & 0xff]), mqttString(t), Buffer.from([0x00])]));
 
-  const sock = net.createConnection({ host: MQTT_HOST, port: MQTT_PORT });
+  const sock = MQTT_TLS
+    ? tls.connect({ host: MQTT_HOST, port: MQTT_PORT, servername: MQTT_HOST })
+    : net.createConnection({ host: MQTT_HOST, port: MQTT_PORT });
+  const readyEvent = MQTT_TLS ? 'secureConnect' : 'connect';
   let buf = Buffer.alloc(0);
   let subscribed = false;
   sock.on('data', (chunk) => {
@@ -106,7 +111,7 @@ function watchMqtt() {
       report(slot, payload === '' ? '' : state, !seen.has(slot));
     }
   });
-  sock.on('connect', () => {
+  sock.on(readyEvent, () => {
     sock.write(connectPacket('reader-' + Math.random().toString(16).slice(2, 8)));
     setTimeout(() => sock.write(subscribePacket(1, filter)), 1200);
   });

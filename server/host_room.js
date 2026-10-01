@@ -5,6 +5,7 @@
 // Defaults to the HTTP (443) transport, because that is the app's default and because it is reachable
 // on networks that block MQTT's 1883. Pass --mqtt when both sides are configured for MQTT.
 const net = require('node:net');
+const tls = require('node:tls');
 
 const args = process.argv.slice(2);
 const useMqtt = args.includes('--mqtt');
@@ -16,11 +17,20 @@ if (!code) {
 const songId = Number(songArg || 1330348068);   // 起风了 (free)
 let positionMs = Number(posArg || 30000);
 const playing = playArg !== 'false';
-const INTERVAL = 5000;
+
+// The cadence must match the app's, and that matters for the HTTP transport specifically: its quota is
+// per source address and shared, so a simulator publishing faster than the app eats the allowance for
+// both. (Measured the hard way — a 5s host hit HTTP 429 within minutes and then dropped out of the
+// room, which reads as "the peer left".) The app posts every 30s; MQTT has no quota, so it can be paced
+// for responsiveness instead.
+const INTERVAL = useMqtt ? 5000 : 30000;
 
 const NTFY = (process.env.NTFY_URL || 'https://ntfy.sh').replace(/\/+$/, '');
 const MQTT_HOST = process.env.MQTT_HOST || 'broker.hivemq.com';
-const MQTT_PORT = Number(process.env.MQTT_PORT || 1883);
+// 8883 (TLS) by default: plain 1883 is commonly blocked by mobile carriers, and TLS on 8883 usually is
+// not. Set MQTT_PORT=1883 (and MQTT_TLS=0) for a network that allows the plain port.
+const MQTT_TLS = process.env.MQTT_TLS !== '0';
+const MQTT_PORT = Number(process.env.MQTT_PORT || (MQTT_TLS ? 8883 : 1883));
 const ROOT = 'yunyin/together/v1';
 
 const uid = 'host-' + Math.random().toString(16).slice(2, 8);
@@ -37,12 +47,17 @@ const publishPacket = (t, p, retain) => packet(3, retain ? 0x01 : 0x00, Buffer.c
 
 function startMqtt() {
   const slot = `${ROOT}/${code}/${uid}`;
-  const sock = net.createConnection({ host: MQTT_HOST, port: MQTT_PORT });
+  // Plain net for 1883; TLS for 8883. The TLS handshake is forced so a wrong port/cert fails loudly
+  // here rather than as a silent no-op later.
+  const sock = MQTT_TLS
+    ? tls.connect({ host: MQTT_HOST, port: MQTT_PORT, servername: MQTT_HOST })
+    : net.createConnection({ host: MQTT_HOST, port: MQTT_PORT });
+  const readyEvent = MQTT_TLS ? 'secureConnect' : 'connect';
   sock.on('data', () => {});
-  sock.on('connect', async () => {
+  sock.on(readyEvent, async () => {
     sock.write(connectPacket(uid));
     await new Promise((r) => setTimeout(r, 1500));
-    console.log(`transport: MQTT ${MQTT_HOST}:${MQTT_PORT}`);
+    console.log(`transport: MQTT${MQTT_TLS ? '+TLS' : ''} ${MQTT_HOST}:${MQTT_PORT}`);
     console.log(`room:      ${code}\nslot:      ${slot}\n`);
     const tick = () => {
       sock.write(publishPacket(slot, state(), true));   // retained, so a joiner sees it at once

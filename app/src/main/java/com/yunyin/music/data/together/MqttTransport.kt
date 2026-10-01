@@ -254,18 +254,28 @@ class MqttTransport(
         const val SUBSCRIBE_WAIT_MS = 20_000L
 
         /**
-         * A public broker that accepts anonymous connections and is widely reachable. Overridable via
-         * `together.mqtt.host` / `together.mqtt.port`, so a self-hosted broker (or a different public
-         * one) needs no code change.
+         * A public broker that accepts anonymous connections and is widely reachable.
+         *
+         * **TLS on 8883 by default**, which is deliberate and was learned the hard way: plain 1883 is
+         * commonly blocked by mobile carriers (measured — the app reported "无法连接消息服务器 …:1883"
+         * on a phone network while working fine from a desktop on the same broker), whereas 8883 is
+         * left alone because it looks like ordinary encrypted traffic. Configure
+         * `together.mqtt.host/port/tls` for a self-hosted broker.
          */
         fun defaultHost(): String =
             BuildConfig.TOGETHER_MQTT_HOST.ifBlank { "broker.hivemq.com" }
 
-        fun defaultPort(): Int = BuildConfig.TOGETHER_MQTT_PORT.ifBlank { "1883" }.toIntOrNull() ?: 1883
+        fun defaultPort(): Int =
+            BuildConfig.TOGETHER_MQTT_PORT.ifBlank { "8883" }.toIntOrNull() ?: 8883
 
-        /** TLS when asked for, or automatically when pointed at the conventional TLS port. */
-        fun defaultTls(): Boolean =
-            BuildConfig.TOGETHER_MQTT_TLS.isNotBlank() ||
-                defaultPort() == 8883
+        /** TLS by default; disabled only by an explicit `together.mqtt.tls=false`. */
+        fun defaultTls(): Boolean {
+            val configured = BuildConfig.TOGETHER_MQTT_TLS.trim()
+            return when {
+                configured.equals("false", ignoreCase = true) || configured == "0" -> false
+                configured.isNotEmpty() -> true
+                else -> true
+            }
+        }
     }
 }

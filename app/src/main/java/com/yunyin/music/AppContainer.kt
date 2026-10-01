@@ -80,20 +80,24 @@ class AppContainer(val appContext: Context) {
      * per device would silently put them on different ones.
      *
      *  - **`together.base.url`** — a self-hosted relay (`server/`). Nothing third-party.
-     *  - **`together.mqtt.host`** — MQTT. No request quota at all, but it needs a port the network
-     *    allows; mobile carriers commonly **block 1883**, so this has to be an explicit choice (with
-     *    `together.mqtt.tls=true` for 8883 if plain 1883 is blocked).
-     *  - **otherwise** — the public HTTP pub/sub service. The default because it runs on **443**,
-     *    which essentially no network blocks — the reason it is preferred over MQTT despite MQTT being
-     *    the better protocol for this job. Its allowance is per source address and shared, so it wants
-     *    a slow heartbeat (which the transport already uses).
+     *  - **`together.ntfy.url`** — the HTTP pub/sub service, for a network that allows neither MQTT
+     *    port. Remember its daily message quota applies to the whole source address.
+     *  - **otherwise** — MQTT over **TLS on 8883**. This is the default because it is the only option
+     *    that is both universally reachable in practice *and* free of a message quota: plain 1883 is
+     *    blocked by many mobile carriers, and the HTTP service's daily allowance is easy to exhaust
+     *    (measured: it returned `42908 daily message quota reached` after a day of testing, which locks
+     *    the whole address out until the next day). TLS on 8883 looks like ordinary encrypted traffic,
+     *    so it is left alone, and MQTT is charged per connection rather than per message.
+     *
+     * All three must match between the two members: a transport is a *rendezvous*, so picking different
+     * ones per device leaves both rooms empty.
      */
     val together: TogetherSession by lazy {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         val transport: TogetherTransport = when {
             BuildConfig.TOGETHER_BASE_URL.isNotBlank() -> RelayTransport()
-            BuildConfig.TOGETHER_MQTT_HOST.isNotBlank() -> MqttTransport(scope)
-            else -> NtfyTransport(scope)
+            BuildConfig.TOGETHER_NTFY_URL.isNotBlank() -> NtfyTransport(scope)
+            else -> MqttTransport(scope)
         }
         TogetherSession(transport = transport, scope = scope)
     }
