@@ -753,6 +753,12 @@ class MainActivity : ComponentActivity() {
                             onPlayAll = {
                                 artist.tracks.firstOrNull()?.let { play(it, artist.tracks) }
                             },
+                            onShufflePlay = {
+                                // A player mode rather than a one-off ordering, exactly as on the
+                                // playlist: enabling it and starting anywhere keeps "next" random.
+                                container.player.toggleShuffle()
+                                artist.tracks.randomOrNull()?.let { play(it, artist.tracks) }
+                            },
                             nowPlayingId = nowPlaying.first,
                             isPlaying = nowPlaying.second,
                         )

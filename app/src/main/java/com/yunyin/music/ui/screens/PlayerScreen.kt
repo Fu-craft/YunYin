@@ -838,6 +838,7 @@ fun PlayerScreen(
                                 interaction++
                                 showActions = true
                             },
+                            onArtistClick = onArtistClick,
                             modifier = Modifier.padding(horizontal = 24.dp),
                         )
                         Spacer(Modifier.height(18.dp))
@@ -1401,21 +1402,18 @@ private fun LyricsHeader(
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.height(1.dp))
-            // The artist line is the way into the artist page. The track carries names, not ids, so the
-            // click hands over the first artist's name and the page resolves the id — which is why the
-            // first name is used and a multi-artist row opens that artist only.
-            val artistName = track?.artists?.firstOrNull().orEmpty()
-            Text(
-                text = track?.artistLine.orEmpty(),
-                fontFamily = SFPro,
-                fontSize = 14.sp,
-                color = Color.White.copy(alpha = 0.75f),
+            // The artist line is the way into the artist page, and *each* name on it is its own tap
+            // target, so a collaboration does not hide its second artist behind the first.
+            ArtistLine(
+                line = track?.artistLine.orEmpty(),
+                artists = track?.artists.orEmpty(),
+                style = TextStyle(
+                    fontFamily = SFPro,
+                    fontSize = 14.sp,
+                    color = Color.White.copy(alpha = 0.75f),
+                ),
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = if (artistName.isBlank()) Modifier else Modifier.clickable(
-                    indication = rememberControlRipple(),
-                    interactionSource = null,
-                ) { onArtistClick(artistName) },
+                onArtistClick = onArtistClick,
             )
         }
         Spacer(Modifier.width(10.dp))
@@ -1737,25 +1735,19 @@ private fun TitleBlock(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Spacer(Modifier.height(2.dp))
-                    // Same tap target as the lyrics header: the artist line opens the artist page.
-                    val artistClick = onArtistClick
-                    val artistName = track?.artists?.firstOrNull().orEmpty()
-                    Text(
-                        text = track?.artistLine.orEmpty(),
-                        fontFamily = SFPro,
-                        fontWeight = FontWeight.Medium,
-                        fontSize = 15.sp,
-                        color = Color.White.copy(alpha = 0.78f),
+                    // The artist line is the way into the artist page, and *each* name on it is its own
+                    // tap target, so a collaboration does not hide its second artist behind the first.
+                    ArtistLine(
+                        line = track?.artistLine.orEmpty(),
+                        artists = track?.artists.orEmpty(),
+                        style = TextStyle(
+                            fontFamily = SFPro,
+                            fontWeight = FontWeight.Medium,
+                            fontSize = 15.sp,
+                            color = Color.White.copy(alpha = 0.78f),
+                        ),
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = if (artistClick != null && artistName.isNotBlank()) {
-                            Modifier.clickable(
-                                indication = rememberControlRipple(),
-                                interactionSource = null,
-                            ) { artistClick(artistName) }
-                        } else {
-                            Modifier
-                        },
+                        onArtistClick = onArtistClick,
                     )
                 }
             }

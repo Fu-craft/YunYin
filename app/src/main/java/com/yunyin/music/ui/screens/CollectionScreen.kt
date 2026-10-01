@@ -6,6 +6,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -45,6 +46,7 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -52,11 +54,17 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -231,6 +239,76 @@ fun CollectionScreen(
 }
 
 /**
+ * The cover-derived colour field behind a hero header: blurred artwork, a tone guard, and the fade into
+ * the page background.
+ *
+ * Shared by the playlist and the artist page so the two headers are the *same* surface rather than two
+ * implementations that drift apart. Every part here is load-bearing, and each was a visible artefact
+ * before:
+ *
+ *  - **Overscan then blur.** The image is pushed through a 1.5x scale so the blur's soft edge lands
+ *    outside the clip instead of showing as a lighter rim around the header.
+ *  - **A tone guard.** Mid-grey artwork is the one case where neither ink colour has contrast, so the
+ *    field is pushed toward whichever end of the scale the ink is at: extra depth under white ink,
+ *    extra lift under dark ink.
+ *  - **The fade's transparent end is the page colour at zero alpha, not `Color.Transparent`.**
+ *    `Color.Transparent` is black with no alpha, and Compose interpolates the RGB channels as well as
+ *    alpha — so a "transparent → page background" ramp spends its middle at roughly 50% of a
+ *    *black-tinted* colour. Composited over the field that is darker than either end, which paints a
+ *    grey band across the fade. Most of what read as a hard edge was this, not the gradient's shape.
+ *  - **The curve is eased** (see [pageFadeStops]). A linear ramp arrives and leaves with a slope
+ *    discontinuity — one where the flat cover colour above it stops being flat, one where the list's
+ *    flat background below it begins — and the eye draws a line at each. That is the Mach band, and it
+ *    is why a colour-correct linear fade still shows a seam.
+ *  - **It is anchored to the bottom rather than stretched over the whole header.** Only the last
+ *    [PageFade] is a gradient; above that the field is untouched cover colour, so the fade cannot wash
+ *    out the artwork.
+ */
+@Composable
+internal fun CoverField(
+    backdrop: ImageBitmap?,
+    coverIsDark: Boolean,
+    pageBackground: Color,
+    modifier: Modifier = Modifier,
+) {
+    Box(modifier.clipToBounds()) {
+        if (backdrop != null) {
+            Image(
+                bitmap = backdrop,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .matchParentSize()
+                    .graphicsLayer {
+                        scaleX = 1.5f
+                        scaleY = 1.5f
+                    }
+                    .blur(56.dp),
+            )
+        } else {
+            Box(Modifier.matchParentSize().background(AppTheme.palette.secondaryBackground))
+        }
+
+        Box(
+            Modifier
+                .matchParentSize()
+                .background(
+                    if (coverIsDark) Color.Black.copy(alpha = 0.24f)
+                    else Color.White.copy(alpha = 0.34f),
+                ),
+        )
+
+        Box(
+            Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .height(PageFade)
+                .background(Brush.verticalGradient(colorStops = pageFadeStops(pageBackground))),
+        )
+    }
+}
+
+/**
  * The artwork hero: blurred colour field, sharp cover, identity, and the two actions.
  *
  * Scrolling behaviour is deliberately absent here — the backdrop is a lazy-item background, so it
@@ -249,73 +327,18 @@ private fun Header(
     /** Reports the measured height so the pinned bar can time its surface to the ramp. */
     onHeightChanged: (Int) -> Unit,
 ) {
-    val palette = AppTheme.palette
-
     Box(
         Modifier
             .fillMaxWidth()
             .onSizeChanged { onHeightChanged(it.height) },
     ) {
         // ---------------------------------------------------------------- colour field
-        Box(Modifier.matchParentSize().clipToBounds()) {
-            if (backdrop != null) {
-                Image(
-                    bitmap = backdrop,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .matchParentSize()
-                        // Overscan so the blur's soft edge is pushed outside the clip instead of
-                        // showing as a lighter rim around the header.
-                        .graphicsLayer {
-                            scaleX = 1.5f
-                            scaleY = 1.5f
-                        }
-                        .blur(56.dp),
-                )
-            } else {
-                Box(Modifier.matchParentSize().background(palette.secondaryBackground))
-            }
-
-            // Tone guard. Mid-grey artwork is the one case where neither ink colour has contrast, so
-            // the field is pushed toward whichever end of the scale the ink is at: extra depth under
-            // white ink, extra lift under dark ink.
-            Box(
-                Modifier
-                    .matchParentSize()
-                    .background(
-                        if (coverIsDark) Color.Black.copy(alpha = 0.24f)
-                        else Color.White.copy(alpha = 0.34f),
-                    ),
-            )
-
-            // The fade into the page background, anchored to the header's bottom edge.
-            //
-            // Three things here are load-bearing, and each was a visible artefact before:
-            //
-            //  - **The transparent end is the page colour at zero alpha, not `Color.Transparent`.**
-            //    `Color.Transparent` is black with no alpha, and Compose interpolates the RGB channels
-            //    as well as alpha — so a "transparent → page background" ramp spends its middle at
-            //    roughly 50% of a *black-tinted* colour. Composited over the field that is darker than
-            //    either end, which paints a grey band across the fade. Most of what read as a hard
-            //    edge here was this, not the gradient's shape.
-            //  - **The curve is eased.** A linear ramp arrives and leaves with a slope
-            //    discontinuity — one where the flat cover colour above it stops being flat, one where
-            //    the list's flat background below it begins — and the eye draws a line at each. That
-            //    is the Mach band, and it is why a colour-correct linear fade still shows a seam.
-            //  - **It is anchored to the bottom rather than stretched over the whole header.** Only
-            //    the last [PageFade] is a gradient; above that the field is untouched cover colour, so
-            //    the fade cannot wash out the artwork.
-            Box(
-                Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .height(PageFade)
-                    .background(
-                        Brush.verticalGradient(colorStops = pageFadeStops(palette.background)),
-                    ),
-            )
-        }
+        CoverField(
+            backdrop = backdrop,
+            coverIsDark = coverIsDark,
+            pageBackground = AppTheme.palette.background,
+            modifier = Modifier.matchParentSize(),
+        )
 
         // ---------------------------------------------------------------- content
         //
@@ -481,9 +504,9 @@ private fun ExpandableDescription(text: String, onCover: Color, key: Any?) {
     }
 }
 
-/** One of the two header pills. */
+/** One of the two header pills. Shared with the artist page so both heroes act identically. */
 @Composable
-private fun HeaderAction(
+internal fun HeaderAction(
     icon: ImageVector,
     label: String,
     fill: Color,
@@ -858,7 +881,7 @@ private const val TopBarScrim = 0.34f
 internal val PageFade = 48.dp
 
 /** Clearance between the action pills and the start of the fade. */
-private val PageFadeMargin = 8.dp
+internal val PageFadeMargin = 8.dp
 
 /**
  * Stops in the fade. More than two is what makes the curve possible: a gradient interpolates
@@ -891,3 +914,129 @@ private fun smootherStep(t: Float): Float = t * t * t * (t * (t * 6f - 15f) + 10
 
 /** Width reserved for the row position / now-playing marker. Fits three digits. */
 internal val IndexWidth = 30.dp
+
+/**
+ * Draws an artist line where **every artist is its own tap target**.
+ *
+ * The player prints artists joined by `" / "`, and tapping the line used to open only the first name —
+ * so a collaboration (`*Luna / ゆある / ねんね`) could not reach its second artist at all.
+ *
+ * The line is still drawn as one `Text`, so truncation and line-breaking are unchanged; each artist is
+ * given a character-offset span and a tap is resolved through the text layout's own offset mapping.
+ * The separators are simply not spanned, which makes them inert.
+ *
+ * Spans are located by walking the separators through the *line* rather than re-joining the names, so
+ * what is drawn is exactly what the model holds. `indexOf` runs from a moving cursor, so a repeated
+ * name (`A / A`) still resolves to its next occurrence. If a separator cannot be found — a name that
+ * itself contains `" / "` — the per-artist spans are dropped and the whole line falls back to opening
+ * the first artist, which is the behaviour this replaces rather than a dead tap target.
+ *
+ * While a name is held it underlines. That is the only affordance the line has, and it earns its keep:
+ * without it nothing on screen says the names are tappable at all, and nothing says *which* of three
+ * names is about to open.
+ */
+@Composable
+internal fun ArtistLine(
+    line: String,
+    artists: List<String>,
+    style: TextStyle,
+    maxLines: Int,
+    onArtistClick: ((String) -> Unit)?,
+) {
+    // Spans are computed once per (line, artists) and shared by the drawing and the hit test. The hit
+    // test deliberately does **not** use string annotations: an annotation is part of the text, so
+    // underlining on press would rebuild the text and restart `pointerInput` mid-gesture, losing the tap.
+    val spans: List<Pair<IntRange, Int>> = remember(line, artists) { artistSpans(line, artists) }
+
+    // Which name is under the finger, for the underline. Separate from the text so a press never
+    // changes what the gesture is attached to.
+    var pressed by remember(line) { mutableIntStateOf(-1) }
+    var layout by remember(line) { mutableStateOf<TextLayoutResult?>(null) }
+    val annotated = remember(line, spans, pressed) {
+        buildAnnotatedString {
+            append(line)
+            spans.forEach { (range, index) ->
+                if (index == pressed) {
+                    addStyle(SpanStyle(textDecoration = TextDecoration.Underline), range.first, range.last + 1)
+                }
+            }
+        }
+    }
+
+    val interaction = onArtistClick
+    Text(
+        text = annotated,
+        style = style,
+        maxLines = maxLines,
+        overflow = TextOverflow.Ellipsis,
+        onTextLayout = { layout = it },
+        modifier = if (interaction == null) {
+            Modifier
+        } else {
+            // Keyed on the stable inputs only. `layout` and `pressed` are read through their delegates,
+            // so the running gesture sees their current values without being restarted by them.
+            Modifier.pointerInput(line, artists, interaction) {
+                detectTapGestures(
+                    onPress = { position ->
+                        pressed = artistIndexAt(spans, layout, position) ?: -1
+                        tryAwaitRelease()
+                        pressed = -1
+                    },
+                    onTap = { position ->
+                        artistIndexAt(spans, layout, position)
+                            ?.let { artists.getOrNull(it) }
+                            ?.let(interaction::invoke)
+                    },
+                )
+            }
+        },
+    )
+}
+
+/**
+ * Maps the artists onto character ranges of [line].
+ *
+ * Walked forward through the separators rather than re-joined, so what is drawn is exactly what the
+ * model holds. `indexOf` runs from a moving cursor, so a repeated name (`A / A`) still resolves to its
+ * next occurrence. Returns one span over the whole line when the mapping does not hold — a single
+ * artist, or a name that itself contains `" / "` — which falls back to opening the first artist rather
+ * than leaving a dead tap target.
+ */
+private fun artistSpans(line: String, artists: List<String>): List<Pair<IntRange, Int>> {
+    if (artists.size < 2) return listOf(0 until line.length to 0)
+
+    val separators = artists.dropLast(1).map { "$it / " }
+    var cursor = 0
+    val cuts = mutableListOf<Int>()
+    for (separator in separators) {
+        val at = line.indexOf(separator, cursor)
+        if (at < 0) return listOf(0 until line.length to 0)
+        // The artist starts where the previous separator ended; the separator itself stays unspanned,
+        // which is what makes it inert.
+        cuts += at + separator.length
+        cursor = at + separator.length
+    }
+
+    val starts = listOf(0) + cuts
+    return artists.indices.map { i ->
+        val end = if (i == artists.lastIndex) line.length else cuts[i] - separators[i].length
+        starts[i] until end to i
+    }
+}
+
+/**
+ * The artist index under [position], or null when the tap missed every name (a separator, or the text
+ * trailing the last name).
+ *
+ * Inclusive at a span's end: `getOffsetForPosition` reports the nearest character boundary, so a tap on
+ * the last pixel of a name resolves to that name's *end* index and an exclusive test would drop it. The
+ * separators are unspanned, so the inclusive edge steals nothing.
+ */
+private fun artistIndexAt(
+    spans: List<Pair<IntRange, Int>>,
+    layout: TextLayoutResult?,
+    position: Offset,
+): Int? {
+    val offset = (layout ?: return null).getOffsetForPosition(position)
+    return spans.firstOrNull { offset in it.first.first..it.first.last }?.second
+}
