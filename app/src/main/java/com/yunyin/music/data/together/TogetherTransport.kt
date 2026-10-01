@@ -67,6 +67,15 @@ interface TogetherTransport {
     val configured: Boolean
 
     /**
+     * The endpoint in use, for display.
+     *
+     * Worth surfacing: a transport is a *rendezvous*, so if the two members are on different endpoints
+     * they sit in two rooms that both look empty and neither side has any way to tell. Showing the
+     * address turns that silent failure into an obvious one.
+     */
+    val serverLabel: String? get() = null
+
+    /**
      * How often the session should poll. A transport reports its own cadence because it is a property
      * of the medium: a self-hosted relay is cheap to hit every two seconds, while a free public
      * service counts each publish and poll against a rate limit.

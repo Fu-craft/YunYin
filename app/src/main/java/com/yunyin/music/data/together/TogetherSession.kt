@@ -21,6 +21,13 @@ data class TogetherUiState(
     /** Set when the room is gone (host closed it, or the code expired) so the UI can explain. */
     val ended: String? = null,
     val error: String? = null,
+    /**
+     * The endpoint in use, shown in the sheet.
+     *
+     * A transport is a rendezvous, so two members on different endpoints sit in two rooms that both
+     * look empty — showing the address makes that mismatch visible instead of mysterious.
+     */
+    val server: String? = null,
 ) {
     val inRoom: Boolean get() = code != null && ended == null
 }
@@ -140,6 +147,7 @@ class TogetherSession(
                 is TogetherResult.Ok -> {
                     _state.value = _state.value.copy(
                         code = result.value, isHost = true, ended = null, error = null,
+                        server = transport.serverLabel,
                     )
                     startLoop(uid, name)
                 }
@@ -176,6 +184,7 @@ class TogetherSession(
                 is TogetherResult.Ok -> {
                     _state.value = _state.value.copy(
                         code = trimmed, isHost = false, ended = null, error = null,
+                        server = transport.serverLabel,
                     )
                     startLoop(uid, name)
                 }

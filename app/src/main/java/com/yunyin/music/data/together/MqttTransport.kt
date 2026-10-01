@@ -34,14 +34,30 @@ import org.json.JSONObject
  */
 class MqttTransport(
     private val scope: CoroutineScope,
-    private val host: String = defaultHost(),
-    private val port: Int = defaultPort(),
-    private val tls: Boolean = defaultTls(),
+    private val candidates: List<Broker> = defaultCandidates(),
     private val onConnectionChanged: (Boolean) -> Unit = {},
 ) : TogetherTransport {
 
+    /**
+     * One broker to try.
+     *
+     * The list is ordered and **both members iterate the same list in the same order**, which is what
+     * keeps them aligned: the first address that accepts a connection is the one used. (A transport is a
+     * rendezvous, so two devices picking different addresses would sit in two empty rooms that look
+     * identical.) [subtitle] is what the room sheet shows, so a mismatch is visible rather than silent.
+     */
+    data class Broker(val host: String, val port: Int, val tls: Boolean) {
+        val label: String get() = "$host:$port${if (tls) " (TLS)" else ""}"
+    }
+
     /** Always available: public brokers are reachable without registration or configuration. */
-    override val configured: Boolean get() = host.isNotBlank()
+    override val configured: Boolean get() = candidates.isNotEmpty()
+
+    /** The address actually in use, for display and for diagnosing a mismatch between the two sides. */
+    override val serverLabel: String? get() = chosen?.label
+
+    private var chosen: Broker? = null
+    private var client: MqttClient? = null
 
     /**
      * How often the member re-publishes its own state.
@@ -59,15 +75,6 @@ class MqttTransport(
 
     private var selfUid: String = ""
     private var roomCode: String = ""
-
-    private val client = MqttClient(
-        host = host,
-        port = port,
-        scope = scope,
-        tls = tls,
-        onMessage = { topic, payload -> onIncoming(topic, payload) },
-        onConnectionChanged = onConnectionChanged,
-    )
 
     override suspend fun createRoom(uid: String, name: String): TogetherResult<String> {
         // Local by construction: the code names a topic subtree, so there is nothing to create.
@@ -116,7 +123,9 @@ class MqttTransport(
         // Clear our retained slot: otherwise a device that left keeps looking present to anyone who
         // joins later, because a retained message outlives its publisher.
         clearRetained(code, uid)
-        client.close()
+        client?.close()
+        client = null
+        chosen = null
         synchronized(lock) {
             peersByUid.clear()
             heardAt.clear()
@@ -129,16 +138,22 @@ class MqttTransport(
     // ------------------------------------------------------------------ plumbing
 
     /**
-     * Brings the subscription up, **waiting for the broker to acknowledge it**.
+     * Brings up a connection and an **acknowledged** subscription, trying each broker in turn.
      *
-     * Two separate waits, and the second is the one that matters: connecting is asynchronous, so
-     * publishing straight after `connect()` reported 尚未连接; and a subscription is not in effect until
-     * its SUBACK arrives, so publishing before that sends state into a room we cannot hear — which
-     * presents as "the room contains only me". Both are handled by waiting rather than guessing.
+     * Three things are being handled here, each of which was a separate reported failure:
+     *
+     *  1. **A broker that is unreachable.** A blocked port or a filtered domain is a property of the
+     *     network, not a reason to give up — the next candidate gets a turn, and in practice
+     *     `broker.hivemq.com` and `broker.emqx.io` are rarely blocked at the same time.
+     *  2. **Connecting is asynchronous**, so publishing straight after `connect()` reported 尚未连接.
+     *  3. **A subscription is not in effect until its SUBACK arrives**, so publishing before that sends
+     *     state into a room we cannot hear — which presents as "the room contains only me".
      */
     private suspend fun ensureSubscribed(code: String, uid: String): TogetherResult<Unit> {
         selfUid = uid
-        if (roomCode == code && client.isConnected && subscribedRoom == code) return TogetherResult.Ok(Unit)
+        if (roomCode == code && client?.isConnected == true && subscribedRoom == code) {
+            return TogetherResult.Ok(Unit)
+        }
         if (roomCode != code) {
             synchronized(lock) {
                 peersByUid.clear()
@@ -147,21 +162,50 @@ class MqttTransport(
             roomCode = code
             subscribedRoom = null
         }
-        client.connect()
-        if (!client.awaitConnected(CONNECT_WAIT_MS)) {
-            // Named explicitly: on a mobile network an unreachable broker on port 1883 is most likely a
-            // blocked port, and "无法连接 broker.hivemq.com:1883" says far more than "尚未连接".
-            return TogetherResult.Failed("无法连接消息服务器 $host:$port")
+
+        // Already connected to the working address: nothing to re-establish.
+        val live = client
+        if (live != null && live.isConnected) {
+            val filter = "$TOPIC_ROOT/$code/+"
+            if (subscribedRoom == code) return TogetherResult.Ok(Unit)
+            live.subscribe(filter)
+            if (live.awaitSubscribed(filter, SUBSCRIBE_WAIT_MS)) {
+                subscribedRoom = code
+                return TogetherResult.Ok(Unit)
+            }
         }
-        // The wildcard covers every member's slot under this room, including our own — incoming messages
-        // from ourselves are filtered in onIncoming.
+
         val filter = "$TOPIC_ROOT/$code/+"
-        client.subscribe(filter)
-        if (!client.awaitSubscribed(filter, SUBSCRIBE_WAIT_MS)) {
-            return TogetherResult.Failed("消息服务器未确认订阅，请重试")
+        val failures = mutableListOf<String>()
+        for (broker in candidates) {
+            val candidate = MqttClient(
+                host = broker.host,
+                port = broker.port,
+                scope = scope,
+                tls = broker.tls,
+                onMessage = { topic, payload -> onIncoming(topic, payload) },
+                onConnectionChanged = onConnectionChanged,
+            )
+            candidate.connect()
+            if (!candidate.awaitConnected(CONNECT_WAIT_MS)) {
+                candidate.close()
+                failures += broker.label
+                continue
+            }
+            candidate.subscribe(filter)
+            if (!candidate.awaitSubscribed(filter, SUBSCRIBE_WAIT_MS)) {
+                candidate.close()
+                failures += "${broker.label}(订阅未确认)"
+                continue
+            }
+            // Success: adopt it, and drop whatever we were using before so one broker is in effect.
+            live?.close()
+            client = candidate
+            chosen = broker
+            subscribedRoom = code
+            return TogetherResult.Ok(Unit)
         }
-        subscribedRoom = code
-        return TogetherResult.Ok(Unit)
+        return TogetherResult.Failed("无法连接消息服务器（已尝试：${failures.joinToString("、")}）")
     }
 
     /** The room whose subscription the broker has confirmed, so the wait happens once, not per publish. */
@@ -215,7 +259,8 @@ class MqttTransport(
         playing: Boolean,
         seq: Long,
     ): TogetherResult<Unit> {
-        if (!client.isConnected) return TogetherResult.Failed("尚未连接")
+        val active = client
+        if (active == null || !active.isConnected) return TogetherResult.Failed("尚未连接")
         val payload = JSONObject()
             .put("uid", uid)
             .put("name", name)
@@ -226,12 +271,12 @@ class MqttTransport(
             .put("seq", seq)
             .toString()
         // Retained, so a later joiner sees this member's state at once.
-        client.publish("$TOPIC_ROOT/$code/$uid", payload, retain = true)
+        active.publish("$TOPIC_ROOT/$code/$uid", payload, retain = true)
         return TogetherResult.Ok(Unit)
     }
 
     private fun clearRetained(code: String, uid: String) {
-        client.publish("$TOPIC_ROOT/$code/$uid", "", retain = true)
+        client?.publish("$TOPIC_ROOT/$code/$uid", "", retain = true)
     }
 
     private companion object {
@@ -254,26 +299,45 @@ class MqttTransport(
         const val SUBSCRIBE_WAIT_MS = 20_000L
 
         /**
-         * A public broker that accepts anonymous connections and is widely reachable.
+         * The brokers to try, **in a fixed order that both members iterate identically**.
          *
-         * **TLS on 8883 by default**, which is deliberate and was learned the hard way: plain 1883 is
-         * commonly blocked by mobile carriers (measured — the app reported "无法连接消息服务器 …:1883"
-         * on a phone network while working fine from a desktop on the same broker), whereas 8883 is
-         * left alone because it looks like ordinary encrypted traffic. Configure
-         * `together.mqtt.host/port/tls` for a self-hosted broker.
+         * Trying more than one is the point: a blocked port or a filtered domain is a property of the
+         * network, and the two members are usually on *different* networks — so if each stopped at its
+         * first-choice address, the two could easily end up on different brokers and sit in two rooms
+         * that are both empty. Same list, same order, first address that accepts both wins.
+         *
+         * **TLS on 8883 throughout**, learned the hard way: plain 1883 is commonly blocked by mobile
+         * carriers (measured — the app reported "无法连接消息服务器 …:1883" on a phone network while a
+         * desktop on the same broker worked fine), whereas 8883 is left alone because it looks like
+         * ordinary encrypted traffic. `test.mosquitto.org` is deliberately absent: it fails certificate
+         * verification, so a client would have to weaken TLS to use it.
+         *
+         * `together.mqtt.host` (with optional `port`/`tls`) replaces this list entirely, for a
+         * self-hosted broker.
          */
-        fun defaultHost(): String =
-            BuildConfig.TOGETHER_MQTT_HOST.ifBlank { "broker.hivemq.com" }
+        fun defaultCandidates(): List<Broker> {
+            val configuredHost = BuildConfig.TOGETHER_MQTT_HOST.trim()
+            if (configuredHost.isNotEmpty()) {
+                val port = BuildConfig.TOGETHER_MQTT_PORT.trim().toIntOrNull() ?: 8883
+                return listOf(Broker(configuredHost, port, tlsFor(port)))
+            }
+            return listOf(
+                Broker("broker.hivemq.com", 8883, tls = true),
+                Broker("broker.emqx.io", 8883, tls = true),
+            )
+        }
 
-        fun defaultPort(): Int =
-            BuildConfig.TOGETHER_MQTT_PORT.ifBlank { "8883" }.toIntOrNull() ?: 8883
-
-        /** TLS by default; disabled only by an explicit `together.mqtt.tls=false`. */
-        fun defaultTls(): Boolean {
+        /**
+         * TLS unless explicitly disabled.
+         *
+         * `together.mqtt.tls=false` (or `0`) is the only way to turn it off, for a network that allows
+         * plain 1883 and prefers it; the conventional TLS port implies it regardless.
+         */
+        fun tlsFor(port: Int): Boolean {
             val configured = BuildConfig.TOGETHER_MQTT_TLS.trim()
             return when {
                 configured.equals("false", ignoreCase = true) || configured == "0" -> false
-                configured.isNotEmpty() -> true
+                port == 8883 -> true
                 else -> true
             }
         }

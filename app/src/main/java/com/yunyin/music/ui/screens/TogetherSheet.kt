@@ -281,6 +281,21 @@ private fun RoomBody(
         }
     }
 
+    // The endpoint in use. Shown because a transport is a rendezvous: if the two members are on
+    // different servers, both rooms look empty and neither side can tell why. Seeing the address turns
+    // that into something you can compare over a message.
+    state.server?.let { server ->
+        Spacer(Modifier.height(10.dp))
+        Text(
+            text = "服务器：$server",
+            fontFamily = SFPro,
+            fontSize = 12.sp,
+            color = AppTheme.palette.tertiaryLabel,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+
     Spacer(Modifier.height(20.dp))
     Text(
         text = "房间内",
