@@ -18,6 +18,7 @@
 ## 目录
 
 - [功能](#功能)
+- [截图](#截图)
 - [快速开始](#快速开始)
 - [技术栈](#技术栈)
 - [接口](#接口)
@@ -25,6 +26,7 @@
 - [项目结构](#项目结构)
 - [测试](#测试)
 - [许可证与致谢](#许可证与致谢)
+- [免责声明](#免责声明)
 
 ---
 
@@ -152,7 +154,7 @@ app/src/main/res/font/sf_pro.ttf
 | 图像取色 | AndroidX Palette |
 | 流动背景 | AGSL（`android.graphics.RuntimeShader`，需 API 33+） |
 | 毛玻璃 | [Backdrop](https://github.com/Kyant0/AndroidLiquidGlass)（Apache-2.0） |
-| 逐字歌词 | [accompanist-lyrics](https://github.com/6xingyv/accompanist-lyrics-ui)（Apache-2.0） |
+| 逐字歌词 | 渲染 [accompanist-lyrics](https://github.com/6xingyv/accompanist-lyrics-ui)（Apache-2.0）＋ 数据 [AMLL TTML DB](https://github.com/amll-dev/amll-ttml-db)（CC0-1.0） |
 | 状态栏歌词 | 词幕 Lyricon Provider（Apache-2.0）+ Flyme 通知 ticker |
 | 构建 | Gradle 9.7.1 / AGP 9.3.2 |
 | minSdk / targetSdk | 33 / 37 |
@@ -197,9 +199,10 @@ app/src/main/res/font/sf_pro.ttf
 
 两路来源，按「有逐字优先」并发竞速合并，统一解析为一种 `SyncedLyrics`：
 
-1. **AMLL TTML DB**（首选，与 Apple Music 同源的逐字歌词）
-   `amll-ttml-db` 的 `ncm-lyrics/{网易云歌曲ID}.ttml`，按网易云 ID 直取，
-   含逐音节时间、对唱左右声道与翻译。多镜像并发竞速，取第一个可用结果。
+1. **[AMLL TTML DB](https://github.com/amll-dev/amll-ttml-db)**（首选，与 Apple Music 同源的逐字歌词）
+   `ncm-lyrics/{网易云歌曲ID}.ttml`，按网易云 ID 直取，
+   含逐音节时间、对唱左右声道与翻译。多镜像（jsDelivr / fastly / gcore / raw / ghproxy）
+   并发竞速，取第一个可用结果。该库的歌词数据以 **CC0-1.0** 公有领域贡献。
 2. **网易云 `/lyric/new`**：`yrc`（逐字）优先，否则 `lrc`（逐行）；
    翻译优先取 `ytlrc`（对齐逐字），其次 `tlyric`（对齐逐行）。
 
@@ -237,6 +240,7 @@ ExoPlayer 可正常处理切歌与重试。
 
 **词幕（Lyricon）**：接入其官方 Provider 接口对应用完全可选，未安装词幕时整个功能是空操作，
 应用其余部分不受影响；设置页显示当前连接状态并可重试。
+（[词幕 Lyricon](https://github.com/tomakino/lyricon)，Apache-2.0）
 
 **Flyme**：Flyme 的状态栏歌词是**系统功能**，它改造了 Android 通知的 ticker。
 应用按 Flyme 官方适配说明发一条常驻通知：歌词放在 `setTicker(...)`，
@@ -286,7 +290,8 @@ app/src/main/java/com/yunyin/music/
 |---|---|---|
 | 流动背景（着色器、painter、调色板、音频响应） | [NeriPlayer](https://github.com/cwuom/NeriPlayer) | **GPL-3.0** |
 | 逐字歌词渲染器（`lyrics/`） | [accompanist-lyrics-ui](https://github.com/6xingyv/accompanist-lyrics-ui) / `accompanist-lyrics-core` | Apache-2.0 |
-| 词幕接入（`LyriconBridge` / `LyriconMapper`） | 本项目代码，依赖 [词幕 Lyricon](https://github.com/proify/lyricon) 的 Provider 接口 | Apache-2.0 |
+| 逐字歌词数据（运行时获取，不随仓库分发） | [AMLL TTML DB](https://github.com/amll-dev/amll-ttml-db) | **CC0-1.0** |
+| 词幕接入（`LyriconBridge` / `LyriconMapper`） | 本项目代码，依赖 [词幕 Lyricon](https://github.com/tomakino/lyricon) 的 Provider 接口 | Apache-2.0 |
 | 毛玻璃 | [AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass) | Apache-2.0 |
 | 音质图标 | Google Material Symbols | Apache-2.0 |
 | 其余界面 / 数据 / 网络 / 播放 | 本项目 | 见下 |
