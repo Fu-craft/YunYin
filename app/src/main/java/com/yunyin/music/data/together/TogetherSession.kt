@@ -3,6 +3,7 @@ package com.yunyin.music.data.together
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -104,6 +105,17 @@ class TogetherSession(
     /** Sleeps for a poll interval, or until [noteUserAction] asks for an immediate publish. */
     private suspend fun awaitNextPoll() {
         withTimeoutOrNull(transport.pollIntervalMs) { wakeups.receive() }
+    }
+
+    private companion object {
+        /**
+         * How long to wait after being rate limited.
+         *
+         * Long on purpose: the allowance refills over a period, so retrying at the normal cadence
+         * spends requests that are certain to be refused and extends the outage. A minute is long
+         * enough for a typical refill and short enough that the room recovers on its own.
+         */
+        const val RATE_LIMIT_BACKOFF_MS = 60_000L
     }
 
     fun createRoom(uid: String, name: String) {
@@ -213,20 +225,26 @@ class TogetherSession(
                         peers.maxOfOrNull { it.seq }?.let { peerSeqSeen = maxOf(peerSeqSeen, it) }
                         _state.value = _state.value.copy(peers = peers, error = null)
                         apply(peers, mine)
+                        awaitNextPoll()
                     }
                     // A room that vanished is terminal: say so and stop rather than retrying forever.
                     is TogetherResult.NoRoom -> {
                         _state.value = _state.value.copy(ended = result.message)
                         break
                     }
-                    // Rate limiting is transient too: wait and try again rather than giving up, and say
-                    // so plainly — "被限流" is actionable, "网络错误" is not.
-                    is TogetherResult.RateLimited ->
+                    // Rate limited: say so plainly (it is actionable), and back off hard. Continuing at
+                    // the normal cadence would keep spending an allowance that is already exhausted —
+                    // the limit refills over time, so the only thing that helps is waiting longer.
+                    is TogetherResult.RateLimited -> {
                         _state.value = _state.value.copy(error = result.message)
+                        delay(RATE_LIMIT_BACKOFF_MS)
+                    }
                     // Everything else is transient as well (a dropped exchange); keep the loop going.
-                    is TogetherResult.Failed -> _state.value = _state.value.copy(error = result.message)
+                    is TogetherResult.Failed -> {
+                        _state.value = _state.value.copy(error = result.message)
+                        awaitNextPoll()
+                    }
                 }
-                awaitNextPoll()
             }
         }
     }

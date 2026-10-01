@@ -63,12 +63,20 @@ class NtfyTransport(
     override val configured: Boolean get() = baseUrl.isNotBlank()
 
     /**
-     * The publish heartbeat. Deliberately slow: a *change* is delivered by the stream the moment it
-     * happens (and a local action re-publishes at once — see `TogetherSession.noteUserAction`), so this
-     * only has to carry the slowly-drifting position and prove the member is alive. Published every
-     * five seconds, a two-person room stays far inside the service's allowance.
+     * The publish heartbeat: slow on purpose.
+     *
+     * A *change* does not wait for this — the subscription stream delivers it the moment it happens,
+     * and a local action re-publishes immediately (`TogetherSession.noteUserAction` wakes the loop).
+     * So this only has to carry the slowly-drifting position and prove the member is still here.
+     *
+     * It used to be 5s, and that was still too much: the public instance's allowance is **per source
+     * address and shared**, so everyone behind one home/office NAT draws on the same quota. Combined
+     * with the fact that both members publish, a fast heartbeat spends the whole budget on a feature
+     * whose updates are mostly already delivered by the stream. Every 30s cuts the request rate by
+     * another ten times, and drift between two devices over 30s is a few tens of milliseconds — far
+     * inside the 2s tolerance that triggers a correction.
      */
-    override val pollIntervalMs: Long get() = 5_000L
+    override val pollIntervalMs: Long get() = 30_000L
 
     private val base: String get() = baseUrl.trimEnd('/')
 
@@ -282,8 +290,13 @@ class NtfyTransport(
         /** First connect looks back this far, so a room joined a moment ago still finds the host. */
         const val INITIAL_WINDOW = "30m"
 
-        /** How long a member may be silent before it is treated as having left. */
-        const val MEMBER_TTL_MS = 20_000L
+        /**
+         * How long a member may be silent before it is treated as having left.
+         *
+         * Comfortably more than the 30s heartbeat, so an ordinary missed beat does not make the other
+         * person appear to vanish, but short enough that closing the app shows up within about a minute.
+         */
+        const val MEMBER_TTL_MS = 75_000L
 
         /** Wait before reopening a dropped stream. */
         const val RECONNECT_DELAY_MS = 2_000L
