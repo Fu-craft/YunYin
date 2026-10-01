@@ -72,6 +72,7 @@ import com.yunyin.music.ui.screens.ArtistScreen
 import com.yunyin.music.ui.screens.HomeScreen
 import com.yunyin.music.ui.screens.LibraryScreen
 import com.yunyin.music.ui.screens.LoginScreen
+import com.yunyin.music.ui.screens.PROJECT_URL
 import com.yunyin.music.ui.screens.PlayerScreen
 import com.yunyin.music.ui.screens.ProfileEditSheet
 import com.yunyin.music.ui.screens.PlayerArtworkCorner
@@ -183,6 +184,9 @@ class MainActivity : ComponentActivity() {
          */
         var quality by remember { mutableStateOf(AudioQuality.from(container.settings.quality)) }
         var statusBarLyricsEnabled by remember { mutableStateOf(container.settings.statusBarLyrics) }
+        // Read from the bridge rather than the preference: the bridge is the authority on whether it is
+        // publishing, and it mirrors the stored value, so the switch cannot disagree with what is running.
+        var lyriconEnabled by remember { mutableStateOf(container.lyricon.enabled) }
         var seamlessTransition by remember { mutableStateOf(container.settings.seamlessTransition) }
 
         // ------------------------------------------------------------ profile
@@ -535,12 +539,20 @@ class MainActivity : ComponentActivity() {
                         Toast.makeText(context, "歌词缓存已清除", Toast.LENGTH_SHORT).show()
                     },
                     onBack = { showSettings = false },
+                    onOpenProject = { openUrl(PROJECT_URL) },
                     // Read on each entry into Settings rather than held as state: the connection can
                     // change while the app runs (Lyricon installed or started later), and a value
                     // captured once would go stale exactly when the user opens this to check it.
                     lyriconConnected = container.lyricon.connected,
                     lyriconAvailable = container.lyricon.available,
                     onRetryLyricon = { container.lyricon.retry() },
+                    lyriconEnabled = lyriconEnabled,
+                    onLyriconEnabledChange = { enabled ->
+                        // The bridge owns the actual connect/disconnect (and the persisted preference),
+                        // so this only keeps the local state — which the switch renders — in step.
+                        lyriconEnabled = enabled
+                        container.lyricon.applyEnabled(enabled)
+                    },
                     flymeSupported = container.tickerLyrics.isSupported(),
                     statusBarLyrics = statusBarLyricsEnabled,
                     onStatusBarLyricsChange = { enabled ->
@@ -863,6 +875,20 @@ class MainActivity : ComponentActivity() {
             putExtra(Intent.EXTRA_TEXT, text)
         }
         startActivity(Intent.createChooser(send, chooserTitle))
+    }
+
+    /**
+     * Opens [url] in whatever handles web links.
+     *
+     * Guarded because there may be no browser (or no handler at all) on the device: an
+     * `ActivityNotFoundException` here would crash the app from a settings tap, which is a poor trade
+     * for a link that is only a convenience.
+     */
+    private fun openUrl(url: String) {
+        runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+            .onFailure {
+                Toast.makeText(this, "无法打开链接", Toast.LENGTH_SHORT).show()
+            }
     }
 }
 

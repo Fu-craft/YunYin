@@ -31,6 +31,20 @@ class SettingsStore(context: Context) {
         set(value) = prefs.edit().putString(KEY_QUALITY, value).apply()
 
     /**
+     * Whether the app publishes to 词幕 (Lyricon) at all.
+     *
+     * Defaults on, matching the behaviour before the switch existed: on a device where 词幕 is
+     * installed, publishing is what the user installed it for. It is opt-out because the feature is
+     * invisible otherwise — nothing in 云音's own UI shows the status-bar lyric, so someone who does
+     * not want it would have no way to discover it was happening.
+     *
+     * Off means the binder connection is dropped, not merely hidden.
+     */
+    var lyriconEnabled: Boolean
+        get() = prefs.getBoolean(KEY_LYRICON_ENABLED, true)
+        set(value) = prefs.edit().putBoolean(KEY_LYRICON_ENABLED, value).apply()
+
+    /**
      * Whether to post the Flyme status-bar lyric notification.
      *
      * Opt-out rather than opt-in: on a ROM that supports it the user installed the app expecting the
@@ -197,6 +211,7 @@ class SettingsStore(context: Context) {
         private const val KEY_ANON = "anonymous"
         private const val KEY_LYRIC_OFFSETS = "lyric_offsets"
         private const val KEY_STATUS_BAR_LYRICS = "status_bar_lyrics"
+        private const val KEY_LYRICON_ENABLED = "lyricon_enabled"
         private const val KEY_SEAMLESS_TRANSITION = "seamless_transition"
         private const val KEY_PROFILE_SIGNATURE = "profile_signature"
         private const val KEY_CUSTOM_NICKNAME = "custom_nickname"

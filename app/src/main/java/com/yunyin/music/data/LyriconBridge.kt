@@ -47,7 +47,7 @@ import io.github.proify.lyricon.provider.providerMetadataOf
  * [publishPosition] is therefore called on every player state emission, which the controller produces
  * at 4Hz while playing. That is cheap precisely because it is a memory write, not a binder call.
  */
-class LyriconBridge(private val context: Context) {
+class LyriconBridge(private val context: Context, private val settings: SettingsStore) {
 
     private var provider: LyriconProvider? = null
 
@@ -56,6 +56,16 @@ class LyriconBridge(private val context: Context) {
 
     /** Identity of the lyric document most recently sent, so it is not re-sent unchanged. */
     private var lastSongSignature: String? = null
+
+    /**
+     * Whether publishing is switched on in Settings.
+     *
+     * Mirrors the stored preference so the UI can read it without touching the store, and so a change
+     * immediately affects [publish] rather than only after the next app start. Off means the connection
+     * is dropped — see [setEnabled].
+     */
+    var enabled by mutableStateOf(settings.lyriconEnabled)
+        private set
 
     /**
      * Whether Lyricon is installed and the provider is connected.
@@ -87,6 +97,8 @@ class LyriconBridge(private val context: Context) {
     fun register() {
         if (registrationAttempted) return
         registrationAttempted = true
+        // Switched off: do not even bind 词幕's central service.
+        if (!enabled) return
         runCatching {
             val created = LyriconFactory.createProvider(
                 context = context,
@@ -132,9 +144,26 @@ class LyriconBridge(private val context: Context) {
      * permanent, so Settings can ask for one more try.
      */
     fun retry() {
-        if (connected) return
+        if (!enabled || connected) return
         registrationAttempted = false
         register()
+    }
+
+    /**
+     * Turns publishing on or off from Settings.
+     *
+     * Off is a real disconnect, not a hidden switch: the binder to 词幕's service is dropped and the
+     * resident registration removed, so the app stops touching another app's process at all. On
+     * re-registers from scratch, which is why [registrationAttempted] is cleared rather than the
+     * original attempt being reused.
+     */
+    fun applyEnabled(value: Boolean) {
+        if (value == enabled) return
+        enabled = value
+        settings.lyriconEnabled = value
+        // Both directions go through the lifecycle helpers, which own the registration flag:
+        // `release()` clears it (so switching back on can bind) and `register()` respects `enabled`.
+        if (value) retry() else release()
     }
 
     private fun applyConnectionState(value: Boolean) {
@@ -168,6 +197,8 @@ class LyriconBridge(private val context: Context) {
         }
         provider = null
         connected = false
+        lastSongSignature = null
+        registrationAttempted = false
     }
 
     // ---------------------------------------------------------------- publishing

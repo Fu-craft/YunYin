@@ -56,7 +56,7 @@ class AppContainer(val appContext: Context) {
     val covers: CoverDownloader by lazy { CoverDownloader(appContext) }
 
     /** Publishes song/lyrics/playback state to 词幕 (Lyricon), when it is installed. */
-    val lyricon: LyriconBridge by lazy { LyriconBridge(appContext) }
+    val lyricon: LyriconBridge by lazy { LyriconBridge(appContext, settings) }
 
     /** Flyme's status-bar lyric, via a resident notification ticker (Flyme-family ROMs only). */
     val tickerLyrics: FlymeLyricNotifier by lazy { FlymeLyricNotifier(appContext) }

@@ -40,6 +40,12 @@ import com.yunyin.music.ui.theme.SFPro
 import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
 
 /**
+ * Where the project lives. Defined once: the About row displays it and the caller opens it, so a
+ * second literal would be one place for the two to drift apart.
+ */
+internal const val PROJECT_URL = "https://github.com/Fu-craft/YunYin"
+
+/**
  * Settings.
  *
  * Only user-facing choices appear here: maintenance actions and status. Audio quality is deliberately
@@ -53,6 +59,8 @@ fun SettingsScreen(
     onClearLyricsCache: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Opens the project page in a browser; the URL is [PROJECT_URL]. */
+    onOpenProject: () -> Unit = {},
     /**
      * State of the 词幕 (Lyricon) bridge, for display.
      *
@@ -63,6 +71,15 @@ fun SettingsScreen(
     lyriconConnected: Boolean = false,
     lyriconAvailable: Boolean = false,
     onRetryLyricon: () -> Unit = {},
+    /**
+     * Whether the app publishes to 词幕 at all.
+     *
+     * The integration only makes sense on a device that has 词幕 installed, and even there someone may
+     * not want their lyrics mirrored outside the app — so it can be switched off, which drops the
+     * binder connection rather than merely hiding the status line.
+     */
+    lyriconEnabled: Boolean = true,
+    onLyriconEnabledChange: (Boolean) -> Unit = {},
     /**
      * Flyme 状态栏歌词 availability and preference.
      *
@@ -116,7 +133,16 @@ fun SettingsScreen(
                 .padding(horizontal = 20.dp, vertical = 8.dp),
         ) {
             SectionLabel("状态栏歌词")
+            // The enable switch leads, because it decides whether the two rows below have anything to
+            // say: with 词幕 publishing off there is no connection to report and no status to retry.
+            ToggleRow(
+                title = "词幕状态栏歌词",
+                subtitle = "把当前歌词推送给「词幕」，由它显示在状态栏／锁屏",
+                enabled = lyriconEnabled,
+                onChange = onLyriconEnabledChange,
+            )
             LyriconRow(
+                enabled = lyriconEnabled,
                 connected = lyriconConnected,
                 available = lyriconAvailable,
                 onRetry = onRetryLyricon,
@@ -150,6 +176,7 @@ fun SettingsScreen(
             // version was bumped.
             InfoRow(text = "版本", value = com.yunyin.music.BuildConfig.VERSION_NAME)
             InfoRow(text = "歌词", value = "AMLL 逐字歌词")
+            LinkRow(text = "项目主页", value = "GitHub", onClick = onOpenProject)
         }
     }
 }
@@ -159,26 +186,35 @@ fun SettingsScreen(
  *
  * Three distinct states, each with different advice, which is why this is not a plain on/off row:
  * connected (nothing to do), installed but not connected (offer a retry), and not installed (name the
- * app the user needs, since nothing else in 云音 would ever mention it).
+ * app the user needs, since nothing else in 云音 would ever mention it). A fourth state is the switch
+ * above being off, in which case there is nothing to report and the row says so rather than showing a
+ * stale "未连接".
  */
 @Composable
-private fun LyriconRow(connected: Boolean, available: Boolean, onRetry: () -> Unit) {
+private fun LyriconRow(
+    enabled: Boolean,
+    connected: Boolean,
+    available: Boolean,
+    onRetry: () -> Unit,
+) {
     val (status, hint) = when {
+        !enabled -> "已关闭" to "打开上面的开关即可启用"
         connected -> "已连接" to "歌词会显示在词幕的状态栏"
         available -> "未连接" to "点击重试连接"
         else -> "未安装" to "需先安装「词幕」应用"
     }
+    val retryable = enabled && available && !connected
     Row(
         Modifier
             .fillMaxWidth()
             .clip(ContinuousRoundedRectangle(10.dp))
-            .then(if (available && !connected) Modifier.clickable(onClick = onRetry) else Modifier)
+            .then(if (retryable) Modifier.clickable(onClick = onRetry) else Modifier)
             .padding(horizontal = 12.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
             Text(
-                text = "词幕状态栏歌词",
+                text = "连接状态",
                 fontFamily = SFPro,
                 fontSize = 16.sp,
                 color = AppTheme.palette.label,
@@ -364,6 +400,46 @@ private fun InfoRow(text: String, value: String) {
             fontFamily = SFPro,
             fontSize = 15.sp,
             color = AppTheme.palette.secondaryLabel,
+        )
+    }
+}
+
+/**
+ * An [InfoRow] that opens something.
+ *
+ * The value is tinted with the accent and followed by an outbound glyph, which is how a link reads in
+ * a settings list: the colour says it acts, the arrow says the act leaves the app. Without either, a
+ * tappable row is indistinguishable from the two informational rows above it.
+ */
+@Composable
+private fun LinkRow(text: String, value: String, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(ContinuousRoundedRectangle(10.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text,
+            fontFamily = SFPro,
+            fontSize = 16.sp,
+            color = AppTheme.palette.label,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            value,
+            fontFamily = SFPro,
+            fontSize = 15.sp,
+            color = AppTheme.palette.accent,
+        )
+        Spacer(Modifier.width(4.dp))
+        Icon(
+            SfIcons.ArrowUpRight,
+            contentDescription = null,
+            tint = AppTheme.palette.accent,
+            modifier = Modifier.size(13.dp),
         )
     }
 }
