@@ -253,7 +253,8 @@ app/src/main/java/com/yunyin/music/
 | 部分 | 来源 | 许可证 |
 |---|---|---|
 | 流动背景（着色器、painter、调色板、音频响应） | [NeriPlayer](https://github.com/cwuom/NeriPlayer) | **GPL-3.0** |
-| 逐字歌词渲染器（`lyrics/`） | [accompanist-lyrics-ui](https://github.com/6xingyv/accompanist-lyrics-ui) / `accompanist-lyrics-core` | Apache-2.0 |
+| 逐字歌词渲染器（`lyrics/`，vendored） | [accompanist-lyrics-ui](https://github.com/6xingyv/accompanist-lyrics-ui) | Apache-2.0 |
+| 逐字歌词解析（`lyrics-core` 依赖） | [accompanist-lyrics-core](https://github.com/6xingyv/accompanist-lyrics-core) | Apache-2.0 |
 | 逐字歌词数据（运行时获取，不随仓库分发） | [AMLL TTML DB](https://github.com/amll-dev/amll-ttml-db) | **CC0-1.0** |
 | 词幕接入（`LyriconBridge` / `LyriconMapper`） | 本项目代码，依赖 [词幕 Lyricon](https://github.com/tomakino/lyricon) 的 Provider 接口 | Apache-2.0 |
 | 底栏 | [AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass) | Apache-2.0 |
