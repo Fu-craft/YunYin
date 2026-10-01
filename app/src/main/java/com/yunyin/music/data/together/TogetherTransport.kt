@@ -34,7 +34,16 @@ sealed interface TogetherResult<out T> {
     /** The room code does not exist (or was closed). */
     data class NoRoom(val message: String) : TogetherResult<Nothing>
 
-    /** Anything else: offline, bad response, relay down. */
+    /**
+     * The service refused for rate limiting.
+     *
+     * Its own case because it is transient and actionable — the user can simply wait — whereas a
+     * generic failure reads as "it is broken". The public instance limits per address, so this is a
+     * real possibility when several devices share one network.
+     */
+    data class RateLimited(val message: String) : TogetherResult<Nothing>
+
+    /** Anything else: offline, bad response, service down. */
     data class Failed(val message: String) : TogetherResult<Nothing>
 }
 
@@ -42,6 +51,7 @@ sealed interface TogetherResult<out T> {
 inline fun <T, R> TogetherResult<T>.map(transform: (T) -> R): TogetherResult<R> = when (this) {
     is TogetherResult.Ok -> TogetherResult.Ok(transform(value))
     is TogetherResult.NoRoom -> this
+    is TogetherResult.RateLimited -> this
     is TogetherResult.Failed -> this
 }
 
@@ -194,6 +204,7 @@ class RelayTransport(
                 val json = runCatching { JSONObject(response.body?.string().orEmpty()) }.getOrNull()
                     ?: return@withContext TogetherResult.Failed("服务响应无法解析")
                 when {
+                    response.code == 429 -> TogetherResult.RateLimited("请求过于频繁，请稍后再试")
                     response.code == 404 || json.optString("error") == "no_room" ->
                         TogetherResult.NoRoom("房间不存在或已结束")
                     !response.isSuccessful -> TogetherResult.Failed("服务错误 HTTP ${response.code}")

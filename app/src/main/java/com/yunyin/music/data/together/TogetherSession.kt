@@ -117,6 +117,7 @@ class TogetherSession(
                     startLoop(uid, name)
                 }
                 is TogetherResult.NoRoom -> setError(result.message)
+                is TogetherResult.RateLimited -> setError(result.message)
                 is TogetherResult.Failed -> setError(result.message)
             }
         }
@@ -130,6 +131,10 @@ class TogetherSession(
             // still validates on join; this is only for a better message.
             when (val info = transport.roomInfo(trimmed)) {
                 is TogetherResult.NoRoom -> {
+                    setError(info.message)
+                    return@launchWork
+                }
+                is TogetherResult.RateLimited -> {
                     setError(info.message)
                     return@launchWork
                 }
@@ -147,6 +152,7 @@ class TogetherSession(
                     startLoop(uid, name)
                 }
                 is TogetherResult.NoRoom -> setError(joined.message)
+                is TogetherResult.RateLimited -> setError(joined.message)
                 is TogetherResult.Failed -> setError(joined.message)
             }
         }
@@ -213,7 +219,11 @@ class TogetherSession(
                         _state.value = _state.value.copy(ended = result.message)
                         break
                     }
-                    // Everything else is transient (a dropped poll); keep the loop and try again.
+                    // Rate limiting is transient too: wait and try again rather than giving up, and say
+                    // so plainly — "被限流" is actionable, "网络错误" is not.
+                    is TogetherResult.RateLimited ->
+                        _state.value = _state.value.copy(error = result.message)
+                    // Everything else is transient as well (a dropped exchange); keep the loop going.
                     is TogetherResult.Failed -> _state.value = _state.value.copy(error = result.message)
                 }
                 awaitNextPoll()

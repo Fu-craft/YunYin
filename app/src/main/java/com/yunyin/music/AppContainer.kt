@@ -80,12 +80,12 @@ class AppContainer(val appContext: Context) {
      *  - otherwise the free public pub/sub service, which needs nothing deployed.
      */
     val together: TogetherSession by lazy {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        // The public service needs a scope of its own: its state arrives on a long-lived subscription
+        // that must outlive individual calls, and the session's poll loop is the caller.
         val transport: TogetherTransport =
-            if (BuildConfig.TOGETHER_BASE_URL.isNotBlank()) RelayTransport() else NtfyTransport()
-        TogetherSession(
-            transport = transport,
-            scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
-        )
+            if (BuildConfig.TOGETHER_BASE_URL.isNotBlank()) RelayTransport() else NtfyTransport(scope)
+        TogetherSession(transport = transport, scope = scope)
     }
 
     val player: PlayerController by lazy {
