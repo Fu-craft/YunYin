@@ -36,14 +36,20 @@ async function poll() {
     if (event.id) lastId = event.id;
     let payload;
     try { payload = JSON.parse(event.message); } catch { continue; }
-    const key = payload.uid;
-    const isNew = !seen.has(key);
-    seen.set(key, payload);
-    if (isNew) {
-      console.log(`[member appeared] uid=${payload.uid} name="${payload.name}"`);
+    // The age matters more than the content: a poll replays a window of history, so without this a
+    // message from ten minutes ago reads exactly like live traffic — which is precisely the mistake
+    // this tool exists to prevent.
+    const ageS = payload.updatedAt ? Math.round((Date.now() - payload.updatedAt) / 1000) : null;
+    const age = ageS === null ? '' : ` (+${ageS}s ago)`;
+    const isLive = ageS !== null && ageS < 8;
+    if (!seen.has(payload.uid)) {
+      console.log(`[member] uid=${payload.uid} name="${payload.name}"${age}`);
+    } else if (isLive) {
+      console.log(`  LIVE uid=${payload.uid} song=${payload.songId} pos=${payload.positionMs}ms playing=${payload.playing}${age}`);
     } else {
-      console.log(`  update uid=${payload.uid} song=${payload.songId} pos=${payload.positionMs}ms playing=${payload.playing} seq=${payload.seq}`);
+      console.log(`  .old uid=${payload.uid} song=${payload.songId}${age}`);
     }
+    seen.set(payload.uid, { ...payload, ageS });
   }
 }
 
@@ -59,7 +65,10 @@ async function poll() {
     console.log('Possible reasons: the app is not in a room with this code, it has not');
     console.log('published yet, or the build does not include the together feature.');
   } else {
-    console.log(`\n${seen.size} member(s) publishing here:`);
-    for (const p of seen.values()) console.log('  ' + JSON.stringify(p));
+    console.log(`\n${seen.size} member(s) seen in the polled window:`);
+    for (const p of seen.values()) {
+      console.log(`  uid=${p.uid} name="${p.name}" song=${p.songId} pos=${p.positionMs}ms ` +
+        `playing=${p.playing} last-heard=${p.ageS}s ago${p.ageS < 8 ? '  <- LIVE' : '  <- stale, not live traffic'}`);
+    }
   }
 })();
