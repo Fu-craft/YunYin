@@ -186,22 +186,22 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    /** Creates a room as the signed-in user, or reports that a real login is needed. */
+    /** Creates a room as this installation, or reports that a real login is needed. */
     fun createTogetherRoom(): String? {
-        val uid = signedInUid() ?: return "请先登录后再使用一起听"
-        together.createRoom(uid = "$uid", name = signedInName())
+        val uid = togetherMemberId() ?: return "请先登录后再使用一起听"
+        together.createRoom(uid = uid, name = togetherName())
         return null
     }
 
     fun joinTogetherRoom(code: String): String? {
-        val uid = signedInUid() ?: return "请先登录后再使用一起听"
-        together.joinRoom(code = code, uid = "$uid", name = signedInName())
+        val uid = togetherMemberId() ?: return "请先登录后再使用一起听"
+        together.joinRoom(code = code, uid = uid, name = togetherName())
         return null
     }
 
     fun leaveTogetherRoom() {
-        val uid = signedInUid() ?: return
-        together.leaveRoom("$uid")
+        val uid = togetherMemberId() ?: return
+        together.leaveRoom(uid)
     }
 
     /**
@@ -214,14 +214,21 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
         together.dismissEnded()
     }
 
-    /** The account's uid, or null for a guest — listen-together needs two identifiable people. */
-    private fun signedInUid(): Long? {
+    /**
+     * This installation's member id, or null when not signed in to a real account.
+     *
+     * The id itself is per-installation rather than per-account, which is what makes the feature
+     * usable from one account on two devices — see `SettingsStore.togetherMemberId`. The login check
+     * is about identity to the *peer* (a name worth showing), not about the transport.
+     */
+    private fun togetherMemberId(): String? {
         val account = container.settings.account ?: return null
         if (account.isAnonymous) return null
-        return account.userId
+        return container.settings.togetherMemberId
     }
 
-    private fun signedInName(): String {
+    /** The name shown to the other member. */
+    private fun togetherName(): String {
         val account = container.settings.account
         return account?.nickname?.takeIf { it.isNotBlank() } ?: "云音用户"
     }

@@ -256,6 +256,22 @@ Windows 服务器用 `server\deploy.bat`。脚本会检查 Node、**生成随机
 自测：`node server/test_ntfy.js`（默认通道的完整协议，会真的访问 ntfy）、
 `node server/test_relay.js`（中继房间生命周期）、`node server/test_token.js`（令牌开关）。
 
+**只有一台设备怎么测。** 用 `server/peer_sim.js` 在电脑上扮演"对方"：先在 App 里创建房间，
+把这个脚本指向那个房间码，手机就会跟随脚本发布的歌曲与进度。
+
+```bash
+node server/peer_sim.js <房间码>
+# 然后输入命令，手机应立刻跟随：
+#   song 1824020871   切歌 -> 手机加载这首歌
+#   pos 90000         跳到 90 秒 -> 手机 seek
+#   pause / play      共享的播放状态
+#   drift 3000        给报告的位置加偏移，用来观察容差与防抖
+```
+
+它和 App 走的是同一套协议（`server/test_peer_sim.js` 用 8 项断言验证这一点）。
+注意这里**成员身份按设备划分**（每台安装各有一个随机 id），而不是按账号——
+所以同一个账号在两台设备上也能正常互见，这也正是单账号可测的前提。
+
 配置（全部可选，都在 `local.properties`，与接口地址同样不进仓库）：
 
 ```properties
@@ -310,9 +326,10 @@ server/                  一起听（可选的自建中继 + 协议端到端测�
 `server/` 下另有几个端到端测试，都模拟两个成员跑完整流程：
 
 ```bash
-node server/test_ntfy.js     # 默认通道的协议（会真的访问 ntfy.sh）
-node server/test_relay.js    # 自建中继的房间生命周期
-node server/test_token.js    # 中继的访问令牌
+node server/test_ntfy.js      # 默认通道的协议（会真的访问 ntfy.sh）
+node server/test_relay.js     # 自建中继的房间生命周期
+node server/test_token.js     # 中继的访问令牌
+node server/test_peer_sim.js  # 扮演对方的脚本是否与 App 同协议
 ```
 
 ---

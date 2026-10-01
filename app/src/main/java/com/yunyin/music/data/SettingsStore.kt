@@ -45,6 +45,28 @@ class SettingsStore(context: Context) {
         set(value) = prefs.edit().putBoolean(KEY_LYRICON_ENABLED, value).apply()
 
     /**
+     * This installation's identity inside a listen-together room.
+     *
+     * Deliberately **not** the NetEase account id. Two reasons, and both bit before:
+     *
+     *  - The transport ignores messages whose sender id equals its own, so two devices sharing one
+     *    account could never see each other — which made the feature impossible to test with a single
+     *    account, and would also break a legitimate "same account on phone and tablet" case.
+     *  - A room is a conversation between *devices*, not accounts. The account only supplies a
+     *    nickname to show.
+     *
+     * Generated once per installation and persisted, so the peer sees a stable member across
+     * restarts. Never sent anywhere but the room topic.
+     */
+    val togetherMemberId: String
+        get() {
+            prefs.getString(KEY_TOGETHER_MEMBER_ID, null)?.takeIf { it.isNotBlank() }?.let { return it }
+            val generated = java.util.UUID.randomUUID().toString().replace("-", "").take(16)
+            prefs.edit().putString(KEY_TOGETHER_MEMBER_ID, generated).apply()
+            return generated
+        }
+
+    /**
      * Whether to post the Flyme status-bar lyric notification.
      *
      * Opt-out rather than opt-in: on a ROM that supports it the user installed the app expecting the
@@ -212,6 +234,7 @@ class SettingsStore(context: Context) {
         private const val KEY_LYRIC_OFFSETS = "lyric_offsets"
         private const val KEY_STATUS_BAR_LYRICS = "status_bar_lyrics"
         private const val KEY_LYRICON_ENABLED = "lyricon_enabled"
+        private const val KEY_TOGETHER_MEMBER_ID = "together_member_id"
         private const val KEY_SEAMLESS_TRANSITION = "seamless_transition"
         private const val KEY_PROFILE_SIGNATURE = "profile_signature"
         private const val KEY_CUSTOM_NICKNAME = "custom_nickname"
