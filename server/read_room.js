@@ -1,98 +1,90 @@
-// Read a listen-together room topic and print what is being published there.
-// Read-only: it never writes, so it cannot disturb the room.
-const BASE = (process.env.NTFY_URL || 'https://ntfy.sh').replace(/\/+$/, '');
-const code = process.argv[2];
+// Read-only view of an MQTT listen-together room: subscribes to the room wildcard and prints each
+// member's slot. Never publishes, so it cannot disturb a room.
+//
+//   node server/read_room.js <ROOM_CODE> [seconds]
+//
+// Retained messages mean the current state of every member arrives immediately on subscribe, so this
+// also shows a room that is already occupied before you start listening.
+const net = require('node:net');
+
+const HOST = process.env.MQTT_HOST || 'broker.hivemq.com';
+const PORT = Number(process.env.MQTT_PORT || 1883);
+const ROOT = 'yunyin/together/v1';
+
+const [code, secArg] = process.argv.slice(2);
 if (!code) {
   console.error('usage: node server/read_room.js <ROOM_CODE> [seconds]');
   process.exit(2);
 }
-const seconds = Number(process.argv[3] || 15);
-const topic = 'yunyin-together-v1-' + code.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+const seconds = Number(secArg || 20);
+const filter = `${ROOT}/${code}/+`;
 
-/**
- * A scratch topic used only to ask the service what time it thinks it is.
- *
- * Ages must be measured on the *service's* clock, not this machine's: a phone and a PC routinely
- * differ by tens of seconds, and comparing locally produced readings like "+-52s ago" — and worse,
- * classified live traffic as stale. Posting a throwaway message to an unrelated topic is the cheapest
- * way to read that clock without touching the user's room.
- */
-const CLOCK_TOPIC = 'yunyin-clock-probe';
-
-async function serviceNow() {
-  try {
-    const res = await fetch(`${BASE}/${CLOCK_TOPIC}`, { method: 'POST', body: '{}' });
-    const json = await res.json();
-    return json && json.time ? json.time : null;
-  } catch {
-    return null;
-  }
-}
-
-console.log(`topic: ${BASE}/${topic}`);
-console.log(`listening ${seconds}s (read-only, nothing is published to the room)\n`);
+const mqttString = (s) => { const b = Buffer.from(s, 'utf8'); return Buffer.concat([Buffer.from([(b.length >> 8) & 0xff, b.length & 0xff]), b]); };
+const remainingLength = (n) => { const out = []; do { let d = n % 128; n = Math.floor(n / 128); if (n > 0) d |= 0x80; out.push(d); } while (n > 0); return Buffer.from(out); };
+const packet = (type, bits, body) => Buffer.concat([Buffer.from([(type << 4) | bits]), remainingLength(body.length), body]);
+const connectPacket = (id) => packet(1, 0, Buffer.concat([Buffer.from([0x00, 0x04, 0x4d, 0x51, 0x54, 0x54, 0x04, 0x02, 0x00, 0x1e]), mqttString(id)]));
+const subscribePacket = (id, t) => packet(8, 0x02, Buffer.concat([Buffer.from([(id >> 8) & 0xff, id & 0xff]), mqttString(t), Buffer.from([0x00])]));
 
 const seen = new Map();
-let lastId = null;
-let polls = 0;
+let subscribed = false;
 
-async function poll() {
-  polls++;
-  const cursor = lastId ? `since=${lastId}` : 'since=30m';
-  // Ask the service for "now" first, so every age below is on one clock — its own.
-  const now = await serviceNow();
-  let text;
-  try {
-    const res = await fetch(`${BASE}/${topic}/json?poll=1&${cursor}`);
-    if (!res.ok) { console.log(`  [warn] poll HTTP ${res.status}`); return; }
-    text = await res.text();
-  } catch (e) {
-    console.log(`  [warn] poll failed: ${e.message}`);
-    return;
-  }
-  for (const line of text.split('\n')) {
-    if (!line.trim()) continue;
-    let event;
-    try { event = JSON.parse(line); } catch { continue; }
-    if (event.event !== 'message' || !event.time) continue;
-    if (event.id) lastId = event.id;
-    let payload;
-    try { payload = JSON.parse(event.message); } catch { continue; }
-    // The age matters more than the content: a poll replays a window of history, so without this a
-    // message from ten minutes ago reads exactly like live traffic — which is precisely the mistake
-    // this tool exists to prevent. Measured on the service clock, never a local one: a phone and this
-    // machine differ by tens of seconds, which would make live traffic look stale (and did).
-    const ageS = now === null ? null : Math.max(0, now - event.time);
-    const age = ageS === null ? '' : ` (${ageS}s ago)`;
-    const isLive = ageS !== null && ageS < 10;
-    if (!seen.has(payload.uid)) {
-      console.log(`[member] uid=${payload.uid} name="${payload.name}"${age}`);
-    } else if (isLive) {
-      console.log(`  LIVE uid=${payload.uid} song=${payload.songId} pos=${payload.positionMs}ms playing=${payload.playing}${age}`);
-    } else {
-      console.log(`  .old uid=${payload.uid} song=${payload.songId}${age}`);
+const sock = net.createConnection({ host: HOST, port: PORT });
+let buf = Buffer.alloc(0);
+sock.on('data', (chunk) => {
+  buf = Buffer.concat([buf, chunk]);
+  while (buf.length >= 2) {
+    let mult = 1, len = 0, i = 1, enc;
+    do { if (i >= buf.length) return; enc = buf[i++]; len += (enc & 0x7f) * mult; mult *= 128; } while (enc & 0x80);
+    if (buf.length < i + len) return;
+    const type = buf[0] >> 4;
+    const body = buf.subarray(i, i + len);
+    buf = buf.subarray(i + len);
+    if (type === 9) { subscribed = true; continue; }
+    if (type !== 3) continue;
+    const tl = (body[0] << 8) | body[1];
+    const topic = body.subarray(2, 2 + tl).toString();
+    const payload = body.subarray(2 + tl).toString();
+    const slot = topic.slice(topic.lastIndexOf('/') + 1);
+    if (payload === '') {
+      console.log(`  [left] ${slot} (slot cleared)`);
+      seen.delete(slot);
+      continue;
     }
-    seen.set(payload.uid, { ...payload, ageS });
+    let state;
+    try { state = JSON.parse(payload); } catch { state = null; }
+    const isNew = !seen.has(slot);
+    seen.set(slot, state);
+    const age = state?.updatedAt ? `${Math.round((Date.now() - state.updatedAt) / 1000)}s ago` : '?';
+    if (isNew) {
+      console.log(`[member] ${slot}  name="${state?.name ?? '?'}"`);
+    }
+    console.log(`   song=${state?.songId} pos=${state?.positionMs}ms playing=${state?.playing} seq=${state?.seq} (reported ${age})`);
   }
-}
+});
 
-(async () => {
-  const until = Date.now() + seconds * 1000;
-  while (Date.now() < until) {
-    await poll();
-    await new Promise((r) => setTimeout(r, 3000));
-  }
-  console.log(`\n${polls} polls done.`);
-  if (seen.size === 0) {
-    console.log('NOTHING FOUND on this topic.');
-    console.log('Possible reasons: the app is not in a room with this code, it has not');
-    console.log('published yet, or the build does not include the together feature.');
+sock.on('connect', () => {
+  sock.write(connectPacket('reader-' + Math.random().toString(16).slice(2, 8)));
+  setTimeout(() => sock.write(subscribePacket(1, filter)), 1200);
+});
+sock.on('error', (e) => { console.log('connection error:', e.message); process.exit(1); });
+
+console.log(`broker: ${HOST}:${PORT}`);
+console.log(`room:   ${code}   (subscribing to ${filter}, read-only)\n`);
+
+setTimeout(() => {
+  console.log('');
+  if (!subscribed) {
+    console.log('No SUBACK — could not subscribe (broker unreachable, or blocked network).');
+  } else if (seen.size === 0) {
+    console.log('Subscribed, but no member is publishing here.');
+    console.log('Check the room code, and whether the app is actually in that room.');
   } else {
-    console.log(`\n${seen.size} member(s) seen in the polled window:`);
-    for (const p of seen.values()) {
-      const live = p.ageS !== null && p.ageS < 10;
-      console.log(`  uid=${p.uid} name="${p.name}" song=${p.songId} pos=${p.positionMs}ms ` +
-        `playing=${p.playing} last-heard=${p.ageS}s ago${live ? '  <- LIVE' : '  <- stale, not live traffic'}`);
+    console.log(`${seen.size} member(s) present:`);
+    for (const [slot, s] of seen) {
+      console.log(`  ${slot}  song=${s?.songId} pos=${s?.positionMs} playing=${s?.playing}`);
     }
+    console.log('\n(retained slots are the current state; "reported Xs ago" shows how stale each is)');
   }
-})();
+  sock.destroy();
+  process.exit(0);
+}, seconds * 1000);

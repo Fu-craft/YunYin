@@ -15,6 +15,7 @@ import com.yunyin.music.data.FlymeLyricNotifier
 import com.yunyin.music.data.LyriconBridge
 import com.yunyin.music.data.net.NeteaseClient
 import com.yunyin.music.BuildConfig
+import com.yunyin.music.data.together.MqttTransport
 import com.yunyin.music.data.together.NtfyTransport
 import com.yunyin.music.data.together.RelayTransport
 import com.yunyin.music.data.together.TogetherSession
@@ -74,17 +75,23 @@ class AppContainer(val appContext: Context) {
      *
      * NetEase's own HTTP API cannot read a peer's playback state (measured: reporting succeeds,
      * reading returns empty — the room runs over an Agora RTC channel), so the read path comes from a
-     * transport. Which one is a deployment choice and is picked here:
+     * transport. Which one is picked here, best first:
      *
-     *  - a self-hosted relay, when `together.base.url` is set (`server/` in this repository);
-     *  - otherwise the free public pub/sub service, which needs nothing deployed.
+     *  - **MQTT** (default): one long-lived connection per device, the broker pushes, so receiving
+     *    costs nothing per message. Chosen over the HTTP service because that service's allowance is
+     *    per source address and *shared*, which met its limit in real use (HTTP 429) when two devices
+     *    sat behind one router — or when anyone ran tests on the same connection.
+     *  - **A self-hosted relay**, when `together.base.url` is set (`server/` in this repository) —
+     *    nothing third-party at all.
+     *  - **The public HTTP pub/sub service**, when `together.ntfy.url` is set.
      */
     val together: TogetherSession by lazy {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-        // The public service needs a scope of its own: its state arrives on a long-lived subscription
-        // that must outlive individual calls, and the session's poll loop is the caller.
-        val transport: TogetherTransport =
-            if (BuildConfig.TOGETHER_BASE_URL.isNotBlank()) RelayTransport() else NtfyTransport(scope)
+        val transport: TogetherTransport = when {
+            BuildConfig.TOGETHER_BASE_URL.isNotBlank() -> RelayTransport()
+            BuildConfig.TOGETHER_NTFY_URL.isNotBlank() -> NtfyTransport(scope)
+            else -> MqttTransport(scope)
+        }
         TogetherSession(transport = transport, scope = scope)
     }
 

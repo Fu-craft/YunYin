@@ -78,6 +78,19 @@ android {
             "TOGETHER_NTFY_URL",
             "\"${localProps.getProperty("together.ntfy.url") ?: ""}\"",
         )
+
+        // MQTT broker for the default transport. Blank means the public default, so the feature works
+        // with nothing deployed and nothing configured; set these to point at your own broker.
+        buildConfigField(
+            "String",
+            "TOGETHER_MQTT_HOST",
+            "\"${localProps.getProperty("together.mqtt.host") ?: ""}\"",
+        )
+        buildConfigField(
+            "String",
+            "TOGETHER_MQTT_PORT",
+            "\"${localProps.getProperty("together.mqtt.port") ?: ""}\"",
+        )
     }
 
     signingConfigs {
