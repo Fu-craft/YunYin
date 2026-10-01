@@ -24,6 +24,16 @@ data class TogetherUiState(
 }
 
 /**
+ * A copy with only the transient notices cleared.
+ *
+ * A pure function because the distinction it encodes is the one that broke: closing the panel clears
+ * a *notice*, while leaving a room is an explicit, separate act. Conflating the two silently ended
+ * sessions, so it is pinned by a test rather than left to a call site to remember.
+ */
+internal fun TogetherUiState.noticesCleared(): TogetherUiState =
+    copy(ended = null, error = null)
+
+/**
  * Runs a listen-together room: publishes this device's playback and applies the peer's.
  *
  * ## Where the corrections come from
@@ -121,8 +131,16 @@ class TogetherSession(
         }
     }
 
+    /**
+     * Clears a transient notice (an ended room, a failed join) **without touching the room**.
+     *
+     * Called when the panel closes. It used to rebuild the whole state, which quietly discarded the
+     * room code — so reopening the panel offered "create a room" again while the polling loop had
+     * already stopped on the now-null code, and the peer was never told anyone left. Closing a panel
+     * must never end a session.
+     */
     fun dismissEnded() {
-        _state.value = TogetherUiState(configured = transport.configured)
+        _state.value = _state.value.noticesCleared()
     }
 
     /** Starts the loop against an already-known room (used when a room survives a reconnect). */
