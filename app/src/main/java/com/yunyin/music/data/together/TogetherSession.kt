@@ -107,6 +107,20 @@ class TogetherSession(
         withTimeoutOrNull(transport.pollIntervalMs) { wakeups.receive() }
     }
 
+    /**
+     * Starts a room's logical clock from zero.
+     *
+     * The clock orders "who acted last" **within one room**, so it must not carry over between rooms:
+     * this session object lives for the whole app, and a counter left over from earlier rooms made a
+     * fresh peer look stale by comparison — its first report is `seq = 1` while ours could be anything.
+     * The symptom was "joining a room never adopts the other member's song", which looks like a sync
+     * failure and is really a units error: comparing counters from two different conversations.
+     */
+    private fun resetClock() {
+        seq = 0L
+        peerSeqSeen = 0L
+    }
+
     private companion object {
         /**
          * How long to wait after being rate limited.
@@ -120,6 +134,7 @@ class TogetherSession(
 
     fun createRoom(uid: String, name: String) {
         if (uid.isBlank()) return
+        resetClock()
         launchWork {
             when (val result = transport.createRoom(uid, name)) {
                 is TogetherResult.Ok -> {
@@ -138,6 +153,7 @@ class TogetherSession(
     fun joinRoom(code: String, uid: String, name: String) {
         val trimmed = code.trim().uppercase()
         if (trimmed.isBlank() || uid.isBlank()) return
+        resetClock()
         launchWork {
             // Look the room up first so a wrong code says so instead of joining nothing. The relay
             // still validates on join; this is only for a better message.
