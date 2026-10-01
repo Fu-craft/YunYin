@@ -26,6 +26,11 @@ keystore.properties
 # token, which is machine-local state rather than source — committing it would hand out the key to
 # whoever runs the relay.
 server/together.env
+# The same for the Cloudflare Worker's local development: `.dev.vars` holds RELAY_TOKEN, and
+# `.wrangler/` is wrangler's build cache. Neither is source.
+server/cloudflare/.dev.vars
+server/cloudflare/.wrangler/
+server/cloudflare/node_modules/
 
 # ---------------------------------------------------------------- development scaffolding
 # The scripts in tools/ are development helpers. They hardcode this machine's paths

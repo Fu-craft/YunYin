@@ -61,7 +61,15 @@ export default {
     if (parts.length >= 2 && parts[0] === 'room') {
       const code = String(parts[1] || '').toUpperCase();
       const stub = env.ROOMS.get(env.ROOMS.idFromName(code));
-      const forwarded = new Request(`https://room/${parts.slice(2).join('/') || 'room'}`, request);
+      // The query string must be re-attached explicitly: `new Request(url, init)` takes the URL from
+      // the first argument, and `parts` came from `pathname` alone — so building the target from the
+      // path alone silently dropped `?exclude=…`, and every member received a peer list containing
+      // itself. (Caught by running test_relay.js against `wrangler dev` before deploying.)
+      const suffix = parts.slice(2).join('/');
+      const forwarded = new Request(
+        `https://room/${suffix || 'room'}${url.search}`,
+        request,
+      );
       return stub.fetch(forwarded);
     }
 
