@@ -149,7 +149,7 @@ app/src/main/res/font/sf_pro.ttf
 | 网络 | OkHttp 4.12 |
 | 图像取色 | AndroidX Palette |
 | 流动背景 | AGSL（`android.graphics.RuntimeShader`，需 API 33+） |
-| 毛玻璃 | [Backdrop](https://github.com/Kyant0/AndroidLiquidGlass)（Apache-2.0） |
+| 底栏 | [Backdrop](https://github.com/Kyant0/AndroidLiquidGlass)（Apache-2.0） |
 | 逐字歌词 | 渲染 [accompanist-lyrics](https://github.com/6xingyv/accompanist-lyrics-ui)（Apache-2.0）＋ 数据 [AMLL TTML DB](https://github.com/amll-dev/amll-ttml-db)（CC0-1.0） |
 | 状态栏歌词 | 词幕 Lyricon Provider（Apache-2.0）+ Flyme 通知 ticker |
 | 构建 | Gradle 9.7.1 / AGP 9.3.2 |
@@ -186,7 +186,7 @@ app/src/main/res/font/sf_pro.ttf
 4. **音频响应** —— 从 ExoPlayer 音频管线 `TeeAudioProcessor` 取 PCM，
    经 RMS → 快/慢 EMA → 自适应噪声底 → 节拍检测，再非对称平滑后驱动 uniforms。
 
-毛玻璃控制栏由**同一份背景场**渲染两层实现：一层模糊、一层清晰，
+底栏由**同一份背景场**渲染两层实现：一层模糊、一层清晰，
 清晰层在面板边界渐隐——两层颜色逐像素一致，交界处只改变锐度，因此不会出现色阶。
 
 ### 播放
@@ -256,7 +256,7 @@ app/src/main/java/com/yunyin/music/
 | 逐字歌词渲染器（`lyrics/`） | [accompanist-lyrics-ui](https://github.com/6xingyv/accompanist-lyrics-ui) / `accompanist-lyrics-core` | Apache-2.0 |
 | 逐字歌词数据（运行时获取，不随仓库分发） | [AMLL TTML DB](https://github.com/amll-dev/amll-ttml-db) | **CC0-1.0** |
 | 词幕接入（`LyriconBridge` / `LyriconMapper`） | 本项目代码，依赖 [词幕 Lyricon](https://github.com/tomakino/lyricon) 的 Provider 接口 | Apache-2.0 |
-| 毛玻璃 | [AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass) | Apache-2.0 |
+| 底栏 | [AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass) | Apache-2.0 |
 | 音质图标 | Google Material Symbols | Apache-2.0 |
 | 其余界面 / 数据 / 网络 / 播放 | 本项目 | 见下 |
 
