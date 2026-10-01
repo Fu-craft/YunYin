@@ -14,8 +14,11 @@ import com.yunyin.music.data.CoverDownloader
 import com.yunyin.music.data.FlymeLyricNotifier
 import com.yunyin.music.data.LyriconBridge
 import com.yunyin.music.data.net.NeteaseClient
+import com.yunyin.music.BuildConfig
+import com.yunyin.music.data.together.NtfyTransport
 import com.yunyin.music.data.together.RelayTransport
 import com.yunyin.music.data.together.TogetherSession
+import com.yunyin.music.data.together.TogetherTransport
 import com.yunyin.music.playback.PlayerController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -69,14 +72,18 @@ class AppContainer(val appContext: Context) {
     /**
      * Listen-together room engine.
      *
-     * Backed by the bundled relay because NetEase's own HTTP API cannot read a peer's playback state
-     * (measured: reporting succeeds, reading returns empty — the room runs over an Agora RTC channel).
-     * The endpoint comes from `local.properties`, so a build without one simply does not offer the
-     * feature.
+     * NetEase's own HTTP API cannot read a peer's playback state (measured: reporting succeeds,
+     * reading returns empty — the room runs over an Agora RTC channel), so the read path comes from a
+     * transport. Which one is a deployment choice and is picked here:
+     *
+     *  - a self-hosted relay, when `together.base.url` is set (`server/` in this repository);
+     *  - otherwise the free public pub/sub service, which needs nothing deployed.
      */
     val together: TogetherSession by lazy {
+        val transport: TogetherTransport =
+            if (BuildConfig.TOGETHER_BASE_URL.isNotBlank()) RelayTransport() else NtfyTransport()
         TogetherSession(
-            transport = RelayTransport(),
+            transport = transport,
             scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
         )
     }

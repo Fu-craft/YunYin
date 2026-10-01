@@ -164,7 +164,7 @@ class TogetherSession(
                     // Everything else is transient (a dropped poll); keep the loop and try again.
                     is TogetherResult.Failed -> _state.value = _state.value.copy(error = result.message)
                 }
-                delay(POLL_MS)
+                delay(transport.pollIntervalMs)
             }
         }
     }
@@ -195,14 +195,5 @@ class TogetherSession(
 
     private fun setError(message: String) {
         _state.value = _state.value.copy(error = message)
-    }
-
-    private companion object {
-        /**
-         * Two seconds: long enough that the relay and the network are not hammered, short enough that
-         * a correction lands about as fast as a lyric line. Start/stop and track changes are also
-         * published immediately by the host, so the visible latency is usually lower than this.
-         */
-        const val POLL_MS = 2_000L
     }
 }

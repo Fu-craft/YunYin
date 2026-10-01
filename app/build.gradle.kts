@@ -69,6 +69,15 @@ android {
             "TOGETHER_TOKEN",
             "\"${localProps.getProperty("together.token") ?: ""}\"",
         )
+
+        // Override for the public pub/sub host used when no relay is configured. Blank means the
+        // default public instance, so the feature works with nothing deployed; set this to point at a
+        // self-hosted instance or a mirror.
+        buildConfigField(
+            "String",
+            "TOGETHER_NTFY_URL",
+            "\"${localProps.getProperty("together.ntfy.url") ?: ""}\"",
+        )
     }
 
     signingConfigs {

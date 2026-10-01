@@ -56,6 +56,13 @@ interface TogetherTransport {
     /** True when a transport is configured at all; the feature is hidden when it is not. */
     val configured: Boolean
 
+    /**
+     * How often the session should poll. A transport reports its own cadence because it is a property
+     * of the medium: a self-hosted relay is cheap to hit every two seconds, while a free public
+     * service counts each publish and poll against a rate limit.
+     */
+    val pollIntervalMs: Long get() = 2_000L
+
     suspend fun createRoom(uid: String, name: String): TogetherResult<String>
 
     suspend fun roomInfo(code: String): TogetherResult<List<TogetherMember>>

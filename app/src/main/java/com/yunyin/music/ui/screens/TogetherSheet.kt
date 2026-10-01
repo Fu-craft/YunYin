@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
+import com.yunyin.music.data.together.TogetherCode
 import com.yunyin.music.data.together.TogetherUiState
 import com.yunyin.music.ui.icons.SfIcons
 import com.yunyin.music.ui.theme.AppleShapes
@@ -171,9 +172,14 @@ private fun IdleBody(
         ) {
             BasicTextField(
                 value = code,
-                // Uppercased as typed: the alphabet the relay uses is upper-case, and a code pasted
-                // from elsewhere must not be rejected over its case.
-                onValueChange = { code = it.filter { ch -> !ch.isWhitespace() }.uppercase().take(6) },
+                // Uppercased as typed, and separators are allowed and ignored: the code is meant to be
+                // read out in groups, so someone will type "ABCD-2345-EFGH". The topic mapping strips
+                // the same characters, so what is typed still lands on the right conversation.
+                onValueChange = { entered ->
+                    code = entered.filter { it.isLetterOrDigit() }
+                        .uppercase()
+                        .take(TogetherCode.LENGTH)
+                },
                 singleLine = true,
                 textStyle = TextStyle(
                     fontFamily = SFPro,
@@ -199,8 +205,12 @@ private fun IdleBody(
             Modifier
                 .height(46.dp)
                 .clip(ContinuousRoundedRectangle(AppleShapes.pill))
-                .background(AppTheme.palette.accent.copy(alpha = if (code.length == 6) 1f else 0.4f))
-                .clickable(enabled = code.length == 6) { onJoin(code) }
+                .background(
+                    AppTheme.palette.accent.copy(
+                        alpha = if (TogetherCode.isComplete(code)) 1f else 0.4f,
+                    ),
+                )
+                .clickable(enabled = TogetherCode.isComplete(code)) { onJoin(code) }
                 .padding(horizontal = 20.dp),
             contentAlignment = Alignment.Center,
         ) {
@@ -245,15 +255,16 @@ private fun RoomBody(
             )
             Spacer(Modifier.height(6.dp))
             Text(
-                text = code,
+                // Grouped in fours so a long code can be read out loud without losing one's place —
+                // the same reason it is not six digits.
+                text = code.chunked(4).joinToString(" "),
                 fontFamily = SFPro,
                 fontWeight = FontWeight.Bold,
-                fontSize = 34.sp,
-                // Spaced out so the six characters read as six separate things when copied by eye.
-                letterSpacing = 6.sp,
+                fontSize = 26.sp,
+                letterSpacing = 3.sp,
                 color = AppTheme.palette.label,
                 textAlign = TextAlign.Center,
-                maxLines = 1,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
         }
