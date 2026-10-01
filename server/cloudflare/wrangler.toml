@@ -1,0 +1,25 @@
+# 一起听中继 · Cloudflare Workers 部署配置
+#
+# 用 `wrangler deploy` 部署时读取这个文件。
+#
+# 房间状态放在 Durable Object 里（每个房间一个对象，内存态），所以需要声明绑定与迁移。
+# 免费版必须用 SQLite 版的对象，即下面的 new_sqlite_classes。
+#
+# 注意：令牌**不要写在这个文件里**——本仓库是公开的。部署后用下面任一方式设置：
+#   命令行： npx wrangler secret put RELAY_TOKEN
+#   或面板： Workers → 你的 Worker → Settings → Variables and Secrets → 添加 RELAY_TOKEN（选 Secret）
+# 没设置令牌时服务是开放的（任何人都能建房间），只适合临时测试。
+
+name = "yunyin-together"
+main = "worker.js"
+compatibility_date = "2025-01-01"
+
+# 同一个 Worker 的所有请求共用一个命名空间；idFromName(房间码) 决定落到哪个对象。
+[durable_objects]
+bindings = [
+  { name = "ROOMS", class_name = "Room" }
+]
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]
