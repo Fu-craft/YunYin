@@ -65,6 +65,28 @@ class SettingsStore(context: Context) {
         set(value) = prefs.edit().putString(KEY_PROFILE_SIGNATURE, value).apply()
 
     /**
+     * The user's own nickname, overriding the account's.
+     *
+     * Empty means "follow NetEase" — the same arrangement as the avatar switch, because both are the same
+     * question: is this field mine or the account's? A local override is the only option here: NetEase's
+     * profile-update endpoints are behind risk control (the same wall that forced sign-in into an embedded
+     * browser), so writing the nickname back to the cloud is not reliably possible.
+     */
+    var customNickname: String
+        get() = prefs.getString(KEY_CUSTOM_NICKNAME, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_CUSTOM_NICKNAME, value).apply()
+
+    /**
+     * Whether the displayed nickname follows the account, mirroring [useNeteaseAvatar].
+     *
+     * Defaults on: someone who just signed in expects to see their account's name, and the override exists
+     * for the case where they would rather show something else.
+     */
+    var useNeteaseName: Boolean
+        get() = prefs.getBoolean(KEY_USE_NETEASE_NAME, true)
+        set(value) = prefs.edit().putBoolean(KEY_USE_NETEASE_NAME, value).apply()
+
+    /**
      * Whether the avatar follows the NetEase account's own avatar.
      *
      * Defaults on, because that is what someone who just signed in expects to see. Turning it off keeps
@@ -177,6 +199,8 @@ class SettingsStore(context: Context) {
         private const val KEY_STATUS_BAR_LYRICS = "status_bar_lyrics"
         private const val KEY_SEAMLESS_TRANSITION = "seamless_transition"
         private const val KEY_PROFILE_SIGNATURE = "profile_signature"
+        private const val KEY_CUSTOM_NICKNAME = "custom_nickname"
+        private const val KEY_USE_NETEASE_NAME = "use_netease_name"
         private const val KEY_USE_NETEASE_AVATAR = "use_netease_avatar"
         private const val KEY_CUSTOM_AVATAR = "custom_avatar_file"
         private const val KEY_CUSTOM_BACKGROUND = "custom_background_file"

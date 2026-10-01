@@ -62,21 +62,30 @@ fun ProfileEditSheet(
     nickname: String,
     signature: String,
     useNeteaseAvatar: Boolean,
+    useNeteaseName: Boolean,
     hasCustomAvatar: Boolean,
     hasCustomBackground: Boolean,
+    onNicknameChange: (String) -> Unit,
     onSignatureChange: (String) -> Unit,
     onPickAvatar: () -> Unit,
     onPickBackground: () -> Unit,
     onClearAvatar: () -> Unit,
     onClearBackground: () -> Unit,
     onUseNeteaseAvatarChange: (Boolean) -> Unit,
+    onUseNeteaseNameChange: (Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    // The field is edited locally and only pushed out on dismissal, so a half-typed signature is not
+    // Both fields are edited locally and only pushed out on dismissal, so a half-typed value is not
     // written (and re-read) on every keystroke.
-    var draft by remember { mutableStateOf(signature) }
+    var nameDraft by remember { mutableStateOf(if (useNeteaseName) "" else nickname) }
+    var signatureDraft by remember { mutableStateOf(signature) }
 
-    Dialog(onDismissRequest = { onSignatureChange(draft); onDismiss() }) {
+    fun commit() {
+        onNicknameChange(nameDraft.trim())
+        onSignatureChange(signatureDraft)
+    }
+
+    Dialog(onDismissRequest = { commit(); onDismiss() }) {
         Column(
             Modifier
                 .fillMaxWidth()
@@ -101,7 +110,7 @@ fun ProfileEditSheet(
                         .clickable(
                             indication = rememberControlRipple(bounded = false),
                             interactionSource = null,
-                            onClick = { onSignatureChange(draft); onDismiss() },
+                            onClick = { commit(); onDismiss() },
                         ),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -123,6 +132,53 @@ fun ProfileEditSheet(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+
+            Spacer(Modifier.height(20.dp))
+
+            // ------------------------------------------------------------ nickname
+            SectionLabel("昵称")
+            SwitchRow(
+                title = "跟随网易云音乐昵称",
+                subtitle = if (useNeteaseName) {
+                    "当前显示「${nickname.ifBlank { "云音用户" }}」"
+                } else {
+                    "关闭后使用你设置的昵称"
+                },
+                checked = useNeteaseName,
+                onCheckedChange = onUseNeteaseNameChange,
+            )
+            // The field only makes sense while the name is the user's own; hiding it while following
+            // keeps the sheet from showing an input that editing would have no effect.
+            if (!useNeteaseName) {
+                Spacer(Modifier.height(8.dp))
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(ContinuousRoundedRectangle(AppleShapes.control))
+                        .background(AppTheme.palette.secondaryBackground)
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                ) {
+                    if (nameDraft.isEmpty()) {
+                        Text(
+                            text = "设置你的昵称",
+                            fontFamily = SFPro,
+                            fontSize = 16.sp,
+                            color = AppTheme.palette.tertiaryLabel,
+                        )
+                    }
+                    BasicTextField(
+                        value = nameDraft,
+                        onValueChange = { nameDraft = it.take(MAX_NICKNAME) },
+                        textStyle = TextStyle(
+                            fontFamily = SFPro,
+                            fontSize = 16.sp,
+                            color = AppTheme.palette.label,
+                        ),
+                        cursorBrush = androidx.compose.ui.graphics.SolidColor(AppTheme.palette.accent),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
 
             Spacer(Modifier.height(20.dp))
 
@@ -180,7 +236,7 @@ fun ProfileEditSheet(
                     .background(AppTheme.palette.secondaryBackground)
                     .padding(horizontal = 14.dp, vertical = 12.dp),
             ) {
-                if (draft.isEmpty()) {
+                if (signatureDraft.isEmpty()) {
                     Text(
                         text = "写点什么…",
                         fontFamily = SFPro,
@@ -189,8 +245,8 @@ fun ProfileEditSheet(
                     )
                 }
                 BasicTextField(
-                    value = draft,
-                    onValueChange = { draft = it.take(MAX_SIGNATURE) },
+                    value = signatureDraft,
+                    onValueChange = { signatureDraft = it.take(MAX_SIGNATURE) },
                     textStyle = TextStyle(
                         fontFamily = SFPro,
                         fontSize = 16.sp,
@@ -202,7 +258,7 @@ fun ProfileEditSheet(
             }
             Spacer(Modifier.height(4.dp))
             Text(
-                text = "${draft.length}/$MAX_SIGNATURE",
+                text = "${signatureDraft.length}/$MAX_SIGNATURE",
                 fontFamily = SFPro,
                 fontSize = 11.sp,
                 color = AppTheme.palette.tertiaryLabel,
@@ -214,6 +270,9 @@ fun ProfileEditSheet(
 
 /** A short cap: the signature is one line under a name, not a bio field. */
 private const val MAX_SIGNATURE = 40
+
+/** A nickname has to fit the header's single line at 26sp, so it is capped tighter than the signature. */
+private const val MAX_NICKNAME = 20
 
 @Composable
 private fun SectionLabel(text: String) {

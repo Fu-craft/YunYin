@@ -1,6 +1,7 @@
 package com.yunyin.music.data.net
 
 import com.yunyin.music.core.Account
+import com.yunyin.music.core.ArtistInfo
 import com.yunyin.music.core.ChartInfo
 import com.yunyin.music.core.LyricBundle
 import com.yunyin.music.core.NetResult
@@ -431,6 +432,75 @@ class NeteaseClient(private val settings: SettingsStore) {
         "/artist/top/song",
         query = mapOf("id" to "$artistId"),
     ).map { json -> json.optJSONArray("songs")?.mapDetailTracks().orEmpty() }
+
+    /**
+     * Resolves an artist **name** to an id, by searching artists only.
+     *
+     * Needed because a [Track] carries artist names but not their ids — and the tap target is the name
+     * printed on the row. The first hit is the answer: the artist search ranks exact names first, and a
+     * miss (null) lets the caller quietly not navigate rather than open a page for the wrong artist.
+     */
+    suspend fun artistIdByName(name: String): Long? {
+        // Unwrapped with the `as?` form rather than the repository layer's `valueOrNull` extension:
+        // this is the low-level client, and reaching up into a UI-facing helper would invert the
+        // layering for one line.
+        val result = request(
+            "/search",
+            query = mapOf("keywords" to name, "type" to "100"),
+        ).map { json ->
+            json.optJSONObject("result")?.optJSONArray("artists")?.optJSONObject(0)?.optLong("id")
+                ?.takeIf { it != 0L }
+        }
+        return (result as? NetResult.Ok)?.value
+    }
+
+    /**
+     * An artist's identity: name and cover.
+     *
+     * Called against music.163.com directly rather than the deployed API, as the user supplied. Both
+     * shapes are accepted because the two documented artist endpoints differ in envelope: `v1/artist`
+     * nests the profile under `data.artist`, the older `/artist` puts it at the top level.
+     */
+    suspend fun artistDetail(artistId: Long): NetResult<ArtistInfo> {
+        val direct = requestDirectArtist(artistId, path = "v1/artist", nested = true)
+        if (direct is NetResult.Ok) return direct
+        // The v1 endpoint is what the app tries first; the legacy one is the fallback, so a deployment
+        // that only exposes the older shape still resolves.
+        return requestDirectArtist(artistId, path = "artist", nested = false)
+    }
+
+    private suspend fun requestDirectArtist(
+        artistId: Long,
+        path: String,
+        nested: Boolean,
+    ): NetResult<ArtistInfo> = withContext(Dispatchers.IO) {
+        val url = "https://music.163.com/api/$path/$artistId"
+        try {
+            val builder = Request.Builder().url(url).header("User-Agent", UA)
+            settings.cookie.takeIf { it.isNotBlank() }?.let { builder.header("Cookie", it) }
+            http.newCall(builder.build()).execute().use { response ->
+                val json = runCatching { JSONObject(response.body?.string().orEmpty()) }.getOrNull()
+                    ?: return@use NetResult.Err("响应无法解析")
+                val profile = (if (nested) json.optJSONObject("data")?.optJSONObject("artist")
+                else json.optJSONObject("artist"))
+                    ?: return@use NetResult.Err("响应中没有歌手信息")
+                NetResult.Ok(
+                    ArtistInfo(
+                        id = profile.optLong("id", artistId),
+                        name = profile.text("name").orEmpty(),
+                        // `img1v1Url` is the square identity image; `picUrl` is its larger variant.
+                        coverUrl = profile.text("img1v1Url") ?: profile.text("picUrl"),
+                    ),
+                )
+            }
+        } catch (e: IOException) {
+            NetResult.Err(e.message ?: "网络错误")
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            NetResult.Err(e.message ?: "解析错误")
+        }
+    }
 
     // ---------------------------------------------------------------- user library
 

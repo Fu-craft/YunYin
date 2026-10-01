@@ -151,6 +151,8 @@ fun PlayerScreen(
     onToggleLike: () -> Unit = {},
     /** Shares the current track: the caller owns the clipboard and the chooser. */
     onShareTrack: () -> Unit = {},
+    /** Opens the artist page for the current track's first artist. */
+    onArtistClick: (String) -> Unit = {},
     /** Called with a long-pressed lyric's text; null when the line had nothing to copy. */
     onCopyLyric: (String?) -> Unit = {},
     positionProvider: () -> Long,
@@ -619,11 +621,12 @@ fun PlayerScreen(
                                         },
                                         liked = liked,
                                         onToggleLike = { interaction++; onToggleLike() },
-                                        cover = cover,
                                         onCoverClick = {
                                             interaction++
                                             onToggleLyrics()
                                         },
+                                        onArtistClick = onArtistClick,
+                                        cover = cover,
                                         sharedScope = this@SharedTransitionLayout,
                                         visibilityScope = this@AnimatedContent,
                                     )
@@ -636,6 +639,7 @@ fun PlayerScreen(
                                             interaction++
                                             showActions = true
                                         },
+                                        onArtistClick = onArtistClick,
                                     )
                                 }
                                 Spacer(Modifier.height(16.dp))
@@ -728,11 +732,12 @@ fun PlayerScreen(
                                     },
                                     liked = liked,
                                     onToggleLike = { interaction++; onToggleLike() },
-                                    cover = cover,
                                     onCoverClick = {
                                         interaction++
                                         onToggleLyrics()
                                     },
+                                    onArtistClick = onArtistClick,
+                                    cover = cover,
                                     sharedScope = this@SharedTransitionLayout,
                                     visibilityScope = this@AnimatedContent,
                                 )
@@ -1346,6 +1351,8 @@ private fun LyricsHeader(
     onToggleLike: () -> Unit,
     /** Tapping the thumbnail returns to the artwork presentation. */
     onCoverClick: () -> Unit,
+    /** Opens the artist page for the track's first artist. */
+    onArtistClick: (String) -> Unit,
     /** The already-decoded cover, so the thumbnail never shows a placeholder mid-transition. */
     cover: ImageBitmap?,
     // Receiver scopes required to declare a shared element. Both are provided by the surrounding
@@ -1394,6 +1401,10 @@ private fun LyricsHeader(
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.height(1.dp))
+            // The artist line is the way into the artist page. The track carries names, not ids, so the
+            // click hands over the first artist's name and the page resolves the id — which is why the
+            // first name is used and a multi-artist row opens that artist only.
+            val artistName = track?.artists?.firstOrNull().orEmpty()
             Text(
                 text = track?.artistLine.orEmpty(),
                 fontFamily = SFPro,
@@ -1401,6 +1412,10 @@ private fun LyricsHeader(
                 color = Color.White.copy(alpha = 0.75f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = if (artistName.isBlank()) Modifier else Modifier.clickable(
+                    indication = rememberControlRipple(),
+                    interactionSource = null,
+                ) { onArtistClick(artistName) },
             )
         }
         Spacer(Modifier.width(10.dp))
@@ -1697,6 +1712,8 @@ private fun TitleBlock(
     liked: Boolean = false,
     onToggleLike: () -> Unit = {},
     onMoreClick: () -> Unit = {},
+    /** Opens the artist page for the track's first artist; absent when there is nowhere to go. */
+    onArtistClick: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -1720,6 +1737,9 @@ private fun TitleBlock(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Spacer(Modifier.height(2.dp))
+                    // Same tap target as the lyrics header: the artist line opens the artist page.
+                    val artistClick = onArtistClick
+                    val artistName = track?.artists?.firstOrNull().orEmpty()
                     Text(
                         text = track?.artistLine.orEmpty(),
                         fontFamily = SFPro,
@@ -1728,6 +1748,14 @@ private fun TitleBlock(
                         color = Color.White.copy(alpha = 0.78f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
+                        modifier = if (artistClick != null && artistName.isNotBlank()) {
+                            Modifier.clickable(
+                                indication = rememberControlRipple(),
+                                interactionSource = null,
+                            ) { artistClick(artistName) }
+                        } else {
+                            Modifier
+                        },
                     )
                 }
             }

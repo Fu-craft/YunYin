@@ -13,6 +13,8 @@ import com.yunyin.music.core.HomeFeed
 import com.yunyin.music.core.Playlist
 import com.yunyin.music.core.Track
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -49,6 +51,20 @@ data class SearchUiState(
 )
 
 /**
+ * Artist page content.
+ *
+ * `name`/`coverUrl` are seeded from what the caller already has (the tapped row's first artist name), then
+ * replaced by the detail response when it lands — so the page is never blank while loading.
+ */
+data class ArtistUiState(
+    val id: Long = 0L,
+    val name: String = "",
+    val coverUrl: String? = null,
+    val tracks: List<Track> = emptyList(),
+    val loading: Boolean = true,
+)
+
+/**
  * Owns catalog state for the browsing tabs.
  *
  * One view model rather than one per tab: the tabs share the [AppContainer] repositories
@@ -64,6 +80,11 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
 
     private val _collection = MutableStateFlow<CollectionUiState?>(null)
     val collection: StateFlow<CollectionUiState?> = _collection.asStateFlow()
+
+    private val _artist = MutableStateFlow<ArtistUiState?>(null)
+    val artist: StateFlow<ArtistUiState?> = _artist.asStateFlow()
+    private var artistJob: Job? = null
+    private var artistRequestId = 0L
 
     /** Recently played tracks, newest first, recorded locally as songs are played. */
     var recentTracks by mutableStateOf<List<Track>>(emptyList())
@@ -314,6 +335,70 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
         collectionJob = null
         collectionRequestId++
         _collection.value = null
+    }
+
+    // ---------------------------------------------------------------- artist
+
+    /**
+     * Opens an artist page from the artist's *name*, as printed on a row.
+     *
+     * Resolving the id is a search round trip, so the page opens immediately seeded with the name and
+     * fills in as the lookups land; a name that resolves to nothing simply does not open a page, which is
+     * preferable to a page about the wrong artist.
+     */
+    fun openArtistByName(name: String) {
+        artistJob?.cancel()
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return
+        val requestId = ++artistRequestId
+        artistJob = viewModelScope.launch {
+            val id = container.music.artistIdFor(trimmed) ?: return@launch
+            if (artistRequestId != requestId) return@launch
+            openArtist(id, trimmed)
+        }
+    }
+
+    /**
+     * Opens an artist page for [artistId].
+     *
+     * [seedName] is the artist name as printed on the row that was tapped, shown immediately so the page
+     * never opens blank; the detail call then replaces the cover and confirms the name. Results are gated
+     * by the same request-identity rule the playlist uses, since a user can leave the page before the
+     * artist call returns.
+     */
+    fun openArtist(artistId: Long, seedName: String) {
+        artistJob?.cancel()
+        if (artistId == 0L) return
+        val requestId = ++artistRequestId
+        _artist.value = ArtistUiState(id = artistId, name = seedName)
+        artistJob = viewModelScope.launch {
+            // Fire both together: the identity and the songs are independent, and the page renders what
+            // has arrived rather than waiting for the slower of the two.
+            coroutineScope {
+                val info = async { container.music.artistInfo(artistId) }
+                val top = async { container.music.artistTopSongs(artistId) }
+
+                info.await()?.let { artist ->
+                    if (artistRequestId == requestId && _artist.value?.id == artistId) {
+                        _artist.value = _artist.value?.copy(
+                            name = artist.name.ifBlank { seedName },
+                            coverUrl = artist.coverUrl,
+                        )
+                    }
+                }
+                val songs = top.await()
+                if (artistRequestId == requestId && _artist.value?.id == artistId) {
+                    _artist.value = _artist.value?.copy(tracks = songs, loading = false)
+                }
+            }
+        }
+    }
+
+    fun closeArtist() {
+        artistJob?.cancel()
+        artistJob = null
+        artistRequestId++
+        _artist.value = null
     }
 
     companion object {

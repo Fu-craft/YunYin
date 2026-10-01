@@ -552,13 +552,13 @@ private fun HeaderAction(
  * them.
  */
 @Composable
-private fun TopBar(
+internal fun TopBar(
     onCover: Color,
     scrimTint: Color,
     listState: LazyListState,
     solidThresholdPx: Float,
     onBack: () -> Unit,
-    onShare: () -> Unit,
+    onShare: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     val palette = AppTheme.palette
@@ -614,9 +614,13 @@ private fun TopBar(
                         Modifier.fillMaxSize().padding(horizontal = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        BarIconButton(SfIcons.ChevronDown, "返回", ink, onBack)
-                        Spacer(Modifier.weight(1f))
+                    BarIconButton(SfIcons.ChevronDown, "返回", ink, onBack)
+                    Spacer(Modifier.weight(1f))
+                    // Absent on pages with nothing worth sharing (the artist page), where an inert
+                    // button would be worse than the asymmetry.
+                    if (onShare != null) {
                         BarIconButton(SfIcons.SquareAndArrowUp, "分享", ink, onShare)
+                    }
                     }
                 }
             }
@@ -688,7 +692,7 @@ private fun CountRow(count: Int, modifier: Modifier = Modifier) {
  * makes the current row findable in a 500-song list without adding a coloured strip down the side.
  */
 @Composable
-private fun CollectionTrackRow(
+internal fun CollectionTrackRow(
     index: Int,
     track: Track,
     loader: ArtworkLoader,
@@ -786,7 +790,7 @@ private fun metaLine(state: CollectionUiState): String {
  * Deliberately not a `Palette` extraction: only the light/dark decision is needed, and a 24-step
  * grid gives it without pulling in quantisation or a background thread.
  */
-private fun meanLuma(bitmap: Bitmap): Float {
+internal fun meanLuma(bitmap: Bitmap): Float {
     val step = (minOf(bitmap.width, bitmap.height) / 24).coerceAtLeast(1)
     var sum = 0.0
     var samples = 0
@@ -808,13 +812,13 @@ private fun meanLuma(bitmap: Bitmap): Float {
 }
 
 /** Horizontal inset shared by the hero, the title and the rows, so the column lines up. */
-private val PageInset = 20.dp
+internal val PageInset = 20.dp
 
 /** Cover width as a fraction of the page, so the sharp artwork scales with the screen. */
 private const val CoverWidthFraction = 0.56f
 
 /** Height of the pinned bar's button row, excluding the status bar inset. */
-private val TopBarHeight = 44.dp
+internal val TopBarHeight = 44.dp
 
 /**
  * How far the scroll has to travel past the threshold for the bar's surface to reach full opacity.
@@ -838,7 +842,7 @@ private val TopBarSurfaceRampPx = TopBarSurfaceRamp.value
 private val TopBarEdgeFade = 12.dp
 
 /** Clearance between the bottom of that row and the first thing in the hero (the cover). */
-private val BarClearance = 6.dp
+internal val BarClearance = 6.dp
 
 /** Peak alpha of the bar's scrim while it floats over artwork. */
 private const val TopBarScrim = 0.34f
@@ -851,7 +855,7 @@ private const val TopBarScrim = 0.34f
  * size (144px on a 3x screen) and, because the curve is eased rather than linear, it reads as the
  * cover dissolving rather than as a band with two edges.
  */
-private val PageFade = 48.dp
+internal val PageFade = 48.dp
 
 /** Clearance between the action pills and the start of the fade. */
 private val PageFadeMargin = 8.dp
@@ -886,4 +890,4 @@ private fun pageFadeStops(color: Color): Array<Pair<Float, Color>> =
 private fun smootherStep(t: Float): Float = t * t * t * (t * (t * 6f - 15f) + 10f)
 
 /** Width reserved for the row position / now-playing marker. Fits three digits. */
-private val IndexWidth = 30.dp
+internal val IndexWidth = 30.dp

@@ -105,6 +105,13 @@ fun LibraryScreen(
     loader: ArtworkLoader,
     signature: String = "",
     /**
+     * The name shown on the profile header.
+     *
+     * Resolved by the caller (a local override when the user set one, otherwise the account's nickname), so
+     * this screen does not have to know which of the two it is displaying.
+     */
+    displayName: String = "",
+    /**
      * Songs in the liked list, or null while it is not yet known.
      *
      * The merged total (local likes plus the account's cloud likes), which is exactly the number the user
@@ -145,6 +152,7 @@ fun LibraryScreen(
         recentTracks = recentTracks,
         loader = loader,
         signature = signature,
+        displayName = displayName,
         likedCount = likedCount,
         headerBackground = headerBackground,
         headerAvatar = headerAvatar,
@@ -213,6 +221,7 @@ private fun LibraryContent(
     recentTracks: List<Track>,
     loader: ArtworkLoader,
     signature: String,
+    displayName: String,
     likedCount: Int?,
     headerBackground: ImageBitmap?,
     headerAvatar: ImageBitmap?,
@@ -240,6 +249,7 @@ private fun LibraryContent(
             ProfileHeader(
                 account = account,
                 signature = signature,
+                displayName = displayName,
                 background = headerBackground,
                 customAvatar = headerAvatar,
                 loader = loader,
@@ -315,6 +325,7 @@ private fun LibraryContent(
 private fun ProfileHeader(
     account: Account?,
     signature: String,
+    displayName: String,
     background: ImageBitmap?,
     customAvatar: ImageBitmap?,
     loader: ArtworkLoader,
@@ -389,7 +400,11 @@ private fun ProfileHeader(
                 // read `account` directly — the compiler establishes that, and an `account?.` here would be
                 // a safe call it flags as unnecessary.
                 Text(
-                    text = if (signedIn) account.nickname.ifBlank { "云音用户" } else "未登录",
+                    // The caller-resolved display name: the user's local override when they set one,
+                    // otherwise the account's nickname. For a guest this is empty, so the fallback below
+                    // is what shows.
+                    text = (displayName.ifBlank { account?.nickname.orEmpty() })
+                        .ifBlank { if (signedIn) "云音用户" else "未登录" },
                     fontFamily = SFPro,
                     fontWeight = FontWeight.Bold,
                     fontSize = 26.sp,

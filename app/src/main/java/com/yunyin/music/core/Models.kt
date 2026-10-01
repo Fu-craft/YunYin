@@ -32,7 +32,14 @@ data class ChartInfo(
     val id: Long,
     val name: String,
     val coverUrl: String?,
-    val updateFrequency: String? = null,
+    val updateFrequency: String?,
+)
+
+/** An artist's identity, as shown on the artist page. */
+data class ArtistInfo(
+    val id: Long,
+    val name: String,
+    val coverUrl: String?,
 )
 
 /** Signed-in (or anonymous) account. */

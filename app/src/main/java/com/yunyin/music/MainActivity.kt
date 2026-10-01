@@ -56,6 +56,7 @@ import com.yunyin.music.data.ShareText
 import com.yunyin.music.playback.LocalPlayerController
 import com.yunyin.music.playback.PlaybackUiState
 import com.yunyin.music.ui.AppViewModel
+import com.yunyin.music.ui.ArtistUiState
 import com.yunyin.music.ui.AudioQuality
 import com.yunyin.music.ui.CollectionUiState
 import com.yunyin.music.ui.PlayerViewModel
@@ -67,6 +68,7 @@ import com.yunyin.music.ui.components.QueueSheet
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.yunyin.music.ui.screens.CollectionScreen
+import com.yunyin.music.ui.screens.ArtistScreen
 import com.yunyin.music.ui.screens.HomeScreen
 import com.yunyin.music.ui.screens.LibraryScreen
 import com.yunyin.music.ui.screens.LoginScreen
@@ -162,6 +164,7 @@ class MainActivity : ComponentActivity() {
         val homeState by appViewModel.home.collectAsState()
         val searchState by appViewModel.search.collectAsState()
         val collectionState by appViewModel.collection.collectAsState()
+        val artistState by appViewModel.artist.collectAsState()
 
         var tab by remember { mutableStateOf(PlayerTab.Home) }
         var showPlayer by remember { mutableStateOf(false) }
@@ -186,6 +189,16 @@ class MainActivity : ComponentActivity() {
         var showProfileEdit by remember { mutableStateOf(false) }
         var signature by remember { mutableStateOf(container.settings.profileSignature) }
         var useNeteaseAvatar by remember { mutableStateOf(container.settings.useNeteaseAvatar) }
+        // The displayed name follows the same arrangement as the avatar: the account's own, unless the user
+        // has set a local override. Both are presentation, so neither needs an account.
+        var useNeteaseName by remember { mutableStateOf(container.settings.useNeteaseName) }
+        var customNickname by remember { mutableStateOf(container.settings.customNickname) }
+
+        /** What the profile header shows: the override when set, otherwise the account's own. */
+        val displayName = when {
+            !useNeteaseName && customNickname.isNotBlank() -> customNickname
+            else -> account?.nickname.orEmpty()
+        }
         // Bumped after a picture is chosen, so the header reloads even though the setting itself is what
         // changed and it is not part of this composition's state.
         var profileRevision by remember { mutableIntStateOf(0) }
@@ -395,6 +408,7 @@ class MainActivity : ComponentActivity() {
                             recentTracks = appViewModel.recentTracks,
                             loader = container.artwork,
                             signature = signature,
+                            displayName = displayName,
                             likedCount = appViewModel.likedCount,
                             headerBackground = backgroundBitmap,
                             headerAvatar = avatarBitmap,
@@ -548,15 +562,23 @@ class MainActivity : ComponentActivity() {
                 )
             }
 
-            // The profile editor. Only reachable while signed in, since every control in it writes to the
-            // signed-in identity.
+            // The profile editor.
+            //
+            // Reachable for a guest too: the editor writes local presentation (nickname, avatar,
+            // background, signature), none of which needs an account. The earlier signed-in-only gate was
+            // written when it only changed cloud identity, and is stale now.
             if (showProfileEdit) {
                 ProfileEditSheet(
                     nickname = account?.nickname.orEmpty(),
                     signature = signature,
                     useNeteaseAvatar = useNeteaseAvatar,
+                    useNeteaseName = useNeteaseName,
                     hasCustomAvatar = container.profile.avatarFile() != null,
                     hasCustomBackground = container.profile.backgroundFile() != null,
+                    onNicknameChange = { value ->
+                        customNickname = value
+                        container.settings.customNickname = value
+                    },
                     onSignatureChange = { value ->
                         signature = value
                         container.settings.profileSignature = value
@@ -583,6 +605,17 @@ class MainActivity : ComponentActivity() {
                     onUseNeteaseAvatarChange = { enabled ->
                         useNeteaseAvatar = enabled
                         container.settings.useNeteaseAvatar = enabled
+                    },
+                    onUseNeteaseNameChange = { enabled ->
+                        useNeteaseName = enabled
+                        container.settings.useNeteaseName = enabled
+                        if (!enabled && container.settings.customNickname.isBlank()) {
+                            // Turning "follow" off with no local name would leave the header on a
+                            // fallback string; seed the field with the account's own so the user edits
+                            // from something.
+                            customNickname = account?.nickname.orEmpty()
+                            container.settings.customNickname = customNickname
+                        }
                     },
                     onDismiss = { showProfileEdit = false },
                 )
@@ -651,6 +684,11 @@ class MainActivity : ComponentActivity() {
                     onToggleShuffle = container.player::toggleShuffle,
                     onShowQueue = { showQueue = true },
                     onShowSettings = { showSettings = true; showPlayer = false },
+                    onArtistClick = { name ->
+                        // The artist page sits above the player: closing it returns to where the tap
+                        // happened, which is the least surprising layering for a page reached mid-play.
+                        appViewModel.openArtistByName(name)
+                    },
                     lyricOffsetMs = playerViewModel.lyricOffsetMs,
                     onLyricOffsetChange = playerViewModel::setLyricOffset,
                     download = playerViewModel.download,
@@ -683,6 +721,43 @@ class MainActivity : ComponentActivity() {
                 val message = playerViewModel.notice ?: return@LaunchedEffect
                 Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
                 playerViewModel.clearNotice()
+            }
+
+            // The artist page, layered over the player.
+            //
+            // The state is kept alive through the exit animation for the same reason as the collection
+            // page: closing nulls it immediately, and an exit transition running on nothing reads as the
+            // page vanishing.
+            var lastArtist by remember { mutableStateOf<ArtistUiState?>(null) }
+            SideEffect { artistState?.let { lastArtist = it } }
+
+            AnimatedVisibility(
+                visible = artistState != null,
+                enter = slideInVertically(tween(320)) { it } + fadeIn(tween(200)),
+                exit = slideOutVertically(tween(260)) { it } + fadeOut(tween(160)),
+            ) {
+                val artist = lastArtist
+                if (artist != null) {
+                    val nowPlaying by remember {
+                        playerState
+                            .map { it.current?.id to it.isPlaying }
+                            .distinctUntilChanged()
+                    }.collectAsState(initial = null to false)
+
+                    Surface(Modifier.fillMaxSize(), color = AppTheme.palette.background) {
+                        ArtistScreen(
+                            state = artist,
+                            loader = container.artwork,
+                            onBack = appViewModel::closeArtist,
+                            onTrackClick = { track, index -> play(track, artist.tracks) },
+                            onPlayAll = {
+                                artist.tracks.firstOrNull()?.let { play(it, artist.tracks) }
+                            },
+                            nowPlayingId = nowPlaying.first,
+                            isPlaying = nowPlaying.second,
+                        )
+                    }
+                }
             }
 
             AnimatedVisibility(
@@ -727,6 +802,7 @@ class MainActivity : ComponentActivity() {
         // (queue, then login/settings, then the player, then a detail page, then the tab).
         BackHandler(enabled = tab != PlayerTab.Home) { tab = PlayerTab.Home }
         BackHandler(enabled = collectionState != null) { appViewModel.closeCollection() }
+        BackHandler(enabled = artistState != null) { appViewModel.closeArtist() }
         BackHandler(enabled = showPlayer) { showPlayer = false }
         BackHandler(enabled = showSettings) { showSettings = false }
         BackHandler(enabled = showLogin) { showLogin = false }

@@ -21,6 +21,12 @@
   HIG 字号阶梯、连续圆角（squircle）、毛玻璃 chrome、底部 Sheet 队列、迷你播放器。
 - **歌单详情** —— 封面放大加模糊作为整页色场，正文颜色由封面亮度测得（暗封面白字、
   亮封面深字），顶部返回/分享条常驻并随滚动过渡为不透明；列表标注序号与正在播放行。
+- **歌手详情** —— 在播放页点歌手名进入：圆形头像、姓名与「播放热门」，
+  歌曲列表沿用歌单页的行样式。因歌曲只带歌手名不带 id，先用 `/search` 反查歌手 id；
+  歌手资料直接取 `music.163.com` 的 `v1/artist`（旧版 `/artist` 作为兜底）。
+- **个人资料自定义** —— 「我的」页可自定义背景图、头像、个性签名与昵称；
+  头像与昵称可分别选择是否跟随网易云账号，未登录时显示占位资料。
+  昵称只存在本地：cookie 会话无法可靠地写回云端，因此「修改名称」是本机覆盖而非同步。
 - **收藏与分享** —— 播放页爱心直接收藏/取消收藏（乐观更新，失败回滚）；长按封面保存
   封面图到相册，长按歌词行复制歌词。
 - **词幕状态栏歌词** —— 可选集成：安装「词幕」后，当前歌曲、逐字歌词与播放状态会推送给它，
@@ -123,11 +129,12 @@ keytool -genkeypair -v -keystore my-release.jks -alias mykey \
 | 用户歌单 | `/user/playlist?uid=` |
 | 我喜欢的音乐 | `/likelist?uid=` |
 | 收藏 / 取消收藏 | `/like?id=&like=` |
-| 搜索 | `/search?keywords=&type=1`、`/search/hot` |
+| 搜索 | `/search?keywords=&type=1`、`/search?keywords=&type=100`（歌手）、`/search/hot` |
 | 歌曲详情 | `/song/detail?ids=` |
 | 歌词 | `/lyric/new?id=` |
 | 播放地址 | `/song/url/v1?id=&level=` |
 | 歌手热门 | `/artist/top/song` |
+| 歌手资料 | `music.163.com/api/v1/artist/{id}`（兜底 `music.163.com/api/artist/{id}`） |
 
 封面支持 `?param=500y500` 直接取缩略图，应用按需请求尺寸。
 

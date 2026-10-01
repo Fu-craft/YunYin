@@ -1,6 +1,7 @@
 package com.yunyin.music.data
 
 import com.yunyin.music.core.HomeFeed
+import com.yunyin.music.core.ArtistInfo
 import com.yunyin.music.core.NetResult
 import com.yunyin.music.core.Playlist
 import com.yunyin.music.core.Track
@@ -88,6 +89,13 @@ class MusicRepository(private val client: NeteaseClient) {
     }
 
     suspend fun artistTopSongs(artistId: Long): List<Track> = client.artistTopSongs(artistId).listOrEmpty()
+
+    /** The artist's name and cover, for the artist page's header. */
+    suspend fun artistInfo(artistId: Long): ArtistInfo? =
+        client.artistDetail(artistId).valueOrNull()
+
+    /** Resolves an artist *name* to the id its page needs; null when the search finds no such artist. */
+    suspend fun artistIdFor(name: String): Long? = client.artistIdByName(name)
 
     /**
      * The cover URL for [id].
