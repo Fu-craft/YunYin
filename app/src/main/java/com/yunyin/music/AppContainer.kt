@@ -75,22 +75,25 @@ class AppContainer(val appContext: Context) {
      *
      * NetEase's own HTTP API cannot read a peer's playback state (measured: reporting succeeds,
      * reading returns empty — the room runs over an Agora RTC channel), so the read path comes from a
-     * transport. Which one is picked here, best first:
+     * transport. The choice is **network-dependent**, which is why it is configuration and not an
+     * automatic fallback: both members must end up on the same transport, and an automatic choice made
+     * per device would silently put them on different ones.
      *
-     *  - **MQTT** (default): one long-lived connection per device, the broker pushes, so receiving
-     *    costs nothing per message. Chosen over the HTTP service because that service's allowance is
-     *    per source address and *shared*, which met its limit in real use (HTTP 429) when two devices
-     *    sat behind one router — or when anyone ran tests on the same connection.
-     *  - **A self-hosted relay**, when `together.base.url` is set (`server/` in this repository) —
-     *    nothing third-party at all.
-     *  - **The public HTTP pub/sub service**, when `together.ntfy.url` is set.
+     *  - **`together.base.url`** — a self-hosted relay (`server/`). Nothing third-party.
+     *  - **`together.mqtt.host`** — MQTT. No request quota at all, but it needs a port the network
+     *    allows; mobile carriers commonly **block 1883**, so this has to be an explicit choice (with
+     *    `together.mqtt.tls=true` for 8883 if plain 1883 is blocked).
+     *  - **otherwise** — the public HTTP pub/sub service. The default because it runs on **443**,
+     *    which essentially no network blocks — the reason it is preferred over MQTT despite MQTT being
+     *    the better protocol for this job. Its allowance is per source address and shared, so it wants
+     *    a slow heartbeat (which the transport already uses).
      */
     val together: TogetherSession by lazy {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         val transport: TogetherTransport = when {
             BuildConfig.TOGETHER_BASE_URL.isNotBlank() -> RelayTransport()
-            BuildConfig.TOGETHER_NTFY_URL.isNotBlank() -> NtfyTransport(scope)
-            else -> MqttTransport(scope)
+            BuildConfig.TOGETHER_MQTT_HOST.isNotBlank() -> MqttTransport(scope)
+            else -> NtfyTransport(scope)
         }
         TogetherSession(transport = transport, scope = scope)
     }

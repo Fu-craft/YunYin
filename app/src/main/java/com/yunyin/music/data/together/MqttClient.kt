@@ -52,6 +52,14 @@ class MqttClient(
     private val port: Int,
     private val scope: CoroutineScope,
     private val clientIdPrefix: String = "yunyin",
+    /**
+     * Wrap the socket in TLS.
+     *
+     * Worth having because a network that **blocks 1883** (common on mobile carriers, to stop MQTT
+     * abuse) usually still allows `8883` — the TLS port looks like any other encrypted traffic. Getting
+     * it wrong is not subtle: the handshake fails and the connection loop reports it.
+     */
+    private val tls: Boolean = false,
     private val onMessage: (topic: String, payload: String) -> Unit,
     private val onConnectionChanged: (Boolean) -> Unit = {},
 ) {
@@ -152,9 +160,24 @@ class MqttClient(
 
     /** Opens a socket, handshakes, then reads the stream until it ends (throwing so we reconnect). */
     private fun openOnce() {
-        val newSocket = Socket()
-        newSocket.tcpNoDelay = true
-        newSocket.connect(InetSocketAddress(host, port), CONNECT_TIMEOUT_MS)
+        val raw = Socket()
+        raw.tcpNoDelay = true
+        raw.connect(InetSocketAddress(host, port), CONNECT_TIMEOUT_MS)
+        // TLS wraps the connected socket; `autoClose = true` so closing the wrapper closes the raw one.
+        //
+        // The intermediate typed values matter: `SSLSocketFactory.getDefault()` is declared to return
+        // the *base* `SocketFactory`, so the SSL-specific overload and `startHandshake` are only
+        // reachable through an explicit cast. The handshake is worth forcing here — it turns a bad
+        // certificate or a non-TLS port into an immediate, reportable failure instead of a mysterious
+        // read timeout later.
+        val newSocket: Socket = if (tls) {
+            val factory = javax.net.ssl.SSLSocketFactory.getDefault() as javax.net.ssl.SSLSocketFactory
+            val ssl = factory.createSocket(raw, host, port, true) as javax.net.ssl.SSLSocket
+            ssl.startHandshake()
+            ssl
+        } else {
+            raw
+        }
         val input = DataInputStream(newSocket.getInputStream().buffered())
 
         socket = newSocket

@@ -36,6 +36,7 @@ class MqttTransport(
     private val scope: CoroutineScope,
     private val host: String = defaultHost(),
     private val port: Int = defaultPort(),
+    private val tls: Boolean = defaultTls(),
     private val onConnectionChanged: (Boolean) -> Unit = {},
 ) : TogetherTransport {
 
@@ -63,6 +64,7 @@ class MqttTransport(
         host = host,
         port = port,
         scope = scope,
+        tls = tls,
         onMessage = { topic, payload -> onIncoming(topic, payload) },
         onConnectionChanged = onConnectionChanged,
     )
@@ -260,5 +262,10 @@ class MqttTransport(
             BuildConfig.TOGETHER_MQTT_HOST.ifBlank { "broker.hivemq.com" }
 
         fun defaultPort(): Int = BuildConfig.TOGETHER_MQTT_PORT.ifBlank { "1883" }.toIntOrNull() ?: 1883
+
+        /** TLS when asked for, or automatically when pointed at the conventional TLS port. */
+        fun defaultTls(): Boolean =
+            BuildConfig.TOGETHER_MQTT_TLS.isNotBlank() ||
+                defaultPort() == 8883
     }
 }
