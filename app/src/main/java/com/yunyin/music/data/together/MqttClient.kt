@@ -4,8 +4,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.DataInputStream
 import java.io.OutputStream
 import java.net.InetSocketAddress
@@ -55,7 +57,30 @@ class MqttClient(
 
     private var connectionLoop: Job? = null
 
-    val isConnected: Boolean get() = socket?.isConnected == true && output != null
+    /**
+     * Connection state, as observable data.
+     *
+     * Needed because connecting is **asynchronous**: `connect()` starts a coroutine and returns
+     * immediately, so a caller that publishes right after it would always find itself "not connected".
+     * That was a real bug — joining a room reported 尚未连接 every time, because the join published
+     * before the socket was up. `awaitConnected` is how a caller waits for the real answer.
+     */
+    private val _connected = kotlinx.coroutines.flow.MutableStateFlow(false)
+    val connected: kotlinx.coroutines.flow.StateFlow<Boolean> = _connected
+
+    val isConnected: Boolean get() = _connected.value
+
+    /**
+     * Suspends until the connection is up, or [timeoutMs] elapses.
+     *
+     * @return true when connected. A false means the broker was not reachable within the window —
+     *   which on a mobile network is quite possibly a blocked port rather than a fault, so the caller
+     *   should say so rather than reporting a generic failure.
+     */
+    suspend fun awaitConnected(timeoutMs: Long): Boolean =
+        kotlinx.coroutines.withTimeoutOrNull(timeoutMs) {
+            connected.first { it }
+        } != null
 
     /** Connects and stays connected, reconnecting with a backoff until [close]. Safe to call twice. */
     fun connect() {
@@ -70,6 +95,8 @@ class MqttClient(
                     throw e
                 } catch (e: Exception) {
                     // Any failure lands here: the broker refused, the network dropped, or a read failed.
+                    lastError = e.message
+                    _connected.value = false
                     onConnectionChanged(false)
                     attempt++
                 } finally {
@@ -78,6 +105,7 @@ class MqttClient(
                     runCatching { socket?.close() }
                     socket = null
                     output = null
+                    _connected.value = false
                 }
                 if (!isActive) break
                 // Back off, but never longer than 30s: a room should recover on its own.
@@ -87,6 +115,10 @@ class MqttClient(
         }
     }
 
+    /** The most recent connection failure, for a caller that wants to explain *why*. */
+    var lastError: String? = null
+        private set
+
     fun close() {
         connectionLoop?.cancel()
         connectionLoop = null
@@ -94,6 +126,7 @@ class MqttClient(
         runCatching { socket?.close() }
         socket = null
         output = null
+        _connected.value = false
         onConnectionChanged(false)
     }
 
@@ -140,6 +173,8 @@ class MqttClient(
         // Fresh connection: restore every subscription.
         synchronized(subscriptionsLock) { subscriptions.toList() }.forEach { sendSubscribe(it) }
         startPinger()
+        lastError = null
+        _connected.value = true
         onConnectionChanged(true)
 
         // Reader loop; returns (throwing) when the stream ends so the outer loop reconnects.

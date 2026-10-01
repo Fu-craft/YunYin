@@ -353,11 +353,12 @@ server/                  一起听（可选的自建中继 + 协议端到端测�
 `server/` 下另有几个端到端测试，都模拟两个成员跑完整流程（都会真的连公共 broker/服务）：
 
 ```bash
-node server/test_mqtt.js       # MQTT 报文：连接 / 订阅 / 发布 / 保留消息
-node server/test_mqtt_room.js  # 房间布局：每人独立槽位、通配订阅、离开清槽
-node server/test_relay.js      # 自建中继的房间生命周期
-node server/test_token.js      # 中继的访问令牌
-node server/test_ntfy.js       # 可选 HTTP 通道的协议
+node server/test_mqtt.js              # MQTT 报文：连接 / 订阅 / 发布 / 保留消息
+node server/test_mqtt_room.js         # 房间布局：每人独立槽位、通配订阅、离开清槽
+node server/test_mqtt_connect_wait.js # 连接是异步的：必须在连接就绪后再发布
+node server/test_relay.js             # 自建中继的房间生命周期
+node server/test_token.js             # 中继的访问令牌
+node server/test_ntfy.js              # 可选 HTTP 通道的协议
 ```
 
 ---

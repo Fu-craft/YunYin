@@ -79,7 +79,8 @@ class MqttTransport(
         TogetherResult.Ok(emptyList())
 
     override suspend fun join(code: String, uid: String, name: String): TogetherResult<Unit> {
-        ensureSubscribed(code, uid)
+        val ready = ensureSubscribed(code, uid)
+        if (ready is TogetherResult.Failed) return ready
         // Announce presence at once so the host sees someone arrive before any music is chosen.
         return publish(code, uid, name, songId = 0L, positionMs = 0L, playing = false, seq = 0L)
     }
@@ -93,7 +94,11 @@ class MqttTransport(
         playing: Boolean,
         seq: Long,
     ): TogetherResult<List<TogetherPeerState>> {
-        ensureSubscribed(code, uid)
+        val ready = ensureSubscribed(code, uid)
+        // A dropped connection is transient, so the caller's loop should retry; but if the broker has
+        // never been reachable, the message names it so the reason is diagnosable rather than a
+        // generic failure.
+        if (ready is TogetherResult.Failed) return ready
         val published = publish(code, uid, name, songId, positionMs, playing, seq)
         if (published is TogetherResult.Failed) return published
         // No fetch: whatever the peer said has already been pushed to us.
@@ -121,9 +126,16 @@ class MqttTransport(
 
     // ------------------------------------------------------------------ plumbing
 
-    private fun ensureSubscribed(code: String, uid: String) {
+    /**
+     * Brings the subscription up, **waiting for the connection**.
+     *
+     * Connecting is asynchronous, so publishing straight after `connect()` always failed with
+     * 尚未连接 — which is what the join used to report. Waiting here is the fix; the timeout is long
+     * enough for a slow network and short enough that a wrong broker does not hang the UI.
+     */
+    private suspend fun ensureSubscribed(code: String, uid: String): TogetherResult<Unit> {
         selfUid = uid
-        if (roomCode == code && client.isConnected) return
+        if (roomCode == code && client.isConnected) return TogetherResult.Ok(Unit)
         if (roomCode != code) {
             synchronized(lock) {
                 peersByUid.clear()
@@ -132,9 +144,15 @@ class MqttTransport(
             roomCode = code
         }
         client.connect()
+        if (!client.awaitConnected(CONNECT_WAIT_MS)) {
+            // Named explicitly: on a mobile network an unreachable broker on port 1883 is most likely a
+            // blocked port, and "无法连接 broker.hivemq.com:1883" says far more than "尚未连接".
+            return TogetherResult.Failed("无法连接消息服务器 $host:$port")
+        }
         // The wildcard covers every member's slot under this room, including our own — incoming
         // messages from ourselves are filtered in onIncoming.
         client.subscribe("$TOPIC_ROOT/$code/+")
+        return TogetherResult.Ok(Unit)
     }
 
     private fun onIncoming(topic: String, payload: String) {
@@ -210,6 +228,9 @@ class MqttTransport(
 
         /** Longer than the 20s heartbeat, so a single missed beat does not make the peer vanish. */
         const val MEMBER_TTL_MS = 75_000L
+
+        /** How long to wait for the broker before telling the user it could not be reached. */
+        const val CONNECT_WAIT_MS = 12_000L
 
         /**
          * A public broker that accepts anonymous connections and is widely reachable. Overridable via
