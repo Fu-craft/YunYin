@@ -2,12 +2,13 @@ package com.yunyin.music.data.together
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /** A room as the UI sees it. */
 data class TogetherUiState(
@@ -65,14 +66,44 @@ class TogetherSession(
 
     private var loop: Job? = null
     private var lastAppliedAt = 0L
-    private var seq = 0L
 
     /**
-     * Bumped by [noteUserAction]. The room's tie-break uses it so that when both members act at once
-     * the newer intent wins instead of both corrections landing.
+     * This device's logical clock, advanced on every local action **and** past every peer value seen.
+     *
+     * This is what decides who wins when the two members disagree, and it must not be a wall clock:
+     * the devices' clocks differ by tens of seconds, so "later timestamp" would be wrong about half the
+     * time. A Lamport counter orders actions causally instead — see [TogetherSync.nextSeq].
+     */
+    private var seq = 0L
+
+    /** The highest counter seen from a peer, so a local action can be made to exceed it. */
+    private var peerSeqSeen = 0L
+
+    /**
+     * Wakes the loop early, so a local action is published at once instead of up to a poll interval
+     * later. `CONFLATED` because several rapid actions need only one prompt re-publish — the payload
+     * always carries the *current* state, so nothing is lost by coalescing them.
+     */
+    private val wakeups = Channel<Unit>(Channel.CONFLATED)
+
+    /**
+     * Records that the user did something to playback (next, previous, play/pause, a seek).
+     *
+     * Every local action **must** call this. Without it the peer's previous state still disagrees with
+     * ours, reads as "out of sync", and the track is pulled back within a poll or two — the reported
+     * "加入房间以后无法切歌". The bump is what makes the room yield to whoever acted last, and it also
+     * gives the action immediate priority over the continuous drift correction.
      */
     fun noteUserAction() {
-        seq++
+        seq = TogetherSync.nextSeq(seq, peerSeqSeen)
+        // Tell the loop to publish now: a peer should see the new track immediately, not after the
+        // next scheduled poll.
+        wakeups.trySend(Unit)
+    }
+
+    /** Sleeps for a poll interval, or until [noteUserAction] asks for an immediate publish. */
+    private suspend fun awaitNextPoll() {
+        withTimeoutOrNull(transport.pollIntervalMs) { wakeups.receive() }
     }
 
     fun createRoom(uid: String, name: String) {
@@ -171,6 +202,9 @@ class TogetherSession(
                 when (result) {
                     is TogetherResult.Ok -> {
                         val peers = result.value
+                        // Observe the peer's clock before deciding, so our next local action can win
+                        // against it (Lamport: the new value must exceed everything we have seen).
+                        peers.maxOfOrNull { it.seq }?.let { peerSeqSeen = maxOf(peerSeqSeen, it) }
                         _state.value = _state.value.copy(peers = peers, error = null)
                         apply(peers, mine)
                     }
@@ -182,7 +216,7 @@ class TogetherSession(
                     // Everything else is transient (a dropped poll); keep the loop and try again.
                     is TogetherResult.Failed -> _state.value = _state.value.copy(error = result.message)
                 }
-                delay(transport.pollIntervalMs)
+                awaitNextPoll()
             }
         }
     }
@@ -196,9 +230,14 @@ class TogetherSession(
             peer = peer,
             lastAppliedAt = lastAppliedAt,
             now = System.currentTimeMillis(),
+            localSeq = seq,
         )
         if (action == SyncAction.None) return
         lastAppliedAt = System.currentTimeMillis()
+        // Adopting the peer's state *is* an action, so our clock moves past theirs. Without this the
+        // next comparison would still see us as the stale side and we would re-apply the same
+        // correction on every poll.
+        seq = TogetherSync.nextSeq(seq, peer.seq)
         applyAction(action)
     }
 

@@ -338,6 +338,10 @@ class MainActivity : ComponentActivity() {
         fun play(track: com.yunyin.music.core.Track, queue: List<com.yunyin.music.core.Track>) {
             val safeQueue = queue.ifEmpty { listOf(track) }
             val index = safeQueue.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
+            // Starting a track from a list is a user action on playback, so the room must yield to it
+            // just as it does for next/previous. Claimed before the player call so the new song is
+            // published (and wins) rather than being pulled back to the peer's track.
+            container.together.noteUserAction()
             runCatching { container.player.playQueue(safeQueue, index) }
                 .onSuccess {
                     showPlayer = true
@@ -690,10 +694,28 @@ class MainActivity : ComponentActivity() {
                     showLyrics = showLyrics,
                     onToggleLyrics = { showLyrics = !showLyrics },
                     onCollapse = { showPlayer = false },
-                    onTogglePlay = container.player::togglePlayPause,
-                    onNext = container.player::next,
-                    onPrevious = container.player::previous,
-                    onSeek = container.player::seekTo,
+                    // Every one of these is a *user* action on playback, so each must claim priority in
+                    // the room (`noteUserAction`) before it runs. The room yields to whoever acted
+                    // last; without the claim the peer's previous state still disagrees, reads as out
+                    // of sync, and undoes the action within a poll — which is why "加入房间后无法切歌".
+                    // These are the UI's callbacks only: a correction applied *from* the room calls the
+                    // player directly, so it cannot claim priority against itself.
+                    onTogglePlay = {
+                        container.together.noteUserAction()
+                        container.player.togglePlayPause()
+                    },
+                    onNext = {
+                        container.together.noteUserAction()
+                        container.player.next()
+                    },
+                    onPrevious = {
+                        container.together.noteUserAction()
+                        container.player.previous()
+                    },
+                    onSeek = { positionMs ->
+                        container.together.noteUserAction()
+                        container.player.seekTo(positionMs)
+                    },
                     onCycleRepeat = container.player::cycleRepeat,
                     onToggleShuffle = container.player::toggleShuffle,
                     onShowQueue = { showQueue = true },
@@ -798,6 +820,8 @@ class MainActivity : ComponentActivity() {
                     currentIndex = playback.index,
                     loader = container.artwork,
                     onSelect = { index ->
+                        // Picking a track from the queue is a user action too — same claim as next/prev.
+                        container.together.noteUserAction()
                         container.player.seekToIndex(index)
                         showQueue = false
                     },

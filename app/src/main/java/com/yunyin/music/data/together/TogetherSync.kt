@@ -60,26 +60,49 @@ object TogetherSync {
         peer: TogetherPeerState?,
         lastAppliedAt: Long,
         now: Long,
+        localSeq: Long = 0L,
         driftToleranceMs: Long = DRIFT_TOLERANCE_MS,
         settleMs: Long = SETTLE_MS,
     ): SyncAction {
         // Nobody to follow.
         if (peer == null || !peer.hasSong) return SyncAction.None
 
-        // Still settling from the last correction: reacting again now would be the ping-pong.
-        if (lastAppliedAt != 0L && now - lastAppliedAt < settleMs) return SyncAction.None
+        // Whose intent is newer? This is the rule that makes the room usable at all, and the one that
+        // was missing: without it any local action (next/previous/play) was immediately undone,
+        // because the peer's *stale* state still disagreed and read as "we are out of sync". The user
+        // saw it as "切歌点了没反应".
+        //
+        // Ordering is by a Lamport clock, not by time. The two devices' clocks differ by tens of
+        // seconds (measured), so comparing timestamps would routinely pick the wrong winner; a counter
+        // that each side advances past whatever it has seen orders actions causally instead.
+        if (localSeq > peer.seq) return SyncAction.None
+        if (peer.seq > localSeq) {
+            // The peer acted more recently, so its state is the truth — including deliberately, not
+            // subject to the settle window below.
+            return followPeer(local, peer, driftToleranceMs)
+        }
 
-        // A different track always wins, and resets the clock: the peer is the source of the song.
+        // Same sequence number: neither side has acted since the last exchange, so this is the
+        // continuous drift correction. Here the settle window applies, because the two sides are
+        // nudging each other rather than one of them having asked for something.
+        if (lastAppliedAt != 0L && now - lastAppliedAt < settleMs) return SyncAction.None
+        return followPeer(local, peer, driftToleranceMs)
+    }
+
+    /** What it takes to match [peer]: adopt its track, seek to it, or match its play state. */
+    private fun followPeer(
+        local: LocalPlayback,
+        peer: TogetherPeerState,
+        driftToleranceMs: Long,
+    ): SyncAction {
+        // A different track wins outright and carries the position with it.
         if (peer.songId != local.songId) {
             return SyncAction.PlaySong(peer.songId, peer.positionMs)
         }
-
-        // Same track: correct a real drift first, since a seek also settles the play state.
-        val drift = peer.positionMs - local.positionMs
-        if (kotlin.math.abs(drift) > driftToleranceMs) {
+        // Same track: correct a real drift, since a seek also settles the play state.
+        if (kotlin.math.abs(peer.positionMs - local.positionMs) > driftToleranceMs) {
             return SyncAction.Seek(peer.songId, peer.positionMs)
         }
-
         // Position agrees; only the play/pause state can be wrong.
         if (peer.playing != local.playing) {
             return if (peer.playing) SyncAction.Play else SyncAction.Pause
@@ -88,11 +111,11 @@ object TogetherSync {
     }
 
     /**
-     * How long to wait before the *peer's* next report is treated as a fresh intent.
+     * The counter to put on the next report after seeing [peerSeq].
      *
-     * When both members act at almost the same moment, the one with the higher [TogetherPeerState.seq]
-     * wins and the other yields. Without a tie-break the two corrections arrive together and the
-     * earlier one is undone — visible as the song jumping twice.
+     * `max(local, peer) + 1` is the Lamport rule: the new value is greater than anything either side
+     * has used, so "larger seq" always means "causally later" no matter whose clock is right.
      */
-    fun peerHasPriority(peer: TogetherPeerState, localSeq: Long): Boolean = peer.seq > localSeq
+    fun nextSeq(localSeq: Long, peerSeq: Long): Long =
+        maxOf(localSeq, peerSeq) + 1L
 }
