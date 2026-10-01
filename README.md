@@ -21,7 +21,6 @@
 - [截图](#截图)
 - [快速开始](#快速开始)
 - [技术栈](#技术栈)
-- [接口](#接口)
 - [实现要点](#实现要点)
 - [项目结构](#项目结构)
 - [测试](#测试)
@@ -116,9 +115,6 @@ keytool -genkeypair -v -keystore my-release.jks -alias mykey \
         -keyalg RSA -keysize 2048 -validity 10000
 ```
 
-> ⚠️ **绝不要提交 `keystore.properties` 或 `.jks`**（已在 `.gitignore` 中）。
-> 私钥泄露意味着任何人都能发布 Android 会当作你签名的更新。
-
 ### 构建
 
 ```bash
@@ -158,38 +154,6 @@ app/src/main/res/font/sf_pro.ttf
 | 状态栏歌词 | 词幕 Lyricon Provider（Apache-2.0）+ Flyme 通知 ticker |
 | 构建 | Gradle 9.7.1 / AGP 9.3.2 |
 | minSdk / targetSdk | 33 / 37 |
-
----
-
-## 接口
-
-应用需要一个 [NeteaseCloudMusicApi](https://github.com/Binaryify/NeteaseCloudMusicApi)
-服务端，地址在应用内配置（仓库不附带任何服务端地址）。
-
-已接入的主要接口：
-
-| 用途 | 接口 |
-|---|---|
-| 游客会话 | `POST /register/anonimous` |
-| 登录态 | `/login/status` |
-| 精选歌单 | `/personalized?limit=` |
-| 推荐歌单 | `/recommend/resource` |
-| 每日推荐 | `/recommend/songs`（需登录） |
-| 新歌速递 | `/personalized/newsong?limit=` |
-| 排行榜 | `/toplist` |
-| 歌单详情 | `/playlist/detail`、`/playlist/track/all` |
-| 用户歌单 | `/user/playlist?uid=` |
-| 我喜欢的音乐 | `/likelist?uid=` |
-| 收藏 / 取消收藏 | `/like?id=&like=` |
-| 搜索 | `/search?keywords=&type=1`、`/search?keywords=&type=100`（歌手）、`/search/hot` |
-| 歌曲详情 | `/song/detail?ids=` |
-| 音乐可用性 | `/check/music?id=` |
-| 歌词 | `/lyric/new?id=` |
-| 播放地址 | `/song/url/v1?id=&level=`（`level` 见 `ui/Quality.kt`） |
-| 歌手热门 | `/artist/top/song` |
-| 歌手资料 | `music.163.com/api/v1/artist/{id}`（兜底 `music.163.com/api/artist/{id}`） |
-
-封面支持 `?param=500y500` 直接取缩略图，应用按需请求尺寸。
 
 ---
 
