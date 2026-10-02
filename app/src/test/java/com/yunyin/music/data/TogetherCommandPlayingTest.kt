@@ -8,41 +8,39 @@ import org.junit.Test
 /**
  * How a room command's play state is read.
  *
- * This is the one place the reported inversion can be introduced on the *reading* side, so it is pinned
- * directly. The sender writes `playStatus` from its own player; the command *kind* is a separate field that
- * can disagree with it, and picking the wrong one of the two flips the room.
+ * The reference implementation's rule, adopted verbatim: a *start* command means playing, and so does an
+ * explicit `PLAY` status; only `PAUSE` means paused. The two halves are OR'ed.
  *
- * The specific trap: a `GOTO` is a start command, so it is tempting to read every `GOTO` as "playing". But a
- * `GOTO` is also sent when the sender switches tracks *while paused*, and forcing it to play then starts
- * music on a device whose partner is paused — the reported "我暂停他那边就播放", arriving through a track
- * change instead of a button.
+ * Why that matters, in both directions, because this function has now been wrong both ways:
+ *
+ *  - trusting `playStatus` **over** the type left a follower paused on a track the sender was playing, so
+ *    the room could never start ("还是无法一起播放") — the `GOTO` carrying the track change read as paused;
+ *  - the OR is what the reference does, and it is the safer failure: a room that keeps playing beats a room
+ *    that never starts.
  */
 class TogetherCommandPlayingTest {
 
     @Test
-    fun `an explicit status wins over the command kind`() {
-        // A paused sender that changed track: the kind says "start", the status says "paused", and the
-        // status is what the sender's own player actually reported.
-        assertFalse(commandPlaying(type = "GOTO", playStatus = "PAUSE"))
-        assertFalse(commandPlaying(type = "NEXT", playStatus = "PAUSE"))
-        assertFalse(commandPlaying(type = "PREV", playStatus = "PAUSED"))
-        assertTrue(commandPlaying(type = "PAUSE", playStatus = "PLAY"))
-    }
-
-    @Test
-    fun `the kind is the fallback when no status is given`() {
-        assertTrue(commandPlaying(type = "PLAY", playStatus = ""))
-        assertTrue(commandPlaying(type = "GOTO", playStatus = ""))
+    fun `a start command means playing, whatever the status says`() {
+        // This is the case that broke the room: the track-change command is a start, and it must be read as
+        // playing even if the echoed status lags a beat behind.
+        assertTrue(commandPlaying(type = "GOTO", playStatus = "PAUSE"))
         assertTrue(commandPlaying(type = "NEXT", playStatus = ""))
         assertTrue(commandPlaying(type = "PREV", playStatus = ""))
-        assertFalse(commandPlaying(type = "PROGRESS", playStatus = ""))
-        assertFalse(commandPlaying(type = "PAUSE", playStatus = ""))
+        assertTrue(commandPlaying(type = "PLAY", playStatus = ""))
     }
 
     @Test
-    fun `status matching is case-insensitive`() {
-        assertTrue(commandPlaying(type = "PROGRESS", playStatus = "play"))
-        assertTrue(commandPlaying(type = "PROGRESS", playStatus = "Playing"))
-        assertFalse(commandPlaying(type = "PLAY", playStatus = "paused"))
+    fun `an explicit play status means playing even without a start command`() {
+        assertTrue(commandPlaying(type = "PROGRESS", playStatus = "PLAY"))
+        assertTrue(commandPlaying(type = "PROGRESS", playStatus = "playing"))
+    }
+
+    @Test
+    fun `only a pause means paused`() {
+        assertFalse(commandPlaying(type = "PAUSE", playStatus = "PAUSE"))
+        assertFalse(commandPlaying(type = "PROGRESS", playStatus = "PAUSE"))
+        assertFalse(commandPlaying(type = "PROGRESS", playStatus = "paused"))
+        assertFalse(commandPlaying(type = "", playStatus = ""))
     }
 }

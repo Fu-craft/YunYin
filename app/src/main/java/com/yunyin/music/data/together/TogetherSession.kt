@@ -163,6 +163,17 @@ class TogetherSession(
     private var lastPublishedQueue: List<Long> = emptyList()
 
     /**
+     * Whether the player was between tracks on the previous tick.
+     *
+     * The reference implementation's `awaitingTransition`, and it is load-bearing: while the player is
+     * mid-change, baselining the transitional state and then comparing against the settled state produced a
+     * **phantom command** — a pause nobody pressed — a few seconds after each track change. The peer obeyed
+     * it, so switching a song appeared to pause the other device. The first settled tick therefore only
+     * re-baselines and reports nothing.
+     */
+    private var awaitingTransition = false
+
+    /**
      * Wakes the loop early, so a local action is published at once instead of up to a poll interval
      * later. `CONFLATED` because several rapid actions need only one prompt re-publish — the payload
      * always carries the *current* state, so nothing is lost by coalescing them.
@@ -201,6 +212,7 @@ class TogetherSession(
      */
     private fun resetSync() {
         lastPeerIdentity = null
+        awaitingTransition = false
     }
 
     private companion object {
@@ -377,21 +389,26 @@ class TogetherSession(
                 // 1-2. What is playing now, and announce it if it changed since the last tick — unless the
                 //      player is mid-change, in which case re-baseline instead (see [localTransitioning]).
                 val before = localPlayback()?.takeIf { it.songId > 0L }
-                if (before != null && localTransitioning()) {
-                    // Between two states: publishing now would name the half-applied track, so only the
-                    // baseline moves.
-                    //
-                    // The claimed intent ([pendingAction]) is deliberately **kept**. It used to be cleared
-                    // here, and that made a next/previous invisible to the peer: the tap claims a `Goto`,
-                    // the player starts loading (so `localTransitioning()` is true for the next tick or
-                    // two), the claim was thrown away, and once the player settled there was nothing left
-                    // to announce — the track had changed but nobody was told. Keeping it means the
-                    // command goes out on the first tick after the player settles, carrying the song it
-                    // actually landed on. Reported as "他那边无法进行上一首下一首的操作".
-                    lastPublishedSongId = before.songId
-                    lastPublishedPlaying = before.playing
-                } else if (before != null) {
-                    publishLocalAction(before)
+                when {
+                    before == null -> Unit
+                    // Between two states: nothing may be reported, because anything read now is a
+                    // half-applied value. Only the baseline moves (see [awaitingTransition]).
+                    localTransitioning() -> {
+                        awaitingTransition = true
+                        lastPublishedSongId = before.songId
+                        lastPublishedPlaying = before.playing
+                    }
+                    // First tick after the player settled: re-baseline and report nothing. This is what
+                    // stops the transitional reading from being compared against the settled one, which is
+                    // how a phantom pause/play used to be announced after every track change.
+                    awaitingTransition -> {
+                        awaitingTransition = false
+                        lastPublishedSongId = before.songId
+                        lastPublishedPlaying = before.playing
+                        // A claimed action is a deliberate act and must not be swallowed by the guard.
+                        if (pendingAction != null) publishLocalAction(before)
+                    }
+                    else -> publishLocalAction(before)
                 }
 
                 // 3. Heartbeat (throttled inside the transport) and read the room.
@@ -455,43 +472,70 @@ class TogetherSession(
      * The window is keyed off [lastAppliedAt] rather than a new timer so it is the same [TogetherSync]
      * settle interval the drift correction uses — one concept, one knob.
      */
+    /**
+     * Publishes a discrete action, if there is one to publish.
+     *
+     * ## The command's kind comes from what the player *did*, not from what was predicted
+     *
+     * An earlier version sent the kind that had been decided at tap time (`pendingAction`) and then
+     * "reconciled" it against the player. That reconciliation was the bug: `isPlaying` is false while the
+     * player is filling its buffer, so a press of *play* reconciled to a *pause* and was broadcast as such —
+     * "我这边点播放他那边就暂停" exactly. The same shape appears whenever the prediction and the player
+     * disagree, and the prediction is never more trustworthy than the player.
+     *
+     * So the kind is now derived from the observed change (reference implementation's rule): a different
+     * song is a `Goto`, a changed play state is a `Play`/`Pause`, and the song's *play state* goes on the
+     * wire as it actually is. A claimed action's only special role is [TogetherLocalAction.Seek]: a seek is
+     * the one thing not visible in the reported state — the position is not part of it — so only a seek
+     * needs the claim to be believed outright.
+     *
+     * ## Two ways a change is not published
+     *
+     *  - **The player is between tracks** — handled by the tick, which re-baselines instead of reporting
+     *    (see [awaitingTransition]).
+     *  - **The change is not ours.** Right after applying the peer's own correction the player still reports
+     *    its pre-correction state for a moment (the apply is asynchronous), so that reading looks like a
+     *    fresh local change. It is the correction arriving, and republishing it would send it straight back.
+     *    Such a change is **deferred, not dropped**: the baseline is deliberately left alone so it is
+     *    reported once the room has settled. Moving the baseline here (which an earlier version did) lost
+     *    the change for good — an automatic track advance just after a correction was never announced.
+     */
     private suspend fun publishLocalAction(mine: LocalPlayback) {
-        val announced = pendingAction
-        pendingAction = null
-        // An announced play/pause is reconciled against what the player *actually* did.
-        //
-        // The claim is decided at tap time from the state snapshot, and that snapshot can be a hair behind
-        // the player — so the claimed "pause" can describe a player that is in fact now playing. Sending the
-        // claim unchanged is enough to invert the room: this device reports the opposite of its own state and
-        // the peer faithfully follows it. The player's live state is authoritative, so it decides.
-        val reconciled = when (announced) {
-            TogetherLocalAction.Play -> if (mine.playing) announced else TogetherLocalAction.Pause
-            TogetherLocalAction.Pause -> if (mine.playing) TogetherLocalAction.Play else announced
-            else -> announced
-        }
-        val inferred = when {
-            mine.songId != lastPublishedSongId -> TogetherLocalAction.Goto
-            mine.playing != lastPublishedPlaying ->
-                if (mine.playing) TogetherLocalAction.Play else TogetherLocalAction.Pause
+        val claim = pendingAction
+        val songChanged = mine.songId != lastPublishedSongId
+        val playingChanged = mine.playing != lastPublishedPlaying
+        val action: TogetherLocalAction? = when {
+            // A seek is invisible in the reported state — position is not part of it — so only the claim can
+            // carry it.
+            claim == TogetherLocalAction.Seek -> TogetherLocalAction.Seek
+            // A claimed track change is sent even when the baseline has already absorbed it: the player is
+            // re-baselined while it loads (see [awaitingTransition]), so by the time it settles the "new
+            // song" may no longer look new. The claim is the user's act; the peer still has to be told.
+            claim == TogetherLocalAction.Goto -> TogetherLocalAction.Goto
+            songChanged -> TogetherLocalAction.Goto
+            // **Play/pause is read from the player, never from the claim.** `isPlaying` is false while the
+            // player buffers, so a press of play is observed as "still paused" for a moment; publishing the
+            // claim then would broadcast a *pause* for a play press — "我这边点播放他那边就暂停" exactly.
+            // Waiting for the state to actually change costs one poll and is always right. A play/pause
+            // claim needs no special handling at all: the change carries it.
+            playingChanged -> if (mine.playing) TogetherLocalAction.Play else TogetherLocalAction.Pause
             else -> null
         }
-        val action = reconciled ?: inferred
-        // The baseline moves whether or not anything was published — this is the reference's `baseline()`
-        // at the end of its report step, and it is what makes "changed since last time" mean what it says.
-        lastPublishedSongId = mine.songId
-        lastPublishedPlaying = mine.playing
-        if (action == null) return
-        // An *unannounced* change inside the window after a correction is the correction arriving, not an act.
-        //
-        // Applying a correction is asynchronous (it goes through the media controller), so for a moment the
-        // player still reports the pre-correction state. With the baseline already on the target, that old
-        // state looks like a change and gets announced back — the two devices then trade the same correction
-        // and each appears to do the opposite of the other ("我暂停他那边就播放"). A claimed action is a
-        // person's deliberate act and always goes out; only the inferred ones wait for the room to settle.
-        if (reconciled == null && System.currentTimeMillis() - lastAppliedAt < TogetherSync.SETTLE_MS) {
-            TogetherLog.add("SEND suppressed (settling): $inferred")
+        if (action == null) {
+            pendingAction = null
+            lastPublishedSongId = mine.songId
+            lastPublishedPlaying = mine.playing
             return
         }
+        // A change nobody asked for, inside the window after a correction, is that correction settling —
+        // not an act. Deferred without moving the baseline, so it is still reported afterwards.
+        if (claim == null && System.currentTimeMillis() - lastAppliedAt < TogetherSync.SETTLE_MS) {
+            TogetherLog.add("SEND deferred (settling): $action")
+            return
+        }
+        pendingAction = null
+        lastPublishedSongId = mine.songId
+        lastPublishedPlaying = mine.playing
         transport.publishAction(
             action = action,
             songId = mine.songId,

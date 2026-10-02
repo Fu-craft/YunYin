@@ -207,21 +207,28 @@ class NeteaseTogetherApi(private val client: EapiClient) {
 /**
  * Whether a returned command means "playing".
  *
- * The sender writes `playStatus` from its own player, so an explicit value is taken at face value — the
- * kind is **not** allowed to override it. Forcing every `GOTO` to mean "playing" (as an earlier version
- * did) starts the music on a device whose partner switched tracks while paused, which is the
- * "我暂停他那边就播放" inversion arriving through a track change instead of a button.
+ * **The reference implementation's rule, adopted verbatim**: a *start* command (`PLAY`, `GOTO`, `NEXT`,
+ * `PREV`) means playing, and so does an explicit `PLAY` status. Only `PAUSE` — as a type or as a status —
+ * means paused.
  *
- * The kind is only the **fallback**, for a response that carries no usable status at all: `GOTO`, `NEXT`,
- * `PREV` and `PLAY` are start commands, so with nothing else to go on they read as playing.
+ * The two halves are OR'ed rather than one overriding the other, and that is deliberate. The type is the
+ * authoritative statement of intent (the sender chose it from its own player state), while `playStatus` is a
+ * field that can be echoed a beat behind. Trusting the status over the type leaves a follower **paused on a
+ * track the sender is playing** — the reported "还是无法一起播放" — because the `GOTO` that carries the
+ * track change would be read as paused. An earlier version of this function did exactly that.
+ *
+ * The cost of the OR is the opposite case: a sender that switches tracks while paused reads as playing. That
+ * is also what the reference does, it is the safer of the two failures (a room that keeps playing beats a
+ * room that never starts), and this client does not send a paused `GOTO` — selecting a track goes through a
+ * path that starts it, and an automatic advance happens while playing.
  *
  * Top-level rather than private so the rule can be tested directly, without a network client.
  */
 internal fun commandPlaying(type: String, playStatus: String): Boolean {
-    when (playStatus.uppercase()) {
-        "PLAY", "PLAYING" -> return true
-        "PAUSE", "PAUSED" -> return false
+    val upperType = type.uppercase()
+    if (upperType == "PLAY" || upperType == "GOTO" || upperType == "NEXT" || upperType == "PREV") {
+        return true
     }
-    val upper = type.uppercase()
-    return upper == "PLAY" || upper == "GOTO" || upper == "NEXT" || upper == "PREV"
+    val upperStatus = playStatus.uppercase()
+    return upperStatus == "PLAY" || upperStatus == "PLAYING"
 }

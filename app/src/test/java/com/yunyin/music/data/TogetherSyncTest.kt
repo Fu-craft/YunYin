@@ -354,8 +354,9 @@ class TogetherSyncTest {
 
     @Test
     fun `a GOTO carries the sender's play state, so a paused switch lands paused`() {
-        // The peer switched tracks while paused. Adopting it must not start playing: that is how a paused
-        // sender ends up with a playing receiver, and the two then trade the state back and forth.
+        // A peer that switched tracks while paused must not start playing on the receiver: that is how a
+        // paused sender ends up with a playing receiver. (The read path reports "playing" for a start
+        // command, so this is the belt to that braces — the rule honours whatever state it is handed.)
         assertEquals(
             SyncAction.PlaySong(300L, 0L, playing = false),
             TogetherSync.decide(

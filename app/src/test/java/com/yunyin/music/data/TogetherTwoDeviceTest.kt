@@ -242,6 +242,24 @@ class TogetherTwoDeviceTest {
             playing = false
             session.noteUserAction(TogetherLocalAction.Pause)
         }
+
+        /**
+         * Presses play the way the real UI does, and models the player taking a moment to obey.
+         *
+         * `isPlaying` stays false for [startLatencyMs] — which is what a buffering player reports — so any
+         * code that published a predicted "play" would be publishing against an unchanged state.
+         */
+        fun pressPlay(startLatencyMs: Long = 0L) {
+            session.noteUserAction(TogetherLocalAction.Play)
+            if (startLatencyMs > 0L) {
+                scope.launch {
+                    delay(startLatencyMs)
+                    playing = true
+                }
+            } else {
+                playing = true
+            }
+        }
     }
 
     private suspend fun waitUntil(timeoutMs: Long = 3_000, condition: () -> Boolean): Boolean {
@@ -425,6 +443,55 @@ class TogetherTwoDeviceTest {
                 hostPlay.isEmpty(),
             )
             assertTrue("the host must end up paused", !host.playing)
+        } finally {
+            hostScope.cancel()
+            guestScope.cancel()
+        }
+    }
+
+    @Test
+    fun `pressing play while the player is still buffering announces PLAY, never PAUSE`() = runBlocking {
+        // The reported bug, at its source. The play button is claimed the instant it is pressed, but the
+        // player reports `isPlaying == false` until it has something to play. Any code that sent the claim
+        // (or "reconciled" it against the player) therefore broadcast a **pause** for a press of play, and
+        // the peer obeyed — "我这边点播放他那边就暂停". The rule must wait for the state to actually change.
+        val room = FakeRoom()
+        val hostScope = CoroutineScope(Dispatchers.Default)
+        val guestScope = CoroutineScope(Dispatchers.Default)
+        try {
+            val host = Device("host", room, hostScope)
+            val guest = Device("guest", room, guestScope)
+
+            host.session.createRoom(uid = "host", name = "房主")
+            assertTrue(waitUntil { host.session.state.value.inRoom })
+            guest.session.joinRoom(code = "ROOM", uid = "guest", name = "对方")
+            assertTrue(waitUntil { guest.session.state.value.inRoom })
+
+            host.play(111L, atMs = 0L)
+            assertTrue(waitUntil { guest.songId == 111L })
+            assertTrue(waitUntil { guest.playing })
+
+            host.pause()
+            assertTrue("the guest should follow the pause", waitUntil { !guest.playing })
+            room.published.clear()
+
+            // Press play; the player takes a moment (buffering) before it reports playing.
+            host.pressPlay(startLatencyMs = 300L)
+            delay(150)
+            assertTrue(
+                "a press of play must never be announced as a pause: ${room.published}",
+                room.published.none { it.first == "host" && it.second == "PAUSE" },
+            )
+
+            // Once the player is actually playing, the PLAY goes out and the guest follows it.
+            assertTrue(
+                "the peer should end up playing",
+                waitUntil { guest.playing },
+            )
+            assertTrue(
+                "a PLAY must have been broadcast: ${room.published}",
+                room.published.any { it.first == "host" && it.second == "PLAY" },
+            )
         } finally {
             hostScope.cancel()
             guestScope.cancel()
