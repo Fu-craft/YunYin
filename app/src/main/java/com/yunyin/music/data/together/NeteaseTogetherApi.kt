@@ -202,22 +202,26 @@ class NeteaseTogetherApi(private val client: EapiClient) {
     suspend fun end(roomId: String): TogetherResult<Unit> =
         client.call("/api/listen/together/end/v2", mapOf("roomId" to roomId))
             .toTogether().also { TogetherLog.add("API end room=${TogetherLog.short(roomId)} -> $it") }
+}
 
-    private companion object {
-        /**
-         * Whether a returned command means "playing".
-         *
-         * The same rule the reference client applies, and it needs both halves: `GOTO`, `NEXT`, `PREV`
-         * and `PLAY` are all *start* commands, while `PAUSE` stops. `playStatus` alone is an unreliable
-         * witness — the official client has been observed sending a `GOTO` whose status still reads
-         * `PAUSE` for the frame in which the track changes, and a receiver that trusts the flag alone
-         * announces the opposite of what the sender just did. That is precisely the ping-pong the room
-         * suffers from: one side plays, the other reports "paused", and each follows the other in turn.
-         */
-        fun commandPlaying(type: String, playStatus: String): Boolean {
-            val upper = type.uppercase()
-            return upper == "PLAY" || upper == "GOTO" || upper == "NEXT" || upper == "PREV" ||
-                playStatus.uppercase() == "PLAY" || playStatus.uppercase() == "PLAYING"
-        }
+/**
+ * Whether a returned command means "playing".
+ *
+ * The sender writes `playStatus` from its own player, so an explicit value is taken at face value — the
+ * kind is **not** allowed to override it. Forcing every `GOTO` to mean "playing" (as an earlier version
+ * did) starts the music on a device whose partner switched tracks while paused, which is the
+ * "我暂停他那边就播放" inversion arriving through a track change instead of a button.
+ *
+ * The kind is only the **fallback**, for a response that carries no usable status at all: `GOTO`, `NEXT`,
+ * `PREV` and `PLAY` are start commands, so with nothing else to go on they read as playing.
+ *
+ * Top-level rather than private so the rule can be tested directly, without a network client.
+ */
+internal fun commandPlaying(type: String, playStatus: String): Boolean {
+    when (playStatus.uppercase()) {
+        "PLAY", "PLAYING" -> return true
+        "PAUSE", "PAUSED" -> return false
     }
+    val upper = type.uppercase()
+    return upper == "PLAY" || upper == "GOTO" || upper == "NEXT" || upper == "PREV"
 }
