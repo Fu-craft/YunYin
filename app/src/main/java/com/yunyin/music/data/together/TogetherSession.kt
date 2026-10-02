@@ -122,6 +122,15 @@ class TogetherSession(
     private var peerSeqSeen = 0L
 
     /**
+     * The peer command already adopted while this device had nothing playing.
+     *
+     * Needed because loading a track is asynchronous: for the few polls before the player reports the new
+     * song, `localPlayback()` is still null, and without this the same command would be re-issued on every
+     * tick — restarting the song over and over until it finally appeared.
+     */
+    private var adoptedPeerSeq = 0L
+
+    /**
      * A discrete action the user announced and the loop has not published yet.
      *
      * Held rather than published at the call site so that a burst — a scrub sends many seeks — collapses
@@ -186,6 +195,9 @@ class TogetherSession(
     private fun resetClock() {
         seq = 0L
         peerSeqSeen = 0L
+        // Same reasoning as the clock: an id left over from a previous room could match a peer command in a
+        // new one and suppress the very adoption the guard exists to make once.
+        adoptedPeerSeq = 0L
     }
 
     private companion object {
@@ -412,10 +424,35 @@ class TogetherSession(
         }
     }
 
+    /**
+     * Applies whatever the room says, given this device's own playback (which may be nothing).
+     *
+     * ## Why `mine == null` is *not* an early return
+     *
+     * It used to be, and that was a bug with a very visible symptom: **joining a room while nothing was
+     * playing did nothing at all.** The loop deliberately polls even with no local playback (see
+     * [startLoop]), so the peer's song was being read and then thrown away by this guard — which is why a
+     * freshly opened app could sit in a room showing the host as present and never start their music
+     * ("房间里只有我", "没有切换到起风了").
+     *
+     * With nothing playing there is nothing to preserve, so the peer's track is adopted outright. It is
+     * applied **once per peer command** ([adoptedPeerSeq]) rather than on every tick: the player loads a
+     * track asynchronously, so `localPlayback()` stays null for a few polls after the request, and
+     * re-issuing it would restart the song repeatedly until it took.
+     */
     private fun apply(peers: List<TogetherPeerState>, mine: LocalPlayback?) {
-        if (mine == null) return
         // The most recently updated peer is the one to follow when the room has more than two members.
         val peer = peers.filter { it.hasSong }.maxByOrNull { it.updatedAt } ?: return
+
+        if (mine == null) {
+            if (peer.seq == adoptedPeerSeq) return
+            adoptedPeerSeq = peer.seq
+            lastAppliedAt = System.currentTimeMillis()
+            seq = TogetherSync.nextSeq(seq, peer.seq)
+            applyAction(SyncAction.PlaySong(peer.songId, peer.positionMs))
+            return
+        }
+
         val action = TogetherSync.decide(
             local = mine,
             peer = peer,
