@@ -35,8 +35,8 @@ android {
         // versionCode must increase for Android to accept a build as an update over a previous one;
         // versionName is what the user sees. Bumped together — a version name change with an unchanged
         // code would install as a downgrade and be rejected.
-        versionCode = 23
-        versionName = "3.9.0"
+        versionCode = 24
+        versionName = "3.9.1"
         vectorDrawables { useSupportLibrary = true }
 
         // The API endpoint is injected at build time rather than baked into the sources, so the

@@ -123,15 +123,21 @@ class UpdateManager(
     }
 
     /**
-     * Checks now, whatever the throttle says — what the "检查更新" row does.
+     * Checks now.
      *
-     * [force] also clears a previous skip, because asking explicitly is a request to be told, and sets
-     * [notice] so the *positive* answers ("已是最新") reach the user; an automatic check stays silent about
-     * them on purpose.
+     * @param force what the "检查更新" row does: bypass the throttle, clear a previous skip, **and report
+     *   the outcome** — including "已是最新" and any failure. Asking explicitly is a request to be told.
+     *
+     * An automatic check is the opposite on purpose, and this is a real bug that shipped: leaving a failed
+     * automatic check in [UpdateUiState.Failed] meant the Settings row read "检查失败" for a user who had
+     * never tapped anything, and tapping it then reported "请求频繁" — a message about a rate limit they
+     * could not have caused. GitHub's refusal is usually invisible to the user (a carrier NAT shared by
+     * every phone behind it; a filtered network answering 403 for reasons unrelated to frequency), so an
+     * automatic attempt that fails must leave **no trace at all** and simply try again tomorrow.
      */
     fun check(force: Boolean = false) {
         if (!configured) {
-            _state.value = UpdateUiState.Failed("未配置更新地址")
+            if (force) _state.value = UpdateUiState.Failed("未配置更新地址")
             return
         }
         if (force) settings.updateSkippedVersion = ""
@@ -145,17 +151,20 @@ class UpdateManager(
                             UpdateUiState.Available(result.update)
                         }
                 // A successful check that finds nothing is a positive answer, not a failure. It also
-                // resets any stale sheet, so a previously-found update that was never acted on cannot
-                // linger in the state after it has been superseded.
+                // resets any stale sheet, so an update that was never acted on cannot linger after being
+                // superseded.
                 is UpdateCheck.UpToDate -> {
-                    _state.value = UpdateUiState.Idle
+                    if (force || _state.value is UpdateUiState.Failed) _state.value = UpdateUiState.Idle
                     if (force) _notice.value = "已是最新版本"
                 }
                 is UpdateCheck.Failed -> {
-                    _state.value = UpdateUiState.Failed(result.message)
-                    // A manual check must say it failed; an automatic one stays quiet, because on a
-                    // network that filters GitHub this would otherwise be a message on every launch.
-                    if (force) _notice.value = "检查更新失败：${result.message}"
+                    // A manual check must say it failed; an automatic one stays invisible (see above) —
+                    // and it does not overwrite a failure the user is already looking at, so their
+                    // message does not change under them.
+                    if (force) {
+                        _state.value = UpdateUiState.Failed(result.message)
+                        _notice.value = "检查更新失败：${result.message}"
+                    }
                 }
             }
         }

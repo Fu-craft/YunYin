@@ -3,6 +3,7 @@ package com.yunyin.music.data
 import com.yunyin.music.data.update.ReleaseAsset
 import com.yunyin.music.data.update.UpdateCheck
 import com.yunyin.music.data.update.UpdateRules
+import com.yunyin.music.data.update.parseAtomRelease
 import com.yunyin.music.data.update.parseRelease
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -224,5 +225,70 @@ class UpdateRulesTest {
             "https://github.com/o/r/releases/latest",
             (result as UpdateCheck.Newer).update.pageUrl,
         )
+    }
+
+    // ---------------------------------------------------------------- the atom fallback
+    //
+    // Used when the API is rate limited or refused. Its structure is captured from a real feed, including
+    // the trap below: the feed's first <title> is the *repository*, and the release's title is a separate
+    // element inside <entry>.
+
+    private fun feed(entries: String) = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <feed xmlns="http://www.w3.org/2005/Atom" xml:lang="en-US">
+          <id>tag:github.com,2008:/Fu-craft/YunYin/releases</id>
+          <link rel="alternate" type="text/html" href="https://github.com/Fu-craft/YunYin/releases"/>
+          <title>Release notes from YunYin</title>
+          <updated>2026-10-01T20:40:18Z</updated>
+          $entries
+        </feed>
+    """.trimIndent()
+
+    private val oneRelease = """
+        <entry>
+          <id>tag:github.com,2008:Repository/1/v3.9.0</id>
+          <updated>2026-09-30T02:41:43Z</updated>
+          <link rel="alternate" type="text/html" href="https://github.com/Fu-craft/YunYin/releases/tag/v3.9.0"/>
+          <title>云音 3.9.0</title>
+        </entry>
+    """.trimIndent()
+
+    @Test
+    fun `the atom feed offers an update, as a page rather than a download`() {
+        val result = parseAtomRelease(feed(oneRelease), "3.8.1")
+        assertTrue(result is UpdateCheck.Newer)
+        val update = (result as UpdateCheck.Newer).update
+        assertEquals("3.9.0", update.versionName)
+        // No asset URL exists in a feed, so nothing installable can be offered -- and the UI turns that
+        // into "打开下载页" instead of a download that could never start.
+        assertNull(update.apk)
+        assertEquals("https://github.com/Fu-craft/YunYin/releases/tag/v3.9.0", update.pageUrl)
+    }
+
+    @Test
+    fun `the feed's own title is not mistaken for the release`() {
+        // "Release notes from YunYin" is the feed title. Reading it as a version would compare against a
+        // non-version and report no update, permanently.
+        assertEquals(UpdateRules.versionParts("Release notes from YunYin"), emptyList<Int>())
+        assertTrue(parseAtomRelease(feed(oneRelease), "3.8.1") is UpdateCheck.Newer)
+    }
+
+    @Test
+    fun `a feed with no entries means no releases, not a failure`() {
+        assertTrue(parseAtomRelease(feed(""), "3.8.1") is UpdateCheck.UpToDate)
+    }
+
+    @Test
+    fun `an older release in the feed is not an offer`() {
+        assertTrue(parseAtomRelease(feed(oneRelease), "3.9.0") is UpdateCheck.UpToDate)
+        assertTrue(parseAtomRelease(feed(oneRelease), "4.0.0") is UpdateCheck.UpToDate)
+    }
+
+    @Test
+    fun `an unreadable feed returns null so the API's refusal stays the reason`() {
+        // Returning UpToDate here would claim "you are current" on the strength of a feed that said
+        // nothing; the caller keeps the real error instead.
+        assertNull(parseAtomRelease("<html>proxy error</html>", "3.8.1"))
+        assertNull(parseAtomRelease(feed("<entry><title>x</title></entry>"), "3.8.1"))
     }
 }
