@@ -121,6 +121,20 @@ keytool -genkeypair -v -keystore my-release.jks -alias mykey \
         -keyalg RSA -keysize 2048 -validity 10000
 ```
 
+**一个坑：别名不是 ASCII 时要写成转义。** Gradle 是用 `Properties.load(InputStream)` 读这个文件的，
+它按 **ISO-8859-1** 解码：直接写中文（UTF-8）会变成乱码、别名找不到，而报错只会说 keystore 有问题，
+不会提编码。Java properties 支持 `\uXXXX` 转义，所以中文别名要这样写：
+
+```properties
+# 别名「赋」
+keyAlias=\u8d4b
+```
+
+**密钥必须固定。** Android 拒绝安装签名不同的包，所以第一次发布用的密钥就决定了以后所有更新：
+换钥匙 = 已安装的用户**再也装不上更新**，而且这个错误只会在手机上以"安装失败"出现。
+`tools/publish_release.py` 因此记录了已发布版本的证书指纹（`dist/signing-cert.sha256`，本地文件），
+指纹不一致时**直接拒绝发布**，把"装了更新不了"提前变成一条明确的报错。
+
 ### 构建
 
 ```bash
