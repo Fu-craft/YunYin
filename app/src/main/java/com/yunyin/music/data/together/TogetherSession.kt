@@ -121,11 +121,13 @@ class TogetherSession(
      *
      * Ports the reference's `snapshot.transitioning`. While this is true the room must **not** report what is
      * playing: the player is between two states, so anything read now is a half-applied value that would be
-     * announced as if the user had done it. The reference handles this with `awaitingTransition`, which
-     * suppresses one report and re-baselines afterwards; the same is done here.
+     * announced as if the user had done it.
      *
-     * Without it, adopting the peer's track produced a report of the *previous* track one tick later — the
-     * echo that made both devices overwrite each other.
+     * Two things this must *not* do, both of which were bugs here. It must not clear a claimed action — a
+     * next/previous pressed just before the player starts loading would then never be announced. And it must
+     * not move the publishing baseline: `isPlaying` is false while buffering, so banking that reading
+     * recorded a *pause* for an act that was a *play*, and the real play then looked like no change and was
+     * never sent. The tick simply skips the report; the change is still there to see once the player settles.
      */
     var localTransitioning: () -> Boolean = { false }
 
@@ -161,17 +163,6 @@ class TogetherSession(
 
     /** The queue the host last published, so it is sent once per queue rather than every tick. */
     private var lastPublishedQueue: List<Long> = emptyList()
-
-    /**
-     * Whether the player was between tracks on the previous tick.
-     *
-     * The reference implementation's `awaitingTransition`, and it is load-bearing: while the player is
-     * mid-change, baselining the transitional state and then comparing against the settled state produced a
-     * **phantom command** — a pause nobody pressed — a few seconds after each track change. The peer obeyed
-     * it, so switching a song appeared to pause the other device. The first settled tick therefore only
-     * re-baselines and reports nothing.
-     */
-    private var awaitingTransition = false
 
     /**
      * Wakes the loop early, so a local action is published at once instead of up to a poll interval
@@ -212,7 +203,6 @@ class TogetherSession(
      */
     private fun resetSync() {
         lastPeerIdentity = null
-        awaitingTransition = false
     }
 
     private companion object {
@@ -389,26 +379,23 @@ class TogetherSession(
                 // 1-2. What is playing now, and announce it if it changed since the last tick — unless the
                 //      player is mid-change, in which case re-baseline instead (see [localTransitioning]).
                 val before = localPlayback()?.takeIf { it.songId > 0L }
-                when {
-                    before == null -> Unit
-                    // Between two states: nothing may be reported, because anything read now is a
-                    // half-applied value. Only the baseline moves (see [awaitingTransition]).
-                    localTransitioning() -> {
-                        awaitingTransition = true
-                        lastPublishedSongId = before.songId
-                        lastPublishedPlaying = before.playing
-                    }
-                    // First tick after the player settled: re-baseline and report nothing. This is what
-                    // stops the transitional reading from being compared against the settled one, which is
-                    // how a phantom pause/play used to be announced after every track change.
-                    awaitingTransition -> {
-                        awaitingTransition = false
-                        lastPublishedSongId = before.songId
-                        lastPublishedPlaying = before.playing
-                        // A claimed action is a deliberate act and must not be swallowed by the guard.
-                        if (pendingAction != null) publishLocalAction(before)
-                    }
-                    else -> publishLocalAction(before)
+                // While the player is mid-change (buffering) nothing is reported **and the baseline does
+                // not move**.
+                //
+                // The baseline move was the inversion. `isPlaying` is false while the player buffers, which
+                // is precisely the state right after a press of play or a track change — so recording that
+                // reading as "what we last published" banked a *pause* for an act that was a *play*. The real
+                // play then looked like no change at all and was never announced, leaving the peer parked
+                // paused ("我这边点播放他那边就暂停"). Skipping the tick instead means the change is still
+                // there to see once the player has something to play, and the command that goes out carries
+                // the state the player actually reached.
+                if (before != null && !localTransitioning()) {
+                    publishLocalAction(before)
+                } else if (before != null) {
+                    // Logged because this is the state a play press passes through: the player reports
+                    // "not playing" while it buffers. Seeing it in the report is how "the press was read as
+                    // a pause" is told apart from "the press never arrived".
+                    TogetherLog.add("LOCAL buffering song=${before.songId} play=${before.playing} (not reporting)")
                 }
 
                 // 3. Heartbeat (throttled inside the transport) and read the room.
@@ -491,8 +478,9 @@ class TogetherSession(
      *
      * ## Two ways a change is not published
      *
-     *  - **The player is between tracks** — handled by the tick, which re-baselines instead of reporting
-     *    (see [awaitingTransition]).
+     *  - **The player is between tracks** — the tick skips it entirely and, crucially, does **not** move the
+     *    baseline while it does (see the tick). Baselining the half-applied state banked a *pause* for an
+     *    act that was a *play*, because `isPlaying` is false while buffering.
      *  - **The change is not ours.** Right after applying the peer's own correction the player still reports
      *    its pre-correction state for a moment (the apply is asynchronous), so that reading looks like a
      *    fresh local change. It is the correction arriving, and republishing it would send it straight back.
@@ -508,9 +496,8 @@ class TogetherSession(
             // A seek is invisible in the reported state — position is not part of it — so only the claim can
             // carry it.
             claim == TogetherLocalAction.Seek -> TogetherLocalAction.Seek
-            // A claimed track change is sent even when the baseline has already absorbed it: the player is
-            // re-baselined while it loads (see [awaitingTransition]), so by the time it settles the "new
-            // song" may no longer look new. The claim is the user's act; the peer still has to be told.
+            // A claimed track change is sent even if the change no longer looks new, so the act always
+            // reaches the peer.
             claim == TogetherLocalAction.Goto -> TogetherLocalAction.Goto
             songChanged -> TogetherLocalAction.Goto
             // **Play/pause is read from the player, never from the claim.** `isPlaying` is false while the
