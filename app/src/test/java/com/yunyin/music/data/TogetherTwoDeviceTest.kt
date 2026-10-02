@@ -264,10 +264,49 @@ class TogetherTwoDeviceTest {
     }
 
     @Test
+    fun `adopting the host's song does not push the joiner's old song back at the host`() = runBlocking {
+        // The regression behind "切歌不跟随" / "成员切不了歌": the session announced its local state *after*
+        // applying the room's, using the playback captured before the apply — so a joiner that had just
+        // adopted the host's track immediately announced the track it was abandoning, overwriting the room's
+        // command. The host then followed that, and the two devices sat on each other's song forever.
+        //
+        // Asserted as: the host keeps ITS song, and is never dragged onto the joiner's.
+        val room = FakeRoom()
+        val hostScope = CoroutineScope(Dispatchers.Default)
+        val guestScope = CoroutineScope(Dispatchers.Default)
+        try {
+            val host = Device("host", room, hostScope)
+            val guest = Device("guest", room, guestScope)
+
+            host.play(222L, atMs = 0L)
+            guest.play(111L, atMs = 0L)
+
+            host.session.createRoom(uid = "host", name = "房主")
+            assertTrue(waitUntil { host.session.state.value.inRoom })
+            guest.session.joinRoom(code = "ROOM", uid = "guest", name = "对方")
+            assertTrue(waitUntil { guest.session.state.value.inRoom })
+
+            // Give both loops several ticks to settle.
+            assertTrue("the two should agree on the host's song", waitUntil { guest.songId == 222L })
+            delay(600)
+
+            assertEquals("the host must keep its own song", 222L, host.songId)
+            assertEquals("and so must the guest", 222L, guest.songId)
+            assertTrue(
+                "the host must never be moved onto the joiner's track: host=${host.songId}",
+                host.songId != 111L,
+            )
+        } finally {
+            hostScope.cancel()
+            guestScope.cancel()
+        }
+    }
+
+    @Test
     fun `two devices already playing different songs converge on one of them`() = runBlocking {
-        // The realistic case, and the one that was reported as "歌曲不同步": both people open the app, each
-        // is already playing something, and only THEN does one create the room and the other join. Neither
-        // starts from silence, so whichever device publishes last must win and the other must switch.
+        // The realistic case: both people open the app, each is already playing something, and only THEN does
+        // one create the room and the other join. Neither starts from silence, so they must still end up on
+        // one song rather than each keeping its own.
         val room = FakeRoom()
         val hostScope = CoroutineScope(Dispatchers.Default)
         val guestScope = CoroutineScope(Dispatchers.Default)
