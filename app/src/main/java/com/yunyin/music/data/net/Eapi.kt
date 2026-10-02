@@ -117,13 +117,16 @@ object Eapi {
             .joinToString("") { "%02x".format(it) }
 
     private fun encryptHex(plain: String): String {
-        val bytes = plain.toByteArray(Charsets.UTF_8)
-        // PKCS#5/PKCS#7 padding, which is what the reference's AES/ECB/PKCS5Padding produces.
-        val pad = 16 - (bytes.size % 16)
-        val padded = bytes + ByteArray(pad) { pad.toByte() }
+        // **No manual padding here** — `AES/ECB/PKCS5Padding` pads for us.
+        //
+        // Padding by hand *and* asking the cipher to do it produced a request one block too long: the extra
+        // 16 bytes survived decryption, the signature NetEase recomputes no longer matched the one in the
+        // payload, and the server answered `200` with an **empty body** (reported from the device as
+        // "响应无法解析"). The tell was the encoded length: 672 characters against the reference's 640 —
+        // exactly one AES block, which is what double padding costs.
         val cipher = Cipher.getInstance("AES/ECB/PKCS5Padding")
         cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(KEY.toByteArray(Charsets.UTF_8), "AES"))
-        return cipher.doFinal(padded).joinToString("") { "%02X".format(it) }
+        return cipher.doFinal(plain.toByteArray(Charsets.UTF_8)).joinToString("") { "%02X".format(it.toInt() and 0xFF) }
     }
 
     /** Splits a stored cookie header into its name/value pairs. */
