@@ -81,6 +81,7 @@ import com.yunyin.music.ui.screens.SearchScreen
 import com.yunyin.music.ui.screens.SettingsScreen
 import com.yunyin.music.ui.screens.SplashScreen
 import com.yunyin.music.ui.screens.TogetherSheet
+import com.yunyin.music.ui.screens.UpdateSheet
 import com.yunyin.music.ui.theme.AmllTheme
 import com.yunyin.music.ui.theme.AppTheme
 import kotlinx.coroutines.delay
@@ -168,6 +169,11 @@ class MainActivity : ComponentActivity() {
         val searchState by appViewModel.search.collectAsState()
         val collectionState by appViewModel.collection.collectAsState()
         val artistState by appViewModel.artist.collectAsState()
+
+        // Collected at the top rather than next to the sheet that uses it: Settings (which shows the
+        // "检查更新" row) is composed before the sheet, so a value read further down would not be in scope
+        // where it is first needed.
+        val updateState by container.update.state.collectAsState()
 
         var tab by remember { mutableStateOf(PlayerTab.Home) }
         var showPlayer by remember { mutableStateOf(false) }
@@ -599,6 +605,14 @@ class MainActivity : ComponentActivity() {
                             Toast.makeText(context, "崩溃日志已复制", Toast.LENGTH_SHORT).show()
                         }
                     },
+                    updateState = updateState,
+                    updateConfigured = container.update.configured,
+                    onCheckUpdate = {
+                        // An explicit tap is a request to be told, so it bypasses the once-a-day throttle
+                        // and clears a previous "skip this version" — and it reports the answer either way,
+                        // including "already current", which a silent check could not.
+                        container.update.check(force = true)
+                    },
                 )
             }
 
@@ -896,6 +910,58 @@ class MainActivity : ComponentActivity() {
                         Toast.makeText(context, "房间码已复制", Toast.LENGTH_SHORT).show()
                     },
                 )
+            }
+
+            // An automatic update check, once a day at most (see UpdateManager.autoCheckIfDue).
+            //
+            // On `LaunchedEffect(Unit)` rather than tied to the splash: the check must not be able to hold
+            // up the launch screen, and it must not delay anything a user can see. Its failures are silent
+            // by design — on a network that filters GitHub, an updater that reported an error every launch
+            // would be worse than one that quietly tries again tomorrow.
+            LaunchedEffect(Unit) {
+                container.update.autoCheckIfDue()
+            }
+
+            // What a *manual* check has to say ("已是最新版本", or why it failed). Automatic checks stay
+            // quiet, so this only ever fires for a tap the user made themselves.
+            LaunchedEffect(Unit) {
+                container.update.notice.collect { message ->
+                    if (message != null) {
+                        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                        container.update.clearNotice()
+                    }
+                }
+            }
+
+            // The update sheet. Holds the last real update through its own dismissal so the exit
+            // animation has something to run on — the same pattern the artist and collection pages use.
+            var lastUpdate by remember { mutableStateOf<com.yunyin.music.data.update.AvailableUpdate?>(null) }
+            SideEffect {
+                when (val s = updateState) {
+                    is com.yunyin.music.data.update.UpdateUiState.Available -> lastUpdate = s.update
+                    is com.yunyin.music.data.update.UpdateUiState.AvailableSkipped -> lastUpdate = s.update
+                    is com.yunyin.music.data.update.UpdateUiState.Downloading -> Unit
+                    else -> Unit
+                }
+            }
+            // Shown for anything except the idle state, so a failed download inside the sheet stays
+            // visible (with its own message and the "浏览器打开" fallback) rather than vanishing silently.
+            if (updateState !is com.yunyin.music.data.update.UpdateUiState.Idle) {
+                val shown = lastUpdate
+                if (shown != null) {
+                    UpdateSheet(
+                        state = updateState,
+                        onInstall = { container.update.downloadAndInstall(it) },
+                        onOpenPage = { update ->
+                            // Dismiss first: leaving the sheet up under the browser looks like the app is
+                            // offering the same version twice.
+                            container.update.dismiss()
+                            openUrl(update.pageUrl)
+                        },
+                        onSkip = { container.update.skip(it) },
+                        onDismiss = { container.update.dismiss() },
+                    )
+                }
             }
 
             // ------------------------------------------------ launch screen (topmost)

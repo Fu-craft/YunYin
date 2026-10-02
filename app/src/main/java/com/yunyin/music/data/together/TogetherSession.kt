@@ -305,16 +305,18 @@ class TogetherSession(
         loop = scope.launch {
             while (isActive) {
                 val code = _state.value.code ?: break
-                val mine = localPlayback()
-                val hasSong = mine != null && mine.songId > 0L
-                val result = if (hasSong) {
+                // `active` rather than a separate boolean so the null check and the non-empty check are one
+                // expression: it lets both uses below use a smart-cast value instead of `mine!!`, which was
+                // an assertion the compiler could already prove.
+                val active = localPlayback()?.takeIf { it.songId > 0L }
+                val result = if (active != null) {
                     transport.postState(
                         code = code,
                         uid = uid,
                         name = name,
-                        songId = mine!!.songId,
-                        positionMs = mine.positionMs,
-                        playing = mine.playing,
+                        songId = active.songId,
+                        positionMs = active.positionMs,
+                        playing = active.playing,
                         seq = seq,
                     )
                 } else {
@@ -327,11 +329,11 @@ class TogetherSession(
                         // against it (Lamport: the new value must exceed everything we have seen).
                         peers.maxOfOrNull { it.seq }?.let { peerSeqSeen = maxOf(peerSeqSeen, it) }
                         _state.value = _state.value.copy(peers = peers, error = null)
-                        apply(peers, mine)
+                        apply(peers, active)
                         // Published *after* the read, deliberately. Publishing first would let a joiner
                         // overwrite the room's command with its own track before it had ever seen the
                         // host's — the joiner would look like it had hijacked the session.
-                        if (hasSong) publishLocalAction(mine!!)
+                        if (active != null) publishLocalAction(active)
                         awaitNextPoll()
                     }
                     // A room that vanished is terminal: say so and stop rather than retrying forever.

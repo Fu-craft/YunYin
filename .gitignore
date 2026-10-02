@@ -40,6 +40,10 @@ server/cloudflare/node_modules/
 tools/
 plans/
 
+# Where `tools/publish_release.py` stages the APK it is about to attach to a release. It is a copy of a
+# build output, so it is neither source nor something to keep.
+dist/
+
 # Development log: the round-by-round fix history from before publication. It contains
 # the API endpoint, quotes from the development conversation, and this machine's paths
 # and device model, so it is kept local only.

@@ -35,8 +35,8 @@ android {
         // versionCode must increase for Android to accept a build as an update over a previous one;
         // versionName is what the user sees. Bumped together — a version name change with an unchanged
         // code would install as a downgrade and be rejected.
-        versionCode = 22
-        versionName = "3.8.1"
+        versionCode = 23
+        versionName = "3.9.0"
         vectorDrawables { useSupportLibrary = true }
 
         // The API endpoint is injected at build time rather than baked into the sources, so the
@@ -96,6 +96,21 @@ android {
             "String",
             "TOGETHER_MQTT_TLS",
             "\"${localProps.getProperty("together.mqtt.tls") ?: ""}\"",
+        )
+
+        // Where the update check looks. `owner/repo`, injected rather than hardcoded so each build points
+        // at the repository that actually publishes *its* updates: a fork that hardcoded the upstream
+        // coordinates would offer users builds signed by someone else. Blank disables the feature, and the
+        // Settings row then explains that rather than failing a check.
+        buildConfigField(
+            "String",
+            "UPDATE_REPO_OWNER",
+            "\"${localProps.getProperty("update.repo.owner") ?: ""}\"",
+        )
+        buildConfigField(
+            "String",
+            "UPDATE_REPO_NAME",
+            "\"${localProps.getProperty("update.repo.name") ?: ""}\"",
         )
     }
 
@@ -201,4 +216,8 @@ dependencies {
     implementation(libs.backdrop)
 
     testImplementation("junit:junit:4.13.2")
+    // A real `org.json` for unit tests. The main source set gets the Android SDK's copy, but the unit-test
+    // classpath's is a stub whose methods throw "not mocked", so any test touching JSONObject would fail
+    // for a reason that has nothing to do with the code under test. Test-only: it does not enter the APK.
+    testImplementation("org.json:json:20240303")
 }

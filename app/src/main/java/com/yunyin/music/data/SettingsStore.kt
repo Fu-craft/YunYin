@@ -89,6 +89,29 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_SEAMLESS_TRANSITION, true)
         set(value) = prefs.edit().putBoolean(KEY_SEAMLESS_TRANSITION, value).apply()
 
+    // ------------------------------------------------------------ updates
+
+    /**
+     * When the update check last ran, in wall-clock milliseconds; 0 when it never has.
+     *
+     * Persisted rather than held in memory because the point of the record is to survive the restarts that
+     * a "once a day" rule is about. GitHub's anonymous API allows 60 requests per hour per address, so an
+     * automatic check on every launch would be both wasteful and eventually refused.
+     */
+    var updateLastCheckMs: Long
+        get() = prefs.getLong(KEY_UPDATE_LAST_CHECK, 0L)
+        set(value) = prefs.edit().putLong(KEY_UPDATE_LAST_CHECK, value).apply()
+
+    /**
+     * The version the user chose to skip, so a dismissed update is not re-offered.
+     *
+     * Only the *version name*, not a flag: once a newer one is published, the comparison stops matching and
+     * the offer returns by itself.
+     */
+    var updateSkippedVersion: String
+        get() = prefs.getString(KEY_UPDATE_SKIPPED, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_UPDATE_SKIPPED, value).apply()
+
     // ------------------------------------------------------------ profile
 
     /**
@@ -242,5 +265,7 @@ class SettingsStore(context: Context) {
         private const val KEY_USE_NETEASE_AVATAR = "use_netease_avatar"
         private const val KEY_CUSTOM_AVATAR = "custom_avatar_file"
         private const val KEY_CUSTOM_BACKGROUND = "custom_background_file"
+        private const val KEY_UPDATE_LAST_CHECK = "update_last_check"
+        private const val KEY_UPDATE_SKIPPED = "update_skipped_version"
     }
 }

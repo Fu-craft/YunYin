@@ -7,6 +7,14 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!--
+      Lets the app hand a downloaded APK to the system installer.
+
+      This is the only way an app without an app store can update itself, and it does NOT grant silent
+      installs: Android still shows its own confirmation dialog, and the user must additionally allow
+      "install unknown apps" for this app the first time. The permission permits *asking*, nothing more.
+    -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
         android:name=".YunYinApp"
@@ -38,6 +46,23 @@
                 <action android:name="androidx.media3.session.MediaSessionService" />
             </intent-filter>
         </service>
+
+        <!--
+          Shares a downloaded APK with the system installer.
+
+          `grantUriPermissions` with no `exported` means only URIs this app explicitly hands out are
+          readable, and `update_file_paths.xml` narrows those to the `updates/` cache directory. Without
+          the scoped paths this provider would be a way for any app to read the whole cache.
+        -->
+        <provider
+            android:name=".data.update.UpdateFileProvider"
+            android:authorities="${applicationId}.updates"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/update_file_paths" />
+        </provider>
 
         <!--
           词幕 (Lyricon) provider registration.

@@ -21,6 +21,7 @@ import com.yunyin.music.data.together.OfficialTogetherTransport
 import com.yunyin.music.data.together.RelayTransport
 import com.yunyin.music.data.together.TogetherSession
 import com.yunyin.music.data.together.TogetherTransport
+import com.yunyin.music.data.update.UpdateManager
 import com.yunyin.music.playback.PlayerController
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -71,6 +72,34 @@ class AppContainer(val appContext: Context) {
 
     /** Flyme's status-bar lyric, via a resident notification ticker (Flyme-family ROMs only). */
     val tickerLyrics: FlymeLyricNotifier by lazy { FlymeLyricNotifier(appContext) }
+
+    /**
+     * Self-update, over GitHub Releases.
+     *
+     * The "cloud" here is the project's own release page: GitHub hosts and serves the APK, so there is no
+     * server to run and nothing to pay for. The repository coordinates come from `local.properties`
+     * (`update.repo.owner` / `update.repo.name`) rather than being hardcoded, so a fork does not silently
+     * offer its users builds published by someone else; when they are blank the feature reports itself as
+     * unconfigured instead of failing a check.
+     *
+     * The scope carries an exception handler for the same reason the listen-together one does: this is
+     * long-running background work on the main dispatcher, and a network failure escaping it would be an
+     * uncaught exception on the main thread — which kills the process. An updater that can crash the app is
+     * worse than no updater, and this app has already died on launch once.
+     */
+    val update: UpdateManager by lazy {
+        val handler = CoroutineExceptionHandler { _, throwable ->
+            android.util.Log.e("YunYin/Update", "uncaught in the update scope", throwable)
+        }
+        UpdateManager(
+            context = appContext,
+            owner = BuildConfig.UPDATE_REPO_OWNER,
+            repo = BuildConfig.UPDATE_REPO_NAME,
+            currentVersion = BuildConfig.VERSION_NAME,
+            settings = settings,
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate + handler),
+        )
+    }
 
     /**
      * Listen-together room engine.

@@ -33,6 +33,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.yunyin.music.data.update.UpdateUiState
 import com.yunyin.music.ui.icons.SfIcons
 import com.yunyin.music.ui.theme.AppleShapes
 import com.yunyin.music.ui.theme.AppTheme
@@ -102,6 +103,17 @@ fun SettingsScreen(
     hasCrashLog: Boolean = false,
     /** Copies the recorded crash text to the clipboard so it can be pasted into a message. */
     onCopyCrashLog: () -> Unit = {},
+    /**
+     * The update check's state, for the "检查更新" row.
+     *
+     * A whole state rather than a boolean because the row has to say four different things — checking,
+     * current, a version is available, and a failed check — and an updater that cannot distinguish "no
+     * update" from "could not ask" is one that lies to the user about being current.
+     */
+    updateState: UpdateUiState = UpdateUiState.Idle,
+    /** Hides the row entirely in a build with no update repository configured. */
+    updateConfigured: Boolean = false,
+    onCheckUpdate: () -> Unit = {},
 ) {
     Column(
         modifier = modifier
@@ -185,6 +197,16 @@ fun SettingsScreen(
             // second source of truth for the version and drifted from the manifest the moment the
             // version was bumped.
             InfoRow(text = "版本", value = com.yunyin.music.BuildConfig.VERSION_NAME)
+            // Placed immediately under the version: "检查更新" only makes sense next to the number it
+            // compares against. Hidden when the build has no update repository, so the row cannot offer
+            // something that would immediately fail.
+            if (updateConfigured) {
+                LinkRow(
+                    text = "检查更新",
+                    value = updateRowValue(updateState),
+                    onClick = onCheckUpdate,
+                )
+            }
             InfoRow(text = "歌词", value = "AMLL 逐字歌词")
             LinkRow(text = "项目主页", value = "GitHub", onClick = onOpenProject)
             // Only shown when there *is* a recorded crash. A permanently visible row would be noise for
@@ -316,6 +338,21 @@ private fun FlymeTickerRow(
             )
         }
     }
+}
+
+/**
+ * What the "检查更新" row shows on its right-hand side.
+ *
+ * Each state gets its own wording because they are genuinely different situations, and collapsing them is
+ * how an updater ends up telling someone "已是最新" when it never managed to ask. A failed check says so,
+ * and stays tappable so the user can retry.
+ */
+private fun updateRowValue(state: UpdateUiState): String = when (state) {
+    is UpdateUiState.Idle -> "点击检查"
+    is UpdateUiState.Available -> "发现 ${state.update.versionName}"
+    is UpdateUiState.AvailableSkipped -> "有新版本 ${state.update.versionName}"
+    is UpdateUiState.Downloading -> if (state.progress in 0..100) "下载中 ${state.progress}%" else "下载中…"
+    is UpdateUiState.Failed -> "检查失败"
 }
 
 @Composable

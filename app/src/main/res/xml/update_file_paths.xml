@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  What the update FileProvider may hand out.
+
+  Scoped to the `updates/` subdirectory of the cache, not the whole cache. The narrow path is the point:
+  a content URI that can address any file in the app's cache would turn "install this update" into a way to
+  read anything the app had written there, and the scope costs nothing to restrict.
+-->
+<paths>
+    <cache-path
+        name="updates"
+        path="updates/" />
+</paths>
