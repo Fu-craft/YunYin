@@ -117,9 +117,13 @@ class OfficialTogetherTransport(
             is NetResult.Ok -> {
                 roomId = result.value.roomId
                 inviterId = result.value.inviterId
+                TogetherLog.add("CREATE ok room=${TogetherLog.short(roomId)} inviter=${inviterId}")
                 TogetherResult.Ok(result.value.roomId)
             }
-            is NetResult.Err -> TogetherResult.Failed(result.message)
+            is NetResult.Err -> {
+                TogetherLog.add("CREATE failed: ${result.message}")
+                TogetherResult.Failed(result.message)
+            }
         }
     }
 
@@ -131,25 +135,39 @@ class OfficialTogetherTransport(
      */
     override suspend fun roomInfo(code: String): TogetherResult<List<TogetherMember>> {
         val parsed = parseInvite(code) ?: return TogetherResult.Failed(INCOMPLETE_INVITE)
+        TogetherLog.add("CHECK room=${TogetherLog.short(parsed.first)} inviter=${parsed.second}")
         return when (val result = music.togetherRoomCheck(parsed.first)) {
             is NetResult.Ok ->
                 if (result.value) TogetherResult.Ok(emptyList())
-                else TogetherResult.NoRoom("这个一起听已结束或失效")
-            is NetResult.Err -> TogetherResult.Failed(result.message)
+                else {
+                    TogetherLog.add("CHECK says the room is gone")
+                    TogetherResult.NoRoom("这个一起听已结束或失效")
+                }
+            is NetResult.Err -> {
+                TogetherLog.add("CHECK failed: ${result.message}")
+                TogetherResult.Failed(result.message)
+            }
         }
     }
 
     override suspend fun join(code: String, uid: String, name: String): TogetherResult<Unit> {
-        val parsed = parseInvite(code) ?: return TogetherResult.Failed(INCOMPLETE_INVITE)
+        val parsed = parseInvite(code) ?: run {
+            TogetherLog.add("JOIN aborted: not an invite -> ${TogetherLog.short(code)}")
+            return TogetherResult.Failed(INCOMPLETE_INVITE)
+        }
         return when (val result = music.togetherAccept(parsed.first, parsed.second)) {
             is NetResult.Ok -> {
                 roomId = parsed.first
                 inviterId = parsed.second
                 membersCheckedAt = 0L
+                TogetherLog.add("JOIN ok room=${TogetherLog.short(parsed.first)} inviter=${parsed.second}")
                 TogetherResult.Ok(Unit)
             }
             // The endpoint answers "ended/expired" as a plain error; naming it helps more than the code.
-            is NetResult.Err -> TogetherResult.Failed(result.message)
+            is NetResult.Err -> {
+                TogetherLog.add("JOIN failed: ${result.message}")
+                TogetherResult.Failed(result.message)
+            }
         }
     }
 
@@ -191,10 +209,23 @@ class OfficialTogetherTransport(
         val room = roomId ?: return TogetherResult.Failed("尚未进入房间")
         val command = when (val result = music.togetherRemoteState(room)) {
             is NetResult.Ok -> result.value
-            is NetResult.Err -> return TogetherResult.Failed(result.message)
+            is NetResult.Err -> {
+                TogetherLog.add("POLL failed: ${result.message}")
+                return TogetherResult.Failed(result.message)
+            }
         }
         refreshMembers(room)
-        return TogetherResult.Ok(buildPeers(command, excludeUid))
+        val peers = buildPeers(command, excludeUid)
+        // One line per poll, because this is the whole question when sync fails: did the room report a
+        // command, whose was it, and did we decide it was ours?
+        val mine = command.userId != 0L && "$excludeUid" == "${command.userId}"
+        TogetherLog.add(
+            "POLL room=${TogetherLog.short(room)} cmd=${command.hasCommand} " +
+                "song=${command.songId} play=${command.playing} author=${command.userId}" +
+                (if (mine) " (self)" else "") +
+                " members=${members.size} peers=${peers.count { it.hasSong }}",
+        )
+        return TogetherResult.Ok(peers)
     }
 
     /**
@@ -220,8 +251,14 @@ class OfficialTogetherTransport(
             TogetherLocalAction.Pause -> "PAUSE"
         }
         return when (val result = music.togetherCommand(room, type, songId, positionMs, playing, clientSeq)) {
-            is NetResult.Ok -> TogetherResult.Ok(Unit)
-            is NetResult.Err -> TogetherResult.Failed(result.message)
+            is NetResult.Ok -> {
+                TogetherLog.add("SEND $type song=$songId pos=$positionMs play=$playing seq=$clientSeq")
+                TogetherResult.Ok(Unit)
+            }
+            is NetResult.Err -> {
+                TogetherLog.add("SEND $type FAILED: ${result.message}")
+                TogetherResult.Failed(result.message)
+            }
         }
     }
 
@@ -237,8 +274,14 @@ class OfficialTogetherTransport(
         val owner = selfUid.takeIf { it != 0L } ?: uid.toLongOrNull() ?: 0L
         if (owner == 0L) return TogetherResult.Ok(Unit)
         return when (val result = music.togetherSyncList(room, queue, owner, version)) {
-            is NetResult.Ok -> TogetherResult.Ok(Unit)
-            is NetResult.Err -> TogetherResult.Failed(result.message)
+            is NetResult.Ok -> {
+                TogetherLog.add("QUEUE ${queue.size} songs as $owner")
+                TogetherResult.Ok(Unit)
+            }
+            is NetResult.Err -> {
+                TogetherLog.add("QUEUE failed: ${result.message}")
+                TogetherResult.Failed(result.message)
+            }
         }
     }
 

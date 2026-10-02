@@ -67,6 +67,56 @@ class OfficialTogetherRulesTest {
         assertEquals(input, OfficialTogetherRules.normaliseJoinInput(input))
     }
 
+    // ---------------------------------------------------------------- the shared sentence
+
+    private val room = "6be6cda6f9b0ff91233f42baf6c79d5d_1790909976"
+
+    @Test
+    fun `the invite is found inside the sentence the app shares`() {
+        // This is what the share button actually sends. Pasting the whole sentence used to be split on the
+        // separator, handing the server "和我一起听歌吧，房间码：<id>" as the room id -- so joining failed with
+        // nothing on screen to explain it.
+        val shared = "和我一起听歌吧，房间码：$room|17583419505"
+        assertEquals("$room|17583419505", OfficialTogetherRules.extractInvite(shared))
+        assertEquals(
+            room to 17583419505L,
+            OfficialTogetherRules.parseInvite(OfficialTogetherRules.normaliseJoinInput(shared)),
+        )
+    }
+
+    @Test
+    fun `an invite on its own line still resolves`() {
+        val pasted = "我好友发来这个：\n  $room|17583419505  \n"
+        assertEquals(
+            room to 17583419505L,
+            OfficialTogetherRules.parseInvite(OfficialTogetherRules.normaliseJoinInput(pasted)),
+        )
+    }
+
+    @Test
+    fun `text with no invite is left for the separator rule`() {
+        // No match, so the old path still applies -- including its rejection of nonsense.
+        assertNull(OfficialTogetherRules.extractInvite("随便一段话"))
+        assertEquals("随便一段话", OfficialTogetherRules.normaliseJoinInput("随便一段话"))
+    }
+
+    @Test
+    fun `a bare pair still works without the sentence`() {
+        assertEquals(
+            room to 17583419505L,
+            OfficialTogetherRules.parseInvite(OfficialTogetherRules.normaliseJoinInput("$room|17583419505")),
+        )
+    }
+
+    @Test
+    fun `a space-separated pair is still folded back to the separator`() {
+        // A chat app that replaced the `|` with a space must still join.
+        assertEquals(
+            "$room|17583419505",
+            OfficialTogetherRules.normaliseJoinInput("$room 17583419505"),
+        )
+    }
+
     // ---------------------------------------------------------------- the reported position
 
     @Test

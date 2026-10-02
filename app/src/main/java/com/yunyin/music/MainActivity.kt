@@ -617,6 +617,15 @@ class MainActivity : ComponentActivity() {
                             Toast.makeText(context, "崩溃日志已复制", Toast.LENGTH_SHORT).show()
                         }
                     },
+                    onCopyTogetherLog = {
+                        val report = com.yunyin.music.data.together.TogetherLog.report()
+                        val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+                            as android.content.ClipboardManager
+                        clipboard.setPrimaryClip(
+                            android.content.ClipData.newPlainText("一起听日志", report),
+                        )
+                        Toast.makeText(context, "一起听日志已复制", Toast.LENGTH_SHORT).show()
+                    },
                     updateState = updateState,
                     updateConfigured = container.update.configured,
                     onCheckUpdate = {

@@ -314,6 +314,32 @@ class TogetherSession(
         lastPublishedSongId = 0L
         lastPublishedPlaying = false
         lastPublishedQueue = emptyList()
+        TogetherLog.add("ROOM start uid=$uid name=$name")
+        // Announce what is already playing **before** the first poll.
+        //
+        // Without this the room only learns about this device on the first tick that runs
+        // `publishLocalAction`, which happens after a read — so the peer sees a member with no song for at
+        // least one interval, and if the very first read fails (a dropped exchange) it may see one for
+        // much longer. That is the reported "join succeeded but nothing follows": the room had no command
+        // to follow because this side had not published one yet.
+        //
+        // The "already published" fields are set **here, synchronously**, not inside the launched block:
+        // that block suspends on the network, and the loop below starts before it resumes, so a later
+        // assignment would let the first tick publish the same GOTO a second time.
+        val opening = localPlayback()?.takeIf { it.songId > 0L }
+        if (opening != null) {
+            lastPublishedSongId = opening.songId
+            lastPublishedPlaying = opening.playing
+            scope.launch {
+                transport.publishAction(
+                    action = TogetherLocalAction.Goto,
+                    songId = opening.songId,
+                    positionMs = opening.positionMs,
+                    playing = opening.playing,
+                    clientSeq = seq,
+                )
+            }
+        }
         loop = scope.launch {
             while (isActive) {
                 val code = _state.value.code ?: break
@@ -449,6 +475,7 @@ class TogetherSession(
             adoptedPeerSeq = peer.seq
             lastAppliedAt = System.currentTimeMillis()
             seq = TogetherSync.nextSeq(seq, peer.seq)
+            TogetherLog.add("APPLY adopt song=${peer.songId} pos=${peer.positionMs} (nothing playing locally)")
             applyAction(SyncAction.PlaySong(peer.songId, peer.positionMs))
             return
         }
@@ -466,6 +493,7 @@ class TogetherSession(
         // next comparison would still see us as the stale side and we would re-apply the same
         // correction on every poll.
         seq = TogetherSync.nextSeq(seq, peer.seq)
+        TogetherLog.add("APPLY $action (local song=${mine.songId} pos=${mine.positionMs} play=${mine.playing})")
         applyAction(action)
     }
 

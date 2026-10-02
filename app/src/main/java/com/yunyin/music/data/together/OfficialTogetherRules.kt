@@ -33,6 +33,34 @@ object OfficialTogetherRules {
 
     fun buildInvite(roomId: String, inviterId: Long): String = "$roomId$INVITE_SEP$inviterId"
 
+    /**
+     * The invite inside whatever the peer actually sent, or null when there is none.
+     *
+     * ## Why this is needed, and what it fixes
+     *
+     * The share action hands a whole sentence to the share sheet — "和我一起听歌吧，房间码：<roomId>|<inviterId>"
+     * — because that is what reads well in a chat. The peer then pastes **that sentence** into the join
+     * field, and the parser split it on `|`: the first half became "和我一起听歌吧，房间码：<roomId>", which is
+     * not a room id, so `/listentogether/accept` was called with a room that does not exist. Joining failed
+     * for a reason nothing in the UI could show.
+     *
+     * So the invite is *found* in the text rather than assumed to be the whole of it. The shape it looks for
+     * is the one the server actually issues: 32 hex characters, an underscore, the create time in seconds,
+     * then the inviter's numeric id after the separator —
+     * `6be6cda6f9b0ff91233f42baf6c79d5d_1790909976|17583419505`. Matching that exactly means a sentence
+     * around it, a line break, or a chat app's added punctuation all still resolve to the same pair.
+     */
+    fun extractInvite(text: String): String? =
+        INVITE_PATTERN.find(text)?.value
+
+    /**
+     * The server's room id, from a room's own command or invite.
+     *
+     * Exposed because the same id has to be recognised in more than one place, and a second hand-written
+     * copy of the pattern is how the two would drift.
+     */
+    val INVITE_PATTERN = Regex("""[0-9a-fA-F]{16,}_\d{6,}\|\d{5,}""")
+
     /** The two halves of an invite, or null when the input is not one. */
     fun parseInvite(code: String): Pair<String, Long>? {
         val parts = code.trim().split(INVITE_SEP)
@@ -51,8 +79,12 @@ object OfficialTogetherRules {
      * `|` into a space, a colon, or a newline, and any of those arriving as the pair should still join.
      * A `-` is deliberately not accepted as a separator, because a hyphen is not a legal character in a
      * room id and a wrong split would produce a room that simply does not exist.
+     *
+     * A complete invite embedded in a sentence is extracted first (see [extractInvite]); only text with no
+     * invite in it is treated as a bare pair.
      */
     fun normaliseJoinInput(input: String): String {
+        extractInvite(input)?.let { return it }
         val trimmed = input.trim()
         if (trimmed.contains(INVITE_SEP)) return trimmed
         val parts = trimmed.split(' ', ':', '\uFF1A', '\n', '\r', '\t')

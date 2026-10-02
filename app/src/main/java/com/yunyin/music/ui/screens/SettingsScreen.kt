@@ -105,6 +105,13 @@ fun SettingsScreen(
     /** Copies the recorded crash text to the clipboard so it can be pasted into a message. */
     onCopyCrashLog: () -> Unit = {},
     /**
+     * Copies the listen-together engine's recent activity.
+     *
+     * Needed because the feature cannot be exercised without two accounts: when a room will not join or
+     * will not sync, the only observable is what the app recorded doing.
+     */
+    onCopyTogetherLog: () -> Unit = {},
+    /**
      * The update check's state, for the "检查更新" row.
      *
      * A whole state rather than a boolean because the row has to say four different things — checking,
@@ -229,6 +236,11 @@ fun SettingsScreen(
             if (hasCrashLog) {
                 ActionRow(text = "复制上次崩溃日志", onClick = onCopyCrashLog)
             }
+            // The listen-together log. Shown always rather than conditionally: a room that failed to join
+            // or failed to sync leaves no crash and no visible error, so the user needs a way to hand over
+            // what the engine actually did. (Two accounts are required to reproduce it, which is why it
+            // cannot be diagnosed from the outside.)
+            ActionRow(text = "复制一起听日志", onClick = onCopyTogetherLog)
         }
     }
 }
