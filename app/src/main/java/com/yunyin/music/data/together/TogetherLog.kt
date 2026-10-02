@@ -106,4 +106,18 @@ object TogetherLog {
         id.length <= 12 -> id
         else -> id.take(8) + "…" + id.takeLast(4)
     }
+
+    /**
+     * A raw server response, trimmed.
+     *
+     * Logged because the interesting question — "why does a command we sent never come back from the read
+     * path?" — cannot be answered from the parsed result alone. The body tells apart an empty `data: {}`,
+     * an error, and a command authored by the *other* device; the client's own summary cannot.
+     *
+     * Trimmed hard: these bodies are diagnostics, not data, and the log has a fixed budget.
+     */
+    fun raw(label: String, body: String?) {
+        val text = (body ?: "null").replace('\n', ' ').trim()
+        add("RAW $label ${if (text.length > 220) text.take(220) + "…" else text}")
+    }
 }

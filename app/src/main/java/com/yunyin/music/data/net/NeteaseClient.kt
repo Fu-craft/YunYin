@@ -12,6 +12,7 @@ import com.yunyin.music.core.TogetherStatus
 import com.yunyin.music.core.TogetherUser
 import com.yunyin.music.core.Track
 import com.yunyin.music.core.map
+import com.yunyin.music.data.together.TogetherLog
 import com.yunyin.music.data.SettingsStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -664,6 +665,9 @@ class NeteaseClient(private val settings: SettingsStore) {
             ?.optJSONArray("result")
             ?.let { arr -> (0 until arr.length()).mapNotNull { arr.optLongOrNull(it) } }
             .orEmpty()
+        // The raw read-back, because "a command we sent never comes back" cannot be told apart from
+        // "the server returned an empty data" without it.
+        TogetherLog.raw("read", data?.toString())
         TogetherRemoteState(
             userId = command?.optLong("userId") ?: 0L,
             songId = command?.optString("targetSongId")?.toLongOrNull() ?: 0L,
@@ -694,7 +698,12 @@ class NeteaseClient(private val settings: SettingsStore) {
             inRoom = data?.optBoolean("inRoom") == true,
             roomId = info?.optString("roomId").orEmpty(),
             members = members,
-        )
+        ).also {
+            // The members the server reports, and the exact ids it uses: if `userId` here is not in the
+            // same id space as the account uid, the client's "drop my own entry" filter silently matches
+            // nothing and every device sees a phantom member.
+            TogetherLog.raw("status", "inRoom=${data?.optBoolean("inRoom")} users=$users")
+        }
     }
 
     /**
@@ -723,7 +732,7 @@ class NeteaseClient(private val settings: SettingsStore) {
             "clientSeq" to "$clientSeq",
             "timestamp" to System.currentTimeMillis().toString(),
         ),
-    ).map { }
+    ).map { json -> TogetherLog.raw("play/command", json.toString()) }
 
     /** The keep-alive that keeps this member present in the room. */
     suspend fun togetherHeartbeat(
@@ -740,7 +749,7 @@ class NeteaseClient(private val settings: SettingsStore) {
             "progress" to "$progressMs",
             "timestamp" to System.currentTimeMillis().toString(),
         ),
-    ).map { }
+    ).map { json -> TogetherLog.raw("heatbeat", json.toString()) }
 
     /** Publishes the queue, so a joiner receives the list and not just the current song. */
     suspend fun togetherSyncList(
