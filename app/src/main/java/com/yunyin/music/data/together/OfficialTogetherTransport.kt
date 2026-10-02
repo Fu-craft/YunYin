@@ -484,6 +484,9 @@ class OfficialTogetherTransport(
                 updatedAt = command.serverSeq,
                 seq = command.serverSeq,
                 avatarUrl = authorAvatar,
+                // Carried through so the sync rule can act on *what the peer did* (start, stop, seek,
+                // change track) instead of inferring it from a position comparison — see [TogetherSync].
+                commandType = command.commandType,
             )
         }
         members.forEach { member ->

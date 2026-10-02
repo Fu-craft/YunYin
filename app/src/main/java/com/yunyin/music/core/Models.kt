@@ -85,6 +85,16 @@ data class TogetherRemoteState(
     val positionMs: Long = 0L,
     val playing: Boolean = false,
     val serverSeq: Long = 0L,
+    /**
+     * Which command this is: `GOTO` / `NEXT` / `PREV` / `PROGRESS` / `PLAY` / `PAUSE`.
+     *
+     * Not decoration — it is how the room says *what happened*, and it is the only trustworthy source
+     * for the play state when the command changes the track. The official client sends a `GOTO` whose
+     * `playStatus` can lag by a frame, and it is the type (`GOTO`/`NEXT`/`PREV`/`PLAY` all mean
+     * "playing") that has to decide. Reading the flag alone made each device announce the opposite of
+     * what the other had just done, and the two then took turns pausing each other.
+     */
+    val commandType: String = "",
     /** The room's queue, as published through `sync/list/command`. */
     val queue: List<Long> = emptyList(),
 ) {

@@ -378,10 +378,18 @@ class TogetherSession(
                 //      player is mid-change, in which case re-baseline instead (see [localTransitioning]).
                 val before = localPlayback()?.takeIf { it.songId > 0L }
                 if (before != null && localTransitioning()) {
-                    // Between two states: do not report, just accept whatever the player ends up doing.
+                    // Between two states: publishing now would name the half-applied track, so only the
+                    // baseline moves.
+                    //
+                    // The claimed intent ([pendingAction]) is deliberately **kept**. It used to be cleared
+                    // here, and that made a next/previous invisible to the peer: the tap claims a `Goto`,
+                    // the player starts loading (so `localTransitioning()` is true for the next tick or
+                    // two), the claim was thrown away, and once the player settled there was nothing left
+                    // to announce — the track had changed but nobody was told. Keeping it means the
+                    // command goes out on the first tick after the player settles, carrying the song it
+                    // actually landed on. Reported as "他那边无法进行上一首下一首的操作".
                     lastPublishedSongId = before.songId
                     lastPublishedPlaying = before.playing
-                    pendingAction = null
                 } else if (before != null) {
                     publishLocalAction(before)
                 }

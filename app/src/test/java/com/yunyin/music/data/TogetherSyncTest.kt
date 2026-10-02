@@ -252,6 +252,129 @@ class TogetherSyncTest {
         )
     }
 
+    // ---------------------------------------------------------------- command kinds
+    //
+    // The official protocol says *what the peer did* (`GOTO`/`NEXT`/`PREV`/`PROGRESS`/`PLAY`/`PAUSE`), and
+    // the rule acts on that rather than inferring it. Inferring made the two devices invert each other:
+    // a pause arrived as a position mismatch, was read as "seek", and a seek never stops the music — so the
+    // receiver kept playing ("我暂停他那边还在播") and the mirror case left it paused ("我播放他那边暂停").
+
+    private fun typed(
+        type: String,
+        songId: Long = 200L,
+        positionMs: Long = 30_000L,
+        playing: Boolean = true,
+    ) = TogetherPeerState(
+        uid = "peer",
+        name = "听众",
+        songId = songId,
+        positionMs = positionMs,
+        playing = playing,
+        updatedAt = 0L,
+        seq = 1L,
+        commandType = type,
+    )
+
+    @Test
+    fun `a PAUSE pauses even when the positions are far apart`() {
+        // The inversion's exact shape: positions differ by 10s, which the legacy rule would answer with a
+        // seek. The command says PAUSE, so it must be a pause regardless of the gap.
+        val action = TogetherSync.decide(
+            local = LocalPlayback(songId = 200L, positionMs = 0L, playing = true),
+            peer = typed("PAUSE", positionMs = 10_000L, playing = false),
+            peerIsNew = true,
+            lastAppliedAt = 0L,
+            now = 10_000L,
+        )
+        assertEquals(SyncAction.Pause, action)
+    }
+
+    @Test
+    fun `a PLAY plays even when the positions are far apart`() {
+        val action = TogetherSync.decide(
+            local = LocalPlayback(songId = 200L, positionMs = 0L, playing = false),
+            peer = typed("PLAY", positionMs = 10_000L, playing = true),
+            peerIsNew = true,
+            lastAppliedAt = 0L,
+            now = 10_000L,
+        )
+        assertEquals(SyncAction.Play, action)
+    }
+
+    @Test
+    fun `a PROGRESS seeks and leaves the play state alone`() {
+        val action = TogetherSync.decide(
+            local = LocalPlayback(songId = 200L, positionMs = 30_000L, playing = true),
+            peer = typed("PROGRESS", positionMs = 45_000L, playing = true),
+            peerIsNew = true,
+            lastAppliedAt = 0L,
+            now = 10_000L,
+        )
+        assertEquals(SyncAction.Seek(200L, 45_000L), action)
+    }
+
+    @Test
+    fun `a GOTO to another track loads it, and to the same track just starts it`() {
+        // Different track: load and start it.
+        assertEquals(
+            SyncAction.PlaySong(300L, 0L),
+            TogetherSync.decide(
+                LocalPlayback(songId = 200L, positionMs = 30_000L, playing = true),
+                typed("GOTO", songId = 300L, positionMs = 0L),
+                peerIsNew = true, lastAppliedAt = 0L, now = 10_000L,
+            ),
+        )
+        // Same track, but we are paused: the peer restarted it, so start — do not reload.
+        assertEquals(
+            SyncAction.Play,
+            TogetherSync.decide(
+                LocalPlayback(songId = 200L, positionMs = 0L, playing = false),
+                typed("GOTO", songId = 200L, positionMs = 0L),
+                peerIsNew = true, lastAppliedAt = 0L, now = 10_000L,
+            ),
+        )
+    }
+
+    @Test
+    fun `NEXT and PREV behave as a track change`() {
+        // The member side of "他那边无法进行上一首下一首的操作": a next/previous must load the target track,
+        // not be treated as a position nudge.
+        listOf("NEXT", "PREV").forEach { type ->
+            assertEquals(
+                type,
+                SyncAction.PlaySong(300L, 0L),
+                TogetherSync.decide(
+                    LocalPlayback(songId = 200L, positionMs = 30_000L, playing = true),
+                    typed(type, songId = 300L, positionMs = 0L),
+                    peerIsNew = true, lastAppliedAt = 0L, now = 10_000L,
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun `a repeated typed command is still never applied`() {
+        // The anti-ping-pong rule holds for typed commands too: an old PAUSE must not keep re-pausing us.
+        assertEquals(
+            SyncAction.None,
+            TogetherSync.decide(
+                LocalPlayback(songId = 200L, positionMs = 0L, playing = false),
+                typed("PAUSE", positionMs = 10_000L, playing = false),
+                peerIsNew = false, lastAppliedAt = 1_000L, now = 10_000L,
+            ),
+        )
+    }
+
+    @Test
+    fun `the identity distinguishes a PLAY from a PROGRESS on the same track`() {
+        // Both can carry the same song and position, but only one starts the music — so they are different
+        // commands and must not collapse into one identity.
+        assertNotEquals(
+            TogetherSync.peerIdentity(typed("PLAY")),
+            TogetherSync.peerIdentity(typed("PROGRESS")),
+        )
+    }
+
     // ---------------------------------------------------------------- command identity
 
     private val base = peer(songId = 200L, positionMs = 30_000L, playing = true)

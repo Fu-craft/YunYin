@@ -48,6 +48,15 @@ class TogetherTwoDeviceTest {
         var positionMs = 0L
         var playing = false
 
+        /**
+         * The kind of the current command, as the official protocol reports it.
+         *
+         * Modelled because it is load-bearing: the room does not just say "this is my position", it says
+         * *what happened* (`GOTO`, `PLAY`, `PAUSE`, `PROGRESS`), and the receiver acts on that. A fake that
+         * dropped it would silently test the legacy comparison instead of the real rule.
+         */
+        var commandType = ""
+
         /** Server-side ordering. A large epoch-like start, matching the real `serverSeq`. */
         var seq = 1_700_000_000_000L
 
@@ -108,6 +117,7 @@ class TogetherTwoDeviceTest {
                         playing = room.playing,
                         updatedAt = room.seq,
                         seq = room.seq,
+                        commandType = room.commandType,
                     )
                 } else {
                     TogetherPeerState(other, other, 0L, 0L, false, 0L, 0L)
@@ -127,6 +137,13 @@ class TogetherTwoDeviceTest {
             room.songId = songId
             room.positionMs = positionMs
             room.playing = playing
+            // The wire type, as the real transport derives it from the action.
+            room.commandType = when (action) {
+                TogetherLocalAction.Goto -> "GOTO"
+                TogetherLocalAction.Seek -> "PROGRESS"
+                TogetherLocalAction.Play -> "PLAY"
+                TogetherLocalAction.Pause -> "PAUSE"
+            }
             room.seq += 1
             room.publishes++
             return TogetherResult.Ok(Unit)
@@ -149,10 +166,20 @@ class TogetherTwoDeviceTest {
         var positionMs = 0L
         var playing = false
 
+        /**
+         * Whether this device's player is between tracks (loading/buffering).
+         *
+         * Real players report this for a second or two after `next()`, and the session is required not to
+         * publish during it. Exposed so a test can hold the room in that state and prove a claimed track
+         * change still goes out afterwards.
+         */
+        var transitioning = false
+
         init {
             session.localPlayback = {
                 if (songId > 0L) LocalPlayback(songId, positionMs, playing) else null
             }
+            session.localTransitioning = { transitioning }
             session.applyAction = { action ->
                 applied += action
                 // Apply it, as the real host does through the player, so the loop can converge.
@@ -232,6 +259,88 @@ class TogetherTwoDeviceTest {
             delay(400)
             assertEquals("the host must stop re-correcting", hostSettled, host.applied.size)
             assertEquals("the guest must stop re-correcting", guestSettled, guest.applied.size)
+        } finally {
+            hostScope.cancel()
+            guestScope.cancel()
+        }
+    }
+
+    @Test
+    fun `a pause is followed even when the two positions have drifted apart`() = runBlocking {
+        // The reported inversion, as a two-device test. When only positions were compared, a mismatch was
+        // read as "seek" — and a seek moves the needle without ever stopping the music. So the receiving
+        // device kept playing while the sender sat paused, and the mirror image happened on a resume. The
+        // command's own kind (`PAUSE`) is what has to decide, not the gap between the two positions.
+        val room = FakeRoom()
+        val hostScope = CoroutineScope(Dispatchers.Default)
+        val guestScope = CoroutineScope(Dispatchers.Default)
+        try {
+            val host = Device("host", room, hostScope)
+            val guest = Device("guest", room, guestScope)
+
+            host.session.createRoom(uid = "host", name = "房主")
+            assertTrue(waitUntil { host.session.state.value.inRoom })
+            guest.session.joinRoom(code = "ROOM", uid = "guest", name = "对方")
+            assertTrue(waitUntil { guest.session.state.value.inRoom })
+
+            host.play(111L, atMs = 0L)
+            assertTrue(waitUntil { guest.songId == 111L })
+
+            // Deliberately far apart — ten seconds, five times the drift tolerance.
+            guest.positionMs = 10_000L
+            guest.pause()
+
+            assertTrue(
+                "the host must follow the pause, not seek: ${host.applied}",
+                waitUntil { host.applied.any { it is SyncAction.Pause } },
+            )
+            assertTrue("the host must end up paused", !host.playing)
+            assertTrue(
+                "a pause must never arrive as a seek: ${host.applied}",
+                host.applied.none { it is SyncAction.Seek },
+            )
+        } finally {
+            hostScope.cancel()
+            guestScope.cancel()
+        }
+    }
+
+    @Test
+    fun `a next pressed while the player is loading still reaches the peer`() = runBlocking {
+        // The second half of "他那边无法进行上一首下一首的操作". A next/previous is claimed the instant it is
+        // tapped, but the player then reports "between tracks" for a second or two. The claim used to be
+        // discarded on those ticks, and because the baseline had also moved onto the new track there was
+        // nothing left for the unannounced-change rule to notice — so the track changed locally and the peer
+        // was never told. Keeping the claim means it goes out as soon as the player settles.
+        val room = FakeRoom()
+        val hostScope = CoroutineScope(Dispatchers.Default)
+        val guestScope = CoroutineScope(Dispatchers.Default)
+        try {
+            val host = Device("host", room, hostScope)
+            val guest = Device("guest", room, guestScope)
+
+            host.session.createRoom(uid = "host", name = "房主")
+            assertTrue(waitUntil { host.session.state.value.inRoom })
+            guest.session.joinRoom(code = "ROOM", uid = "guest", name = "对方")
+            assertTrue(waitUntil { guest.session.state.value.inRoom })
+
+            host.play(111L, atMs = 0L)
+            assertTrue(waitUntil { guest.songId == 111L })
+
+            // The host taps next: the player is now on 222 but loading, which is what the session must not
+            // publish. Several ticks pass in that state.
+            host.transitioning = true
+            host.play(222L, atMs = 0L)
+            delay(250)
+
+            // The player settles.
+            host.transitioning = false
+
+            assertTrue(
+                "the peer must adopt the track the host switched to: guest=${guest.songId}",
+                waitUntil { guest.songId == 222L },
+            )
+            assertEquals("and since it was a start command, playing", true, guest.playing)
         } finally {
             hostScope.cancel()
             guestScope.cancel()

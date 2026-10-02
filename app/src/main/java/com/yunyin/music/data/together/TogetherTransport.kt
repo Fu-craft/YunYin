@@ -28,6 +28,17 @@ data class TogetherPeerState(
      * `/listentogether/status`, which returns `roomUsers[].avatarUrl`.
      */
     val avatarUrl: String? = null,
+    /**
+     * The kind of command this is (`GOTO` / `NEXT` / `PREV` / `PROGRESS` / `PLAY` / `PAUSE`), where the
+     * transport reports one.
+     *
+     * Empty on the hand-rolled transports, which publish a whole state rather than a named action — the
+     * sync rule then falls back to comparing positions and play state. The official transport fills it,
+     * and the rule *acts on it*, because a bare "here is my position" cannot say whether the other side
+     * pressed play or merely drifted: inferring a pause from a position mismatch is what made each device
+     * announce the opposite of what the other had just done.
+     */
+    val commandType: String = "",
 ) {
     val hasSong: Boolean get() = songId > 0L
 }
