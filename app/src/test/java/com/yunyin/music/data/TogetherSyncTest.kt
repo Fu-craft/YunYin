@@ -119,16 +119,32 @@ class TogetherSyncTest {
     }
 
     @Test
-    fun `a repeated command is followed for drift once the window passes`() {
-        val action = TogetherSync.decide(
-            local = LocalPlayback(songId = 300L, positionMs = 30_000L, playing = true),
-            peer = peer(songId = 300L, positionMs = 34_000L, seq = 3L),
-            peerIsNew = false,
-            lastAppliedAt = 1_000L,
-            now = 10_000L,
-            settleMs = 6_000L,
+    fun `a repeated command is never applied, however out of step the position is`() {
+        // The rule that stops the two devices fighting: only a *new* command moves the player. With a
+        // periodic drift branch here, "they paused and I seek back to playing" and "I play and they pull me
+        // back to paused" chase each other forever — every correction reads as a difference worth
+        // correcting. The reference has no such branch, and this pins its absence.
+        assertEquals(
+            SyncAction.None,
+            TogetherSync.decide(
+                local = LocalPlayback(songId = 300L, positionMs = 30_000L, playing = true),
+                peer = peer(songId = 300L, positionMs = 34_000L, seq = 3L),
+                peerIsNew = false,
+                lastAppliedAt = 1_000L,
+                now = 10_000L,
+            ),
         )
-        assertEquals(SyncAction.Seek(300L, 34_000L), action)
+        // Even the play state: a repeated command must not flip us.
+        assertEquals(
+            SyncAction.None,
+            TogetherSync.decide(
+                local = LocalPlayback(songId = 300L, positionMs = 30_000L, playing = true),
+                peer = peer(songId = 300L, positionMs = 30_000L, playing = false, seq = 3L),
+                peerIsNew = false,
+                lastAppliedAt = 1_000L,
+                now = 10_000L,
+            ),
+        )
     }
 
     @Test

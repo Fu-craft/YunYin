@@ -187,6 +187,13 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
         // The room publishes this device's queue once when a session starts, so the server side of the room
         // is fully set up rather than only half of it (see TogetherSession.localQueue).
         together.localQueue = { container.player.state.value.queue.map { it.id } }
+        // While the player is loading or buffering it is between two states, and reporting then announces a
+        // half-applied value as if the user had done it — the echo that made two devices overwrite each
+        // other. Ported from the reference's `transitioning` guard.
+        together.localTransitioning = {
+            val playback = container.player.state.value
+            playback.isBuffering
+        }
     }
 
     /**

@@ -98,21 +98,18 @@ object TogetherSync {
     ): SyncAction {
         // Nobody to follow.
         if (peer == null || !peer.hasSong) return SyncAction.None
+        // Nothing has changed since we last acted on this command: leave the player alone.
+        if (!peerIsNew) return SyncAction.None
 
-        // The peer acted: follow, including inside the settle window. An explicit action is not drift, and
-        // suppressing it would make the other person's next/previous look broken.
-        if (peerIsNew) return followPeer(local, peer, driftToleranceMs)
-
-        // The same command as last time: neither side has acted, so this is the continuous drift
-        // correction. Rate-limit it, or the two devices would seek at each other.
-        if (lastAppliedAt != 0L && now - lastAppliedAt < settleMs) return SyncAction.None
-        // Never yank a track we changed locally. (The identity includes the song, so a peer on a different
-        // song is always a *new* command and handled above; this is only a guard for a stale report.)
-        if (peer.songId != local.songId) return SyncAction.None
-        if (kotlin.math.abs(peer.positionMs - local.positionMs) > driftToleranceMs) {
-            return SyncAction.Seek(peer.songId, peer.positionMs)
-        }
-        return SyncAction.None
+        // The peer acted: follow it.
+        //
+        // **Only a new command is applied — never a periodic re-assertion of the same one.** That is the
+        // reference implementation's rule, and dropping it is what made the two devices fight: with a drift
+        // branch here, "they paused, I seek back to playing" and "I play, they pull me back to paused" chase
+        // each other forever, because each correction looks like a difference worth correcting. The
+        // reference has no such branch; the two devices stay aligned because they both follow the same
+        // commands, not because they keep nudging each other.
+        return followPeer(local, peer, driftToleranceMs)
     }
 
     /** What it takes to match [peer]: adopt its track, seek to it, or match its play state. */

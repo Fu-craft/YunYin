@@ -116,6 +116,19 @@ class TogetherSession(
      */
     var localQueue: () -> List<Long> = { emptyList() }
 
+    /**
+     * Whether the player is mid-change (loading a track, buffering).
+     *
+     * Ports the reference's `snapshot.transitioning`. While this is true the room must **not** report what is
+     * playing: the player is between two states, so anything read now is a half-applied value that would be
+     * announced as if the user had done it. The reference handles this with `awaitingTransition`, which
+     * suppresses one report and re-baselines afterwards; the same is done here.
+     *
+     * Without it, adopting the peer's track produced a report of the *previous* track one tick later — the
+     * echo that made both devices overwrite each other.
+     */
+    var localTransitioning: () -> Boolean = { false }
+
     private var loop: Job? = null
     private var lastAppliedAt = 0L
 
@@ -361,9 +374,17 @@ class TogetherSession(
 
             while (isActive) {
                 val code = _state.value.code ?: break
-                // 1-2. What is playing now, and announce it if it changed since the last tick.
+                // 1-2. What is playing now, and announce it if it changed since the last tick — unless the
+                //      player is mid-change, in which case re-baseline instead (see [localTransitioning]).
                 val before = localPlayback()?.takeIf { it.songId > 0L }
-                if (before != null) publishLocalAction(before)
+                if (before != null && localTransitioning()) {
+                    // Between two states: do not report, just accept whatever the player ends up doing.
+                    lastPublishedSongId = before.songId
+                    lastPublishedPlaying = before.playing
+                    pendingAction = null
+                } else if (before != null) {
+                    publishLocalAction(before)
+                }
 
                 // 3. Heartbeat (throttled inside the transport) and read the room.
                 val result = if (before != null) {
@@ -384,16 +405,9 @@ class TogetherSession(
                     is TogetherResult.Ok -> {
                         val peers = result.value
                         _state.value = _state.value.copy(peers = peers, error = null)
-                        // 4. Apply the room's state.
+                        // 4. Apply the room's state. `apply` also moves the baseline onto what it applied —
+                        //    see below.
                         apply(peers, before)
-                        // 5. Re-baseline from what is playing *now*, i.e. after the apply. This is the line
-                        //    that stops the adopted song being sent straight back to its author.
-                        localPlayback()?.let { after ->
-                            if (after.songId > 0L) {
-                                lastPublishedSongId = after.songId
-                                lastPublishedPlaying = after.playing
-                            }
-                        }
                         awaitNextPoll()
                     }
                     // A room that vanished is terminal: say so and stop rather than retrying forever.
@@ -547,8 +561,13 @@ class TogetherSession(
         lastPeerIdentity = identity
         TogetherLog.add("APPLY $action (local song=${mine.songId} pos=${mine.positionMs} play=${mine.playing})")
         applyAction(action)
-        // The room's state is now ours, so there is nothing new to announce: marking it as published stops
-        // the settle window expiring later and sending the adopted song straight back to its author.
+        // Move the baseline onto what we just applied — **not** a fresh read of the player.
+        //
+        // The apply is asynchronous (it goes through the media controller), so reading the player back
+        // immediately returns the *old* state; baselining that would make this device report the change it is
+        // in the middle of adopting, and the other side would follow that — the two then trade the same
+        // correction. Baselining the target is what the reference achieves by awaiting its action and only
+        // then reading playback back.
         lastPublishedSongId = peer.songId
         lastPublishedPlaying = peer.playing
     }
