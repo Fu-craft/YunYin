@@ -17,10 +17,12 @@ import com.yunyin.music.data.net.NeteaseClient
 import com.yunyin.music.BuildConfig
 import com.yunyin.music.data.together.MqttTransport
 import com.yunyin.music.data.together.NtfyTransport
+import com.yunyin.music.data.together.OfficialTogetherTransport
 import com.yunyin.music.data.together.RelayTransport
 import com.yunyin.music.data.together.TogetherSession
 import com.yunyin.music.data.together.TogetherTransport
 import com.yunyin.music.playback.PlayerController
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -73,31 +75,41 @@ class AppContainer(val appContext: Context) {
     /**
      * Listen-together room engine.
      *
-     * NetEase's own HTTP API cannot read a peer's playback state (measured: reporting succeeds,
-     * reading returns empty — the room runs over an Agora RTC channel), so the read path comes from a
-     * transport. The choice is **network-dependent**, which is why it is configuration and not an
-     * automatic fallback: both members must end up on the same transport, and an automatic choice made
-     * per device would silently put them on different ones.
+     * **The default is NetEase's own API** — the official feature, with no third-party service and
+     * nothing to deploy. That became possible once the API was measured properly: an earlier probe
+     * concluded HTTP could not read the peer's playback state, and that conclusion was wrong — it had
+     * been taken against a server whose session was **not logged in**, where the same endpoint answers
+     * `需要登录`. Against a signed-in server it returns the room's live command (song, position, play
+     * state, and a server-assigned sequence that orders commands with no client clocks involved).
      *
-     *  - **`together.base.url`** — a self-hosted relay (`server/`). Nothing third-party.
-     *  - **`together.ntfy.url`** — the HTTP pub/sub service, for a network that allows neither MQTT
-     *    port. Remember its daily message quota applies to the whole source address.
-     *  - **otherwise** — MQTT over **TLS on 8883**. This is the default because it is the only option
-     *    that is both universally reachable in practice *and* free of a message quota: plain 1883 is
-     *    blocked by many mobile carriers, and the HTTP service's daily allowance is easy to exhaust
-     *    (measured: it returned `42908 daily message quota reached` after a day of testing, which locks
-     *    the whole address out until the next day). TLS on 8883 looks like ordinary encrypted traffic,
-     *    so it is left alone, and MQTT is charged per connection rather than per message.
+     * The hand-rolled alternatives remain available, selected by configuration rather than by fallback,
+     * because a transport is a *rendezvous*: two devices on different ones sit in two rooms that both look
+     * empty, with nothing on screen to explain why.
      *
-     * All three must match between the two members: a transport is a *rendezvous*, so picking different
-     * ones per device leaves both rooms empty.
+     *  - `together.base.url` — a self-hosted relay (`server/together-relay.js`, or the Cloudflare Worker).
+     *  - `together.mqtt.host` — a public MQTT broker.
+     *  - `together.ntfy.url` — an HTTP pub/sub service.
      */
     val together: TogetherSession by lazy {
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        // The scope **must** carry an exception handler.
+        //
+        // Both the session and the MQTT client run on this one scope, and it is `Main.immediate` — so an
+        // exception thrown out of any of those coroutines is an uncaught exception *on the main thread*,
+        // which takes the process down. A `SupervisorJob` isolates siblings from each other but does not
+        // install a handler, so "the child failed" still means "the app crashed". A transport's reconnect
+        // loop is exactly the kind of long-running background work that must never be able to do that.
+        //
+        // This is the backstop: the session and the transport each turn their own failures into messages,
+        // and anything that somehow slips past them is recorded instead of fatal.
+        val handler = CoroutineExceptionHandler { _, throwable ->
+            android.util.Log.e("YunYin/Together", "uncaught in the together scope", throwable)
+        }
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate + handler)
         val transport: TogetherTransport = when {
             BuildConfig.TOGETHER_BASE_URL.isNotBlank() -> RelayTransport()
+            BuildConfig.TOGETHER_MQTT_HOST.isNotBlank() -> MqttTransport(scope)
             BuildConfig.TOGETHER_NTFY_URL.isNotBlank() -> NtfyTransport(scope)
-            else -> MqttTransport(scope)
+            else -> OfficialTogetherTransport(music)
         }
         TogetherSession(transport = transport, scope = scope)
     }

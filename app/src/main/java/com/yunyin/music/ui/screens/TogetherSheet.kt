@@ -100,7 +100,14 @@ fun TogetherSheet(
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    text = if (state.inRoom) "房间已创建，把房间码发给对方" else "和朋友同步听同一首歌",
+                    // What to do next differs by transport: a short code is read out, a long invite is
+                    // sent as a message. Saying "把房间码发给对方" over a 43-character id would be advice
+                    // the user cannot follow.
+                    text = when {
+                        !state.inRoom -> "和朋友同步听同一首歌"
+                        state.joinsByTyping -> "房间已创建，把房间码发给对方"
+                        else -> "邀请已生成，分享给对方即可加入"
+                    },
                     fontFamily = SFPro,
                     fontSize = 13.sp,
                     color = AppTheme.palette.secondaryLabel,
@@ -155,8 +162,31 @@ private fun IdleBody(
     )
     Spacer(Modifier.height(16.dp))
 
+    if (state.joinsByTyping) {
+        TypedCodeJoin(state = state, connecting = connecting, onJoin = onJoin)
+    } else {
+        PasteInviteJoin(state = state, connecting = connecting, onJoin = onJoin)
+    }
+
+    state.error?.let { message ->
+        Spacer(Modifier.height(12.dp))
+        Notice(text = message, tone = Color(0xFFE5484D))
+    }
+}
+
+/**
+ * Joining by typing a code — the hand-rolled transports, whose codes are short and typed out.
+ */
+@Composable
+private fun TypedCodeJoin(
+    state: TogetherUiState,
+    connecting: Boolean,
+    onJoin: (String) -> Unit,
+) {
     Text(
-        text = if (connecting) "正在连接消息服务器，请稍候…" else "或输入对方的房间码",
+        // "消息服务器" would be wrong for the official transport: joining it is a couple of HTTP calls,
+        // there is no broker involved. Naming the act rather than the plumbing keeps it true of both.
+        text = if (connecting) "正在创建房间，请稍候…" else "或输入对方的房间码",
         fontFamily = SFPro,
         fontSize = 13.sp,
         color = AppTheme.palette.secondaryLabel,
@@ -209,35 +239,91 @@ private fun IdleBody(
         }
         Spacer(Modifier.width(10.dp))
         val canJoin = complete && !connecting
+        JoinButton(enabled = canJoin, onClick = { onJoin(code) })
+    }
+}
+
+/**
+ * Joining by accepting a shared invite — the official room, whose id is a 43-character server string.
+ *
+ * There is no field to type into: the invite is a *(roomId, inviterId)* pair, far past what anyone keys
+ * in by hand. What replaces typing is pasting, so the field is wide, unnamed, and validated by the
+ * transport's own parser rather than by a length.
+ */
+@Composable
+private fun PasteInviteJoin(
+    state: TogetherUiState,
+    connecting: Boolean,
+    onJoin: (String) -> Unit,
+) {
+    Text(
+        text = "或粘贴对方分享的邀请",
+        fontFamily = SFPro,
+        fontSize = 13.sp,
+        color = AppTheme.palette.secondaryLabel,
+    )
+    Spacer(Modifier.height(8.dp))
+
+    var invite by remember { mutableStateOf("") }
+    Row(verticalAlignment = Alignment.CenterVertically) {
         Box(
             Modifier
+                .weight(1f)
                 .height(46.dp)
-                .clip(ContinuousRoundedRectangle(AppleShapes.pill))
-                .background(
-                    AppTheme.palette.accent.copy(
-                        alpha = if (canJoin) 1f else 0.4f,
-                    ),
-                )
-                // Validated against the transport's own length. A hardcoded twelve made a six-character
-                // code permanently un-joinable: the button never enabled and nothing said why.
-                // Also disabled while connecting, so a repeated tap cannot start a second attempt.
-                .clickable(enabled = canJoin) { onJoin(code) }
-                .padding(horizontal = 20.dp),
-            contentAlignment = Alignment.Center,
+                .clip(ContinuousRoundedRectangle(10.dp))
+                .background(AppTheme.palette.secondaryBackground)
+                .padding(horizontal = 14.dp),
+            contentAlignment = Alignment.CenterStart,
         ) {
-            Text(
-                text = "加入",
-                fontFamily = SFPro,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 16.sp,
-                color = Color.White,
+            BasicTextField(
+                value = invite,
+                // No case folding and no truncation: the invite's room id is lowercase hex and its
+                // second half is a number, so either would corrupt it. The transport's parser is the
+                // only thing that can judge it, and it does so when the button is pressed.
+                onValueChange = { invite = it.trim() },
+                singleLine = true,
+                textStyle = TextStyle(
+                    fontFamily = SFPro,
+                    fontSize = 14.sp,
+                    color = AppTheme.palette.label,
+                ),
+                cursorBrush = androidx.compose.ui.graphics.SolidColor(AppTheme.palette.accent),
+                modifier = Modifier.fillMaxWidth(),
             )
+            if (invite.isEmpty()) {
+                Text(
+                    text = "一起听邀请",
+                    fontFamily = SFPro,
+                    fontSize = 15.sp,
+                    color = AppTheme.palette.tertiaryLabel,
+                )
+            }
         }
+        Spacer(Modifier.width(10.dp))
+        // Enabled whenever there is something to try: the *only* thing that can tell a good invite from
+        // a bad one is the transport, so the button does not pretend to pre-validate it.
+        JoinButton(enabled = invite.isNotBlank() && !connecting, onClick = { onJoin(invite) })
     }
+}
 
-    state.error?.let { message ->
-        Spacer(Modifier.height(12.dp))
-        Notice(text = message, tone = Color(0xFFE5484D))
+@Composable
+private fun JoinButton(enabled: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .height(46.dp)
+            .clip(ContinuousRoundedRectangle(AppleShapes.pill))
+            .background(AppTheme.palette.accent.copy(alpha = if (enabled) 1f else 0.4f))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 20.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = "加入",
+            fontFamily = SFPro,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 16.sp,
+            color = Color.White,
+        )
     }
 }
 
@@ -248,6 +334,10 @@ private fun RoomBody(
     onCopyCode: (String) -> Unit,
 ) {
     val code = state.code ?: return
+    // What the peer needs is the invite, not the room id: the official room cannot be joined from the id
+    // alone. Falling back to the code keeps the hand-rolled transports working, where the code *is* the
+    // invite.
+    val shareable = state.invite ?: code
 
     Box(
         Modifier
@@ -259,36 +349,61 @@ private fun RoomBody(
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
-                text = "房间码",
+                text = if (state.joinsByTyping) "房间码" else "邀请",
                 fontFamily = SFPro,
                 fontSize = 12.sp,
                 color = AppTheme.palette.secondaryLabel,
             )
             Spacer(Modifier.height(6.dp))
-            Text(
-                // Grouped in fours so a long code can be read out loud without losing one's place —
-                // the same reason it is not six digits.
-                text = code.chunked(4).joinToString(" "),
-                fontFamily = SFPro,
-                fontWeight = FontWeight.Bold,
-                fontSize = 26.sp,
-                letterSpacing = 3.sp,
-                color = AppTheme.palette.label,
-                textAlign = TextAlign.Center,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+            if (state.joinsByTyping) {
+                Text(
+                    // Grouped in fours so a long code can be read out loud without losing one's place —
+                    // the same reason it is not six digits.
+                    text = code.chunked(4).joinToString(" "),
+                    fontFamily = SFPro,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 26.sp,
+                    letterSpacing = 3.sp,
+                    color = AppTheme.palette.label,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            } else {
+                // A 43-character server id is not something to read aloud, and printing it invites the
+                // user to copy it by hand and paste the wrong thing. It is shown truncated for
+                // recognition only, because the actual hand-over is the share button.
+                Text(
+                    text = code.take(8) + "…",
+                    fontFamily = SFPro,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 20.sp,
+                    color = AppTheme.palette.label,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "分享给对方，由对方在「加入」处粘贴",
+                    fontFamily = SFPro,
+                    fontSize = 12.sp,
+                    color = AppTheme.palette.tertiaryLabel,
+                    textAlign = TextAlign.Center,
+                )
+            }
         }
     }
 
     Spacer(Modifier.height(12.dp))
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Box(Modifier.weight(1f)) {
-            SheetButton(label = "分享", filled = true, onClick = { onShareCode(code) },
+            SheetButton(label = "分享", filled = true, onClick = { onShareCode(shareable) },
                 icon = SfIcons.SquareAndArrowUp)
         }
         Box(Modifier.weight(1f)) {
-            SheetButton(label = "复制", filled = false, onClick = { onCopyCode(code) })
+            SheetButton(
+                label = "复制",
+                filled = false,
+                onClick = { onCopyCode(shareable) },
+            )
         }
     }
 

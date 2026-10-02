@@ -4,6 +4,9 @@ import com.yunyin.music.core.HomeFeed
 import com.yunyin.music.core.ArtistInfo
 import com.yunyin.music.core.NetResult
 import com.yunyin.music.core.Playlist
+import com.yunyin.music.core.TogetherRemoteState
+import com.yunyin.music.core.TogetherRoomInfo
+import com.yunyin.music.core.TogetherStatus
 import com.yunyin.music.core.Track
 import com.yunyin.music.data.net.NeteaseClient
 import kotlinx.coroutines.async
@@ -117,6 +120,53 @@ class MusicRepository(private val client: NeteaseClient) {
      */
     suspend fun track(id: Long): com.yunyin.music.core.Track? =
         client.songDetail(listOf(id)).valueOrNull()?.firstOrNull()
+
+    // ---------------------------------------------------------------- listen together (official API)
+    //
+    // Thin passthroughs, deliberately *not* flattened to null-on-failure: the session needs to tell
+    // "the room ended" from "the network is down" to decide whether to keep polling or stop.
+
+    suspend fun togetherCreateRoom(): NetResult<TogetherRoomInfo> = client.togetherRoomCreate()
+
+    /**
+     * The signed-in account, for the one thing the room engine needs it for: recognising its own
+     * commands. The official room records the *author* of its current command, and a device that
+     * followed its own echo would chase itself.
+     */
+    suspend fun account(): com.yunyin.music.core.Account? =
+        (client.loginStatus() as? NetResult.Ok)?.value
+
+    suspend fun togetherRoomCheck(roomId: String): NetResult<Boolean> = client.togetherRoomCheck(roomId)
+
+    suspend fun togetherAccept(roomId: String, inviterId: Long): NetResult<Unit> =
+        client.togetherAccept(roomId, inviterId)
+
+    suspend fun togetherRemoteState(roomId: String): NetResult<TogetherRemoteState> =
+        client.togetherPlaylistGet(roomId)
+
+    suspend fun togetherStatus(): NetResult<TogetherStatus> = client.togetherStatus()
+
+    suspend fun togetherHeartbeat(roomId: String, songId: Long, playing: Boolean, positionMs: Long): NetResult<Unit> =
+        client.togetherHeartbeat(roomId, songId, playing, positionMs)
+
+    suspend fun togetherCommand(
+        roomId: String,
+        commandType: String,
+        songId: Long,
+        positionMs: Long,
+        playing: Boolean,
+        clientSeq: Long,
+    ): NetResult<Unit> =
+        client.togetherPlayCommand(roomId, commandType, songId, positionMs, playing, clientSeq)
+
+    suspend fun togetherSyncList(
+        roomId: String,
+        displayList: List<Long>,
+        userId: Long,
+        version: Long,
+    ): NetResult<Unit> = client.togetherSyncList(roomId, displayList, userId, version)
+
+    suspend fun togetherEnd(roomId: String): NetResult<Unit> = client.togetherEnd(roomId)
 }
 
 /**

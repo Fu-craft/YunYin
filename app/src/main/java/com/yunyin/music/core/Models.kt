@@ -42,6 +42,55 @@ data class ArtistInfo(
     val coverUrl: String?,
 )
 
+/**
+ * A created together-listen room.
+ *
+ * Both fields are needed to join: the id identifies the room, and the inviter id says whose invite is
+ * being accepted. That is why the UI shares them as a pair rather than showing a bare code.
+ */
+data class TogetherRoomInfo(
+    val roomId: String,
+    val inviterId: Long,
+)
+
+/** One member of a together-listen room, as `/listentogether/status` reports them. */
+data class TogetherUser(
+    val uid: Long,
+    val nickname: String,
+    val avatarUrl: String?,
+)
+
+/** Who is in the room. */
+data class TogetherStatus(
+    val inRoom: Boolean,
+    val roomId: String,
+    val members: List<TogetherUser>,
+)
+
+/**
+ * The room's playback state — what the *other* member has done.
+ *
+ * Measured: a room whose only member is the caller reads back as `data: {}` even after that caller
+ * issued a command, so this reports the **peer**, never the caller's own echo. That is what makes
+ * polling work — and what makes the feature un-demonstrable with a single account.
+ *
+ * [serverSeq] is assigned by NetEase and increases per command. It is the natural answer to "whose
+ * action is newer?", with no client clocks involved — which matters because the two devices' clocks
+ * disagree by tens of seconds (measured), so a timestamp comparison would pick the wrong winner.
+ */
+data class TogetherRemoteState(
+    /** Whose command this is; 0 when nobody has acted yet. */
+    val userId: Long = 0L,
+    val songId: Long = 0L,
+    val positionMs: Long = 0L,
+    val playing: Boolean = false,
+    val serverSeq: Long = 0L,
+    /** The room's queue, as published through `sync/list/command`. */
+    val queue: List<Long> = emptyList(),
+) {
+    val hasCommand: Boolean get() = songId > 0L
+}
+
 /** Signed-in (or anonymous) account. */
 data class Account(
     val userId: Long,

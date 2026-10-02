@@ -53,6 +53,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.yunyin.music.core.NetResult
 import com.yunyin.music.data.SettingsStore
 import com.yunyin.music.data.ShareText
+import com.yunyin.music.data.together.TogetherLocalAction
 import com.yunyin.music.playback.LocalPlayerController
 import com.yunyin.music.playback.PlaybackUiState
 import com.yunyin.music.ui.AppViewModel
@@ -340,8 +341,11 @@ class MainActivity : ComponentActivity() {
             val index = safeQueue.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
             // Starting a track from a list is a user action on playback, so the room must yield to it
             // just as it does for next/previous. Claimed before the player call so the new song is
-            // published (and wins) rather than being pulled back to the peer's track.
-            container.together.noteUserAction()
+            // published (and wins) rather than being pulled back to the peer's track. The action is
+            // named because the official protocol distinguishes a track change from a seek, and the
+            // queue goes with it so a joiner gets the list this track belongs to.
+            container.together.noteUserAction(TogetherLocalAction.Goto)
+            appViewModel.publishTogetherQueue(safeQueue.map { it.id })
             runCatching { container.player.playQueue(safeQueue, index) }
                 .onSuccess {
                     showPlayer = true
@@ -698,22 +702,30 @@ class MainActivity : ComponentActivity() {
                     // the room (`noteUserAction`) before it runs. The room yields to whoever acted
                     // last; without the claim the peer's previous state still disagrees, reads as out
                     // of sync, and undoes the action within a poll — which is why "加入房间后无法切歌".
+                    // The action is also named: the official protocol has separate commands for a
+                    // track change, a seek and a play/pause, and sending the wrong one makes the peer
+                    // reload a song it is already playing.
                     // These are the UI's callbacks only: a correction applied *from* the room calls the
                     // player directly, so it cannot claim priority against itself.
                     onTogglePlay = {
-                        container.together.noteUserAction()
+                        // The *resulting* state decides which command to send; `isPlaying` here is the
+                        // state being left, not the one being entered.
+                        val willPause = container.player.state.value.isPlaying
+                        container.together.noteUserAction(
+                            if (willPause) TogetherLocalAction.Pause else TogetherLocalAction.Play,
+                        )
                         container.player.togglePlayPause()
                     },
                     onNext = {
-                        container.together.noteUserAction()
+                        container.together.noteUserAction(TogetherLocalAction.Goto)
                         container.player.next()
                     },
                     onPrevious = {
-                        container.together.noteUserAction()
+                        container.together.noteUserAction(TogetherLocalAction.Goto)
                         container.player.previous()
                     },
                     onSeek = { positionMs ->
-                        container.together.noteUserAction()
+                        container.together.noteUserAction(TogetherLocalAction.Seek)
                         container.player.seekTo(positionMs)
                     },
                     onCycleRepeat = container.player::cycleRepeat,
@@ -821,7 +833,7 @@ class MainActivity : ComponentActivity() {
                     loader = container.artwork,
                     onSelect = { index ->
                         // Picking a track from the queue is a user action too — same claim as next/prev.
-                        container.together.noteUserAction()
+                        container.together.noteUserAction(TogetherLocalAction.Goto)
                         container.player.seekToIndex(index)
                         showQueue = false
                     },

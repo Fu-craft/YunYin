@@ -38,6 +38,23 @@ data class TogetherUiState(
      */
     val codeLength: Int = 12,
     /**
+     * Whether joining is done by typing a code.
+     *
+     * False for the official room, whose id is a 43-character server string that nobody types: the
+     * invite is the *(roomId, inviterId)* pair, so the sheet offers share/paste instead of a text field.
+     * A field for a value no one can enter is worse than no field — it invites the attempt and then
+     * fails.
+     */
+    val joinsByTyping: Boolean = true,
+    /**
+     * The text to hand to the peer.
+     *
+     * Carried in the state rather than read from the transport so the sheet stays a pure function of
+     * the state it is given, and so the difference between the transports (a bare code, or a two-part
+     * invite) lives in one place.
+     */
+    val invite: String? = null,
+    /**
      * True while a create/join is in flight.
      *
      * Needed because connecting can take a while — every candidate endpoint gets a turn — and without
@@ -105,6 +122,26 @@ class TogetherSession(
     private var peerSeqSeen = 0L
 
     /**
+     * A discrete action the user announced and the loop has not published yet.
+     *
+     * Held rather than published at the call site so that a burst — a scrub sends many seeks — collapses
+     * into one command carrying the *latest* position, which is the only one that matters.
+     */
+    private var pendingAction: TogetherLocalAction? = null
+
+    /**
+     * What was last published, so a change nobody announced is still noticed.
+     *
+     * Playback can move on its own (a track ends and the next starts), and those transitions must reach
+     * the peer just as a tap does. Comparing against this is what catches them.
+     */
+    private var lastPublishedSongId = 0L
+    private var lastPublishedPlaying = false
+
+    /** The queue the host last published, so it is sent once per queue rather than every tick. */
+    private var lastPublishedQueue: List<Long> = emptyList()
+
+    /**
      * Wakes the loop early, so a local action is published at once instead of up to a poll interval
      * later. `CONFLATED` because several rapid actions need only one prompt re-publish — the payload
      * always carries the *current* state, so nothing is lost by coalescing them.
@@ -118,8 +155,14 @@ class TogetherSession(
      * ours, reads as "out of sync", and the track is pulled back within a poll or two — the reported
      * "加入房间以后无法切歌". The bump is what makes the room yield to whoever acted last, and it also
      * gives the action immediate priority over the continuous drift correction.
+     *
+     * [action] names what the user did, when the call site knows. The official transport needs it: its
+     * protocol distinguishes "a different song" from "a seek" from "a pause", and only an explicit
+     * command changes the room's state. The hand-rolled transports ignore it and re-publish their whole
+     * state, so passing it there is harmless.
      */
-    fun noteUserAction() {
+    fun noteUserAction(action: TogetherLocalAction? = null) {
+        if (action != null) pendingAction = action
         seq = TogetherSync.nextSeq(seq, peerSeqSeen)
         // Tell the loop to publish now: a peer should see the new track immediately, not after the
         // next scheduled poll.
@@ -165,6 +208,7 @@ class TogetherSession(
                     _state.value = _state.value.copy(
                         code = result.value, isHost = true, ended = null, error = null,
                         server = transport.serverLabel,
+                        invite = transport.inviteText(result.value),
                     )
                     startLoop(uid, name)
                 }
@@ -176,13 +220,15 @@ class TogetherSession(
     }
 
     fun joinRoom(code: String, uid: String, name: String) {
-        val trimmed = code.trim().uppercase()
-        if (trimmed.isBlank() || uid.isBlank()) return
+        // Normalised by the *transport*, not here: uppercase is right for a typed alphanumeric code and
+        // wrong for the official invite, whose id is lowercase hex with a separator in it.
+        val key = transport.normaliseJoinInput(code)
+        if (key.isBlank() || uid.isBlank()) return
         resetClock()
         launchWork {
             // Look the room up first so a wrong code says so instead of joining nothing. The relay
             // still validates on join; this is only for a better message.
-            when (val info = transport.roomInfo(trimmed)) {
+            when (val info = transport.roomInfo(key)) {
                 is TogetherResult.NoRoom -> {
                     setError(info.message)
                     return@launchWork
@@ -197,11 +243,12 @@ class TogetherSession(
                 }
                 is TogetherResult.Ok -> Unit
             }
-            when (val joined = transport.join(trimmed, uid, name)) {
+            when (val joined = transport.join(key, uid, name)) {
                 is TogetherResult.Ok -> {
                     _state.value = _state.value.copy(
-                        code = trimmed, isHost = false, ended = null, error = null,
+                        code = key, isHost = false, ended = null, error = null,
                         server = transport.serverLabel,
+                        invite = transport.inviteText(key),
                     )
                     startLoop(uid, name)
                 }
@@ -227,6 +274,7 @@ class TogetherSession(
         configured = transport.configured,
         server = transport.serverLabel,
         codeLength = transport.codeLength,
+        joinsByTyping = transport.joinsByTyping,
     )
 
     /**
@@ -249,16 +297,22 @@ class TogetherSession(
     private fun startLoop(uid: String, name: String) {
         stopLoop()
         lastAppliedAt = 0L
+        // A fresh room publishes from scratch: the last room's song and play state say nothing about
+        // this one, and inheriting them would make the first tick look like a change that never happened.
+        lastPublishedSongId = 0L
+        lastPublishedPlaying = false
+        lastPublishedQueue = emptyList()
         loop = scope.launch {
             while (isActive) {
                 val code = _state.value.code ?: break
                 val mine = localPlayback()
-                val result = if (mine != null && mine.songId > 0L) {
+                val hasSong = mine != null && mine.songId > 0L
+                val result = if (hasSong) {
                     transport.postState(
                         code = code,
                         uid = uid,
                         name = name,
-                        songId = mine.songId,
+                        songId = mine!!.songId,
                         positionMs = mine.positionMs,
                         playing = mine.playing,
                         seq = seq,
@@ -274,6 +328,10 @@ class TogetherSession(
                         peers.maxOfOrNull { it.seq }?.let { peerSeqSeen = maxOf(peerSeqSeen, it) }
                         _state.value = _state.value.copy(peers = peers, error = null)
                         apply(peers, mine)
+                        // Published *after* the read, deliberately. Publishing first would let a joiner
+                        // overwrite the room's command with its own track before it had ever seen the
+                        // host's — the joiner would look like it had hijacked the session.
+                        if (hasSong) publishLocalAction(mine!!)
                         awaitNextPoll()
                     }
                     // A room that vanished is terminal: say so and stop rather than retrying forever.
@@ -295,6 +353,60 @@ class TogetherSession(
                     }
                 }
             }
+        }
+    }
+
+    /**
+     * Publishes a discrete action, if there is one to publish.
+     *
+     * Two sources, and the difference between them is what keeps a room from oscillating:
+     *
+     *  - **An announced action** ([pendingAction]) — the user tapped something. Always published, even
+     *    right after a correction, because it is a deliberate act that must reach the peer.
+     *  - **An unannounced change** — a different song or play state appeared between ticks, which is
+     *    what an automatic track advance looks like. Published too, *except* inside the window after
+     *    applying the peer's own correction: that change is the correction arriving, and republishing it
+     *    would send it straight back, so the two devices would trade it forever.
+     *
+     * The window is keyed off [lastAppliedAt] rather than a new timer so it is the same [TogetherSync]
+     * settle interval the drift correction uses — one concept, one knob.
+     */
+    private suspend fun publishLocalAction(mine: LocalPlayback) {
+        val now = System.currentTimeMillis()
+        val settling = lastAppliedAt != 0L && now - lastAppliedAt < TogetherSync.SETTLE_MS
+        val announced = pendingAction
+        pendingAction = null
+        val action = announced ?: when {
+            mine.songId != lastPublishedSongId -> TogetherLocalAction.Goto
+            mine.playing != lastPublishedPlaying ->
+                if (mine.playing) TogetherLocalAction.Play else TogetherLocalAction.Pause
+            else -> null
+        }
+        val fromPeer = announced == null && settling
+        lastPublishedSongId = mine.songId
+        lastPublishedPlaying = mine.playing
+        if (action == null || fromPeer) return
+        transport.publishAction(
+            action = action,
+            songId = mine.songId,
+            positionMs = mine.positionMs,
+            playing = mine.playing,
+            clientSeq = seq,
+        )
+    }
+
+    /**
+     * Publishes the queue to the room, once per distinct queue.
+     *
+     * Best-effort and deliberately outside the loop: it is a convenience (a joiner sees the list you are
+     * playing from instead of only the current song), and a failure must not disturb the room's actual
+     * job, which is keeping the current track aligned.
+     */
+    fun publishQueue(queue: List<Long>, uid: String, version: Long) {
+        if (queue.isEmpty() || queue == lastPublishedQueue) return
+        lastPublishedQueue = queue
+        scope.launch {
+            runCatching { transport.publishQueue(queue, uid, version) }
         }
     }
 

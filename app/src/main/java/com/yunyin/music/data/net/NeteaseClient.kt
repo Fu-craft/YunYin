@@ -6,6 +6,10 @@ import com.yunyin.music.core.ChartInfo
 import com.yunyin.music.core.LyricBundle
 import com.yunyin.music.core.NetResult
 import com.yunyin.music.core.Playlist
+import com.yunyin.music.core.TogetherRemoteState
+import com.yunyin.music.core.TogetherRoomInfo
+import com.yunyin.music.core.TogetherStatus
+import com.yunyin.music.core.TogetherUser
 import com.yunyin.music.core.Track
 import com.yunyin.music.core.map
 import com.yunyin.music.data.SettingsStore
@@ -576,6 +580,196 @@ class NeteaseClient(private val settings: SettingsStore) {
     suspend fun isLiked(uid: Long, id: Long): NetResult<Boolean> =
         likedSongIds(uid).map { it.contains(id) }
 
+    // ---------------------------------------------------------------- listen together
+    //
+    // NetEase's own together-listen, called through the API server, and the app's default transport.
+    // Every route below was called directly and confirmed present on a signed-in server (200 each; a
+    // control path returns 404, so the server does distinguish them). The payload fields the client
+    // reads — the room id and creator id, the command's song/position/playStatus/serverSeq, the queue,
+    // `status == "AVAILABLE"`, and the member list — are the ones the official demo page uses.
+    //
+    // The read path (`sync/playlist/get`) reports the **peer's** command: a room whose only member is
+    // the caller returns `data: {}` even after that caller has commanded it. That is why the feature
+    // needs two signed-in accounts to demonstrate — with one, the room is empty by construction.
+    //
+    // An earlier probe concluded HTTP could not read the peer state at all. That was measured on a
+    // server whose session was not logged in, where these routes answer `{"code":301,"msg":"需要登录"}`
+    // — the conclusion, not the API, was wrong.
+    //
+    // Requirements worth stating: **both members must be signed in**, and the account the server acts
+    // as is the one whose cookie is attached — this client sends the device's own cookie, so each device
+    // acts as its own account.
+
+    /**
+     * Creates a room. Returns the room id **and the inviter id**, because joining needs both — the
+     * invite is the pair, which is why the UI shares them together rather than a bare code.
+     */
+    suspend fun togetherRoomCreate(): NetResult<TogetherRoomInfo> = request(
+        "/listentogether/room/create",
+        query = mapOf("timestamp" to System.currentTimeMillis().toString()),
+        form = emptyMap(),
+    ).map { json ->
+        val info = json.optJSONObject("data")?.optJSONObject("roomInfo")
+        TogetherRoomInfo(
+            roomId = info?.optString("roomId").orEmpty(),
+            inviterId = info?.optLong("creatorId") ?: 0L,
+        )
+    }.let { result ->
+        // A room with no id would be unjoinable; report that rather than handing back a blank code.
+        when (result) {
+            is NetResult.Ok ->
+                if (result.value.roomId.isBlank()) NetResult.Err("房间创建失败") else result
+            is NetResult.Err -> result
+        }
+    }
+
+    /** Accepts an invite. The room is identified by the id *pair*, so both are sent. */
+    suspend fun togetherAccept(roomId: String, inviterId: Long): NetResult<Unit> = request(
+        "/listentogether/accept",
+        form = mapOf(
+            "roomId" to roomId,
+            "inviterId" to "$inviterId",
+            "timestamp" to System.currentTimeMillis().toString(),
+        ),
+    ).map { }
+
+    /** Whether the room is still joinable (false once ended or expired). */
+    suspend fun togetherRoomCheck(roomId: String): NetResult<Boolean> = request(
+        "/listentogether/room/check",
+        form = mapOf("roomId" to roomId, "timestamp" to System.currentTimeMillis().toString()),
+    ).map { json ->
+        json.optJSONObject("data")?.optString("status") == "AVAILABLE"
+    }
+
+    /**
+     * The room's current state — **the read path**.
+     *
+     * `playCommand` carries the latest command (whose it is, which song, what position, playing or
+     * paused, and the server sequence for ordering); `playlist.displayList.result` carries the queue.
+     * Both are absent/empty before anyone has acted, which is not an error.
+     *
+     * Measured caveat: a room whose only member is the caller returns `data: {}` here — even after that
+     * caller has issued a command. So this endpoint reports the **peer**, not the caller, and its empty
+     * result with one account present is correct rather than broken. Everything parsed below was
+     * confirmed present against a live server for a room with a command in it.
+     */
+    suspend fun togetherPlaylistGet(roomId: String): NetResult<TogetherRemoteState> = request(
+        "/listentogether/sync/playlist/get",
+        form = mapOf("roomId" to roomId, "timestamp" to System.currentTimeMillis().toString()),
+    ).map { json ->
+        val data = json.optJSONObject("data")
+        val command = data?.optJSONObject("playCommand")
+        val queue = data?.optJSONObject("playlist")
+            ?.optJSONObject("displayList")
+            ?.optJSONArray("result")
+            ?.let { arr -> (0 until arr.length()).mapNotNull { arr.optLongOrNull(it) } }
+            .orEmpty()
+        TogetherRemoteState(
+            userId = command?.optLong("userId") ?: 0L,
+            songId = command?.optString("targetSongId")?.toLongOrNull() ?: 0L,
+            positionMs = command?.optLong("progress") ?: 0L,
+            playing = command?.optString("playStatus") == "PLAY",
+            serverSeq = command?.optLong("serverSeq") ?: 0L,
+            queue = queue,
+        )
+    }
+
+    /** Who is in the room. The only place member identity is visible over HTTP. */
+    suspend fun togetherStatus(): NetResult<TogetherStatus> = request(
+        "/listentogether/status",
+        query = mapOf("timestamp" to System.currentTimeMillis().toString()),
+    ).map { json ->
+        val data = json.optJSONObject("data")
+        val info = data?.optJSONObject("roomInfo")
+        val users = info?.optJSONArray("roomUsers")
+        val members = (0 until (users?.length() ?: 0)).mapNotNull { i ->
+            val u = users?.optJSONObject(i) ?: return@mapNotNull null
+            TogetherUser(
+                uid = u.optLong("userId"),
+                nickname = u.optString("nickname"),
+                avatarUrl = u.optString("avatarUrl").ifBlank { null },
+            )
+        }
+        TogetherStatus(
+            inRoom = data?.optBoolean("inRoom") == true,
+            roomId = info?.optString("roomId").orEmpty(),
+            members = members,
+        )
+    }
+
+    /**
+     * Reports playback: the song, the position, and whether it is playing.
+     *
+     * `commandType` matters — `GOTO` is a track change, `PLAY`/`PAUSE` are state changes — because the
+     * receiving side treats a track change differently from a pause (one has to load a song).
+     */
+    suspend fun togetherPlayCommand(
+        roomId: String,
+        commandType: String,
+        targetSongId: Long,
+        progressMs: Long,
+        playing: Boolean,
+        clientSeq: Long,
+    ): NetResult<Unit> = request(
+        "/listentogether/play/command",
+        form = mapOf(
+            "roomId" to roomId,
+            "commandType" to commandType,
+            "progress" to "$progressMs",
+            "playStatus" to if (playing) "PLAY" else "PAUSE",
+            // `formerSongId` is required by the endpoint; the demo sends "-1" for "no previous track".
+            "formerSongId" to "-1",
+            "targetSongId" to "$targetSongId",
+            "clientSeq" to "$clientSeq",
+            "timestamp" to System.currentTimeMillis().toString(),
+        ),
+    ).map { }
+
+    /** The keep-alive that keeps this member present in the room. */
+    suspend fun togetherHeartbeat(
+        roomId: String,
+        songId: Long,
+        playing: Boolean,
+        progressMs: Long,
+    ): NetResult<Unit> = request(
+        "/listentogether/heatbeat",
+        form = mapOf(
+            "roomId" to roomId,
+            "songId" to "$songId",
+            "playStatus" to if (playing) "PLAY" else "PAUSE",
+            "progress" to "$progressMs",
+            "timestamp" to System.currentTimeMillis().toString(),
+        ),
+    ).map { }
+
+    /** Publishes the queue, so a joiner receives the list and not just the current song. */
+    suspend fun togetherSyncList(
+        roomId: String,
+        displayList: List<Long>,
+        userId: Long,
+        version: Long,
+    ): NetResult<Unit> = request(
+        "/listentogether/sync/list/command",
+        form = mapOf(
+            "roomId" to roomId,
+            "commandType" to "REPLACE",
+            "userId" to "$userId",
+            "version" to "$version",
+            "playMode" to "ORDER_LOOP",
+            "displayList" to displayList.joinToString(","),
+            "randomList" to displayList.joinToString(","),
+            "anchorSongId" to "",
+            "anchorPosition" to "-1",
+            "timestamp" to System.currentTimeMillis().toString(),
+        ),
+    ).map { }
+
+    /** Ends the room for everyone. */
+    suspend fun togetherEnd(roomId: String): NetResult<Unit> = request(
+        "/listentogether/end",
+        form = mapOf("roomId" to roomId, "timestamp" to System.currentTimeMillis().toString()),
+    ).map { }
+
 
     // ---------------------------------------------------------------- mapping
 
@@ -614,6 +808,18 @@ class NeteaseClient(private val settings: SettingsStore) {
 
     private fun JSONArray.mapNames(): List<String> = (0 until length()).mapNotNull { i ->
         optJSONObject(i)?.optString("name")?.ifBlank { null }
+    }
+
+    /**
+     * A long at [index], or null when the entry is absent, null, or not a number.
+     *
+     * `JSONArray.optLong` answers 0 for "missing", which is indistinguishable from a real 0 — and a song
+     * id of 0 is meaningless, so mapping it to null keeps the caller honest about what it received.
+     */
+    private fun JSONArray.optLongOrNull(index: Int): Long? {
+        if (index < 0 || index >= length() || isNull(index)) return null
+        return optLong(index).takeIf { it != 0L }
+            ?: optString(index).toLongOrNull()
     }
 
     companion object {

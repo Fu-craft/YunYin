@@ -199,6 +199,19 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
         return null
     }
 
+    /**
+     * Publishes the queue this device is playing from, so a joiner receives the list and not only the
+     * current song.
+     *
+     * The version is a millisecond stamp, which is what the endpoint expects to order successive
+     * replacements. The account id is resolved in the transport (it has to be a real one for the server
+     * to accept the command), so nothing account-shaped is needed here.
+     */
+    fun publishTogetherQueue(songIds: List<Long>) {
+        val uid = togetherMemberId() ?: return
+        together.publishQueue(songIds, uid, System.currentTimeMillis())
+    }
+
     fun leaveTogetherRoom() {
         val uid = togetherMemberId() ?: return
         together.leaveRoom(uid)

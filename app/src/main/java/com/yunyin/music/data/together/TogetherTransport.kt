@@ -56,6 +56,25 @@ inline fun <T, R> TogetherResult<T>.map(transform: (T) -> R): TogetherResult<R> 
 }
 
 /**
+ * A *discrete* thing the user did to playback, as opposed to the continuous drift of a position.
+ *
+ * The distinction is the official protocol's, and it is not cosmetic: a receiver has to load a song
+ * for [Goto] but must not reload it for [Seek], and both differ from a bare [Play]/[Pause]. Carrying
+ * only "here is my state" loses that, which is why the relay transports can ignore it while the
+ * official one needs it.
+ */
+enum class TogetherLocalAction {
+    /** The track changed — the receiver has to load [TogetherTransport.publishAction]'s song. */
+    Goto,
+
+    Seek,
+
+    Play,
+
+    Pause,
+}
+
+/**
  * Transport for listen-together state.
  *
  * An interface rather than a concrete HTTP client because the *reason* this exists is a missing read
@@ -103,6 +122,60 @@ interface TogetherTransport {
     /** Trims typed input to this transport's length, ignoring separators. */
     fun normaliseCodeInput(input: String): String =
         input.filter { it.isLetterOrDigit() }.uppercase().take(codeLength)
+
+    /**
+     * Whether a room is joined by typing a code, or only by accepting a shared invite.
+     *
+     * The official NetEase room cannot be joined by typing: its id is a 43-character server string and
+     * the invite is the *(roomId, inviterId)* pair. Presenting a text field for that would be a field
+     * nobody can fill, so the UI hides it and offers share/paste instead.
+     */
+    val joinsByTyping: Boolean get() = true
+
+    /**
+     * Normalises whatever the user pasted into a room key.
+     *
+     * Uppercasing is right for the hand-rolled transports, whose codes are uppercase alphanumerics the
+     * user types. It is **wrong** for the official room, whose id is a lowercase hex string plus an
+     * epoch: uppercasing it silently produces an id the server has never heard of, and joining fails
+     * with "邀请信息不完整" or an expired-room message that names none of that.
+     */
+    fun normaliseJoinInput(input: String): String = input.trim().uppercase()
+
+    /**
+     * The text to hand to the peer so it can join.
+     *
+     * Defaults to the code, which is all the hand-rolled transports need. The official room overrides
+     * it: its invite is the *(roomId, inviterId)* pair, and a bare id cannot be accepted.
+     */
+    fun inviteText(code: String): String = code
+
+    /**
+     * Publishes a discrete local action.
+     *
+     * A no-op by default on purpose: the relay and broker transports publish the *whole* state every
+     * tick, so the receiver already sees the new song by comparing it — the action would be a
+     * duplicate. The official protocol is different: it separates "the song changed" from "the
+     * position drifted", and only a command updates the room's state, so there it is the whole
+     * write path.
+     */
+    suspend fun publishAction(
+        action: TogetherLocalAction,
+        songId: Long,
+        positionMs: Long,
+        playing: Boolean,
+        clientSeq: Long,
+    ): TogetherResult<Unit> = TogetherResult.Ok(Unit)
+
+    /**
+     * Publishes the current queue, so a joiner receives the list and not only the current song.
+     *
+     * Also a no-op by default: the broker transports already publish the queue as part of their state,
+     * and the relay can be asked for it at any time. It exists for the official room, whose list is a
+     * separate command.
+     */
+    suspend fun publishQueue(queue: List<Long>, uid: String, version: Long): TogetherResult<Unit> =
+        TogetherResult.Ok(Unit)
 
     suspend fun createRoom(uid: String, name: String): TogetherResult<String>
 
