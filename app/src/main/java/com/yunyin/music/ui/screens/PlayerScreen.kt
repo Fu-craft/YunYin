@@ -88,6 +88,8 @@ import com.yunyin.music.ui.background.DynamicBackgroundPalette
 import com.yunyin.music.ui.background.HyperBackground
 import com.yunyin.music.ui.components.Artwork
 import com.yunyin.music.ui.components.CrossfadeContent
+import com.yunyin.music.ui.components.TogetherPair
+import com.yunyin.music.ui.components.TogetherPairStrip
 import com.yunyin.music.ui.components.VinylDisc
 import com.yunyin.music.ui.components.formatDuration
 import com.yunyin.music.ui.components.pressableGestures
@@ -166,6 +168,13 @@ fun PlayerScreen(
      * style cannot be a half-implemented second player.
      */
     playerStyle: PlayerStyle = PlayerStyle.Classic,
+    /**
+     * The two people in the current listen-together room, or null when not in one.
+     *
+     * Drawn as a strip **above the cover**, which is where the reference design puts it: the room is a
+     * property of what is playing, so it belongs on the player rather than on a screen of its own.
+     */
+    together: TogetherPair? = null,
     positionProvider: () -> Long,
     modifier: Modifier = Modifier,
 ) {
@@ -552,23 +561,46 @@ fun PlayerScreen(
                                     .padding(end = railWidth * chromeProgress),
                                 contentAlignment = Alignment.Center,
                             ) {
-                                ArtworkWithGestures(
-                                    artSize = minOf(maxWidth, maxHeight) * 0.94f,
-                                    track = track,
-                                    cover = cover,
-                                    loader = loader,
-                                    download = download,
-                                    onToggleLyrics = { interaction++; onToggleLyrics() },
-                                    onSaveCover = { interaction++; onSaveCover() },
-                                    onDownloadDismissed = onDownloadDismissed,
-                                    onCollapse = onCollapse,
-                                    dragDistance = { dragDistance },
-                                    setDragDistance = { dragDistance = it },
-                                    playerStyle = playerStyle,
-                                    isPlaying = state.isPlaying,
-                                    sharedScope = this@SharedTransitionLayout,
-                                    visibilityScope = this@AnimatedContent,
-                                )
+                                // The room and the cover share the column: the strip is given its own row
+                                // so the artwork can never be drawn under it. (Letting the strip overlay
+                                // the record instead put two faces on top of the disc, which read as a
+                                // rendering fault rather than as an indicator.)
+                                val stripSize = TOGETHER_AVATAR_SIZE * 0.8f
+                                val stripHeight = if (together != null) stripSize * 1.4f + 8.dp else 0.dp
+                                val available = minOf(maxWidth, maxHeight) * 0.94f - stripHeight
+
+                                Column(
+                                    Modifier.fillMaxSize(),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center,
+                                ) {
+                                    if (together != null && chromeProgress > 0.01f) {
+                                        TogetherPairStrip(
+                                            pair = together,
+                                            loader = loader,
+                                            avatarSize = stripSize,
+                                            modifier = Modifier.alpha(chromeProgress),
+                                        )
+                                        Spacer(Modifier.height(8.dp))
+                                    }
+                                    ArtworkWithGestures(
+                                        artSize = available,
+                                        track = track,
+                                        cover = cover,
+                                        loader = loader,
+                                        download = download,
+                                        onToggleLyrics = { interaction++; onToggleLyrics() },
+                                        onSaveCover = { interaction++; onSaveCover() },
+                                        onDownloadDismissed = onDownloadDismissed,
+                                        onCollapse = onCollapse,
+                                        dragDistance = { dragDistance },
+                                        setDragDistance = { dragDistance = it },
+                                        playerStyle = playerStyle,
+                                        isPlaying = state.isPlaying,
+                                        sharedScope = this@SharedTransitionLayout,
+                                        visibilityScope = this@AnimatedContent,
+                                    )
+                                }
                             }
                         }
 
@@ -817,7 +849,22 @@ fun PlayerScreen(
                             .statusBarsPadding()
                             .navigationBarsPadding(),
                     ) {
-                        Spacer(Modifier.height(56.dp))
+                        // The room, when there is one, sits above the cover — the same place the reference
+                        // design puts the two faces. Without a room the spacer keeps the cover where it has
+                        // always been.
+                        if (together != null) {
+                            TogetherPairStrip(
+                                pair = together,
+                                loader = loader,
+                                avatarSize = TOGETHER_AVATAR_SIZE,
+                                modifier = Modifier
+                                    .align(Alignment.CenterHorizontally)
+                                    .padding(top = 10.dp),
+                            )
+                            Spacer(Modifier.height(10.dp))
+                        } else {
+                            Spacer(Modifier.height(56.dp))
+                        }
 
                         BoxWithConstraints(
                             Modifier
@@ -2231,6 +2278,14 @@ private const val COVER_SHARED_KEY = "album-cover"
 /** Corner radius of the full-size artwork, and of the header thumbnail it shrinks into. */
 private val ARTWORK_CORNER = 14.dp
 private val HEADER_COVER_CORNER = 10.dp
+
+/**
+ * Diameter of each face in the listen-together strip above the cover.
+ *
+ * Deliberately small: the strip is an indicator that a room is active, and at cover scale it would compete
+ * with the album art it sits above. Landscape scales it down further (see the landscape branch).
+ */
+private val TOGETHER_AVATAR_SIZE = 56.dp
 
 /**
  * The full-size cover's corner radius, exposed for the cover transition.
