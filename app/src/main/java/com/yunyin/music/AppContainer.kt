@@ -14,6 +14,8 @@ import com.yunyin.music.data.CoverDownloader
 import com.yunyin.music.data.FlymeLyricNotifier
 import com.yunyin.music.data.LyriconBridge
 import com.yunyin.music.data.net.NeteaseClient
+import com.yunyin.music.data.net.EapiClient
+import com.yunyin.music.data.together.NeteaseTogetherApi
 import com.yunyin.music.BuildConfig
 import com.yunyin.music.data.together.MqttTransport
 import com.yunyin.music.data.together.NtfyTransport
@@ -41,6 +43,19 @@ class AppContainer(val appContext: Context) {
     val client: NeteaseClient by lazy { NeteaseClient(settings) }
 
     val music: MusicRepository by lazy { MusicRepository(client) }
+
+    /**
+     * NetEase's own eapi endpoint, for the one feature the API proxy cannot serve.
+     *
+     * Listen-together lives here because the proxy does not carry it properly: two of the routes the official
+     * protocol needs (`sync/list/command/report`, `heartbeat`) do not exist on the proxy at all, and its read
+     * path returns an empty room. The session cookie is read live on each call, so signing in or out takes
+     * effect without rebuilding anything.
+     */
+    val eapi: EapiClient by lazy { EapiClient(cookieProvider = { settings.cookie }) }
+
+    /** Listen-together, spoken the way NetEase's own client speaks it. */
+    val togetherApi: NeteaseTogetherApi by lazy { NeteaseTogetherApi(eapi) }
 
     val lyrics: LyricsRepository by lazy { LyricsRepository(appContext, client) }
 
@@ -138,7 +153,10 @@ class AppContainer(val appContext: Context) {
             BuildConfig.TOGETHER_BASE_URL.isNotBlank() -> RelayTransport()
             BuildConfig.TOGETHER_MQTT_HOST.isNotBlank() -> MqttTransport(scope)
             BuildConfig.TOGETHER_NTFY_URL.isNotBlank() -> NtfyTransport(scope)
-            else -> OfficialTogetherTransport(music)
+            else -> OfficialTogetherTransport(
+                api = togetherApi,
+                ownUid = { settings.account?.userId ?: 0L },
+            )
         }
         TogetherSession(transport = transport, scope = scope)
     }

@@ -1,9 +1,7 @@
 package com.yunyin.music.data.together
 
-import com.yunyin.music.core.NetResult
 import com.yunyin.music.core.TogetherRemoteState
 import com.yunyin.music.core.TogetherUser
-import com.yunyin.music.data.MusicRepository
 
 /**
  * Listen-together over **NetEase's own API** — the official feature, no third-party relay involved.
@@ -60,7 +58,14 @@ import com.yunyin.music.data.MusicRepository
  * stutter — which is exactly the bug this class exists to avoid.
  */
 class OfficialTogetherTransport(
-    private val music: MusicRepository,
+    private val api: NeteaseTogetherApi,
+    /**
+     * This device's own account id, for recognising its own commands.
+     *
+     * The room records the author of its current command, and a device that followed its own echo would
+     * fight itself. Read from the signed-in account rather than fetched, because the App already knows it.
+     */
+    private val ownUid: () -> Long,
 ) : TogetherTransport {
 
     /**
@@ -121,8 +126,8 @@ class OfficialTogetherTransport(
         // a previous session hands back the OLD room — still containing the old members. On screen that is
         // indistinguishable from "my other device joined by itself", which is exactly how it was reported.
         endExistingRoom()
-        return when (val result = music.togetherCreateRoom()) {
-            is NetResult.Ok -> {
+        return when (val result = api.create()) {
+            is TogetherResult.Ok -> {
                 roomId = result.value.roomId
                 inviterId = result.value.inviterId
                 // A new room is not the old one: clear the "gone" verdict, or the first poll would end it.
@@ -133,9 +138,9 @@ class OfficialTogetherTransport(
                 TogetherLog.add("CREATE ok room=${TogetherLog.short(roomId)} inviter=${inviterId}")
                 TogetherResult.Ok(result.value.roomId)
             }
-            is NetResult.Err -> {
-                TogetherLog.add("CREATE failed: ${result.message}")
-                TogetherResult.Failed(result.message)
+            else -> {
+                TogetherLog.add("CREATE failed: ${failureMessage(result)}")
+                TogetherResult.Failed(failureMessage(result))
             }
         }
     }
@@ -148,12 +153,12 @@ class OfficialTogetherTransport(
      * reason to refuse to create.
      */
     private suspend fun endExistingRoom() {
-        val existing = when (val status = music.togetherStatus()) {
-            is NetResult.Ok -> status.value.roomId.takeIf { status.value.inRoom && it.isNotBlank() }
-            is NetResult.Err -> null
+        val existing = when (val status = api.status()) {
+            is TogetherResult.Ok -> status.value.roomId.takeIf { status.value.inRoom && it.isNotBlank() }
+            else -> null
         } ?: return
         TogetherLog.add("CREATE clearing the account's existing room ${TogetherLog.short(existing)}")
-        music.togetherEnd(existing)
+        api.end(existing)
     }
 
     /**
@@ -165,16 +170,16 @@ class OfficialTogetherTransport(
     override suspend fun roomInfo(code: String): TogetherResult<List<TogetherMember>> {
         val parsed = parseInvite(code) ?: return TogetherResult.Failed(INCOMPLETE_INVITE)
         TogetherLog.add("CHECK room=${TogetherLog.short(parsed.first)} inviter=${parsed.second}")
-        return when (val result = music.togetherRoomCheck(parsed.first)) {
-            is NetResult.Ok ->
+        return when (val result = api.check(parsed.first)) {
+            is TogetherResult.Ok ->
                 if (result.value) TogetherResult.Ok(emptyList())
                 else {
                     TogetherLog.add("CHECK says the room is gone")
                     TogetherResult.NoRoom("这个一起听已结束或失效")
                 }
-            is NetResult.Err -> {
-                TogetherLog.add("CHECK failed: ${result.message}")
-                TogetherResult.Failed(result.message)
+            else -> {
+                TogetherLog.add("CHECK failed: ${failureMessage(result)}")
+                TogetherResult.Failed(failureMessage(result))
             }
         }
     }
@@ -184,8 +189,8 @@ class OfficialTogetherTransport(
             TogetherLog.add("JOIN aborted: not an invite -> ${TogetherLog.short(code)}")
             return TogetherResult.Failed(INCOMPLETE_INVITE)
         }
-        return when (val result = music.togetherAccept(parsed.first, parsed.second)) {
-            is NetResult.Ok -> {
+        return when (val result = api.accept(parsed.first, parsed.second)) {
+            is TogetherResult.Ok -> {
                 roomId = parsed.first
                 inviterId = parsed.second
                 membersCheckedAt = 0L
@@ -196,9 +201,9 @@ class OfficialTogetherTransport(
                 TogetherResult.Ok(Unit)
             }
             // The endpoint answers "ended/expired" as a plain error; naming it helps more than the code.
-            is NetResult.Err -> {
-                TogetherLog.add("JOIN failed: ${result.message}")
-                TogetherResult.Failed(result.message)
+            else -> {
+                TogetherLog.add("JOIN failed: ${failureMessage(result)}")
+                TogetherResult.Failed(failureMessage(result))
             }
         }
     }
@@ -232,7 +237,7 @@ class OfficialTogetherTransport(
         val now = System.currentTimeMillis()
         if (songId > 0L && now - heartbeatAt >= HEARTBEAT_INTERVAL_MS) {
             heartbeatAt = now
-            music.togetherHeartbeat(room, songId, playing, positionMs)
+            api.heartbeat(room, songId, playing, positionMs)
         }
         return pollPeers(code, uid)
     }
@@ -249,11 +254,11 @@ class OfficialTogetherTransport(
         excludeUid: String,
     ): TogetherResult<List<TogetherPeerState>> {
         val room = roomId ?: return TogetherResult.Failed("尚未进入房间")
-        val command = when (val result = music.togetherRemoteState(room)) {
-            is NetResult.Ok -> result.value
-            is NetResult.Err -> {
-                TogetherLog.add("POLL failed: ${result.message}")
-                return TogetherResult.Failed(result.message)
+        val command = when (val result = api.snapshot(room)) {
+            is TogetherResult.Ok -> result.value
+            else -> {
+                TogetherLog.add("POLL failed: ${failureMessage(result)}")
+                return TogetherResult.Failed(failureMessage(result))
             }
         }
         refreshMembers(room)
@@ -311,14 +316,17 @@ class OfficialTogetherTransport(
         // very first command used to go out as 0. Our own ordering still uses the local Lamport counter
         // passed in as [clientSeq]; this only changes what goes on the wire.
         val wireSeq = maxOf(clientSeq, System.currentTimeMillis())
-        return when (val result = music.togetherCommand(room, type, songId, positionMs, playing, wireSeq)) {
-            is NetResult.Ok -> {
+        return when (val result = api.reportCommand(
+            roomId = room, type = type, formerSongId = "0", targetSongId = "$songId",
+            progressMs = positionMs, playing = playing, sequence = wireSeq,
+        )) {
+            is TogetherResult.Ok -> {
                 TogetherLog.add("SEND $type song=$songId pos=$positionMs play=$playing seq=$clientSeq")
                 TogetherResult.Ok(Unit)
             }
-            is NetResult.Err -> {
-                TogetherLog.add("SEND $type FAILED: ${result.message}")
-                TogetherResult.Failed(result.message)
+            else -> {
+                TogetherLog.add("SEND $type FAILED: ${failureMessage(result)}")
+                TogetherResult.Failed(failureMessage(result))
             }
         }
     }
@@ -334,14 +342,14 @@ class OfficialTogetherTransport(
         ensureSelfUid()
         val owner = selfUid.takeIf { it != 0L } ?: uid.toLongOrNull() ?: 0L
         if (owner == 0L) return TogetherResult.Ok(Unit)
-        return when (val result = music.togetherSyncList(room, queue, owner, version)) {
-            is NetResult.Ok -> {
+        return when (val result = api.reportPlaylist(room, owner, version, queue)) {
+            is TogetherResult.Ok -> {
                 TogetherLog.add("QUEUE ${queue.size} songs as $owner")
                 TogetherResult.Ok(Unit)
             }
-            is NetResult.Err -> {
-                TogetherLog.add("QUEUE failed: ${result.message}")
-                TogetherResult.Failed(result.message)
+            else -> {
+                TogetherLog.add("QUEUE failed: ${failureMessage(result)}")
+                TogetherResult.Failed(failureMessage(result))
             }
         }
     }
@@ -365,12 +373,12 @@ class OfficialTogetherTransport(
         heartbeatAt = 0L
         roomGone = false
         TogetherLog.add("LEAVE room=${TogetherLog.short(room)}")
-        return when (val result = music.togetherEnd(room)) {
-            is NetResult.Ok -> TogetherResult.Ok(Unit)
+        return when (val result = api.end(room)) {
+            is TogetherResult.Ok -> TogetherResult.Ok(Unit)
             // Leaving must never fail from the user's point of view: the local session is already cleared,
             // so a server-side error only means the room will expire on its own.
-            is NetResult.Err -> {
-                TogetherLog.add("LEAVE end failed: ${result.message}")
+            else -> {
+                TogetherLog.add("LEAVE end failed: ${failureMessage(result)}")
                 TogetherResult.Ok(Unit)
             }
         }
@@ -384,9 +392,9 @@ class OfficialTogetherTransport(
         membersCheckedAt = 0L
         heartbeatAt = 0L
         roomGone = false
-        return when (val result = music.togetherEnd(room)) {
-            is NetResult.Ok -> TogetherResult.Ok(Unit)
-            is NetResult.Err -> TogetherResult.Failed(result.message)
+        return when (val result = api.end(room)) {
+            is TogetherResult.Ok -> TogetherResult.Ok(Unit)
+            else -> TogetherResult.Failed(failureMessage(result))
         }
     }
 
@@ -402,7 +410,7 @@ class OfficialTogetherTransport(
      */
     private suspend fun ensureSelfUid() {
         if (selfUid != 0L) return
-        selfUid = music.account()?.userId ?: 0L
+        selfUid = ownUid()
         // Logged because this one value decides whether a device can tell its own command from the peer's:
         // with it unresolved, each side treats its own echoes as the peer's, and "the song does not follow"
         // is the visible result. Without this line the log could not distinguish that from a poll that
@@ -426,8 +434,8 @@ class OfficialTogetherTransport(
         if (now - membersCheckedAt < MEMBERS_REFRESH_MS) return
         membersCheckedAt = now
         ensureSelfUid()
-        when (val result = music.togetherStatus()) {
-            is NetResult.Ok -> {
+        when (val result = api.status()) {
+            is TogetherResult.Ok -> {
                 // The room this account is in, according to the server. If it says "not in a room" while we
                 // believe we are in one, the other side ended it — but not during the first few seconds,
                 // when the server may not have caught up with the room we just made or joined.
@@ -441,7 +449,7 @@ class OfficialTogetherTransport(
                     .map { TogetherMember(uid = "${it.uid}", name = it.nickname, avatarUrl = it.avatarUrl) }
             }
             // A failed lookup must not end the session: keep the previous answer and try again next time.
-            is NetResult.Err -> Unit
+            else -> Unit
         }
     }
 
@@ -562,6 +570,22 @@ class OfficialTogetherTransport(
     /** Members other than this device, refreshed at most every [MEMBERS_REFRESH_MS]. */
     private var members: List<TogetherMember> = emptyList()
     private var membersCheckedAt: Long = 0L
+
+
+    /**
+     * The message from a failed call, whatever the outcome type.
+     *
+     * Needed because the `when`s here switch on [TogetherResult] from the API, where only `Ok` and `Failed`
+     * occur, so the failure branch is `else ->` and the compiler can no longer prove the result is a
+     * `Failed`. Reading `.message` through this keeps those branches one line each without re-adding
+     * outcome cases the API cannot produce.
+     */
+    private fun failureMessage(result: TogetherResult<*>): String = when (result) {
+        is TogetherResult.Failed -> result.message
+        is TogetherResult.NoRoom -> result.message
+        is TogetherResult.RateLimited -> result.message
+        is TogetherResult.Ok -> "一起听请求失败"
+    }
 
     /**
      * Local aliases for the invite helpers, which live in [OfficialTogetherRules] so their rules are
