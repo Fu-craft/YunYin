@@ -31,17 +31,37 @@ data class LocalPlayback(
 /**
  * The room's sync rule, as a pure function.
  *
- * ## Why this is its own unit
+ * ## How "whose action is newer" is decided — and why not with counters
  *
- * Two devices correcting each other is the failure mode of every "listen together" implementation:
- * A seeks, B sees a drift and seeks back, A sees a drift again, and the song stutters forever. The
- * rule below makes that impossible by construction rather than by tuning — every correction is
- * attributed to the peer, and a correction is **suppressed while one is still settling**, so the
- * two cannot chase each other.
+ * The room holds **one command**, and the read path reports it along with **who authored it**. That is
+ * enough to order events without any clock at all:
  *
- * @param driftToleranceMs how far apart the two positions may be before it is worth correcting. A
- *   second or two of skew is inaudible as "out of sync" but constant micro-seeks are very audible,
- *   so this is deliberately not zero.
+ *  - a command authored by *us* is never even handed to this rule (the transport drops it as an echo), so
+ *    our own local actions can never be undone by our own stale state;
+ *  - a command authored by the peer is a **thing they did** — so whenever it differs from the last one we
+ *    saw, it is followed immediately, whatever we are playing.
+ *
+ * What "differs" means is [peerIdentity]: the author, the song and the play state, which change exactly when
+ * someone acts and stay stable while they merely listen.
+ *
+ * An earlier version compared a **local Lamport counter** against the peer's server sequence instead. That
+ * was wrong in a way that only shows up against a real server: the two values come from different clocks
+ * (ours a counter, the server's its own numbering), so once the local counter had been advanced past the
+ * peer's value — which adopting the peer's first command does — every later command from the peer compared
+ * as *older* and was ignored. The symptom was exact: **the first song syncs and nothing after it ever
+ * does.** Dropping the counter removes the whole class of error, and matches the reference implementation,
+ * which also has no local sequence.
+ *
+ * ## Anti-ping-pong
+ *
+ * Two devices correcting each other is the failure mode of every "listen together" implementation: A seeks,
+ * B sees a drift and seeks back, and the song stutters forever. The rule below makes that impossible by
+ * construction: only a *new* peer command is applied outright, and a repeated one is only ever nudged for
+ * position, inside a tolerance, and never while a correction is still settling.
+ *
+ * @param driftToleranceMs how far apart the two positions may be before it is worth correcting. A second or
+ *   two of skew is inaudible as "out of sync" but constant micro-seeks are very audible, so this is
+ *   deliberately not zero.
  * @param settleMs how long after applying a peer's state we stop reacting to it.
  */
 object TogetherSync {
@@ -50,43 +70,49 @@ object TogetherSync {
     const val SETTLE_MS = 6_000L
 
     /**
+     * What identifies a peer command.
+     *
+     * Author, song and play state: the three things that change when the other person *does* something.
+     * Position is deliberately excluded — it advances on its own, so including it would make every poll look
+     * like a new command and turn the drift correction into a seek loop.
+     */
+    fun peerIdentity(peer: TogetherPeerState): String =
+        "${peer.uid}|${peer.songId}|${peer.playing}"
+
+    /**
      * @param local what this device is playing right now
-     * @param peer the other member's state, or null while nobody has reported in
+     * @param peer the other member's command, or null while nobody has reported in
+     * @param peerIsNew true when this command differs from the last one we acted on — i.e. the peer has done
+     *   something since, rather than this being the same state re-reported
      * @param lastAppliedAt the wall clock at which the last peer correction was applied
      * @param now the wall clock
      */
     fun decide(
         local: LocalPlayback,
         peer: TogetherPeerState?,
+        peerIsNew: Boolean,
         lastAppliedAt: Long,
         now: Long,
-        localSeq: Long = 0L,
         driftToleranceMs: Long = DRIFT_TOLERANCE_MS,
         settleMs: Long = SETTLE_MS,
     ): SyncAction {
         // Nobody to follow.
         if (peer == null || !peer.hasSong) return SyncAction.None
 
-        // Whose intent is newer? This is the rule that makes the room usable at all, and the one that
-        // was missing: without it any local action (next/previous/play) was immediately undone,
-        // because the peer's *stale* state still disagreed and read as "we are out of sync". The user
-        // saw it as "切歌点了没反应".
-        //
-        // Ordering is by a Lamport clock, not by time. The two devices' clocks differ by tens of
-        // seconds (measured), so comparing timestamps would routinely pick the wrong winner; a counter
-        // that each side advances past whatever it has seen orders actions causally instead.
-        if (localSeq > peer.seq) return SyncAction.None
-        if (peer.seq > localSeq) {
-            // The peer acted more recently, so its state is the truth — including deliberately, not
-            // subject to the settle window below.
-            return followPeer(local, peer, driftToleranceMs)
-        }
+        // The peer acted: follow, including inside the settle window. An explicit action is not drift, and
+        // suppressing it would make the other person's next/previous look broken.
+        if (peerIsNew) return followPeer(local, peer, driftToleranceMs)
 
-        // Same sequence number: neither side has acted since the last exchange, so this is the
-        // continuous drift correction. Here the settle window applies, because the two sides are
-        // nudging each other rather than one of them having asked for something.
+        // The same command as last time: neither side has acted, so this is the continuous drift
+        // correction. Rate-limit it, or the two devices would seek at each other.
         if (lastAppliedAt != 0L && now - lastAppliedAt < settleMs) return SyncAction.None
-        return followPeer(local, peer, driftToleranceMs)
+        // Never yank a track we changed locally. (The identity includes the song, so a peer on a different
+        // song is always a *new* command and handled above; this is only a guard for a stale report.)
+        if (peer.songId != local.songId) return SyncAction.None
+        if (kotlin.math.abs(peer.positionMs - local.positionMs) > driftToleranceMs) {
+            return SyncAction.Seek(peer.songId, peer.positionMs)
+        }
+        return SyncAction.None
     }
 
     /** What it takes to match [peer]: adopt its track, seek to it, or match its play state. */
@@ -109,13 +135,4 @@ object TogetherSync {
         }
         return SyncAction.None
     }
-
-    /**
-     * The counter to put on the next report after seeing [peerSeq].
-     *
-     * `max(local, peer) + 1` is the Lamport rule: the new value is greater than anything either side
-     * has used, so "larger seq" always means "causally later" no matter whose clock is right.
-     */
-    fun nextSeq(localSeq: Long, peerSeq: Long): Long =
-        maxOf(localSeq, peerSeq) + 1L
 }

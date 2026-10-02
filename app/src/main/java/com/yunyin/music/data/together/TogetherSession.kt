@@ -120,25 +120,14 @@ class TogetherSession(
     private var lastAppliedAt = 0L
 
     /**
-     * This device's logical clock, advanced on every local action **and** past every peer value seen.
+     * The identity of the last peer command this device acted on — see [TogetherSync.peerIdentity].
      *
-     * This is what decides who wins when the two members disagree, and it must not be a wall clock:
-     * the devices' clocks differ by tens of seconds, so "later timestamp" would be wrong about half the
-     * time. A Lamport counter orders actions causally instead — see [TogetherSync.nextSeq].
+     * This is the whole of the room's ordering: a command with a different identity is something the peer
+     * *did* since we last looked, and is followed; the same identity is a state we have already seen. No
+     * counter, and therefore nothing that can drift out of step with the server's own numbering — which is
+     * what made every command after the first one look "older" and get ignored.
      */
-    private var seq = 0L
-
-    /** The highest counter seen from a peer, so a local action can be made to exceed it. */
-    private var peerSeqSeen = 0L
-
-    /**
-     * The peer command already adopted while this device had nothing playing.
-     *
-     * Needed because loading a track is asynchronous: for the few polls before the player reports the new
-     * song, `localPlayback()` is still null, and without this the same command would be re-issued on every
-     * tick — restarting the song over and over until it finally appeared.
-     */
-    private var adoptedPeerSeq = 0L
+    private var lastPeerIdentity: String? = null
 
     /**
      * A discrete action the user announced and the loop has not published yet.
@@ -170,10 +159,8 @@ class TogetherSession(
     /**
      * Records that the user did something to playback (next, previous, play/pause, a seek).
      *
-     * Every local action **must** call this. Without it the peer's previous state still disagrees with
-     * ours, reads as "out of sync", and the track is pulled back within a poll or two — the reported
-     * "加入房间以后无法切歌". The bump is what makes the room yield to whoever acted last, and it also
-     * gives the action immediate priority over the continuous drift correction.
+     * Every local action **must** call this: it is what queues the announcement and wakes the loop so the
+     * peer sees the change immediately rather than after the next scheduled poll.
      *
      * [action] names what the user did, when the call site knows. The official transport needs it: its
      * protocol distinguishes "a different song" from "a seek" from "a pause", and only an explicit
@@ -182,7 +169,6 @@ class TogetherSession(
      */
     fun noteUserAction(action: TogetherLocalAction? = null) {
         if (action != null) pendingAction = action
-        seq = TogetherSync.nextSeq(seq, peerSeqSeen)
         // Tell the loop to publish now: a peer should see the new track immediately, not after the
         // next scheduled poll.
         wakeups.trySend(Unit)
@@ -194,20 +180,14 @@ class TogetherSession(
     }
 
     /**
-     * Starts a room's logical clock from zero.
+     * Forgets which peer command was last acted on, for a room that is only just starting.
      *
-     * The clock orders "who acted last" **within one room**, so it must not carry over between rooms:
-     * this session object lives for the whole app, and a counter left over from earlier rooms made a
-     * fresh peer look stale by comparison — its first report is `seq = 1` while ours could be anything.
-     * The symptom was "joining a room never adopts the other member's song", which looks like a sync
-     * failure and is really a units error: comparing counters from two different conversations.
+     * It must not carry over between rooms: an identity left from a previous conversation could match the
+     * first command in a new room and suppress the very adoption this is meant to make once — which is the
+     * reported "joining a room never adopts the other member's song".
      */
-    private fun resetClock() {
-        seq = 0L
-        peerSeqSeen = 0L
-        // Same reasoning as the clock: an id left over from a previous room could match a peer command in a
-        // new one and suppress the very adoption the guard exists to make once.
-        adoptedPeerSeq = 0L
+    private fun resetSync() {
+        lastPeerIdentity = null
     }
 
     private companion object {
@@ -223,7 +203,7 @@ class TogetherSession(
 
     fun createRoom(uid: String, name: String) {
         if (uid.isBlank()) return
-        resetClock()
+        resetSync()
         launchWork {
             when (val result = transport.createRoom(uid, name)) {
                 is TogetherResult.Ok -> {
@@ -246,7 +226,7 @@ class TogetherSession(
         // wrong for the official invite, whose id is lowercase hex with a separator in it.
         val key = transport.normaliseJoinInput(code)
         if (key.isBlank() || uid.isBlank()) return
-        resetClock()
+        resetSync()
         launchWork {
             // Look the room up first so a wrong code says so instead of joining nothing. The relay
             // still validates on join; this is only for a better message.
@@ -384,7 +364,7 @@ class TogetherSession(
                         songId = opening.songId,
                         positionMs = opening.positionMs,
                         playing = opening.playing,
-                        clientSeq = seq,
+                        clientSeq = 0L,
                     )
                 }
             }
@@ -404,7 +384,7 @@ class TogetherSession(
                         songId = active.songId,
                         positionMs = active.positionMs,
                         playing = active.playing,
-                        seq = seq,
+                        seq = 0L,
                     )
                 } else {
                     transport.pollPeers(code, uid)
@@ -412,9 +392,6 @@ class TogetherSession(
                 when (result) {
                     is TogetherResult.Ok -> {
                         val peers = result.value
-                        // Observe the peer's clock before deciding, so our next local action can win
-                        // against it (Lamport: the new value must exceed everything we have seen).
-                        peers.maxOfOrNull { it.seq }?.let { peerSeqSeen = maxOf(peerSeqSeen, it) }
                         _state.value = _state.value.copy(peers = peers, error = null)
                         apply(peers, active)
                         // Published *after* the read, deliberately. Publishing first would let a joiner
@@ -480,7 +457,7 @@ class TogetherSession(
             songId = mine.songId,
             positionMs = mine.positionMs,
             playing = mine.playing,
-            clientSeq = seq,
+            clientSeq = 0L,
         )
     }
 
@@ -502,6 +479,13 @@ class TogetherSession(
     /**
      * Applies whatever the room says, given this device's own playback (which may be nothing).
      *
+     * ## What decides "the peer acted"
+     *
+     * Not a counter — the identity of the command ([TogetherSync.peerIdentity]: author, song and play
+     * state). A different identity means they did something since we last looked, and it is followed at
+     * once; the same identity means the room is reporting the state we have already seen, so only the
+     * drift is nudged, and only outside the settle window.
+     *
      * ## Why `mine == null` is *not* an early return
      *
      * It used to be, and that was a bug with a very visible symptom: **joining a room while nothing was
@@ -511,7 +495,7 @@ class TogetherSession(
      * ("房间里只有我", "没有切换到起风了").
      *
      * With nothing playing there is nothing to preserve, so the peer's track is adopted outright. It is
-     * applied **once per peer command** ([adoptedPeerSeq]) rather than on every tick: the player loads a
+     * applied **once per peer command** ([lastPeerIdentity]) rather than on every tick: the player loads a
      * track asynchronously, so `localPlayback()` stays null for a few polls after the request, and
      * re-issuing it would restart the song repeatedly until it took.
      */
@@ -526,37 +510,41 @@ class TogetherSession(
             return
         }
 
+        // The command is followed when it differs from the state we have already settled on. Both
+        // `lastPeerIdentity` (what we acted on) and `lastPublished…` (what our own state is) count, because
+        // adopting the room's state sets both.
+        val identity = TogetherSync.peerIdentity(peer)
+        val isNew = identity != lastPeerIdentity
+
         if (mine == null) {
-            if (peer.seq == adoptedPeerSeq) return
-            adoptedPeerSeq = peer.seq
+            if (!isNew) return
+            lastPeerIdentity = identity
             lastAppliedAt = System.currentTimeMillis()
-            seq = TogetherSync.nextSeq(seq, peer.seq)
             TogetherLog.add("APPLY adopt song=${peer.songId} pos=${peer.positionMs} (nothing playing locally)")
             applyAction(SyncAction.PlaySong(peer.songId, peer.positionMs))
+            lastPublishedSongId = peer.songId
+            lastPublishedPlaying = peer.playing
             return
         }
 
         val action = TogetherSync.decide(
             local = mine,
             peer = peer,
+            peerIsNew = isNew,
             lastAppliedAt = lastAppliedAt,
             now = System.currentTimeMillis(),
-            localSeq = seq,
         )
         if (action == SyncAction.None) {
-            // The interesting negative: the peer IS on a song and we still did nothing. Either we consider
-            // our own state newer (the Lamport comparison), or the two agree already.
+            // The interesting negative: the peer IS on a song and we still did nothing — either this is the
+            // state we already have, or the difference is inside the drift tolerance.
             TogetherLog.add(
-                "APPLY none: local(song=${mine.songId} pos=${mine.positionMs} play=${mine.playing} seq=$seq) " +
-                    "vs peer(song=${peer.songId} pos=${peer.positionMs} seq=${peer.seq})",
+                "APPLY none: local(song=${mine.songId} pos=${mine.positionMs} play=${mine.playing}) " +
+                    "vs peer(song=${peer.songId} pos=${peer.positionMs} play=${peer.playing}) new=$isNew",
             )
             return
         }
         lastAppliedAt = System.currentTimeMillis()
-        // Adopting the peer's state *is* an action, so our clock moves past theirs. Without this the
-        // next comparison would still see us as the stale side and we would re-apply the same
-        // correction on every poll.
-        seq = TogetherSync.nextSeq(seq, peer.seq)
+        lastPeerIdentity = identity
         TogetherLog.add("APPLY $action (local song=${mine.songId} pos=${mine.positionMs} play=${mine.playing})")
         applyAction(action)
         // The room's state is now ours, so there is nothing new to announce: marking it as published stops

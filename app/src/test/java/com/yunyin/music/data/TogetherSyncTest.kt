@@ -5,19 +5,19 @@ import com.yunyin.music.data.together.SyncAction
 import com.yunyin.music.data.together.TogetherPeerState
 import com.yunyin.music.data.together.TogetherSync
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNotEquals
 import org.junit.Test
 
 /**
  * The listen-together sync rule.
  *
- * The cases here are the ways two devices correcting each other go wrong — the failure this feature
- * is most likely to ship with, because it looks like it works when you test it alone:
+ * The cases here are the ways two devices correcting each other go wrong — the failure this feature is most
+ * likely to ship with, because it looks like it works when you test it alone:
  *
+ *  - **the first song syncs and nothing after it** (the reported bug): a stale ordering rule made every later
+ *    peer command compare as "older" and be ignored;
  *  - the ping-pong: A seeks, B seeks back, forever (guarded by the settle window);
  *  - correcting a sub-second skew, which is inaudible as desync but very audible as a stutter;
- *  - fighting over the play/pause state while the track is already right;
  *  - reacting to a member who has joined but is not playing anything yet.
  */
 class TogetherSyncTest {
@@ -44,7 +44,7 @@ class TogetherSyncTest {
     fun `no peer means nothing to do`() {
         assertEquals(
             SyncAction.None,
-            TogetherSync.decide(local, null, lastAppliedAt = 0L, now = 10_000L),
+            TogetherSync.decide(local, null, peerIsNew = true, lastAppliedAt = 0L, now = 10_000L),
         )
     }
 
@@ -54,7 +54,7 @@ class TogetherSyncTest {
         // everyone, which is the opposite of what they asked for.
         assertEquals(
             SyncAction.None,
-            TogetherSync.decide(local, peer(songId = 0L, positionMs = 0L), 0L, now = 10_000L),
+            TogetherSync.decide(local, peer(songId = 0L, positionMs = 0L), true, 0L, now = 10_000L),
         )
     }
 
@@ -63,6 +63,7 @@ class TogetherSyncTest {
         val action = TogetherSync.decide(
             local,
             peer(songId = 200L, positionMs = 30_000L),
+            peerIsNew = true,
             lastAppliedAt = 0L,
             now = 10_000L,
         )
@@ -70,10 +71,72 @@ class TogetherSyncTest {
     }
 
     @Test
+    fun `a second, later command is followed too`() {
+        // THE reported bug. With the old counter comparison, adopting the peer's first command advanced our
+        // value past theirs, so every *later* command compared as older and was ignored: "the first song is
+        // the same, but when the host switches, the member does not follow."
+        //
+        // With identity-based ordering there is no such state: a command with a different song is simply a
+        // new thing the peer did. Modelled here as the state after having adopted the first command.
+        val afterFirst = LocalPlayback(songId = 200L, positionMs = 0L, playing = true)
+
+        val second = TogetherSync.decide(
+            local = afterFirst,
+            peer = peer(songId = 300L, positionMs = 0L, seq = 2L),
+            peerIsNew = true,
+            lastAppliedAt = 0L,
+            now = 20_000L,
+        )
+        assertEquals(SyncAction.PlaySong(300L, 0L), second)
+    }
+
+    @Test
+    fun `a peer command is followed even right after we applied one`() {
+        // The settle window must not suppress an explicit action: the peer pressed next and expects the room
+        // to move now, whatever we were doing a moment ago.
+        val action = TogetherSync.decide(
+            local = LocalPlayback(songId = 200L, positionMs = 0L, playing = true),
+            peer = peer(songId = 300L, positionMs = 5_000L, seq = 3L),
+            peerIsNew = true,
+            lastAppliedAt = 9_900L,
+            now = 10_000L,
+        )
+        assertEquals(SyncAction.PlaySong(300L, 5_000L), action)
+    }
+
+    @Test
+    fun `a repeated command is left alone inside the settle window`() {
+        // Same command as last time, and we just applied something: this is drift, and chasing it inside the
+        // window is what makes the two devices seek at each other.
+        val action = TogetherSync.decide(
+            local = LocalPlayback(songId = 300L, positionMs = 0L, playing = true),
+            peer = peer(songId = 300L, positionMs = 30_000L, seq = 3L),
+            peerIsNew = false,
+            lastAppliedAt = 9_000L,
+            now = 10_000L,
+        )
+        assertEquals(SyncAction.None, action)
+    }
+
+    @Test
+    fun `a repeated command is followed for drift once the window passes`() {
+        val action = TogetherSync.decide(
+            local = LocalPlayback(songId = 300L, positionMs = 30_000L, playing = true),
+            peer = peer(songId = 300L, positionMs = 34_000L, seq = 3L),
+            peerIsNew = false,
+            lastAppliedAt = 1_000L,
+            now = 10_000L,
+            settleMs = 6_000L,
+        )
+        assertEquals(SyncAction.Seek(300L, 34_000L), action)
+    }
+
+    @Test
     fun `a drift past the tolerance is corrected by seeking`() {
         val action = TogetherSync.decide(
             LocalPlayback(songId = 200L, positionMs = 30_000L, playing = true),
             peer(songId = 200L, positionMs = 34_000L),
+            peerIsNew = true,
             lastAppliedAt = 0L,
             now = 10_000L,
         )
@@ -86,6 +149,7 @@ class TogetherSyncTest {
         val action = TogetherSync.decide(
             LocalPlayback(songId = 200L, positionMs = 30_000L, playing = true),
             peer(songId = 200L, positionMs = 31_500L),
+            peerIsNew = true,
             lastAppliedAt = 0L,
             now = 10_000L,
         )
@@ -94,11 +158,12 @@ class TogetherSyncTest {
 
     @Test
     fun `a drift exactly at the tolerance is not corrected`() {
-        // Boundary: the test is `> tolerance`, so exactly at it stays put. Pinned because an
-        // off-by-one here turns every steady state into a seek loop.
+        // Boundary: the test is `> tolerance`, so exactly at it stays put. Pinned because an off-by-one here
+        // turns every steady state into a seek loop.
         val action = TogetherSync.decide(
             LocalPlayback(songId = 200L, positionMs = 30_000L, playing = true),
             peer(songId = 200L, positionMs = 32_000L),
+            peerIsNew = true,
             lastAppliedAt = 0L,
             now = 10_000L,
         )
@@ -110,6 +175,7 @@ class TogetherSyncTest {
         val action = TogetherSync.decide(
             LocalPlayback(songId = 200L, positionMs = 34_000L, playing = true),
             peer(songId = 200L, positionMs = 30_000L),
+            peerIsNew = true,
             lastAppliedAt = 0L,
             now = 10_000L,
         )
@@ -117,10 +183,11 @@ class TogetherSyncTest {
     }
 
     @Test
-    fun `same song and position but the peer is paused pauses us`() {
+    fun `same song and position but the peer paused pauses us`() {
         val action = TogetherSync.decide(
             LocalPlayback(songId = 200L, positionMs = 30_000L, playing = true),
             peer(songId = 200L, positionMs = 30_000L, playing = false),
+            peerIsNew = true,
             lastAppliedAt = 0L,
             now = 10_000L,
         )
@@ -132,6 +199,7 @@ class TogetherSyncTest {
         val action = TogetherSync.decide(
             LocalPlayback(songId = 200L, positionMs = 30_000L, playing = false),
             peer(songId = 200L, positionMs = 30_000L, playing = true),
+            peerIsNew = true,
             lastAppliedAt = 0L,
             now = 10_000L,
         )
@@ -145,6 +213,7 @@ class TogetherSyncTest {
             TogetherSync.decide(
                 LocalPlayback(songId = 200L, positionMs = 30_000L, playing = true),
                 peer(songId = 200L, positionMs = 30_500L, playing = true),
+                peerIsNew = true,
                 lastAppliedAt = 0L,
                 now = 10_000L,
             ),
@@ -152,124 +221,39 @@ class TogetherSyncTest {
     }
 
     @Test
-    fun `drift correction is suppressed while a correction is still settling`() {
-        // The ping-pong guard: right after we applied the peer's state, a re-reported difference must
-        // be ignored rather than chased, or the two devices correct each other forever. Equal sequence
-        // numbers mean neither side has *acted* — so this is drift, and the window applies. (A peer
-        // action is a different case and is applied immediately; see the who-wins tests above.)
-        val action = TogetherSync.decide(
-            LocalPlayback(songId = 200L, positionMs = 30_000L, playing = true),
-            peer(songId = 999L, positionMs = 0L, seq = 4L),
-            lastAppliedAt = 9_000L,
-            now = 10_000L,
-            localSeq = 4L,
-        )
-        assertEquals(SyncAction.None, action)
-    }
-
-    @Test
-    fun `drift correction resumes once the settle window has passed`() {
-        val action = TogetherSync.decide(
-            LocalPlayback(songId = 200L, positionMs = 30_000L, playing = true),
-            peer(songId = 999L, positionMs = 0L, seq = 4L),
-            lastAppliedAt = 1_000L,
-            now = 10_000L,
-            localSeq = 4L,
-            settleMs = 6_000L,
-        )
-        assertEquals(SyncAction.PlaySong(999L, 0L), action)
-    }
-
-    // ---------------------------------------------------------------- who wins
-
-    @Test
-    fun `a local action taken after the peer's report is not overwritten`() {
-        // THE reported bug: you press next, the peer's (older) state still says the previous track, and
-        // the room pulls you back — the button looks dead. Our counter has moved past theirs, so the
-        // peer's track must be ignored entirely.
-        val action = TogetherSync.decide(
-            local = LocalPlayback(songId = 300L, positionMs = 0L, playing = true),
-            peer = peer(songId = 200L, positionMs = 90_000L, seq = 3L),
-            lastAppliedAt = 0L,
-            now = 10_000L,
-            localSeq = 4L,
-        )
-        assertEquals(SyncAction.None, action)
-    }
-
-    @Test
-    fun `a local pause is not undone by the peer still playing`() {
-        val action = TogetherSync.decide(
-            local = LocalPlayback(songId = 200L, positionMs = 30_000L, playing = false),
-            peer = peer(songId = 200L, positionMs = 30_000L, playing = true, seq = 2L),
-            lastAppliedAt = 0L,
-            now = 10_000L,
-            localSeq = 5L,
-        )
-        assertEquals(SyncAction.None, action)
-    }
-
-    @Test
-    fun `a newer peer action wins over ours`() {
-        val action = TogetherSync.decide(
-            local = LocalPlayback(songId = 300L, positionMs = 0L, playing = true),
-            peer = peer(songId = 200L, positionMs = 90_000L, seq = 7L),
-            lastAppliedAt = 0L,
-            now = 10_000L,
-            localSeq = 6L,
-        )
-        assertEquals(SyncAction.PlaySong(200L, 90_000L), action)
-    }
-
-    @Test
-    fun `a peer action is applied even inside the settle window`() {
-        // An explicit action is not drift, so the anti-ping-pong window must not suppress it: the peer
-        // pressed next and expects the room to move now.
-        val action = TogetherSync.decide(
-            local = LocalPlayback(songId = 300L, positionMs = 0L, playing = true),
-            peer = peer(songId = 200L, positionMs = 0L, seq = 9L),
-            lastAppliedAt = 9_900L,
-            now = 10_000L,
-            localSeq = 8L,
-        )
-        assertEquals(SyncAction.PlaySong(200L, 0L), action)
-    }
-
-    @Test
-    fun `equal sequences are treated as drift, so the settle window applies`() {
-        // Neither side has acted since the last exchange: this is the continuous correction, and it
-        // must still be rate-limited or the two devices would seek at each other.
+    fun `a stale report of a different song never yanks our track in drift mode`() {
+        // Not a new command, yet a different song: the only reading is a stale echo of a track we have
+        // already left. Drift correction must not pull us back to it.
         assertEquals(
             SyncAction.None,
             TogetherSync.decide(
                 local = LocalPlayback(songId = 300L, positionMs = 0L, playing = true),
-                peer = peer(songId = 200L, positionMs = 0L, seq = 5L),
-                lastAppliedAt = 9_900L,
-                now = 10_000L,
-                localSeq = 5L,
-            ),
-        )
-        // ...and once the window passes, it is applied.
-        assertEquals(
-            SyncAction.PlaySong(200L, 0L),
-            TogetherSync.decide(
-                local = LocalPlayback(songId = 300L, positionMs = 0L, playing = true),
-                peer = peer(songId = 200L, positionMs = 0L, seq = 5L),
+                peer = peer(songId = 200L, positionMs = 90_000L, seq = 3L),
+                peerIsNew = false,
                 lastAppliedAt = 1_000L,
                 now = 10_000L,
-                localSeq = 5L,
             ),
         )
     }
 
+    // ---------------------------------------------------------------- command identity
+
+    private val base = peer(songId = 200L, positionMs = 30_000L, playing = true)
+
     @Test
-    fun `the next counter always exceeds both sides, without needing synced clocks`() {
-        // Lamport: the new value is greater than anything either side has used, so "larger" means
-        // "causally later" even though the two clocks differ by tens of seconds.
-        assertEquals(1L, TogetherSync.nextSeq(0L, 0L))
-        assertEquals(6L, TogetherSync.nextSeq(5L, 3L))
-        assertEquals(8L, TogetherSync.nextSeq(3L, 7L))
-        assertTrue(TogetherSync.nextSeq(5L, 3L) > 5L)
-        assertTrue(TogetherSync.nextSeq(3L, 7L) > 7L)
+    fun `the identity ignores position, so listening is not an action`() {
+        // Position advances on its own; if it were part of the identity, every poll would look like a new
+        // command and the drift guard would never apply.
+        assertEquals(
+            TogetherSync.peerIdentity(base),
+            TogetherSync.peerIdentity(base.copy(positionMs = 45_000L)),
+        )
+    }
+
+    @Test
+    fun `the identity changes when the peer does something`() {
+        assertNotEquals(TogetherSync.peerIdentity(base), TogetherSync.peerIdentity(base.copy(songId = 300L)))
+        assertNotEquals(TogetherSync.peerIdentity(base), TogetherSync.peerIdentity(base.copy(playing = false)))
+        assertNotEquals(TogetherSync.peerIdentity(base), TogetherSync.peerIdentity(base.copy(uid = "other")))
     }
 }

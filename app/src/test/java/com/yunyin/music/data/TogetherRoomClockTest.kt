@@ -5,22 +5,21 @@ import com.yunyin.music.data.together.SyncAction
 import com.yunyin.music.data.together.TogetherPeerState
 import com.yunyin.music.data.together.TogetherSync
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNotEquals
 import org.junit.Test
 
 /**
- * The room's logical clock is scoped to **one room**.
+ * Ordering across *rooms* — the bug class that the local counter caused.
  *
- * This is the bug that made joining a room do nothing: the counter lived on the session object, which
- * lives for the whole app, so it carried over between rooms. A peer starting a fresh room reports
- * `seq = 1`, while our leftover counter could already be 7 — and because a higher counter means "acted
- * later", our device concluded **its own** state was newer and refused to follow. The other member's
- * song never loaded, which reads as a sync failure but is really a units error: comparing counters
- * from two different conversations.
+ * The session object lives for the whole app, so anything it remembers between rooms is a hazard. An earlier
+ * design kept a Lamport counter there and compared it against the peer's server sequence; because the two
+ * numbers came from different clocks, a value carried over (or simply advanced past the server's own
+ * numbering) made later commands compare as "older" and be ignored. The reported shape was precise:
+ * **the first song syncs, the host switches, and nothing follows.**
  *
- * There is no way to unit-test `resetClock()`'s call sites without a transport, so the *rule* is pinned
- * here instead — a fresh room starts from zero on both sides, which is what makes the first exchange
- * comparable.
+ * The rule that replaced it has no cross-room state to leak: a command is judged by *what it is* (author,
+ * song, play state), so the same command in a new room is followed exactly as the first one in an old room.
+ * These tests pin that property rather than the deleted counter.
  */
 class TogetherRoomClockTest {
 
@@ -31,43 +30,44 @@ class TogetherRoomClockTest {
         )
 
     @Test
-    fun `both sides starting at zero means the first report is followed`() {
-        // The state a joined room is actually in: neither side has acted, so the peer's first published
-        // song must be adopted. With a leftover counter this returned None — the reported bug.
-        val action = TogetherSync.decide(
-            local = LocalPlayback(songId = 0L, positionMs = 0L, playing = false),
-            peer = peer(songId = 222L, positionMs = 30_000L, seq = 1L),
-            lastAppliedAt = 0L,
-            now = 10_000L,
-            localSeq = 0L,
-        )
-        assertEquals(SyncAction.PlaySong(222L, 30_000L), action)
-    }
-
-    @Test
-    fun `a leftover counter would have suppressed it`() {
-        // The old behaviour, asserted explicitly so the failure mode is on record: a counter from a
-        // previous room (7) makes an incoming seq of 1 look stale, and the peer is ignored.
-        val action = TogetherSync.decide(
-            local = LocalPlayback(songId = 0L, positionMs = 0L, playing = false),
-            peer = peer(songId = 222L, positionMs = 30_000L, seq = 1L),
-            lastAppliedAt = 0L,
-            now = 10_000L,
-            localSeq = 7L,
-        )
-        assertEquals(SyncAction.None, action)
-    }
-
-    @Test
-    fun `a fresh room's counters are comparable on both sides`() {
-        // Whatever each side does first, the counters stay in the same small range — the property that
-        // makes "higher means later" meaningful. Cross-room accumulation breaks exactly this.
-        var mine = 0L
-        var theirs = 0L
-        repeat(3) {
-            mine = TogetherSync.nextSeq(mine, theirs)
-            theirs = TogetherSync.nextSeq(theirs, mine)
+    fun `the first command of a room is followed even with a huge server sequence`() {
+        // A fresh room must adopt the peer's song regardless of how the server numbers its commands — the
+        // ordering rule no longer looks at that number at all.
+        listOf(0L, 1L, 999L, 1_790_930_000_000L).forEach { seq ->
+            val action = TogetherSync.decide(
+                local = LocalPlayback(songId = 0L, positionMs = 0L, playing = false),
+                peer = peer(songId = 222L, positionMs = 30_000L, seq = seq),
+                peerIsNew = true,
+                lastAppliedAt = 0L,
+                now = 10_000L,
+            )
+            assertEquals("seq=$seq", SyncAction.PlaySong(222L, 30_000L), action)
         }
-        assertTrue("counters drifted apart: mine=$mine theirs=$theirs", kotlin.math.abs(mine - theirs) <= 2)
+    }
+
+    @Test
+    fun `a later command in the same room is followed just as readily`() {
+        // The reported bug, as a property: nothing about having followed an earlier command can make the
+        // next one look stale.
+        val action = TogetherSync.decide(
+            local = LocalPlayback(songId = 222L, positionMs = 12_000L, playing = true),
+            peer = peer(songId = 333L, positionMs = 0L, seq = 1_790_930_000_001L),
+            peerIsNew = true,
+            lastAppliedAt = 10_000L,
+            now = 10_500L,
+        )
+        assertEquals(SyncAction.PlaySong(333L, 0L), action)
+    }
+
+    @Test
+    fun `identity is the only thing that decides newness, and it is stable across rooms`() {
+        // No room id, no sequence, no counter takes part: the same command looks identical in any room, and a
+        // changed command looks different in every room.
+        val a = peer(songId = 222L, positionMs = 1_000L, seq = 1L)
+        val sameLater = peer(songId = 222L, positionMs = 90_000L, seq = 77L)
+        val changed = peer(songId = 333L, positionMs = 1_000L, seq = 1L)
+
+        assertEquals(TogetherSync.peerIdentity(a), TogetherSync.peerIdentity(sameLater))
+        assertNotEquals(TogetherSync.peerIdentity(a), TogetherSync.peerIdentity(changed))
     }
 }
