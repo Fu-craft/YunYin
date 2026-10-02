@@ -487,6 +487,9 @@ class OfficialTogetherTransport(
                 // Carried through so the sync rule can act on *what the peer did* (start, stop, seek,
                 // change track) instead of inferring it from a position comparison — see [TogetherSync].
                 commandType = command.commandType,
+                // The room's list, so the follower can play *within* it and keep next/previous working.
+                // Only the command's author carries it; the members riding along below are presence only.
+                queue = command.queue,
             )
         }
         members.forEach { member ->

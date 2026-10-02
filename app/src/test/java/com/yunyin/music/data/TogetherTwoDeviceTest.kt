@@ -12,6 +12,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -61,6 +62,15 @@ class TogetherTwoDeviceTest {
         var seq = 1_700_000_000_000L
 
         var publishes = 0
+
+        /**
+         * Every command actually sent, as `(author, type)`.
+         *
+         * Recorded so a test can assert on what a device *broadcast*, not only on what it applied. The echo
+         * bug — following a pause and announcing the opposite — is invisible in `applied` and only visible
+         * here.
+         */
+        val published = mutableListOf<Pair<String, String>>()
     }
 
     /**
@@ -144,6 +154,7 @@ class TogetherTwoDeviceTest {
                 TogetherLocalAction.Play -> "PLAY"
                 TogetherLocalAction.Pause -> "PAUSE"
             }
+            room.published += me to room.commandType
             room.seq += 1
             room.publishes++
             return TogetherResult.Ok(Unit)
@@ -158,7 +169,11 @@ class TogetherTwoDeviceTest {
     }
 
     /** A device: its own playback, plus what the room has told it to do. */
-    private class Device(val uid: String, private val room: FakeRoom, scope: CoroutineScope) {
+    private class Device(
+        val uid: String,
+        private val room: FakeRoom,
+        private val scope: CoroutineScope,
+    ) {
         val session = TogetherSession(FakeTransport(uid, room), scope)
         val applied = mutableListOf<SyncAction>()
 
@@ -175,6 +190,15 @@ class TogetherTwoDeviceTest {
          */
         var transitioning = false
 
+        /**
+         * How long the player takes to actually obey a correction.
+         *
+         * A real media controller applies play/pause asynchronously, so for a moment after following a
+         * correction the device still reports its *old* state. That lag is what produced the echo the sync
+         * engine has to suppress, so the fake reproduces it rather than applying instantly.
+         */
+        var applyLatencyMs = 0L
+
         init {
             session.localPlayback = {
                 if (songId > 0L) LocalPlayback(songId, positionMs, playing) else null
@@ -183,16 +207,26 @@ class TogetherTwoDeviceTest {
             session.applyAction = { action ->
                 applied += action
                 // Apply it, as the real host does through the player, so the loop can converge.
-                when (action) {
-                    is SyncAction.PlaySong -> {
-                        songId = action.songId
-                        positionMs = action.positionMs
-                        playing = true
+                val apply = {
+                    when (action) {
+                        is SyncAction.PlaySong -> {
+                            songId = action.songId
+                            positionMs = action.positionMs
+                            playing = action.playing
+                        }
+                        is SyncAction.Seek -> positionMs = action.positionMs
+                        SyncAction.Play -> playing = true
+                        SyncAction.Pause -> playing = false
+                        SyncAction.None -> Unit
                     }
-                    is SyncAction.Seek -> positionMs = action.positionMs
-                    SyncAction.Play -> playing = true
-                    SyncAction.Pause -> playing = false
-                    SyncAction.None -> Unit
+                }
+                if (applyLatencyMs > 0L) {
+                    scope.launch {
+                        delay(applyLatencyMs)
+                        apply()
+                    }
+                } else {
+                    apply()
                 }
             }
         }
@@ -341,6 +375,56 @@ class TogetherTwoDeviceTest {
                 waitUntil { guest.songId == 222L },
             )
             assertEquals("and since it was a start command, playing", true, guest.playing)
+        } finally {
+            hostScope.cancel()
+            guestScope.cancel()
+        }
+    }
+
+    @Test
+    fun `following a pause is never echoed back as a play`() = runBlocking {
+        // The other half of the inversion, and the one a single device cannot show: a correction is applied
+        // asynchronously, so for a moment the receiving player still reports its *old* state. With the
+        // baseline already moved onto the target, that stale reading looks like a fresh local change — and
+        // the device announces the opposite of what it just did. The two then take turns, each appearing to
+        // do the reverse of the other ("我暂停他那边就播放").
+        //
+        // The window is asserted from the *wire*: what this device broadcast, not what it applied.
+        val room = FakeRoom()
+        val hostScope = CoroutineScope(Dispatchers.Default)
+        val guestScope = CoroutineScope(Dispatchers.Default)
+        try {
+            val host = Device("host", room, hostScope)
+            val guest = Device("guest", room, guestScope)
+
+            host.session.createRoom(uid = "host", name = "房主")
+            assertTrue(waitUntil { host.session.state.value.inRoom })
+            guest.session.joinRoom(code = "ROOM", uid = "guest", name = "对方")
+            assertTrue(waitUntil { guest.session.state.value.inRoom })
+
+            host.play(111L, atMs = 0L)
+            assertTrue(waitUntil { guest.songId == 111L })
+            assertTrue(waitUntil { guest.playing })
+
+            // From here on, the host's player takes a moment to obey — as a real one does.
+            host.applyLatencyMs = 250L
+            room.published.clear()
+
+            // The guest pauses. The host must follow, and must not broadcast a PLAY while its player is
+            // still catching up.
+            guest.pause()
+            assertTrue(
+                "the host should follow the pause",
+                waitUntil { host.applied.any { it is SyncAction.Pause } },
+            )
+            delay(400)
+
+            val hostPlay = room.published.filter { it.first == "host" && it.second == "PLAY" }
+            assertTrue(
+                "following a pause must not be echoed back as a play: ${room.published}",
+                hostPlay.isEmpty(),
+            )
+            assertTrue("the host must end up paused", !host.playing)
         } finally {
             hostScope.cancel()
             guestScope.cancel()

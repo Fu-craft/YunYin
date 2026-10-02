@@ -265,8 +265,8 @@ class PlayerController(
 
     // ---------------------------------------------------------------- queue
 
-    /** Replaces the queue and starts at [startIndex]. */
-    fun playQueue(tracks: List<Track>, startIndex: Int) {
+    /** Replaces the queue and starts at [startIndex], playing unless [autoPlay] says otherwise. */
+    fun playQueue(tracks: List<Track>, startIndex: Int, autoPlay: Boolean = true) {
         val mediaController = controller ?: return
         if (tracks.isEmpty()) return
         val items = tracks.map { TrackMediaItem.mediaItem(it) }
@@ -275,13 +275,27 @@ class PlayerController(
         currentQueue = tracks
         mediaController.setMediaItems(items, startIndex.coerceIn(0, items.lastIndex), 0L)
         mediaController.prepare()
-        mediaController.play()
+        if (autoPlay) mediaController.play()
         publish()
     }
 
-    fun playSingle(track: Track, queue: List<Track> = listOf(track)) {
+    fun playSingle(track: Track, queue: List<Track> = listOf(track), autoPlay: Boolean = true) {
         val index = queue.indexOfFirst { it.id == track.id }.takeIf { it >= 0 } ?: 0
-        playQueue(if (queue.isEmpty()) listOf(track) else queue, index)
+        playQueue(if (queue.isEmpty()) listOf(track) else queue, index, autoPlay = autoPlay)
+    }
+
+    /**
+     * Plays [track] from [queue], starting only when [autoPlay] asks, positioned at its index.
+     *
+     * [queue] is already resolved, so this is the single place a listen-together correction reaches the
+     * player. The play state is a parameter because the caller may be reproducing someone else's state: a
+     * room `GOTO` sent while the sender was paused must land paused, and `playQueue`'s unconditional
+     * `play()` would silently override exactly that.
+     */
+    fun playWithinQueue(track: Track, queue: List<Track>, autoPlay: Boolean) {
+        val ordered = queue.ifEmpty { listOf(track) }
+        val index = ordered.indexOfFirst { it.id == track.id }.takeIf { it >= 0 } ?: 0
+        playQueue(ordered, index, autoPlay = autoPlay)
     }
 
     fun next() = controller?.let { it.seekToNextMediaItem(); publish() }

@@ -94,12 +94,17 @@ class NeteaseTogetherApi(private val client: EapiClient) {
                 val command = data.optJSONObject("playCommand") ?: data.optJSONObject("commandInfo")
                 val playlist = data.optJSONObject("playlist") ?: JSONObject()
                 val mode = playlist.optString("playMode").uppercase()
-                val list = (if (mode.contains("RANDOM") || mode.contains("SHUFFLE")) {
-                    playlist.optJSONObject("randomList") ?: playlist.optJSONObject("displayList")
-                } else {
-                    playlist.optJSONObject("displayList") ?: playlist.optJSONObject("randomList")
-                }) ?: JSONObject()
-                val ids = list.optJSONArray("result")
+                // The list is read from whichever shape the server returns. What the client *sends* is a
+                // bare array (`displayList: [id, id]`), while the server's own replies wrap it as an object
+                // with `result`. Accepting only one of the two silently produced an empty queue — and an
+                // empty queue on the follower is exactly what makes its next/previous buttons do nothing.
+                val luckyFirst = mode.contains("RANDOM") || mode.contains("SHUFFLE")
+                val ids = listOf("randomList", "displayList")
+                    .let { if (luckyFirst) it else it.reversed() }
+                    .firstNotNullOfOrNull { key ->
+                        playlist.optJSONArray(key)
+                            ?: playlist.optJSONObject(key)?.optJSONArray("result")
+                    }
                 val queue = (0 until (ids?.length() ?: 0)).mapNotNull { i ->
                     ids?.optString(i)?.toLongOrNull()?.takeIf { it > 0L }
                 }

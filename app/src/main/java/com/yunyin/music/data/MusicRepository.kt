@@ -117,6 +117,16 @@ class MusicRepository(private val client: NeteaseClient) {
      */
     suspend fun track(id: Long): com.yunyin.music.core.Track? =
         client.songDetail(listOf(id)).valueOrNull()?.firstOrNull()
+
+    /**
+     * Resolves many ids into tracks in one or two batched calls, skipping any that fail to resolve.
+     *
+     * For installing a listen-together room's queue: the list can be hundreds of ids, and resolving them one
+     * at a time would issue hundreds of requests. Order is not preserved here because the caller re-selects
+     * by id — but unresolvable ids are dropped rather than inserted as gaps.
+     */
+    suspend fun tracks(ids: List<Long>): List<com.yunyin.music.core.Track> =
+        if (ids.isEmpty()) emptyList() else client.songDetail(ids).listOrEmpty()
 }
 
 /**

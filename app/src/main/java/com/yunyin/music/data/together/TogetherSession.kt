@@ -458,22 +458,40 @@ class TogetherSession(
     private suspend fun publishLocalAction(mine: LocalPlayback) {
         val announced = pendingAction
         pendingAction = null
-        val action = announced ?: when {
+        // An announced play/pause is reconciled against what the player *actually* did.
+        //
+        // The claim is decided at tap time from the state snapshot, and that snapshot can be a hair behind
+        // the player — so the claimed "pause" can describe a player that is in fact now playing. Sending the
+        // claim unchanged is enough to invert the room: this device reports the opposite of its own state and
+        // the peer faithfully follows it. The player's live state is authoritative, so it decides.
+        val reconciled = when (announced) {
+            TogetherLocalAction.Play -> if (mine.playing) announced else TogetherLocalAction.Pause
+            TogetherLocalAction.Pause -> if (mine.playing) TogetherLocalAction.Play else announced
+            else -> announced
+        }
+        val inferred = when {
             mine.songId != lastPublishedSongId -> TogetherLocalAction.Goto
             mine.playing != lastPublishedPlaying ->
                 if (mine.playing) TogetherLocalAction.Play else TogetherLocalAction.Pause
             else -> null
         }
+        val action = reconciled ?: inferred
         // The baseline moves whether or not anything was published — this is the reference's `baseline()`
         // at the end of its report step, and it is what makes "changed since last time" mean what it says.
-        //
-        // There is deliberately no "suppress while settling" here any more: a state adopted from the room is
-        // already in the baseline (the loop re-baselines after applying), so it cannot present itself as a
-        // local change in the first place. An extra window on top of that only risked swallowing a real
-        // change — a track that auto-advanced just after a correction, for instance.
         lastPublishedSongId = mine.songId
         lastPublishedPlaying = mine.playing
         if (action == null) return
+        // An *unannounced* change inside the window after a correction is the correction arriving, not an act.
+        //
+        // Applying a correction is asynchronous (it goes through the media controller), so for a moment the
+        // player still reports the pre-correction state. With the baseline already on the target, that old
+        // state looks like a change and gets announced back — the two devices then trade the same correction
+        // and each appears to do the opposite of the other ("我暂停他那边就播放"). A claimed action is a
+        // person's deliberate act and always goes out; only the inferred ones wait for the room to settle.
+        if (reconciled == null && System.currentTimeMillis() - lastAppliedAt < TogetherSync.SETTLE_MS) {
+            TogetherLog.add("SEND suppressed (settling): $inferred")
+            return
+        }
         transport.publishAction(
             action = action,
             songId = mine.songId,
@@ -543,7 +561,7 @@ class TogetherSession(
             lastPeerIdentity = identity
             lastAppliedAt = System.currentTimeMillis()
             TogetherLog.add("APPLY adopt song=${peer.songId} pos=${peer.positionMs} (nothing playing locally)")
-            applyAction(SyncAction.PlaySong(peer.songId, peer.positionMs))
+            applyAction(SyncAction.PlaySong(peer.songId, peer.positionMs, peer.playing))
             lastPublishedSongId = peer.songId
             lastPublishedPlaying = peer.playing
             return

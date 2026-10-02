@@ -39,6 +39,14 @@ data class TogetherPeerState(
      * announce the opposite of what the other had just done.
      */
     val commandType: String = "",
+    /**
+     * The room's queue, when the transport can report it.
+     *
+     * Carried so the device that *follows* a track change ends up with a queue it can navigate, rather
+     * than a single song. This is what makes the peer's next/previous work: adopting a track into a
+     * one-item queue leaves `seekToNextMediaItem` with nowhere to go, so the buttons look dead.
+     */
+    val queue: List<Long> = emptyList(),
 ) {
     val hasSong: Boolean get() = songId > 0L
 }

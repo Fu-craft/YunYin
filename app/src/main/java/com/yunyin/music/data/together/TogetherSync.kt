@@ -10,8 +10,18 @@ sealed interface SyncAction {
     /** Nothing to do. */
     data object None : SyncAction
 
-    /** Load [songId] and start it at [positionMs]; used when the peer is on a different track. */
-    data class PlaySong(val songId: Long, val positionMs: Long) : SyncAction
+    /**
+     * Load [songId] and put it at [positionMs].
+     *
+     * [playing] carries the peer's own play state, because selecting a track and starting it are two
+     * decisions: a `GOTO` sent while the sender was paused must land paused, or the receiver would begin
+     * playing something nobody asked it to play.
+     */
+    data class PlaySong(
+        val songId: Long,
+        val positionMs: Long,
+        val playing: Boolean = true,
+    ) : SyncAction
 
     /** Same track, but the positions have drifted past the tolerance. */
     data class Seek(val songId: Long, val positionMs: Long) : SyncAction
@@ -149,9 +159,13 @@ object TogetherSync {
                 // A track change: load the song and start it, as the reference's `playback.select` does.
                 // Same song means the peer only restarted it — start, do not reload.
                 "GOTO", "NEXT", "PREV" ->
-                    if (peer.songId != local.songId) SyncAction.PlaySong(peer.songId, peer.positionMs)
-                    else if (!local.playing) SyncAction.Play
-                    else SyncAction.None
+                    if (peer.songId != local.songId) {
+                        SyncAction.PlaySong(peer.songId, peer.positionMs, peer.playing)
+                    } else if (!local.playing && peer.playing) {
+                        SyncAction.Play
+                    } else {
+                        SyncAction.None
+                    }
                 // A scrub: move the position only. The play state is whatever the peer's own command said,
                 // so this one must not be turned into a play/pause.
                 "PROGRESS" -> if (kotlin.math.abs(peer.positionMs - local.positionMs) > driftToleranceMs) {
@@ -183,7 +197,7 @@ object TogetherSync {
     ): SyncAction {
         // A different track wins outright and carries the position with it.
         if (peer.songId != local.songId) {
-            return SyncAction.PlaySong(peer.songId, peer.positionMs)
+            return SyncAction.PlaySong(peer.songId, peer.positionMs, peer.playing)
         }
         // Same track: the play state is the deliberate part, so it is settled first.
         if (peer.playing != local.playing) {

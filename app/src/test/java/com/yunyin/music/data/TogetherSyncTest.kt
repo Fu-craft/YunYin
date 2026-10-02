@@ -353,6 +353,20 @@ class TogetherSyncTest {
     }
 
     @Test
+    fun `a GOTO carries the sender's play state, so a paused switch lands paused`() {
+        // The peer switched tracks while paused. Adopting it must not start playing: that is how a paused
+        // sender ends up with a playing receiver, and the two then trade the state back and forth.
+        assertEquals(
+            SyncAction.PlaySong(300L, 0L, playing = false),
+            TogetherSync.decide(
+                LocalPlayback(songId = 200L, positionMs = 30_000L, playing = false),
+                typed("GOTO", songId = 300L, positionMs = 0L, playing = false),
+                peerIsNew = true, lastAppliedAt = 0L, now = 10_000L,
+            ),
+        )
+    }
+
+    @Test
     fun `a repeated typed command is still never applied`() {
         // The anti-ping-pong rule holds for typed commands too: an old PAUSE must not keep re-pausing us.
         assertEquals(

@@ -213,11 +213,22 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
             is SyncAction.PlaySong -> {
                 val wanted = action.songId
                 viewModelScope.launch {
-                    val track = container.music.track(wanted) ?: return@launch
-                    // Re-check: the room may have moved on while the lookup was in flight.
+                    val roomQueue = together.state.value.peers
+                        .firstOrNull { it.songId == wanted }?.queue.orEmpty()
+                    // Resolve the room's whole list in one batched call. Fetching only the one track (as
+                    // this used to) leaves the follower on a one-item queue, where next/previous have
+                    // nowhere to go — the buttons appear dead ("他那边无法进行上一首下一首的操作").
+                    val roomTracks = container.music.tracks(roomQueue)
+                    val track = roomTracks.firstOrNull { it.id == wanted }
+                        ?: container.music.track(wanted)
+                        ?: return@launch
+                    // Re-check: the room may have moved on while the lookups were in flight.
                     val stillWanted = together.state.value.peers.any { it.songId == wanted }
                     if (!stillWanted) return@launch
-                    container.player.playSingle(track)
+                    // Play inside the room's own list when it resolved, matching the sender's play state;
+                    // otherwise fall back to the single track, still honouring the state.
+                    val queue = roomTracks.ifEmpty { listOf(track) }
+                    container.player.playWithinQueue(track, queue, action.playing)
                     container.player.seekTo(action.positionMs)
                     container.playHistory.record(track)
                     refreshRecentTracks()
