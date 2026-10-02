@@ -113,10 +113,23 @@ class OfficialTogetherTransport(
         private set
 
     override suspend fun createRoom(uid: String, name: String): TogetherResult<String> {
+        // Release whatever room this account already holds, before asking for a new one.
+        //
+        // **NetEase rooms are scoped to the account, and `room/create` returns the account's existing room
+        // rather than making a fresh one** (measured: repeated calls returned the same `roomId` and the same
+        // `roomCreateTime`). Combined with a room that was never ended, that means pressing "创建房间" after
+        // a previous session hands back the OLD room — still containing the old members. On screen that is
+        // indistinguishable from "my other device joined by itself", which is exactly how it was reported.
+        endExistingRoom()
         return when (val result = music.togetherCreateRoom()) {
             is NetResult.Ok -> {
                 roomId = result.value.roomId
                 inviterId = result.value.inviterId
+                // A new room is not the old one: clear the "gone" verdict, or the first poll would end it.
+                roomGone = false
+                enteredAt = System.currentTimeMillis()
+                membersCheckedAt = 0L
+                heartbeatAt = 0L
                 TogetherLog.add("CREATE ok room=${TogetherLog.short(roomId)} inviter=${inviterId}")
                 TogetherResult.Ok(result.value.roomId)
             }
@@ -125,6 +138,22 @@ class OfficialTogetherTransport(
                 TogetherResult.Failed(result.message)
             }
         }
+    }
+
+    /**
+     * Ends the room this account already has, if any.
+     *
+     * Called before creating, so the new room cannot be an old one. Deliberately best-effort: if the status
+     * lookup or the end fails, creating still goes ahead — a stale room is what we are avoiding, not a
+     * reason to refuse to create.
+     */
+    private suspend fun endExistingRoom() {
+        val existing = when (val status = music.togetherStatus()) {
+            is NetResult.Ok -> status.value.roomId.takeIf { status.value.inRoom && it.isNotBlank() }
+            is NetResult.Err -> null
+        } ?: return
+        TogetherLog.add("CREATE clearing the account's existing room ${TogetherLog.short(existing)}")
+        music.togetherEnd(existing)
     }
 
     /**
@@ -160,6 +189,9 @@ class OfficialTogetherTransport(
                 roomId = parsed.first
                 inviterId = parsed.second
                 membersCheckedAt = 0L
+                heartbeatAt = 0L
+                roomGone = false
+                enteredAt = System.currentTimeMillis()
                 TogetherLog.add("JOIN ok room=${TogetherLog.short(parsed.first)} inviter=${parsed.second}")
                 TogetherResult.Ok(Unit)
             }
@@ -225,6 +257,16 @@ class OfficialTogetherTransport(
             }
         }
         refreshMembers(room)
+        // A room the server says we are no longer in is **gone**, not merely quiet.
+        //
+        // Without this a device whose partner ended the room sat in it indefinitely: the polls kept
+        // succeeding (an empty room reads as an empty command, not an error), so nothing indicated that the
+        // session was over. That is the other half of "I created a room and the other device was already
+        // in it" — the "already in it" state was a session nobody had ended.
+        if (roomGone) {
+            TogetherLog.add("POLL room is gone (server says not in room)")
+            return TogetherResult.NoRoom("这个一起听已结束")
+        }
         val peers = buildPeers(command, excludeUid)
         // One line per poll, because this is the whole question when sync fails: did the room report a
         // command, whose was it, did we decide it was ours, and what did that leave to follow?
@@ -304,14 +346,34 @@ class OfficialTogetherTransport(
         }
     }
 
+    /**
+     * Leaving **does** tell the server, unlike an earlier version of this method.
+     *
+     * The old behaviour only stopped publishing and let the member time out, on the reasoning that ending
+     * the room for the other person would be rude. That reasoning missed the consequence: the account's
+     * room then **stays alive**, and because `room/create` hands back the account's existing room, the next
+     * "创建房间" reopened the old room with the old members still in it — reported as "my other device
+     * joined by itself, I never pressed join". The reference implementation ends the room on leave for this
+     * reason; this now matches.
+     */
     override suspend fun leave(code: String, uid: String): TogetherResult<Unit> {
+        val room = roomId ?: code
         roomId = null
         inviterId = 0L
         members = emptyList()
         membersCheckedAt = 0L
-        // Leaving a shared room is the endpoint's "unfollow"; ending it for everyone else would be rude,
-        // so this only stops publishing and lets the server time the member out.
-        return TogetherResult.Ok(Unit)
+        heartbeatAt = 0L
+        roomGone = false
+        TogetherLog.add("LEAVE room=${TogetherLog.short(room)}")
+        return when (val result = music.togetherEnd(room)) {
+            is NetResult.Ok -> TogetherResult.Ok(Unit)
+            // Leaving must never fail from the user's point of view: the local session is already cleared,
+            // so a server-side error only means the room will expire on its own.
+            is NetResult.Err -> {
+                TogetherLog.add("LEAVE end failed: ${result.message}")
+                TogetherResult.Ok(Unit)
+            }
+        }
     }
 
     override suspend fun closeRoom(code: String): TogetherResult<Unit> {
@@ -320,6 +382,8 @@ class OfficialTogetherTransport(
         inviterId = 0L
         members = emptyList()
         membersCheckedAt = 0L
+        heartbeatAt = 0L
+        roomGone = false
         return when (val result = music.togetherEnd(room)) {
             is NetResult.Ok -> TogetherResult.Ok(Unit)
             is NetResult.Err -> TogetherResult.Failed(result.message)
@@ -363,12 +427,20 @@ class OfficialTogetherTransport(
         membersCheckedAt = now
         ensureSelfUid()
         when (val result = music.togetherStatus()) {
-            is NetResult.Ok -> members = result.value.members
-                .filter { selfUid == 0L || it.uid != selfUid }
-                // The avatar is carried through rather than dropped: `/listentogether/status` returns
-                // `roomUsers[].avatarUrl`, and the room screen shows the two members' faces. Discarding it
-                // here was why the feature had no faces to show.
-                .map { TogetherMember(uid = "${it.uid}", name = it.nickname, avatarUrl = it.avatarUrl) }
+            is NetResult.Ok -> {
+                // The room this account is in, according to the server. If it says "not in a room" while we
+                // believe we are in one, the other side ended it — but not during the first few seconds,
+                // when the server may not have caught up with the room we just made or joined.
+                val settled = System.currentTimeMillis() - enteredAt > ROOM_SETTLE_MS
+                roomGone = settled && (!result.value.inRoom || result.value.roomId.isBlank())
+                members = result.value.members
+                    .filter { selfUid == 0L || it.uid != selfUid }
+                    // The avatar is carried through rather than dropped: `/listentogether/status` returns
+                    // `roomUsers[].avatarUrl`, and the room screen shows the two members' faces. Discarding it
+                    // here was why the feature had no faces to show.
+                    .map { TogetherMember(uid = "${it.uid}", name = it.nickname, avatarUrl = it.avatarUrl) }
+            }
+            // A failed lookup must not end the session: keep the previous answer and try again next time.
             is NetResult.Err -> Unit
         }
     }
@@ -444,6 +516,14 @@ class OfficialTogetherTransport(
         const val INCOMPLETE_INVITE = "邀请信息不完整：请粘贴对方分享的邀请"
 
         /**
+         * How long after entering a room a "not in room" answer is ignored.
+         *
+         * `status` is not guaranteed to be consistent the instant a room is created or joined, and ending
+         * the session on that transient would be worse than the problem it solves.
+         */
+        const val ROOM_SETTLE_MS = 6_000L
+
+        /**
          * How often presence is re-asserted. Ten seconds: the server's own reply reports a 30s window
          * (`timeSpan`), and the reference implementation sends one roughly every twelve.
          */
@@ -461,6 +541,23 @@ class OfficialTogetherTransport(
 
     /** When the last heartbeat went out, so presence can be kept without a write on every poll. */
     private var heartbeatAt: Long = 0L
+
+    /**
+     * Set when the server reports that this account is no longer in a room.
+     *
+     * Distinct from a failed request: only an explicit "not in room" means the room is over, and treating a
+     * dropped exchange the same way would end a working session on one bad packet.
+     */
+    private var roomGone: Boolean = false
+
+    /**
+     * When this device entered the current room.
+     *
+     * Used to ignore a "not in room" answer for the first few seconds: `status` is not necessarily
+     * consistent the instant a room is created or joined, and acting on it immediately would end a session
+     * that had only just started.
+     */
+    private var enteredAt: Long = 0L
 
     /** Members other than this device, refreshed at most every [MEMBERS_REFRESH_MS]. */
     private var members: List<TogetherMember> = emptyList()

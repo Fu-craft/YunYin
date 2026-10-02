@@ -324,6 +324,15 @@ class TogetherSession(
         lastPublishedSongId = 0L
         lastPublishedPlaying = false
         lastPublishedQueue = emptyList()
+        // An action taken *before* entering the room is not an announcement to the room.
+        //
+        // Without this, a user who was already playing something and then joined had their pre-join track
+        // queued as a "pending action", and the first tick published it **after** the room had already told
+        // that device to adopt the host's song — so the joiner announced the track it was in the middle of
+        // abandoning, the host followed *that*, and the two ended up swapped (host on the joiner's song,
+        // joiner on the host's), each with a Lamport counter too high to correct back. That is the reported
+        // "歌曲不同步", reproduced by TogetherTwoDeviceTest.
+        pendingAction = null
         TogetherLog.add("ROOM start uid=$uid name=$name")
         // Announce what is already playing **before** the first poll.
         //
@@ -336,8 +345,19 @@ class TogetherSession(
         // The "already published" fields are set **here, synchronously**, not inside the launched block:
         // that block suspends on the network, and the loop below starts before it resumes, so a later
         // assignment would let the first tick publish the same GOTO a second time.
-        val opening = localPlayback()?.takeIf { it.songId > 0L }
-        val openingQueue = localQueue()
+        // **Only the host announces what it is playing; the joiner adopts instead.**
+        //
+        // This asymmetry is the whole reason two devices converge, and getting it wrong is what "歌曲不同步"
+        // turned out to be. If BOTH sides publish their own song on entering, each one's command is what the
+        // other reads — so A adopts B's song while B adopts A's, each advances its Lamport counter past the
+        // other's, and neither will correct back. The two devices sit on each other's track forever.
+        // (Pinned by TogetherTwoDeviceTest: it reported host=222, guest=111 — swapped and stuck.)
+        //
+        // The reference implementation is asymmetric in exactly this way: its `createRoom` publishes the
+        // playlist and a `GOTO`, while `joinRoom` fetches the room snapshot and *applies* the room's command
+        // without reporting one of its own.
+        val opening = if (_state.value.isHost) localPlayback()?.takeIf { it.songId > 0L } else null
+        val openingQueue = if (_state.value.isHost) localQueue() else emptyList()
         if (opening != null || openingQueue.isNotEmpty()) {
             // The "already published" fields are set **here, synchronously**, not inside the launched
             // block: that block suspends on the network, and the loop below starts before it resumes, so a
@@ -350,10 +370,10 @@ class TogetherSession(
 
             // **The queue goes first, then the command** — the order the reference implementation uses.
             //
-            // Its `createRoom` chains `reportPlaylist` before `reportCommand`, and `joinRoom` applies the
-            // room's snapshot before reporting anything. The reason is not documented, but a room's
-            // playlist is what a `GOTO` refers to, so a command sent into a room with no list has nothing
-            // to point at. One sequential block, not two parallel ones, because the order is the point.
+            // Its `createRoom` chains `reportPlaylist` before `reportCommand`. The reason is not documented,
+            // but a room's playlist is what a `GOTO` refers to, so a command sent into a room with no list
+            // has nothing to point at. One sequential block, not two parallel ones, because the order is the
+            // point.
             scope.launch {
                 if (openingQueue.isNotEmpty()) {
                     transport.publishQueue(openingQueue, uid, System.currentTimeMillis())
@@ -539,6 +559,10 @@ class TogetherSession(
         seq = TogetherSync.nextSeq(seq, peer.seq)
         TogetherLog.add("APPLY $action (local song=${mine.songId} pos=${mine.positionMs} play=${mine.playing})")
         applyAction(action)
+        // The room's state is now ours, so there is nothing new to announce: marking it as published stops
+        // the settle window expiring later and sending the adopted song straight back to its author.
+        lastPublishedSongId = peer.songId
+        lastPublishedPlaying = peer.playing
     }
 
     private fun stopLoop() {
