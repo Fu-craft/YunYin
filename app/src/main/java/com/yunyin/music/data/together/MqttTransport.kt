@@ -39,15 +39,31 @@ class MqttTransport(
 ) : TogetherTransport {
 
     /**
-     * One broker to try.
+     * One broker to try, and how to reach it.
      *
      * The list is ordered and **both members iterate the same list in the same order**, which is what
      * keeps them aligned: the first address that accepts a connection is the one used. (A transport is a
      * rendezvous, so two devices picking different addresses would sit in two empty rooms that look
-     * identical.) [subtitle] is what the room sheet shows, so a mismatch is visible rather than silent.
+     * identical.) [label] is what the room sheet shows, so a mismatch is visible rather than silent.
      */
-    data class Broker(val host: String, val port: Int, val tls: Boolean) {
-        val label: String get() = "$host:$port${if (tls) " (TLS)" else ""}"
+    data class Broker(
+        val label: String,
+        val kind: Kind,
+        val host: String = "",
+        val port: Int = 0,
+        val tls: Boolean = false,
+        val url: String = "",
+    ) {
+        enum class Kind { WEB_SOCKET, TCP }
+
+        companion object {
+            /** `wss://…:8084/mqtt` — reachable on networks that block the MQTT ports outright. */
+            fun webSocket(url: String) = Broker(label = url, kind = Kind.WEB_SOCKET, url = url)
+
+            fun tcp(host: String, port: Int, tls: Boolean) =
+                Broker(label = "$host:$port${if (tls) " (TLS)" else ""}", kind = Kind.TCP,
+                    host = host, port = port, tls = tls)
+        }
     }
 
     /** Always available: public brokers are reachable without registration or configuration. */
@@ -61,6 +77,21 @@ class MqttTransport(
 
     private var chosen: Broker? = null
     private var client: MqttClient? = null
+
+    /**
+     * Used only for WebSocket connections.
+     *
+     * `readTimeout(0)` because these connections are meant to stay open for the whole session, and
+     * `pingInterval` so a silently dropped link is noticed rather than sitting there looking healthy —
+     * the WebSocket-level equivalent of the MQTT keep-alive, for the case where the path dies without a
+     * FIN.
+     */
+    private val wsClient: okhttp3.OkHttpClient by lazy {
+        okhttp3.OkHttpClient.Builder()
+            .readTimeout(0, java.util.concurrent.TimeUnit.MILLISECONDS)
+            .pingInterval(30, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+    }
 
     /**
      * How often the member re-publishes its own state.
@@ -182,10 +213,13 @@ class MqttTransport(
         val failures = mutableListOf<String>()
         for (broker in candidates) {
             val candidate = MqttClient(
-                host = broker.host,
-                port = broker.port,
+                // The pipe is the only thing that differs between endpoints; the protocol above it is
+                // identical, which is why MQTT-over-WebSocket needs no separate implementation.
+                openStream = when (broker.kind) {
+                    Broker.Kind.WEB_SOCKET -> { { WebSocketMqttStream(broker.url, wsClient) } }
+                    Broker.Kind.TCP -> { { TcpMqttStream(broker.host, broker.port, broker.tls) } }
+                },
                 scope = scope,
-                tls = broker.tls,
                 onMessage = { topic, payload -> onIncoming(topic, payload) },
                 onConnectionChanged = onConnectionChanged,
             )
@@ -302,18 +336,21 @@ class MqttTransport(
         const val SUBSCRIBE_WAIT_MS = 20_000L
 
         /**
-         * The brokers to try, **in a fixed order that both members iterate identically**.
+         * The endpoints to try, **in a fixed order that both members iterate identically**.
          *
          * Trying more than one is the point: a blocked port or a filtered domain is a property of the
          * network, and the two members are usually on *different* networks — so if each stopped at its
          * first-choice address, the two could easily end up on different brokers and sit in two rooms
          * that are both empty. Same list, same order, first address that accepts both wins.
          *
-         * **TLS on 8883 throughout**, learned the hard way: plain 1883 is commonly blocked by mobile
-         * carriers (measured — the app reported "无法连接消息服务器 …:1883" on a phone network while a
-         * desktop on the same broker worked fine), whereas 8883 is left alone because it looks like
-         * ordinary encrypted traffic. `test.mosquitto.org` is deliberately absent: it fails certificate
-         * verification, so a client would have to weaken TLS to use it.
+         * **WebSocket first, and that ordering is measured rather than assumed.** Plain MQTT ports are
+         * the ones carriers filter: on the user's phone network both 1883 *and* 8883 were refused, while
+         * `wss://…:8084/mqtt` connected immediately (and carried connect/subscribe/publish/retain
+         * correctly — verified end to end). Port 8084-over-TLS is not recognisable as MQTT, so it is
+         * left alone. The TCP entries stay as fallbacks for networks that do allow them.
+         *
+         * `test.mosquitto.org` is deliberately absent: it fails certificate verification, so a client
+         * would have to weaken TLS to use it.
          *
          * `together.mqtt.host` (with optional `port`/`tls`) replaces this list entirely, for a
          * self-hosted broker.
@@ -322,11 +359,13 @@ class MqttTransport(
             val configuredHost = BuildConfig.TOGETHER_MQTT_HOST.trim()
             if (configuredHost.isNotEmpty()) {
                 val port = BuildConfig.TOGETHER_MQTT_PORT.trim().toIntOrNull() ?: 8883
-                return listOf(Broker(configuredHost, port, tlsFor(port)))
+                return listOf(Broker.tcp(configuredHost, port, tlsFor(port)))
             }
             return listOf(
-                Broker("broker.hivemq.com", 8883, tls = true),
-                Broker("broker.emqx.io", 8883, tls = true),
+                Broker.webSocket("wss://broker.emqx.io:8084/mqtt"),
+                Broker.webSocket("wss://broker.hivemq.com:8884/mqtt"),
+                Broker.tcp("broker.hivemq.com", 8883, tls = true),
+                Broker.tcp("broker.emqx.io", 8883, tls = true),
             )
         }
 

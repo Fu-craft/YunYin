@@ -12,8 +12,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.DataInputStream
 import java.io.OutputStream
-import java.net.InetSocketAddress
-import java.net.Socket
 
 /**
  * A minimal MQTT 3.1.1 client — just enough for the listen-together room, and nothing more.
@@ -26,18 +24,24 @@ import java.net.Socket
  * keeps its dependency list short on purpose.
  *
  * Deliberately **not** implemented: QoS 1/2 (state is re-sent periodically, so a lost message costs one
- * interval, not correctness), authentication, TLS, wildcards, last-will, session resumption. Each is a
- * real feature this use does not need.
+ * interval, not correctness), authentication, wildcards, last-will, session resumption. Each is a real
+ * feature this use does not need.
+ *
+ * ## The pipe is pluggable
+ *
+ * Packets are written to and read from an [MqttStream], which is a plain TCP/TLS socket or a WebSocket.
+ * That split exists because the *network* decides which one is reachable: a carrier that blocks 1883
+ * and 8883 usually still permits `wss://…:8084`, and the protocol above this line does not care.
  *
  * ## Threading, and the one rule that matters
  *
- * **Exactly one thread reads the socket** (the connection loop). MQTT has no framing other than the
+ * **Exactly one thread reads the stream** (the connection loop). MQTT has no framing other than the
  * stream itself, so a second reader — even one that only "just checks for a SUBACK" — would consume
- * bytes the main loop needs and corrupt every subsequent packet. Everything that needs to observe
- * the stream does so through state that the reader loop writes:
+ * bytes the main loop needs and corrupt every subsequent packet. Everything that needs to observe the
+ * stream does so through state that the reader loop writes:
  *
  *  - incoming messages       -> [onMessage]
- *  - subscription acks       -> [subscribedTopics]
+ *  - subscription acks       -> [subscribed]
  *  - connection up/down      -> [connected]
  *
  * ## Why the subscription is tracked, not fired and forgotten
@@ -48,23 +52,15 @@ import java.net.Socket
  * and [awaitSubscribed] lets a caller wait for the real answer before it starts publishing.
  */
 class MqttClient(
-    private val host: String,
-    private val port: Int,
+    /** Opens a fresh byte pipe for one connection attempt. */
+    private val openStream: () -> MqttStream,
     private val scope: CoroutineScope,
     private val clientIdPrefix: String = "yunyin",
-    /**
-     * Wrap the socket in TLS.
-     *
-     * Worth having because a network that **blocks 1883** (common on mobile carriers, to stop MQTT
-     * abuse) usually still allows `8883` — the TLS port looks like any other encrypted traffic. Getting
-     * it wrong is not subtle: the handshake fails and the connection loop reports it.
-     */
-    private val tls: Boolean = false,
     private val onMessage: (topic: String, payload: String) -> Unit,
     private val onConnectionChanged: (Boolean) -> Unit = {},
 ) {
 
-    private var socket: Socket? = null
+    private var stream: MqttStream? = null
     private var output: OutputStream? = null
 
     /** Serialises writes: a half-written packet followed by another is unparseable to the broker. */
@@ -123,15 +119,14 @@ class MqttClient(
         connectionLoop?.cancel()
         connectionLoop = null
         sendControlPacket(DISCONNECT)
-        runCatching { socket?.close() }
         teardown()
     }
 
     /**
      * Suspends until the connection is up, or [timeoutMs] elapses.
      *
-     * A false means the broker was not reachable within the window — on a mobile network quite possibly
-     * a blocked port rather than a fault, so the caller should say so.
+     * A false means the endpoint was not reachable within the window — on a mobile network quite
+     * possibly a blocked port, so the caller should say so.
      */
     suspend fun awaitConnected(timeoutMs: Long): Boolean =
         withTimeoutOrNull(timeoutMs) { connected.first { it } } != null
@@ -158,30 +153,16 @@ class MqttClient(
 
     // ------------------------------------------------------------------ connection
 
-    /** Opens a socket, handshakes, then reads the stream until it ends (throwing so we reconnect). */
-    private fun openOnce() {
-        val raw = Socket()
-        raw.tcpNoDelay = true
-        raw.connect(InetSocketAddress(host, port), CONNECT_TIMEOUT_MS)
-        // TLS wraps the connected socket; `autoClose = true` so closing the wrapper closes the raw one.
-        //
-        // The intermediate typed values matter: `SSLSocketFactory.getDefault()` is declared to return
-        // the *base* `SocketFactory`, so the SSL-specific overload and `startHandshake` are only
-        // reachable through an explicit cast. The handshake is worth forcing here — it turns a bad
-        // certificate or a non-TLS port into an immediate, reportable failure instead of a mysterious
-        // read timeout later.
-        val newSocket: Socket = if (tls) {
-            val factory = javax.net.ssl.SSLSocketFactory.getDefault() as javax.net.ssl.SSLSocketFactory
-            val ssl = factory.createSocket(raw, host, port, true) as javax.net.ssl.SSLSocket
-            ssl.startHandshake()
-            ssl
-        } else {
-            raw
+    /** Opens a pipe, handshakes, then reads it until it ends (throwing so we reconnect). */
+    private suspend fun openOnce() {
+        val opened = openStream()
+        if (!opened.awaitReady(STREAM_READY_MS)) {
+            opened.close()
+            throw IllegalStateException("stream did not become ready")
         }
-        val input = DataInputStream(newSocket.getInputStream().buffered())
-
-        socket = newSocket
-        output = newSocket.getOutputStream().buffered()
+        stream = opened
+        output = opened.output.buffered()
+        val input = DataInputStream(opened.input.buffered())
 
         sendConnect(output!!)
         val connackType = input.readUnsignedByte()
@@ -247,8 +228,8 @@ class MqttClient(
         pinger = null
         supervisor?.cancel()
         supervisor = null
-        runCatching { socket?.close() }
-        socket = null
+        runCatching { stream?.close() }
+        stream = null
         output = null
         _connected.value = false
         synchronized(stateLock) {
@@ -392,8 +373,10 @@ class MqttClient(
         const val PINGREQ = 12
         const val DISCONNECT = 14
 
-        const val CONNECT_TIMEOUT_MS = 8_000
         const val KEEPALIVE_MS = 30_000L
+
+        /** How long to wait for a WebSocket handshake (or a socket) before trying the next endpoint. */
+        const val STREAM_READY_MS = 12_000L
 
         /** How often an unacknowledged subscription is re-sent. */
         const val SUPERVISE_INTERVAL_MS = 2_500L

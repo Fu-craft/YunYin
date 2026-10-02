@@ -117,8 +117,13 @@ node test_relay.js https://yunyin-together.<你的子域>.workers.dev 你的令�
 
 | 现象 | 原因 |
 |---|---|
-| `/health` 能开，但建房返回 `unauthorized` | 令牌没设，或 App 里的令牌与设置的不一致 |
-| 建房 500，或日志提到 Durable Object / `Room` | 第 3–4 步没做：命名空间未创建，或 Variable name 不是 `ROOMS`、Class name 不是 `Room` |
+| `/health` 能开，但建房返回 `error code: 1101` | **最常见**。Durable Object 没绑定：`env.ROOMS` 为 undefined，建房时抛异常。做第 3–4 步（先建 `Room` 命名空间，再以 `ROOMS` 绑定），然后重新 Deploy |
+| `/health` 能开，但建房返回 `unauthorized` | 令牌没设（这是好事），或 App 里的令牌与设置的不一致 |
+| 建房 500，或日志提到 Durable Object / `Room` | 同上：命名空间未创建，或 Variable name 不是 `ROOMS`、Class name 不是 `Room` |
 | 两人房间都只有自己 | 两人的 `together.base.url` 不一致（服务不同 → 房间不互通） |
 | `wrangler deploy` 报 `class Room is not exported` | `worker.js` 粘贴不完整，或 `main` 指向的文件名不对 |
 | 超过免费额度 | 只有极高频使用才会；两人房间远低于 10 万/天 |
+
+> **为什么会是 1101**：`/health` 不碰 Durable Object，所以它能通；建房要经 `env.ROOMS` 找到房间对象，
+> 绑定缺失时 `env.ROOMS.get(...)` 直接抛异常。因此"health 正常但建房 1101"这个组合，
+> 基本就是绑定问题的指纹。
