@@ -124,7 +124,7 @@ keytool -genkeypair -v -keystore my-release.jks -alias mykey \
 ```bash
 ./gradlew :app:assembleDebug       # 调试包
 ./gradlew :app:assembleRelease     # 发布包（未配置签名则不签名）
-./gradlew :app:testDebugUnitTest   # 单元测试
+python tools/run_suite.py          # 全部校验（静态检查 + 单元测试）
 ```
 
 若环境中 `java` 不在 PATH，设置 `JAVA_HOME` 指向你的 JDK 即可。
@@ -316,11 +316,25 @@ server/                  一起听旧的传输通路（可选自建中继 + 协�
 ## 测试
 
 ```bash
-./gradlew :app:testDebugUnitTest
+python tools/run_suite.py           # 全套：静态校验 + 单元测试（推荐，一条命令跑完）
+./gradlew :app:testDebugUnitTest    # 只跑单元测试
 ```
 
+**`tools/run_suite.py` 才是"全绿"的入口。** 它先跑 `tools/verify_*.py` 这些静态校验脚本
+（每条规则都先在**有 bug 的版本**上验证过能报警，否则一条永远通过的检查没有意义），
+**然后才真的执行 `testDebugUnitTest`**。之所以要强调这件事：之前这个套件只跑静态正则、
+**根本没跑过单元测试**，于是"216 项单测全过"和"28/28 套件通过"是可以同时成立却毫无保证的——
+直到它真的执行代码，才补上了这道防线。
+
 单元测试覆盖歌词解析与对齐、渲染折叠、逐字滚动的纯逻辑、位置插值、收藏合并规则、
-异步结果竞态、一起听的同步判定与防抖、房间码与主题映射、房间状态的两类清理等，共 **192 项**。
+异步结果竞态、一起听的同步判定与防抖、邀请解析与进度补时、房间码与主题映射、
+房间状态的两类清理等，共 **216 项**。
+
+静态校验里有一条值得单独说明：`tools/verify_init_order.py` 检查**任何类都不允许把
+`by` 委托属性声明在 `init` 之后**。这不是风格要求——Kotlin 类体按源码顺序初始化，
+`init` 执行时它下面的委托属性还是 `null`，而 `init` 里的写入会因此抛 NPE 让进程在
+第一帧就死掉。3.8.0 起 App 打不开就是这个原因（`refreshLikedCount()` 写 `likedCount`，
+而 `likedCount` 声明在 250 行之后），所以这条规则被固化成了检查。
 
 `server/` 下另有几个端到端测试，都模拟两个成员跑完整流程（都会真的连公共 broker/服务）：
 

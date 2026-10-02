@@ -12,10 +12,17 @@ import java.util.Locale
 /**
  * Writes uncaught exceptions to a file in app storage.
  *
- * The app is normally run on hardware where logcat may not be reachable (or is truncated
- * by a restart), so the last crash is persisted at `filesDir/crash-last.txt` and can be
- * read back with `adb shell run-as com.yunyin.music cat files/crash-last.txt`, or through
- * the in-app Settings entry that surfaces the file.
+ * The app is normally run on hardware where logcat may not be reachable (or is truncated by a restart),
+ * so the last crash is persisted at `filesDir/crash-last.txt`. Retrieval options, in order of convenience:
+ *
+ *  - **In the app**: 设置 → 关于 → 复制崩溃日志 (copies the text to the clipboard, so it can be pasted
+ *    into a message with no cable and no adb).
+ *  - **With a cable**: `adb shell run-as com.yunyin.music cat files/crash-last.txt`.
+ *  - **With a file manager**: the app's private directory, if the device is rooted or backs up the app.
+ *
+ * The in-app route is the one that matters: a crash report nobody can retrieve is not a report, and this
+ * feature exists precisely because a launch crash makes every other route useless (`adb` needs a working
+ * PC, and a file manager cannot read app-private storage on an unrooted device).
  */
 object CrashLogger {
 

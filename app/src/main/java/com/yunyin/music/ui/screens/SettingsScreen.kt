@@ -92,6 +92,16 @@ fun SettingsScreen(
     /** Whether tracks run into each other without the dead air that makes them sound like files. */
     seamlessTransition: Boolean = true,
     onSeamlessTransitionChange: (Boolean) -> Unit = {},
+    /**
+     * Whether a crash has been recorded since the last one was cleared.
+     *
+     * Drives the visibility of the "复制上次崩溃日志" row: the app writes every uncaught exception to
+     * `filesDir/crash-last.txt`, but that file is unreachable without adb on an unrooted device — and a
+     * launch crash makes adb the *only* other route, which is useless to the person holding the phone.
+     */
+    hasCrashLog: Boolean = false,
+    /** Copies the recorded crash text to the clipboard so it can be pasted into a message. */
+    onCopyCrashLog: () -> Unit = {},
 ) {
     Column(
         modifier = modifier
@@ -177,6 +187,13 @@ fun SettingsScreen(
             InfoRow(text = "版本", value = com.yunyin.music.BuildConfig.VERSION_NAME)
             InfoRow(text = "歌词", value = "AMLL 逐字歌词")
             LinkRow(text = "项目主页", value = "GitHub", onClick = onOpenProject)
+            // Only shown when there *is* a recorded crash. A permanently visible row would be noise for
+            // everyone who never crashes, and its presence is itself the useful signal; but without it a
+            // user who hits a crash has no way to hand over the report — which is how the launch crash
+            // in 3.8.0 had to be reproduced from a screenshot of the stack trace instead of just read.
+            if (hasCrashLog) {
+                ActionRow(text = "复制上次崩溃日志", onClick = onCopyCrashLog)
+            }
         }
     }
 }

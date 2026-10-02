@@ -581,6 +581,24 @@ class MainActivity : ComponentActivity() {
                         // the service owns that half.
                         container.settings.seamlessTransition = enabled
                     },
+                    // The crash file is app-private, so on an unrooted device it is unreachable without
+                    // adb — and when the crash is on *launch*, adb is the only other route, which is no
+                    // help to whoever is holding the phone. Copying it to the clipboard turns "it
+                    // crashes" into a stack trace that can be pasted into a message.
+                    hasCrashLog = remember(showSettings) { com.yunyin.music.CrashLogger.lastCrash(context) != null },
+                    onCopyCrashLog = {
+                        val report = com.yunyin.music.CrashLogger.lastCrash(context)
+                        if (report == null) {
+                            Toast.makeText(context, "没有崩溃日志", Toast.LENGTH_SHORT).show()
+                        } else {
+                            val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+                                as android.content.ClipboardManager
+                            clipboard.setPrimaryClip(
+                                android.content.ClipData.newPlainText("崩溃日志", report),
+                            )
+                            Toast.makeText(context, "崩溃日志已复制", Toast.LENGTH_SHORT).show()
+                        }
+                    },
                 )
             }
 

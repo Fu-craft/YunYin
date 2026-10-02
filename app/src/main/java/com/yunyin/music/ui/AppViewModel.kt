@@ -113,6 +113,36 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
     private var collectionRequestId = 0L
     private var playlistsJob: Job? = null
 
+    /**
+     * The number of songs in the liked list, for the library's 喜欢 row.
+     *
+     * Computed by [com.yunyin.music.data.LikedSongsRepository] — the same rule the list itself uses — so
+     * this number and the number of rows inside the list are the same by construction. It was previously a
+     * second implementation, and that is how it came to read "1 首" beside a 564-song list.
+     *
+     * `null` means "the cloud half is not known yet", which is not the same as zero: the row then falls
+     * back to the cloud playlist's own count rather than briefly showing the local total alone.
+     */
+    var likedCount by mutableStateOf<Int?>(null)
+        private set
+
+    private var likedCountJob: Job? = null
+
+    /**
+     * **Property initialisation order — do not move this below a `by`-delegated property.**
+     *
+     * A class body runs in source order, so during `init` every property declared *after* it is still
+     * uninitialised. `likedCount` is `by mutableStateOf`, i.e. the backing field does not exist until its
+     * own line runs, and `refreshLikedCount()` writes to it from the coroutine it launches. With `init`
+     * above that line the write lands on a null delegate and the process dies on the first frame:
+     *
+     * ```
+     * Attempt to invoke interface method 'void ...MutableState.setValue(java.lang.Object)'
+     *   on a null object reference
+     * ```
+     *
+     * So every delegated-state property must be declared above this block, not merely referenced by it.
+     */
     init {
         refreshHome()
         refreshRecentTracks()
@@ -358,21 +388,6 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
             }
         }
     }
-
-    /**
-     * The number of songs in the liked list, for the library's 喜欢 row.
-     *
-     * Computed by [com.yunyin.music.data.LikedSongsRepository] — the same rule the list itself uses — so
-     * this number and the number of rows inside the list are the same by construction. It was previously a
-     * second implementation, and that is how it came to read "1 首" beside a 564-song list.
-     *
-     * `null` means "the cloud half is not known yet", which is not the same as zero: the row then falls
-     * back to the cloud playlist's own count rather than briefly showing the local total alone.
-     */
-    var likedCount by mutableStateOf<Int?>(null)
-        private set
-
-    private var likedCountJob: Job? = null
 
     /**
      * Recomputes [likedCount] from the shared repository.
