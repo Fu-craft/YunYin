@@ -604,11 +604,15 @@ class NeteaseClient(private val settings: SettingsStore) {
     /**
      * Creates a room. Returns the room id **and the inviter id**, because joining needs both — the
      * invite is the pair, which is why the UI shares them together rather than a bare code.
+     *
+     * `refer` is the entry point the official client reports ("songplay_more" = the song's more menu). It
+     * is sent because the reference implementation (the qplayer NetEase plugin) sends it, and a room
+     * created without it may not be set up the same way server-side.
      */
     suspend fun togetherRoomCreate(): NetResult<TogetherRoomInfo> = request(
         "/listentogether/room/create",
         query = mapOf("timestamp" to System.currentTimeMillis().toString()),
-        form = emptyMap(),
+        form = mapOf("refer" to "songplay_more"),
     ).map { json ->
         val info = json.optJSONObject("data")?.optJSONObject("roomInfo")
         TogetherRoomInfo(
@@ -624,12 +628,18 @@ class NeteaseClient(private val settings: SettingsStore) {
         }
     }
 
-    /** Accepts an invite. The room is identified by the id *pair*, so both are sent. */
+    /**
+     * Accepts an invite. The room is identified by the id *pair*, so both are sent.
+     *
+     * `refer` is "inbox_invite" here — the official client's name for "I followed an invitation", which is
+     * what accepting is. See [togetherRoomCreate].
+     */
     suspend fun togetherAccept(roomId: String, inviterId: Long): NetResult<Unit> = request(
         "/listentogether/accept",
         form = mapOf(
             "roomId" to roomId,
             "inviterId" to "$inviterId",
+            "refer" to "inbox_invite",
             "timestamp" to System.currentTimeMillis().toString(),
         ),
     ).map { }
@@ -659,7 +669,12 @@ class NeteaseClient(private val settings: SettingsStore) {
         form = mapOf("roomId" to roomId, "timestamp" to System.currentTimeMillis().toString()),
     ).map { json ->
         val data = json.optJSONObject("data")
-        val command = data?.optJSONObject("playCommand")
+        // The command may arrive under either name. The official protocol calls the block
+        // `playCommand`; a proxy that mirrors it often calls the same object `commandInfo` (the name its
+        // own request body uses). Reading only `playCommand` would report "no command" forever against a
+        // server that answers with the other spelling -- which looks exactly like "the song never
+        // follows". Taken from the qplayer NetEase plugin's snapshot handler, which reads both.
+        val command = data?.optJSONObject("playCommand") ?: data?.optJSONObject("commandInfo")
         val queue = data?.optJSONObject("playlist")
             ?.optJSONObject("displayList")
             ?.optJSONArray("result")
@@ -726,8 +741,9 @@ class NeteaseClient(private val settings: SettingsStore) {
             "commandType" to commandType,
             "progress" to "$progressMs",
             "playStatus" to if (playing) "PLAY" else "PAUSE",
-            // `formerSongId` is required by the endpoint; the demo sends "-1" for "no previous track".
-            "formerSongId" to "-1",
+            // "0" means "there was no previous track" in the reference implementation, which sends "0"
+            // rather than "-1". The field is required by the endpoint either way.
+            "formerSongId" to "0",
             "targetSongId" to "$targetSongId",
             "clientSeq" to "$clientSeq",
             "timestamp" to System.currentTimeMillis().toString(),

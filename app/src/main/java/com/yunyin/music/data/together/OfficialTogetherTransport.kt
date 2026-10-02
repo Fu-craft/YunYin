@@ -178,6 +178,14 @@ class OfficialTogetherTransport(
      * server drops silent members), while the room's shared command changes only through
      * [publishAction]. Reporting the position here therefore cannot make the two devices overwrite each
      * other — which is exactly why the two are separate endpoints.
+     *
+     * The heartbeat is **throttled to every [HEARTBEAT_INTERVAL_MS]**, not sent on every poll. The
+     * reference implementation sends one roughly every twelve seconds and skips it on most ticks; this
+     * client used to send one every two seconds, which is sixty writes to the room per session against the
+     * reference's five. A room's write endpoints are the ones that would be throttled first, and a throttled
+     * `play/command` is indistinguishable on screen from "the peer is not following" — so the pacing is
+     * aligned rather than merely reduced. The server's own reply says its presence window is 30s
+     * (`timeSpan`), so ten seconds is comfortably inside it.
      */
     override suspend fun postState(
         code: String,
@@ -189,7 +197,9 @@ class OfficialTogetherTransport(
         seq: Long,
     ): TogetherResult<List<TogetherPeerState>> {
         val room = roomId ?: return TogetherResult.Failed("尚未进入房间")
-        if (songId > 0L) {
+        val now = System.currentTimeMillis()
+        if (songId > 0L && now - heartbeatAt >= HEARTBEAT_INTERVAL_MS) {
+            heartbeatAt = now
             music.togetherHeartbeat(room, songId, playing, positionMs)
         }
         return pollPeers(code, uid)
@@ -243,13 +253,23 @@ class OfficialTogetherTransport(
     ): TogetherResult<Unit> {
         val room = roomId ?: return TogetherResult.Failed("尚未进入房间")
         ensureSelfUid()
+        // The protocol's own names, taken from the reference implementation (qplayer's NetEase plugin):
+        // a seek is `PROGRESS`, not `seek`. An unrecognised type is the kind of thing a server accepts
+        // with a 200 and then ignores, which is indistinguishable from "the peer is not following".
         val type = when (action) {
             TogetherLocalAction.Goto -> "GOTO"
-            TogetherLocalAction.Seek -> "seek"
+            TogetherLocalAction.Seek -> "PROGRESS"
             TogetherLocalAction.Play -> "PLAY"
             TogetherLocalAction.Pause -> "PAUSE"
         }
-        return when (val result = music.togetherCommand(room, type, songId, positionMs, playing, clientSeq)) {
+        // `clientSeq` is sent at timestamp magnitude, never from a small counter starting at 0.
+        //
+        // The reference computes `Math.max(sequence + 1, Date.now())`. A zero or a tiny value is what a
+        // server is most likely to discard as "not newer than what I already have", and this client's
+        // very first command used to go out as 0. Our own ordering still uses the local Lamport counter
+        // passed in as [clientSeq]; this only changes what goes on the wire.
+        val wireSeq = maxOf(clientSeq, System.currentTimeMillis())
+        return when (val result = music.togetherCommand(room, type, songId, positionMs, playing, wireSeq)) {
             is NetResult.Ok -> {
                 TogetherLog.add("SEND $type song=$songId pos=$positionMs play=$playing seq=$clientSeq")
                 TogetherResult.Ok(Unit)
@@ -424,6 +444,12 @@ class OfficialTogetherTransport(
         const val INCOMPLETE_INVITE = "邀请信息不完整：请粘贴对方分享的邀请"
 
         /**
+         * How often presence is re-asserted. Ten seconds: the server's own reply reports a 30s window
+         * (`timeSpan`), and the reference implementation sends one roughly every twelve.
+         */
+        const val HEARTBEAT_INTERVAL_MS = 10_000L
+
+        /**
          * How often the member list is re-read. Ten seconds: it changes on a join or a leave, and the
          * sheet is the only thing that reads it.
          */
@@ -432,6 +458,9 @@ class OfficialTogetherTransport(
 
     /** The signed-in account id, once known; 0 until then (which disables the self-echo filter). */
     private var selfUid: Long = 0L
+
+    /** When the last heartbeat went out, so presence can be kept without a write on every poll. */
+    private var heartbeatAt: Long = 0L
 
     /** Members other than this device, refreshed at most every [MEMBERS_REFRESH_MS]. */
     private var members: List<TogetherMember> = emptyList()

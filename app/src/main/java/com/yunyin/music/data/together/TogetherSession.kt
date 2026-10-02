@@ -337,27 +337,36 @@ class TogetherSession(
         // that block suspends on the network, and the loop below starts before it resumes, so a later
         // assignment would let the first tick publish the same GOTO a second time.
         val opening = localPlayback()?.takeIf { it.songId > 0L }
-        if (opening != null) {
-            lastPublishedSongId = opening.songId
-            lastPublishedPlaying = opening.playing
-            scope.launch {
-                transport.publishAction(
-                    action = TogetherLocalAction.Goto,
-                    songId = opening.songId,
-                    positionMs = opening.positionMs,
-                    playing = opening.playing,
-                    clientSeq = seq,
-                )
-            }
-        }
-        // The queue too, once. A room with no playlist is not the same room to the server, and one of the
-        // ways "the song never follows" could happen is a command that is not readable until the list
-        // exists. Publishing what we already have removes that possibility at the cost of one request.
         val openingQueue = localQueue()
-        if (openingQueue.isNotEmpty()) {
-            lastPublishedQueue = openingQueue
+        if (opening != null || openingQueue.isNotEmpty()) {
+            // The "already published" fields are set **here, synchronously**, not inside the launched
+            // block: that block suspends on the network, and the loop below starts before it resumes, so a
+            // later assignment would let the first tick publish the same thing a second time.
+            if (opening != null) {
+                lastPublishedSongId = opening.songId
+                lastPublishedPlaying = opening.playing
+            }
+            if (openingQueue.isNotEmpty()) lastPublishedQueue = openingQueue
+
+            // **The queue goes first, then the command** — the order the reference implementation uses.
+            //
+            // Its `createRoom` chains `reportPlaylist` before `reportCommand`, and `joinRoom` applies the
+            // room's snapshot before reporting anything. The reason is not documented, but a room's
+            // playlist is what a `GOTO` refers to, so a command sent into a room with no list has nothing
+            // to point at. One sequential block, not two parallel ones, because the order is the point.
             scope.launch {
-                transport.publishQueue(openingQueue, uid, System.currentTimeMillis())
+                if (openingQueue.isNotEmpty()) {
+                    transport.publishQueue(openingQueue, uid, System.currentTimeMillis())
+                }
+                if (opening != null) {
+                    transport.publishAction(
+                        action = TogetherLocalAction.Goto,
+                        songId = opening.songId,
+                        positionMs = opening.positionMs,
+                        playing = opening.playing,
+                        clientSeq = seq,
+                    )
+                }
             }
         }
         loop = scope.launch {
