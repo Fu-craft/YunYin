@@ -34,6 +34,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.yunyin.music.data.update.UpdateUiState
+import com.yunyin.music.ui.PlayerStyle
 import com.yunyin.music.ui.icons.SfIcons
 import com.yunyin.music.ui.theme.AppleShapes
 import com.yunyin.music.ui.theme.AppTheme
@@ -114,6 +115,10 @@ fun SettingsScreen(
     /** Hides the row entirely in a build with no update repository configured. */
     updateConfigured: Boolean = false,
     onCheckUpdate: () -> Unit = {},
+    /** The player presentation currently chosen, shown on the 播放器界面 row. */
+    playerStyle: PlayerStyle = PlayerStyle.Classic,
+    /** Opens the picker; the choosing itself lives in the sheet so this screen stays a list. */
+    onShowPlayerStyle: () -> Unit = {},
 ) {
     Column(
         modifier = modifier
@@ -183,6 +188,14 @@ fun SettingsScreen(
                 subtitle = "柔化每首歌的开头，切歌不会突然出声",
                 enabled = seamlessTransition,
                 onChange = onSeamlessTransitionChange,
+            )
+            // The player's centrepiece: a rounded cover, or a rotating record. A row that opens a picker
+            // rather than an inline switch, because there are two choices and each needs a line saying what
+            // it is — the same reason the quality tier uses a sheet.
+            LinkRow(
+                text = "播放器界面",
+                value = playerStyle.label,
+                onClick = onShowPlayerStyle,
             )
 
             Spacer(Modifier.height(28.dp))

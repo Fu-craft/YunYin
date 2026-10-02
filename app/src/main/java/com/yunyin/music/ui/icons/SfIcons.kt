@@ -689,6 +689,50 @@ object SfIcons {
         }
     }
 
+    /**
+     * Over-ear headphones: a headband arc with two ear cups.
+     *
+     * Added for the listen-together room, which draws one of these across two avatars. Drawn rather than
+     * imported because the glyph has to *read as a shape at large sizes* next to two circles, and the
+     * generic "headphones" symbols available are tuned for small icon rows.
+     */
+    val Headphones: ImageVector = icon("headphones") {
+        mono("headband", width = 1.9f) {
+            // A semicircle from the left cup up over to the right cup.
+            moveTo(4.6f, 14.2f)
+            verticalLineTo(12f)
+            curveTo(4.6f, 7.91f, 7.91f, 4.6f, 12f, 4.6f)
+            curveTo(16.09f, 4.6f, 19.4f, 7.91f, 19.4f, 12f)
+            verticalLineTo(14.2f)
+        }
+        path(fill = SolidColor(Color.Black)) {
+            // Left cup: a rounded rectangle standing on the band's end.
+            moveTo(3.1f, 13.6f)
+            horizontalLineTo(6.1f)
+            curveTo(6.9f, 13.6f, 7.5f, 14.2f, 7.5f, 15f)
+            verticalLineTo(19.2f)
+            curveTo(7.5f, 20f, 6.9f, 20.6f, 6.1f, 20.6f)
+            horizontalLineTo(3.1f)
+            curveTo(2.3f, 20.6f, 1.7f, 20f, 1.7f, 19.2f)
+            verticalLineTo(15f)
+            curveTo(1.7f, 14.2f, 2.3f, 13.6f, 3.1f, 13.6f)
+            close()
+        }
+        path(fill = SolidColor(Color.Black)) {
+            // Right cup, mirrored.
+            moveTo(17.9f, 13.6f)
+            horizontalLineTo(20.9f)
+            curveTo(21.7f, 13.6f, 22.3f, 14.2f, 22.3f, 15f)
+            verticalLineTo(19.2f)
+            curveTo(22.3f, 20f, 21.7f, 20.6f, 20.9f, 20.6f)
+            horizontalLineTo(17.9f)
+            curveTo(17.1f, 20.6f, 16.5f, 20f, 16.5f, 19.2f)
+            verticalLineTo(15f)
+            curveTo(16.5f, 14.2f, 17.1f, 13.6f, 17.9f, 13.6f)
+            close()
+        }
+    }
+
     val ListNumber: ImageVector = icon("text.line.first.and.arrowtriangle.forward") {
         mono("lines", width = 1.9f) {
             moveTo(9.4f, 6.4f)

@@ -20,12 +20,25 @@ data class TogetherPeerState(
     val playing: Boolean,
     val updatedAt: Long,
     val seq: Long,
+    /**
+     * The member's NetEase avatar, when the transport can supply one.
+     *
+     * Null on the hand-rolled transports by design — they exchange only ids and names, and inventing an
+     * avatar would be worse than showing the default glyph. The official transport fills it from
+     * `/listentogether/status`, which returns `roomUsers[].avatarUrl`.
+     */
+    val avatarUrl: String? = null,
 ) {
     val hasSong: Boolean get() = songId > 0L
 }
 
 /** A room member as the relay reports it (identity only). */
-data class TogetherMember(val uid: String, val name: String)
+data class TogetherMember(
+    val uid: String,
+    val name: String,
+    /** See [TogetherPeerState.avatarUrl]; null where the transport has no avatar concept. */
+    val avatarUrl: String? = null,
+)
 
 /** Failure modes the UI has to distinguish, rather than one opaque error. */
 sealed interface TogetherResult<out T> {

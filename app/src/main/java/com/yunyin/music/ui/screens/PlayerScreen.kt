@@ -83,10 +83,12 @@ import com.yunyin.music.data.ArtworkLoader
 import com.yunyin.music.playback.PlaybackUiState
 import com.yunyin.music.ui.AudioQuality
 import com.yunyin.music.ui.LYRIC_OFFSET_LIMIT_MS
+import com.yunyin.music.ui.PlayerStyle
 import com.yunyin.music.ui.background.DynamicBackgroundPalette
 import com.yunyin.music.ui.background.HyperBackground
 import com.yunyin.music.ui.components.Artwork
 import com.yunyin.music.ui.components.CrossfadeContent
+import com.yunyin.music.ui.components.VinylDisc
 import com.yunyin.music.ui.components.formatDuration
 import com.yunyin.music.ui.components.pressableGestures
 import com.yunyin.music.ui.components.rememberControlRipple
@@ -157,6 +159,13 @@ fun PlayerScreen(
     onArtistClick: (String) -> Unit = {},
     /** Called with a long-pressed lyric's text; null when the line had nothing to copy. */
     onCopyLyric: (String?) -> Unit = {},
+    /**
+     * Which centrepiece to draw: the classic rounded cover, or a rotating vinyl record.
+     *
+     * Only the cover area changes between the two — title, controls and the lyrics page are shared, so a
+     * style cannot be a half-implemented second player.
+     */
+    playerStyle: PlayerStyle = PlayerStyle.Classic,
     positionProvider: () -> Long,
     modifier: Modifier = Modifier,
 ) {
@@ -555,6 +564,8 @@ fun PlayerScreen(
                                     onCollapse = onCollapse,
                                     dragDistance = { dragDistance },
                                     setDragDistance = { dragDistance = it },
+                                    playerStyle = playerStyle,
+                                    isPlaying = state.isPlaying,
                                     sharedScope = this@SharedTransitionLayout,
                                     visibilityScope = this@AnimatedContent,
                                 )
@@ -816,7 +827,7 @@ fun PlayerScreen(
                         ) {
                             val artSize = minOf(maxWidth * 0.87f, maxHeight)
                             ArtworkWithGestures(
-                                artSize = artSize,
+                                artSize = minOf(maxWidth * 0.87f, maxHeight),
                                 track = track,
                                 cover = cover,
                                 loader = loader,
@@ -827,9 +838,12 @@ fun PlayerScreen(
                                 onCollapse = onCollapse,
                                 dragDistance = { dragDistance },
                                 setDragDistance = { dragDistance = it },
+                                playerStyle = playerStyle,
+                                isPlaying = state.isPlaying,
                                 sharedScope = this@SharedTransitionLayout,
                                 visibilityScope = this@AnimatedContent,
                             )
+
                         }
 
                         TitleBlock(
@@ -950,6 +964,10 @@ private fun ArtworkWithGestures(
     onCollapse: () -> Unit,
     dragDistance: () -> Float,
     setDragDistance: (Float) -> Unit,
+    /** Classic rounded cover, or the rotating record. Only this centrepiece differs. */
+    playerStyle: PlayerStyle,
+    /** Drives the record's rotation; ignored by the classic cover. */
+    isPlaying: Boolean,
     // Receiver scopes are passed in rather than captured: this is a separate composable, so the
     // caller's `this@SharedTransitionLayout` / `this@AnimatedContent` are not in scope here.
     sharedScope: SharedTransitionScope,
@@ -978,29 +996,48 @@ private fun ArtworkWithGestures(
             ),
         contentAlignment = Alignment.Center,
     ) {
-        Artwork(
-            url = track?.coverUrl,
-            loader = loader,
-            corner = ARTWORK_CORNER,
-            requestSize = 1000,
-            // The single decoded cover, shared with the header thumbnail: both halves of the shared
-            // element must be the same pixels, and reusing one bitmap avoids a second fetch/decode
-            // mid-transition.
-            preloaded = cover,
-            modifier = Modifier
-                .size(artSize)
-                // The other half of the shared cover: switching to the lyrics presentation shrinks
-                // this into the header thumbnail.
-                .then(
-                    with(sharedScope) {
-                        Modifier.sharedElement(
-                            rememberSharedContentState(key = COVER_SHARED_KEY),
-                            animatedVisibilityScope = visibilityScope,
-                        )
-                    },
-                )
-                .shadow(14.dp, ContinuousRoundedRectangle(ARTWORK_CORNER)),
-        )
+        if (playerStyle == PlayerStyle.Vinyl) {
+            // The record. Gestures above are unchanged, so tap-to-lyrics, long-press-to-save and
+            // drag-down-to-collapse all still work on it.
+            //
+            // It deliberately does NOT take part in the cover's shared-element transition: the record's
+            // label is a fraction of the disc, so morphing it into the 56dp header thumbnail would
+            // animate one shape into a much smaller piece of itself. Switching to the lyrics page still
+            // cross-fades (the AnimatedContent wrapper), the cover simply does not fly into the header.
+            VinylDisc(
+                url = track?.coverUrl,
+                loader = loader,
+                size = artSize,
+                isPlaying = isPlaying,
+                modifier = Modifier
+                    .size(artSize)
+                    .shadow(14.dp, CircleShape),
+            )
+        } else {
+            Artwork(
+                url = track?.coverUrl,
+                loader = loader,
+                corner = ARTWORK_CORNER,
+                requestSize = 1000,
+                // The single decoded cover, shared with the header thumbnail: both halves of the shared
+                // element must be the same pixels, and reusing one bitmap avoids a second fetch/decode
+                // mid-transition.
+                preloaded = cover,
+                modifier = Modifier
+                    .size(artSize)
+                    // The other half of the shared cover: switching to the lyrics presentation shrinks
+                    // this into the header thumbnail.
+                    .then(
+                        with(sharedScope) {
+                            Modifier.sharedElement(
+                                rememberSharedContentState(key = COVER_SHARED_KEY),
+                                animatedVisibilityScope = visibilityScope,
+                            )
+                        },
+                    )
+                    .shadow(14.dp, ContinuousRoundedRectangle(ARTWORK_CORNER)),
+            )
+        }
 
         // Download feedback, drawn over the cover so the gesture's result appears exactly where the
         // gesture was made.

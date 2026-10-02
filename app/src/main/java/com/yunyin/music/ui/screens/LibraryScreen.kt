@@ -59,6 +59,7 @@ import com.yunyin.music.core.Playlist
 import com.yunyin.music.core.Track
 import com.yunyin.music.data.ArtworkLoader
 import com.yunyin.music.ui.components.Artwork
+import com.yunyin.music.ui.components.UserAvatar
 import com.yunyin.music.ui.components.rememberControlRipple
 import com.yunyin.music.ui.icons.SfIcons
 import com.yunyin.music.ui.theme.AppleShapes
@@ -508,7 +509,12 @@ private fun ProfileBanner(background: ImageBitmap?) {
     }
 }
 
-/** A circular profile picture: the custom image, the NetEase avatar, or a monogram/person glyph. */
+/**
+ * The library header's own picture.
+ *
+ * Delegates to the shared [UserAvatar] so the header, the profile editor and the listen-together room
+ * cannot drift apart — the wrapper only maps "the signed-in account" onto the component's two inputs.
+ */
 @Composable
 private fun Avatar(
     account: Account?,
@@ -517,50 +523,12 @@ private fun Avatar(
     modifier: Modifier = Modifier,
 ) {
     val signedIn = account != null && !account.isAnonymous
-    val palette = AppTheme.palette
-    val hasPicture = custom != null || (signedIn && !account.avatarUrl.isNullOrBlank())
-    Box(
-        modifier
-            .clip(CircleShape)
-            // A ring in the page colour, which is what separates the avatar from the banner behind it.
-            .background(palette.background)
-            .padding(4.dp)
-            .clip(CircleShape)
-            // The plate behind the picture. Neutral when there is an image to show; accent-tinted when
-            // there is not, because a light grey plate with a light grey glyph on a white sheet has no
-            // contrast at all — it reads as an empty hole rather than as an avatar. The tint makes the
-            // placeholder legible in both appearances, which is what the reference's artwork does for it.
-            .background(if (hasPicture) palette.secondaryBackground else palette.accent.copy(alpha = 0.18f)),
-        contentAlignment = Alignment.Center,
-    ) {
-        val avatarUrl = account?.avatarUrl
-        when {
-            // The user's own picture wins whenever they have chosen one; the caller only supplies it when
-            // the "follow NetEase avatar" switch is off.
-            custom != null -> Image(
-                bitmap = custom,
-                contentDescription = "头像",
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-            )
-
-            signedIn && !avatarUrl.isNullOrBlank() -> Artwork(
-                url = avatarUrl,
-                loader = loader,
-                corner = AppleShapes.pill,
-                requestSize = 320,
-                placeholderIcon = SfIcons.Person,
-                modifier = Modifier.fillMaxSize(),
-            )
-
-            else -> Icon(
-                SfIcons.Person,
-                contentDescription = null,
-                tint = palette.accent,
-                modifier = Modifier.size(AvatarSize * 0.42f),
-            )
-        }
-    }
+    UserAvatar(
+        url = if (signedIn) account.avatarUrl else null,
+        custom = custom,
+        loader = loader,
+        modifier = modifier,
+    )
 }
 
 /** A white glyph on the banner, with its own hit area. */

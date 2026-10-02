@@ -66,6 +66,8 @@ fun TogetherSheet(
     onDismiss: () -> Unit,
     onShareCode: (String) -> Unit,
     onCopyCode: (String) -> Unit,
+    /** Opens the full-screen room (two avatars under headphones); null hides the button. */
+    onEnterRoom: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     Dialog(
@@ -128,6 +130,16 @@ fun TogetherSheet(
                         onCopyCode = onCopyCode,
                     )
                     Spacer(Modifier.height(18.dp))
+                    // The room proper, for when there is a room to be in.
+                    if (onEnterRoom != null) {
+                        SheetButton(
+                            label = "进入一起听",
+                            filled = true,
+                            onClick = onEnterRoom,
+                            icon = SfIcons.Headphones,
+                        )
+                        Spacer(Modifier.height(10.dp))
+                    }
                     SheetButton(
                         label = if (state.isHost) "结束房间" else "离开房间",
                         filled = false,

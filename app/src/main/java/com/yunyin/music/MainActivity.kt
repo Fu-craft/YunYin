@@ -81,6 +81,9 @@ import com.yunyin.music.ui.screens.SearchScreen
 import com.yunyin.music.ui.screens.SettingsScreen
 import com.yunyin.music.ui.screens.SplashScreen
 import com.yunyin.music.ui.screens.TogetherSheet
+import com.yunyin.music.ui.screens.TogetherRoomScreen
+import com.yunyin.music.ui.screens.PlayerStyleSheet
+import com.yunyin.music.ui.PlayerStyle
 import com.yunyin.music.ui.screens.UpdateSheet
 import com.yunyin.music.ui.theme.AmllTheme
 import com.yunyin.music.ui.theme.AppTheme
@@ -196,7 +199,14 @@ class MainActivity : ComponentActivity() {
         // publishing, and it mirrors the stored value, so the switch cannot disagree with what is running.
         var lyriconEnabled by remember { mutableStateOf(container.lyricon.enabled) }
         var seamlessTransition by remember { mutableStateOf(container.settings.seamlessTransition) }
+        // The player's centrepiece. Held as Compose state as well as persisted, for the same reason as the
+        // settings above: a SharedPreferences write does not invalidate composition, so a value read
+        // straight from the store would change only on the next launch.
+        var playerStyle by remember { mutableStateOf(PlayerStyle.from(container.settings.playerStyle)) }
+        var showPlayerStyle by remember { mutableStateOf(false) }
         var showTogether by remember { mutableStateOf(false) }
+        /** The full-screen room: the two avatars under headphones, once someone is actually in a room. */
+        var showTogetherRoom by remember { mutableStateOf(false) }
 
         // ------------------------------------------------------------ profile
         var showProfileEdit by remember { mutableStateOf(false) }
@@ -613,6 +623,8 @@ class MainActivity : ComponentActivity() {
                         // including "already current", which a silent check could not.
                         container.update.check(force = true)
                     },
+                    playerStyle = playerStyle,
+                    onShowPlayerStyle = { showPlayerStyle = true },
                 )
             }
 
@@ -767,7 +779,15 @@ class MainActivity : ComponentActivity() {
                     // Hidden entirely when no relay is configured: without one the feature cannot
                     // work, so offering the row would only produce a failure.
                     onListenTogether = if (appViewModel.togetherState.value.configured) {
-                        { showTogether = true }
+                        {
+                            // Already in a room: the room screen is the useful destination. Otherwise the
+                            // sheet, whose whole job is creating or joining one.
+                            if (appViewModel.togetherState.value.inRoom) {
+                                showTogetherRoom = true
+                            } else {
+                                showTogether = true
+                            }
+                        }
                     } else {
                         null
                     },
@@ -800,6 +820,7 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                     positionProvider = container.player::positionMsNow,
+                    playerStyle = playerStyle,
                 )
             }
 
@@ -909,6 +930,53 @@ class MainActivity : ComponentActivity() {
                         clipboard.setPrimaryClip(android.content.ClipData.newPlainText("房间码", code))
                         Toast.makeText(context, "房间码已复制", Toast.LENGTH_SHORT).show()
                     },
+                    onEnterRoom = {
+                        // Into the room screen: the sheet's job is done once someone is in a room, and the
+                        // two of them are what the feature is about.
+                        showTogether = false
+                        showTogetherRoom = true
+                    },
+                )
+            }
+
+            // The listen-together room itself: two faces under one pair of headphones.
+            //
+            // Layered over the player and under the sheet, so it reads as "entered" from the player and
+            // "beside" the create/join panel rather than replacing either.
+            var lastRoom by remember { mutableStateOf<com.yunyin.music.data.together.TogetherUiState?>(null) }
+            if (showTogetherRoom) {
+                val room by appViewModel.togetherState.collectAsState()
+                SideEffect { lastRoom = room }
+                val shown = room.takeIf { it.inRoom } ?: lastRoom
+                if (shown != null && shown.inRoom) {
+                    TogetherRoomScreen(
+                        state = shown,
+                        account = account,
+                        ownAvatar = avatarBitmap,
+                        loader = container.artwork,
+                        track = miniPlayerState.current,
+                        onInvite = {
+                            // Back to the sheet for the invite itself — it owns sharing and copying.
+                            showTogetherRoom = false
+                            showTogether = true
+                        },
+                        onClose = { showTogetherRoom = false },
+                    )
+                } else {
+                    // The room ended (or never existed): leave the screen rather than showing an empty one.
+                    showTogetherRoom = false
+                }
+            }
+
+            if (showPlayerStyle) {
+                PlayerStyleSheet(
+                    current = playerStyle,
+                    onSelect = { picked ->
+                        playerStyle = picked
+                        container.settings.playerStyle = picked.level
+                        showPlayerStyle = false
+                    },
+                    onDismiss = { showPlayerStyle = false },
                 )
             }
 
@@ -997,6 +1065,9 @@ class MainActivity : ComponentActivity() {
             appViewModel.dismissTogetherNotice()
             showTogether = false
         }
+        // Last, so the room screen unwinds before the player underneath it: back from the room returns to
+        // the player rather than collapsing both at once.
+        BackHandler(enabled = showTogetherRoom) { showTogetherRoom = false }
 
         // Surface playback errors once, then clear them.
         LaunchedEffect(playbackError) {

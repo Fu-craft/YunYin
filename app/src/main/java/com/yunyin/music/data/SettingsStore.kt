@@ -89,6 +89,17 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_SEAMLESS_TRANSITION, true)
         set(value) = prefs.edit().putBoolean(KEY_SEAMLESS_TRANSITION, value).apply()
 
+    /**
+     * Which player presentation to draw: the classic rounded cover, or the rotating vinyl record.
+     *
+     * Stored as the `PlayerStyle.level` string rather than an ordinal, so reordering or renaming the enum
+     * cannot silently change what a user has chosen. An unrecognised value falls back to the default at
+     * construction (`PlayerStyle.from`), which is what keeps a downgrade from failing to open the player.
+     */
+    var playerStyle: String
+        get() = prefs.getString(KEY_PLAYER_STYLE, "classic") ?: "classic"
+        set(value) = prefs.edit().putString(KEY_PLAYER_STYLE, value).apply()
+
     // ------------------------------------------------------------ updates
 
     /**
@@ -259,6 +270,7 @@ class SettingsStore(context: Context) {
         private const val KEY_LYRICON_ENABLED = "lyricon_enabled"
         private const val KEY_TOGETHER_MEMBER_ID = "together_member_id"
         private const val KEY_SEAMLESS_TRANSITION = "seamless_transition"
+        private const val KEY_PLAYER_STYLE = "player_style"
         private const val KEY_PROFILE_SIGNATURE = "profile_signature"
         private const val KEY_CUSTOM_NICKNAME = "custom_nickname"
         private const val KEY_USE_NETEASE_NAME = "use_netease_name"

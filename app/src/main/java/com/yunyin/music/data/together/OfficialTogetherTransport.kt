@@ -295,7 +295,10 @@ class OfficialTogetherTransport(
         when (val result = music.togetherStatus()) {
             is NetResult.Ok -> members = result.value.members
                 .filter { selfUid == 0L || it.uid != selfUid }
-                .map { TogetherMember(uid = "${it.uid}", name = it.nickname) }
+                // The avatar is carried through rather than dropped: `/listentogether/status` returns
+                // `roomUsers[].avatarUrl`, and the room screen shows the two members' faces. Discarding it
+                // here was why the feature had no faces to show.
+                .map { TogetherMember(uid = "${it.uid}", name = it.nickname, avatarUrl = it.avatarUrl) }
             is NetResult.Err -> Unit
         }
     }
@@ -317,6 +320,7 @@ class OfficialTogetherTransport(
         // command leaves the room silently stuck.
         val isOwnEcho = author != null && selfUid != 0L && command.userId == selfUid
         val authorName = author?.let { id -> members.firstOrNull { it.uid == id }?.name }.orEmpty()
+        val authorAvatar = author?.let { id -> members.firstOrNull { it.uid == id }?.avatarUrl }
 
         val peers = ArrayList<TogetherPeerState>(members.size + 1)
         if (command.hasCommand && !isOwnEcho) {
@@ -329,6 +333,7 @@ class OfficialTogetherTransport(
                 // The server's sequence is the ordering authority; the local clock plays no part.
                 updatedAt = command.serverSeq,
                 seq = command.serverSeq,
+                avatarUrl = authorAvatar,
             )
         }
         members.forEach { member ->
@@ -341,6 +346,7 @@ class OfficialTogetherTransport(
                 playing = false,
                 updatedAt = 0L,
                 seq = 0L,
+                avatarUrl = member.avatarUrl,
             )
         }
         return peers.filter { it.uid != excludeUid }
