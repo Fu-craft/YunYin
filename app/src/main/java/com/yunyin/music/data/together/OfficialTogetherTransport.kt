@@ -217,13 +217,12 @@ class OfficialTogetherTransport(
         refreshMembers(room)
         val peers = buildPeers(command, excludeUid)
         // One line per poll, because this is the whole question when sync fails: did the room report a
-        // command, whose was it, and did we decide it was ours?
-        val mine = command.userId != 0L && "$excludeUid" == "${command.userId}"
+        // command, whose was it, did we decide it was ours, and what did that leave to follow?
+        val isOwn = command.userId != 0L && selfUid != 0L && command.userId == selfUid
         TogetherLog.add(
-            "POLL room=${TogetherLog.short(room)} cmd=${command.hasCommand} " +
-                "song=${command.songId} play=${command.playing} author=${command.userId}" +
-                (if (mine) " (self)" else "") +
-                " members=${members.size} peers=${peers.count { it.hasSong }}",
+            "POLL cmd=${command.hasCommand} song=${command.songId} play=${command.playing} " +
+                "author=${command.userId} selfUid=$selfUid own=$isOwn " +
+                "members=${members.size} followed=${peers.count { it.hasSong }}",
         )
         return TogetherResult.Ok(peers)
     }
@@ -320,6 +319,14 @@ class OfficialTogetherTransport(
     private suspend fun ensureSelfUid() {
         if (selfUid != 0L) return
         selfUid = music.account()?.userId ?: 0L
+        // Logged because this one value decides whether a device can tell its own command from the peer's:
+        // with it unresolved, each side treats its own echoes as the peer's, and "the song does not follow"
+        // is the visible result. Without this line the log could not distinguish that from a poll that
+        // simply returned nothing.
+        TogetherLog.add(
+            if (selfUid == 0L) "SELF unresolved (looks like this session has no real account?)"
+            else "SELF uid=$selfUid",
+        )
     }
 
     /**

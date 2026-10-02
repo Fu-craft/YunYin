@@ -106,6 +106,16 @@ class TogetherSession(
     /** Applies a correction to the player. The host decides how (and may refuse). */
     var applyAction: (SyncAction) -> Unit = {}
 
+    /**
+     * The queue this device is playing from, supplied by the host.
+     *
+     * Published once when a room starts. It is not needed for the current-song sync, but a room whose
+     * playlist has never been set is a *different* room as far as the server is concerned, and the
+     * `sync/playlist/get` read path is the one place a command could go missing because of it. Sending what
+     * we already have costs one request and removes that whole class of doubt.
+     */
+    var localQueue: () -> List<Long> = { emptyList() }
+
     private var loop: Job? = null
     private var lastAppliedAt = 0L
 
@@ -340,6 +350,16 @@ class TogetherSession(
                 )
             }
         }
+        // The queue too, once. A room with no playlist is not the same room to the server, and one of the
+        // ways "the song never follows" could happen is a command that is not readable until the list
+        // exists. Publishing what we already have removes that possibility at the cost of one request.
+        val openingQueue = localQueue()
+        if (openingQueue.isNotEmpty()) {
+            lastPublishedQueue = openingQueue
+            scope.launch {
+                transport.publishQueue(openingQueue, uid, System.currentTimeMillis())
+            }
+        }
         loop = scope.launch {
             while (isActive) {
                 val code = _state.value.code ?: break
@@ -468,7 +488,14 @@ class TogetherSession(
      */
     private fun apply(peers: List<TogetherPeerState>, mine: LocalPlayback?) {
         // The most recently updated peer is the one to follow when the room has more than two members.
-        val peer = peers.filter { it.hasSong }.maxByOrNull { it.updatedAt } ?: return
+        val peer = peers.filter { it.hasSong }.maxByOrNull { it.updatedAt }
+        if (peer == null) {
+            // Logged only when there *was* a peer to consider, so an idle room is not noisy — but a room
+            // where the other member is present and on a song is exactly the case that must not pass
+            // silently.
+            if (peers.isNotEmpty()) TogetherLog.add("APPLY nothing: peers present but none has a song")
+            return
+        }
 
         if (mine == null) {
             if (peer.seq == adoptedPeerSeq) return
@@ -487,7 +514,15 @@ class TogetherSession(
             now = System.currentTimeMillis(),
             localSeq = seq,
         )
-        if (action == SyncAction.None) return
+        if (action == SyncAction.None) {
+            // The interesting negative: the peer IS on a song and we still did nothing. Either we consider
+            // our own state newer (the Lamport comparison), or the two agree already.
+            TogetherLog.add(
+                "APPLY none: local(song=${mine.songId} pos=${mine.positionMs} play=${mine.playing} seq=$seq) " +
+                    "vs peer(song=${peer.songId} pos=${peer.positionMs} seq=${peer.seq})",
+            )
+            return
+        }
         lastAppliedAt = System.currentTimeMillis()
         // Adopting the peer's state *is* an action, so our clock moves past theirs. Without this the
         // next comparison would still see us as the stale side and we would re-apply the same

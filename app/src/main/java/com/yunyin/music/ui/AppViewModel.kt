@@ -184,6 +184,9 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
             }
         }
         together.applyAction = { action -> applyTogetherAction(action) }
+        // The room publishes this device's queue once when a session starts, so the server side of the room
+        // is fully set up rather than only half of it (see TogetherSession.localQueue).
+        together.localQueue = { container.player.state.value.queue.map { it.id } }
     }
 
     /**

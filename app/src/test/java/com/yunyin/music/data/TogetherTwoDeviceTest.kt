@@ -262,4 +262,48 @@ class TogetherTwoDeviceTest {
             scope.cancel()
         }
     }
+
+    @Test
+    fun `two devices already playing different songs converge on one of them`() = runBlocking {
+        // The realistic case, and the one that was reported as "歌曲不同步": both people open the app, each
+        // is already playing something, and only THEN does one create the room and the other join. Neither
+        // starts from silence, so whichever device publishes last must win and the other must switch.
+        val room = FakeRoom()
+        val hostScope = CoroutineScope(Dispatchers.Default)
+        val guestScope = CoroutineScope(Dispatchers.Default)
+        try {
+            val host = Device("host", room, hostScope)
+            val guest = Device("guest", room, guestScope)
+
+            // Both are mid-song before the room exists.
+            host.play(111L, atMs = 5_000L)
+            guest.play(222L, atMs = 9_000L)
+
+            host.session.createRoom(uid = "host", name = "房主")
+            assertTrue(waitUntil { host.session.state.value.inRoom })
+            guest.session.joinRoom(code = "ROOM", uid = "guest", name = "对方")
+            assertTrue(waitUntil { guest.session.state.value.inRoom })
+
+            // They must agree on a single song — either one is acceptable, disagreement is not.
+            val converged = waitUntil(4_000) { host.songId == guest.songId }
+            assertTrue(
+                "the two devices must end on the same song, got host=${host.songId} guest=${guest.songId}",
+                converged,
+            )
+            assertTrue(
+                "someone must actually have followed: host=${host.applied} guest=${guest.applied}",
+                host.applied.isNotEmpty() || guest.applied.isNotEmpty(),
+            )
+
+            // And then stay settled rather than trading the song back and forth.
+            val hostApplied = host.applied.size
+            val guestApplied = guest.applied.size
+            delay(500)
+            assertEquals("the host must stop re-correcting", hostApplied, host.applied.size)
+            assertEquals("the guest must stop re-correcting", guestApplied, guest.applied.size)
+        } finally {
+            hostScope.cancel()
+            guestScope.cancel()
+        }
+    }
 }

@@ -14,6 +14,9 @@ class YunYinApp : Application() {
         super.onCreate()
         instance = this
         CrashLogger.install(this)
+        // Points the listen-together log at a file so a session's evidence survives a backgrounding or a
+        // restart — a room is long, and the user leaves the app to send an invite mid-session.
+        com.yunyin.music.data.together.TogetherLog.install(this)
         container = AppContainer(this)
         registerLyriconProvider()
     }
