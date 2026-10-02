@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -40,6 +41,26 @@ import com.yunyin.music.ui.theme.SFPro
 import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
 
 /**
+ * Press indication for a card.
+ *
+ * Two things had to change from the plain `clickable(onClick = ...)` these cards used, and both showed up
+ * as the same complaint — "点击后后面有像方块一样的" (a square block appears behind the card when tapped):
+ *
+ *  - **The shape.** Material's default ripple is bounded but **rectangular**, so on a card whose artwork is
+ *    rounded it drew a hard-edged block around it, corners and all. Clipping the card to its own shape (and
+ *    keeping the ripple inside it) makes the highlight follow the corners instead.
+ *  - **The colour.** The default tint comes from the theme's `onSurface`, which is only correct on the page
+ *    background — on a card with its own fill it read as the grey block the user saw. Deriving it from
+ *    `label` makes it darken a light card and brighten a dark one, which is what iOS does and what the rest
+ *    of this app already does through [rememberControlRipple].
+ */
+@Composable
+private fun cardRipple() = rememberControlRipple(
+    bounded = true,
+    color = AppTheme.palette.label.copy(alpha = 0.08f),
+)
+
+/**
  * Large playlist tile used by the "精选歌单" carousel.
  *
  * Mirrors Apple Music's editorial card: square artwork with a title/curator footer, sized
@@ -58,7 +79,12 @@ fun PlaylistCard(
             .width(width)
             .clip(ContinuousRoundedRectangle(AppleShapes.cardLarge))
             .background(AppTheme.palette.secondaryBackground)
-            .clickable(onClick = onClick),
+            // The clip above is what keeps this inside the card's rounded corners; see [cardRipple].
+            .clickable(
+                indication = cardRipple(),
+                interactionSource = null,
+                onClick = onClick,
+            ),
     ) {
         Artwork(
             url = playlist.coverUrl,
@@ -106,37 +132,59 @@ fun TrackCard(
     width: androidx.compose.ui.unit.Dp = 150.dp,
 ) {
     Column(
-        modifier = modifier
-            .width(width)
-            .clickable(onClick = onClick),
+        modifier = modifier.width(width),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Artwork(
-            url = track.coverUrl,
-            loader = loader,
-            corner = AppleShapes.card,
-            requestSize = 500,
+        // The press indication lives on the artwork, not on the whole card.
+        //
+        // This card has no fill of its own — it is artwork plus two lines of text on the page — so a
+        // highlight over the full column drew a grey block across the title and artist as well, which is
+        // exactly the "方块" that was reported. Scoping it to the artwork confines the feedback to the
+        // part that looks like a card, and clipping to the same corner the artwork uses keeps it round.
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .clip(ContinuousRoundedRectangle(AppleShapes.card))
+                .clickable(
+                    indication = cardRipple(),
+                    interactionSource = null,
+                    onClick = onClick,
+                ),
+        ) {
+            Artwork(
+                url = track.coverUrl,
+                loader = loader,
+                corner = AppleShapes.card,
+                requestSize = 500,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+        // The labels stay tappable — tapping a title is expected to open the item — but carry no
+        // indication of their own, so pressing them does not resurrect the block this fix removes.
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .aspectRatio(1f),
-        )
-        Text(
-            text = track.name,
-            fontFamily = SFPro,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 15.sp,
-            color = AppTheme.palette.label,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-            text = track.artistLine,
-            fontFamily = SFPro,
-            fontSize = 13.sp,
-            color = AppTheme.palette.secondaryLabel,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+                .clickable(indication = null, interactionSource = null, onClick = onClick),
+        ) {
+            Text(
+                text = track.name,
+                fontFamily = SFPro,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 15.sp,
+                color = AppTheme.palette.label,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = track.artistLine,
+                fontFamily = SFPro,
+                fontSize = 13.sp,
+                color = AppTheme.palette.secondaryLabel,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
