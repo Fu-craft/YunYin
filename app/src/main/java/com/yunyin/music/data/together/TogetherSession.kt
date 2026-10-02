@@ -37,6 +37,14 @@ data class TogetherUiState(
      * button could never be pressed.
      */
     val codeLength: Int = 12,
+    /**
+     * True while a create/join is in flight.
+     *
+     * Needed because connecting can take a while — every candidate endpoint gets a turn — and without
+     * it the sheet simply sat there, which reads as "the button does nothing". (That is what prompted
+     * repeated taps, which used to stack up and crash.)
+     */
+    val connecting: Boolean = false,
 ) {
     val inRoom: Boolean get() = code != null && ended == null
 }
@@ -315,9 +323,42 @@ class TogetherSession(
         loop = null
     }
 
+    /**
+     * Runs a create/join/leave in the session's scope, with the previous one cancelled and **no
+     * exception allowed out**.
+     *
+     * Two failures are being fixed here, and both showed up as "tapping join does nothing, then the app
+     * crashes if you tap a few times":
+     *
+     *  - **Nothing may escape.** The scope is `Dispatchers.Main.immediate` on the session's own
+     *    SupervisorJob, so an exception thrown by an unhandled coroutine on the main thread is not
+     *    swallowed — it takes the process down. Network code must not have that power, so every failure
+     *    becomes a message in [TogetherUiState.error].
+     *  - **Only one at a time.** Each tap used to start an independent job, and a second concurrent join
+     *    raced the first: the transport's "already connected" shortcut could not see a connection that
+     *    was still being established, so it opened another and leaked the first. Cancelling the previous
+     *    job makes repeated taps harmless.
+     */
     private fun launchWork(block: suspend () -> Unit) {
-        scope.launch { block() }
+        workJob?.cancel()
+        _state.value = _state.value.copy(connecting = true, error = null)
+        workJob = scope.launch {
+            try {
+                block()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                // Includes OOM-style Errors? No — `Throwable` is deliberate: a network stack can throw
+                // anything, and none of it should be allowed to kill the app. Cancellation is rethrown
+                // above so structured concurrency still works.
+                setError(e.message ?: "一起听连接失败")
+            } finally {
+                _state.value = _state.value.copy(connecting = false)
+            }
+        }
     }
+
+    private var workJob: Job? = null
 
     private fun setError(message: String) {
         _state.value = _state.value.copy(error = message)

@@ -143,16 +143,20 @@ private fun IdleBody(
     onCreate: () -> Unit,
     onJoin: (String) -> Unit,
 ) {
+    // Connecting can take a while — each candidate endpoint gets a turn — so the button says so and is
+    // disabled meanwhile. Without this the sheet looked inert, which is what invited repeated taps.
+    val connecting = state.connecting
     SheetButton(
-        label = "创建房间",
+        label = if (connecting) "正在连接…" else "创建房间",
         filled = true,
+        enabled = !connecting,
         onClick = onCreate,
-        icon = SfIcons.Plus,
+        icon = if (connecting) null else SfIcons.Plus,
     )
     Spacer(Modifier.height(16.dp))
 
     Text(
-        text = "或输入对方的房间码",
+        text = if (connecting) "正在连接消息服务器，请稍候…" else "或输入对方的房间码",
         fontFamily = SFPro,
         fontSize = 13.sp,
         color = AppTheme.palette.secondaryLabel,
@@ -204,18 +208,20 @@ private fun IdleBody(
             }
         }
         Spacer(Modifier.width(10.dp))
+        val canJoin = complete && !connecting
         Box(
             Modifier
                 .height(46.dp)
                 .clip(ContinuousRoundedRectangle(AppleShapes.pill))
                 .background(
                     AppTheme.palette.accent.copy(
-                        alpha = if (complete) 1f else 0.4f,
+                        alpha = if (canJoin) 1f else 0.4f,
                     ),
                 )
                 // Validated against the transport's own length. A hardcoded twelve made a six-character
                 // code permanently un-joinable: the button never enabled and nothing said why.
-                .clickable(enabled = complete) { onJoin(code) }
+                // Also disabled while connecting, so a repeated tap cannot start a second attempt.
+                .clickable(enabled = canJoin) { onJoin(code) }
                 .padding(horizontal = 20.dp),
             contentAlignment = Alignment.Center,
         ) {
@@ -394,9 +400,12 @@ private fun SheetButton(
     filled: Boolean,
     onClick: () -> Unit,
     icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    /** False dims the button and stops it responding — used while a connection is in flight. */
+    enabled: Boolean = true,
 ) {
     val palette = AppTheme.palette
-    val background = if (filled) palette.accent else palette.secondaryBackground
+    val base = if (filled) palette.accent else palette.secondaryBackground
+    val background = if (enabled) base else base.copy(alpha = 0.4f)
     val ink = if (filled) Color.White else palette.label
     Row(
         Modifier
@@ -404,7 +413,7 @@ private fun SheetButton(
             .height(50.dp)
             .clip(ContinuousRoundedRectangle(AppleShapes.pill))
             .background(background)
-            .clickable(onClick = onClick),
+            .clickable(enabled = enabled, onClick = onClick),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {

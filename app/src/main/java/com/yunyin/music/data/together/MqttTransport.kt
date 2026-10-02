@@ -79,6 +79,14 @@ class MqttTransport(
     private var client: MqttClient? = null
 
     /**
+     * Serialises connection setup.
+     *
+     * Without it, two concurrent callers each found no live client and each opened one, leaking the
+     * loser (a WebSocket plus its reconnect loop). See [ensureSubscribedLocked].
+     */
+    private val ensureLock = kotlinx.coroutines.sync.Mutex()
+
+    /**
      * Used only for WebSocket connections.
      *
      * `readTimeout(0)` because these connections are meant to stay open for the whole session, and
@@ -174,7 +182,7 @@ class MqttTransport(
     /**
      * Brings up a connection and an **acknowledged** subscription, trying each broker in turn.
      *
-     * Three things are being handled here, each of which was a separate reported failure:
+     * Four things are being handled here, each of which was a separate reported failure:
      *
      *  1. **A broker that is unreachable.** A blocked port or a filtered domain is a property of the
      *     network, not a reason to give up — the next candidate gets a turn, and in practice
@@ -182,8 +190,22 @@ class MqttTransport(
      *  2. **Connecting is asynchronous**, so publishing straight after `connect()` reported 尚未连接.
      *  3. **A subscription is not in effect until its SUBACK arrives**, so publishing before that sends
      *     state into a room we cannot hear — which presents as "the room contains only me".
+     *  4. **Concurrent callers must not each open their own connection.** The "already connected"
+     *     shortcut below can only see a *finished* connection, so a second call arriving while the first
+     *     was still connecting opened another client and leaked the first — a WebSocket plus a reconnect
+     *     loop that never went away. Repeated taps on the join button therefore accumulated connections
+     *     until the app died. The lock makes the second caller wait for the first's result instead.
      */
     private suspend fun ensureSubscribed(code: String, uid: String): TogetherResult<Unit> {
+        ensureLock.lock()
+        try {
+            return ensureSubscribedLocked(code, uid)
+        } finally {
+            ensureLock.unlock()
+        }
+    }
+
+    private suspend fun ensureSubscribedLocked(code: String, uid: String): TogetherResult<Unit> {
         selfUid = uid
         if (roomCode == code && client?.isConnected == true && subscribedRoom == code) {
             return TogetherResult.Ok(Unit)
@@ -242,6 +264,11 @@ class MqttTransport(
             subscribedRoom = code
             return TogetherResult.Ok(Unit)
         }
+        // Every endpoint failed. Do not keep a half-built client around: its reconnect loop would
+        // outlive this attempt and the next call would find a "client" that never connects.
+        client?.close()
+        client = null
+        chosen = null
         return TogetherResult.Failed("无法连接消息服务器（已尝试：${failures.joinToString("、")}）")
     }
 
@@ -323,8 +350,14 @@ class MqttTransport(
         /** Longer than the 20s heartbeat, so a single missed beat does not make the peer vanish. */
         const val MEMBER_TTL_MS = 75_000L
 
-        /** How long to wait for the broker before telling the user it could not be reached. */
-        const val CONNECT_WAIT_MS = 12_000L
+        /**
+         * How long to wait for one endpoint before moving to the next.
+         *
+         * Kept short on purpose: a public broker either completes the WebSocket/TCP handshake quickly or
+         * is not reachable, and this timeout is paid *per candidate* — four endpoints at the old 12s
+         * meant a wrong network left the button looking dead for the best part of a minute.
+         */
+        const val CONNECT_WAIT_MS = 7_000L
 
         /**
          * How long to wait for the subscription to be acknowledged.
