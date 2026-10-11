@@ -23,6 +23,8 @@ import com.yunyin.music.data.together.OfficialTogetherTransport
 import com.yunyin.music.data.together.RelayTransport
 import com.yunyin.music.data.together.TogetherSession
 import com.yunyin.music.data.together.TogetherTransport
+import com.yunyin.music.data.together.ltw.LtwApi
+import com.yunyin.music.data.together.ltw.LtwTransport
 import com.yunyin.music.data.update.UpdateManager
 import com.yunyin.music.playback.PlayerController
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -119,18 +121,19 @@ class AppContainer(val appContext: Context) {
     /**
      * Listen-together room engine.
      *
-     * **The default is NetEase's own API** — the official feature, with no third-party service and
-     * nothing to deploy. That became possible once the API was measured properly: an earlier probe
-     * concluded HTTP could not read the peer's playback state, and that conclusion was wrong — it had
-     * been taken against a server whose session was **not logged in**, where the same endpoint answers
-     * `需要登录`. Against a signed-in server it returns the room's live command (song, position, play
-     * state, and a server-assigned sequence that orders commands with no client clocks involved).
+     * **The default is the NeriPlayer LTW service**, which is *server-authoritative*: one server owns the
+     * room's playback and computes the position from its own clock, so the two devices read the same truth
+     * instead of negotiating. That is the property the earlier transports could not have, and its absence is
+     * what produced the whole family of "I press play and the other side pauses" reports — two peers with
+     * disagreeing clocks cannot agree on who acted last, so each correction looks like something worth
+     * correcting.
      *
-     * The hand-rolled alternatives remain available, selected by configuration rather than by fallback,
-     * because a transport is a *rendezvous*: two devices on different ones sit in two rooms that both look
-     * empty, with nothing on screen to explain why.
+     * The alternatives below remain, selected by configuration rather than by fallback, because a transport
+     * is a *rendezvous*: two devices on different ones sit in two rooms that both look empty, with nothing
+     * on screen to explain why. They are no longer the default.
      *
-     *  - `together.base.url` — a self-hosted relay (`server/together-relay.js`, or the Cloudflare Worker).
+     *  - `together.ltw.url` — the LTW service (the default when configured).
+     *  - `together.base.url` — a self-hosted peer-to-peer relay.
      *  - `together.mqtt.host` — a public MQTT broker.
      *  - `together.ntfy.url` — an HTTP pub/sub service.
      */
@@ -150,6 +153,12 @@ class AppContainer(val appContext: Context) {
         }
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate + handler)
         val transport: TogetherTransport = when {
+            BuildConfig.TOGETHER_LTW_URL.isNotBlank() ->
+                LtwTransport(
+                    api = LtwApi(),
+                    scope = scope,
+                    identityProvider = { settings.togetherUserUuid to togetherName() },
+                ).also { it.configure(BuildConfig.TOGETHER_LTW_URL) }
             BuildConfig.TOGETHER_BASE_URL.isNotBlank() -> RelayTransport()
             BuildConfig.TOGETHER_MQTT_HOST.isNotBlank() -> MqttTransport(scope)
             BuildConfig.TOGETHER_NTFY_URL.isNotBlank() -> NtfyTransport(scope)
@@ -160,6 +169,12 @@ class AppContainer(val appContext: Context) {
         }
         TogetherSession(transport = transport, scope = scope)
     }
+
+    /** The nickname shown to the other member: the custom one, else the account's, else a default. */
+    private fun togetherName(): String =
+        settings.customNickname.takeIf { it.isNotBlank() }
+            ?: settings.account?.nickname?.takeIf { it.isNotBlank() }
+            ?: "云音用户"
 
     val player: PlayerController by lazy {
         PlayerController(appContext) { trackId ->

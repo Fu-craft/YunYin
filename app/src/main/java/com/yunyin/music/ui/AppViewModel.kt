@@ -14,6 +14,8 @@ import com.yunyin.music.core.Playlist
 import com.yunyin.music.core.Track
 import com.yunyin.music.data.together.LocalPlayback
 import com.yunyin.music.data.together.SyncAction
+import com.yunyin.music.data.together.TogetherSeed
+import com.yunyin.music.data.together.TogetherTrack
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -194,6 +196,33 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
             val playback = container.player.state.value
             playback.isBuffering
         }
+        // The server-authoritative transport sends the whole track, so it needs the queue with metadata
+        // rather than bare ids. Supplied here because resolving it belongs to the player, not to the session.
+        together.transportSeedProvider = {
+            val playback = container.player.state.value
+            val queue = playback.queue
+            if (queue.isEmpty()) {
+                null
+            } else {
+                TogetherSeed(
+                    tracks = queue.map {
+                        TogetherTrack(
+                            id = it.id,
+                            name = it.name,
+                            artist = it.artistLine,
+                            album = it.albumName.ifBlank { null },
+                            durationMs = it.durationMs,
+                            coverUrl = it.coverUrl,
+                        )
+                    },
+                    currentIndex = playback.index.coerceIn(0, queue.lastIndex),
+                    positionMs = container.player.positionMsNow(),
+                    playing = playback.isPlaying,
+                    repeatMode = playback.repeatMode,
+                    shuffleEnabled = playback.shuffle,
+                )
+            }
+        }
     }
 
     /**
@@ -237,7 +266,14 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    /** Creates a room as this installation, or reports that a real login is needed. */
+    /**
+     * Creates a room as this installation.
+     *
+     * Returns a message when the *transport* cannot proceed. Only a peer-to-peer transport needs a signed-in
+     * account (its member ids are the NetEase account's); the server-authoritative LTW room identifies the
+     * device by a generated UUID and shares tracks the app already has, so it needs no login at all — which
+     * also makes it testable from one account on two devices.
+     */
     fun createTogetherRoom(): String? {
         val uid = togetherMemberId() ?: return "请先登录后再使用一起听"
         together.createRoom(uid = uid, name = togetherName())
@@ -279,20 +315,26 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     /**
-     * This installation's member id, or null when not signed in to a real account.
+     * This installation's member id, or null when the transport needs an account it does not have.
      *
-     * The id itself is per-installation rather than per-account, which is what makes the feature
-     * usable from one account on two devices — see `SettingsStore.togetherMemberId`. The login check
-     * is about identity to the *peer* (a name worth showing), not about the transport.
+     * The id itself is per-installation rather than per-account, which is what makes the feature usable from
+     * one account on two devices — see `SettingsStore.togetherMemberId`. A peer-to-peer room still needs a
+     * *signed-in* account for its member ids to mean anything; a server-authoritative room does not, so the
+     * check is skipped there rather than blocking a feature that does not need it.
      */
     private fun togetherMemberId(): String? {
-        val account = container.settings.account ?: return null
-        if (account.isAnonymous) return null
+        if (together.requiresAccount) {
+            val account = container.settings.account ?: return null
+            if (account.isAnonymous) return null
+            return container.settings.togetherMemberId
+        }
         return container.settings.togetherMemberId
     }
 
     /** The name shown to the other member. */
     private fun togetherName(): String {
+        val custom = container.settings.customNickname
+        if (custom.isNotBlank()) return custom
         val account = container.settings.account
         return account?.nickname?.takeIf { it.isNotBlank() } ?: "云音用户"
     }

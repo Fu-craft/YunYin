@@ -44,6 +44,14 @@ import com.yunyin.music.ui.theme.AppTheme
 import com.yunyin.music.ui.theme.SFPro
 
 /**
+ * What separates a room code from its secret inside a pasted invite.
+ *
+ * Matches `TogetherTransport`'s own invite separator. Duplicated as a literal rather than imported so this
+ * composable does not depend on a data-layer constant for something it only uses to *recognise* a paste.
+ */
+private const val INVITE_SEPARATOR = '|'
+
+/**
  * 一起听 — create or join a room, then show who is in it.
  *
  * ## Why the sheet is one screen with two faces rather than a flow
@@ -194,8 +202,12 @@ private fun TypedCodeJoin(
     Spacer(Modifier.height(8.dp))
 
     var code by remember { mutableStateOf("") }
-    // Complete for *this* transport's code format (six on the relay, twelve on a broker).
-    val complete = code.count { it.isLetterOrDigit() } >= state.codeLength
+    // Complete for *this* transport's code format (six on the relay, twelve on a broker) — **or** for a
+    // pasted invite, which is a code plus a secret. The secret is what proves the invite is genuine, so it
+    // must survive being pasted; truncating to the code length would silently drop it and the join would
+    // fail with no explanation.
+    val pastedInvite = code.contains(INVITE_SEPARATOR)
+    val complete = pastedInvite || code.count { it.isLetterOrDigit() } >= state.codeLength
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(
             Modifier
@@ -214,8 +226,16 @@ private fun TypedCodeJoin(
                 //
                 // The cap comes from the transport, not a constant: codes are six characters on the
                 // self-hosted relay and twelve where the code doubles as a topic name.
+                //
+                // A pasted invite (code + `|` + secret) is left **whole** and not uppercased inside the
+                // secret — the same rule the transport's own parser applies, kept here so the field cannot
+                // corrupt what the paste button in the other member's sheet produced.
                 onValueChange = { entered ->
-                    code = entered.filter { it.isLetterOrDigit() }.uppercase().take(state.codeLength)
+                    code = if (entered.any { it == INVITE_SEPARATOR }) {
+                        entered.trim()
+                    } else {
+                        entered.filter { it.isLetterOrDigit() }.uppercase().take(state.codeLength)
+                    }
                 },
                 singleLine = true,
                 textStyle = TextStyle(

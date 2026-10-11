@@ -59,6 +59,35 @@ data class TogetherMember(
     val avatarUrl: String? = null,
 )
 
+/**
+ * A track as a room needs to describe it.
+ *
+ * Distinct from [com.yunyin.music.core.Track] because a room stores its own copy: the server-authoritative
+ * transport sends the whole track (name, artist, duration, cover) so the *other* device can show and place
+ * the song without a second lookup, and receives it back the same way.
+ */
+data class TogetherTrack(
+    val id: Long,
+    val name: String,
+    val artist: String,
+    val album: String?,
+    val durationMs: Long,
+    val coverUrl: String?,
+)
+
+/** The controller's playback, as a room that bootstraps from the client's state needs to receive it. */
+data class TogetherSeed(
+    val tracks: List<TogetherTrack>,
+    val currentIndex: Int,
+    val positionMs: Long,
+    val playing: Boolean,
+    val repeatMode: Int = 0,
+    val shuffleEnabled: Boolean = false,
+) {
+    val current: TogetherTrack? get() = tracks.getOrNull(currentIndex)
+    fun trackById(id: Long): TogetherTrack? = tracks.firstOrNull { it.id == id }
+}
+
 /** Failure modes the UI has to distinguish, rather than one opaque error. */
 sealed interface TogetherResult<out T> {
     data class Ok<T>(val value: T) : TogetherResult<T>
@@ -116,6 +145,27 @@ enum class TogetherLocalAction {
 interface TogetherTransport {
     /** True when a transport is configured at all; the feature is hidden when it is not. */
     val configured: Boolean
+
+    /**
+     * True when **one server holds the authoritative playback**, rather than the two devices negotiating.
+     *
+     * The difference decides how the session applies state. A peer-to-peer room must only act on a *new*
+     * command, or the two sides chase each other; a server-authoritative room must move toward the server's
+     * state on **every** poll, because the server is not a peer to argue with — it is the truth. Setting
+     * this makes the session converge instead of arbitrate, which is the whole reason this transport exists.
+     */
+    val authoritative: Boolean get() = false
+
+    /**
+     * The current queue with full metadata, for a transport whose payloads carry tracks.
+     *
+     * Set by the host from the player. Null for the transports that exchange only ids — nothing about them
+     * changes. A `var` on the interface (with a no-op default) so the host can supply it without the session
+     * having to know which transport is in use.
+     */
+    var seedProvider: (() -> TogetherSeed?)?
+        get() = null
+        set(_) {}
 
     /**
      * The endpoint in use, for display.

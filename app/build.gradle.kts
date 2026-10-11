@@ -35,8 +35,8 @@ android {
         // versionCode must increase for Android to accept a build as an update over a previous one;
         // versionName is what the user sees. Bumped together — a version name change with an unchanged
         // code would install as a downgrade and be rejected.
-        versionCode = 43
-        versionName = "3.11.6"
+        versionCode = 44
+        versionName = "3.12.0"
         vectorDrawables { useSupportLibrary = true }
 
         // The API endpoint is injected at build time rather than baked into the sources, so the
@@ -52,14 +52,22 @@ android {
         // Listen-together relay, same arrangement as the API endpoint: injected from local.properties
         // (`together.base.url`) so no server address is committed, and empty by default so a clone
         // simply does not offer the feature rather than pointing at someone else's relay.
-        //
-        // This is needed because NetEase's own HTTP API cannot read a peer's playback state at all —
-        // its room runs over an Agora RTC channel and the HTTP calls are write-only for state
-        // (measured: reporting succeeds, reading returns empty). The relay supplies the read path.
         buildConfigField(
             "String",
             "TOGETHER_BASE_URL",
             "\"${localProps.getProperty("together.base.url") ?: ""}\"",
+        )
+
+        // The NeriPlayer listen-together service (`together.ltw.url`), a Cloudflare Worker + Durable
+        // Object. **This is the default transport when set**, and the one this app is built around: the
+        // room is server-authoritative, so the two devices cannot argue about play/pause — the failure
+        // that made every peer-to-peer version of this feature invert itself. Injected from
+        // local.properties for the same reason as the API endpoint: a published repository carries no
+        // server address, and a build with none simply does not offer the feature.
+        buildConfigField(
+            "String",
+            "TOGETHER_LTW_URL",
+            "\"${localProps.getProperty("together.ltw.url") ?: ""}\"",
         )
 
         // Optional shared secret for the relay (`together.token`). Empty means the relay is open,

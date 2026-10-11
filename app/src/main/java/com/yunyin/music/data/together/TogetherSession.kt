@@ -107,6 +107,25 @@ class TogetherSession(
     var applyAction: (SyncAction) -> Unit = {}
 
     /**
+     * The queue with full metadata, supplied by the host, for a transport whose payloads carry tracks.
+     *
+     * Forwarded to the transport because it is the transport that has to serialize it (the LTW service
+     * requires a shareable current track to create a room at all). Null for transports that exchange ids.
+     */
+    var transportSeedProvider: (() -> TogetherSeed?)?
+        get() = transport.seedProvider
+        set(value) { transport.seedProvider = value }
+
+    /**
+     * Whether the room needs a signed-in account.
+     *
+     * A server-authoritative room does not: its identity is a per-installation UUID, and it shares tracks the
+     * app already has rather than anything tied to a login. Requiring a login there would block the feature
+     * for no reason.
+     */
+    val requiresAccount: Boolean get() = !transport.authoritative
+
+    /**
      * The queue this device is playing from, supplied by the host.
      *
      * Published once when a room starts. It is not needed for the current-song sync, but a room whose
@@ -133,6 +152,14 @@ class TogetherSession(
 
     private var loop: Job? = null
     private var lastAppliedAt = 0L
+
+    /**
+     * When this device last *sent* an action to the room.
+     *
+     * Used only by the authoritative path: for a short round-trip window after our own command, the server
+     * still reports the pre-command state, and obeying it would undo the tap the user just made.
+     */
+    private var lastLocalActionAt = 0L
 
     /**
      * The identity of the last peer command this device acted on — see [TogetherSync.peerIdentity].
@@ -184,6 +211,10 @@ class TogetherSession(
      */
     fun noteUserAction(action: TogetherLocalAction? = null) {
         if (action != null) pendingAction = action
+        // An authoritative room needs to know *when* this device last acted, so it can ignore the server's
+        // not-yet-updated state for the round trip that follows. Recorded here rather than at the transport,
+        // because this is the one point every user action passes through.
+        lastLocalActionAt = System.currentTimeMillis()
         // Tell the loop to publish now: a peer should see the new track immediately, not after the
         // next scheduled poll.
         wakeups.trySend(Unit)
@@ -214,6 +245,16 @@ class TogetherSession(
          * enough for a typical refill and short enough that the room recovers on its own.
          */
         const val RATE_LIMIT_BACKOFF_MS = 60_000L
+
+        /**
+         * How long an authoritative room ignores the server after this device's own command.
+         *
+         * A round trip, not a settle window: the server has to record the command and the next read has to
+         * come back, and until it does the room still describes the state the user just changed. Obeying it
+         * would visibly undo the tap. Two polls is comfortably longer than a round trip over the socket and
+         * far shorter than the old anti-ping-pong window, so a genuine difference cannot hide here.
+         */
+        const val LOCAL_INTENT_GRACE_MS = 4_000L
     }
 
     fun createRoom(uid: String, name: String) {
@@ -492,6 +533,15 @@ class TogetherSession(
         val claim = pendingAction
         val songChanged = mine.songId != lastPublishedSongId
         val playingChanged = mine.playing != lastPublishedPlaying
+        // A server-authoritative room is driven by **explicit actions only**, never by inferred local
+        // changes. Inferring them here would re-publish the very state this device just adopted from the
+        // server — the echo that made every peer-to-peer version oscillate — as well as a track that
+        // advanced because the server moved it. So with no claim there is nothing to send; just re-baseline.
+        if (transport.authoritative && claim == null) {
+            lastPublishedSongId = mine.songId
+            lastPublishedPlaying = mine.playing
+            return
+        }
         val action: TogetherLocalAction? = when {
             // A seek is invisible in the reported state — position is not part of it — so only the claim can
             // carry it.
@@ -571,13 +621,22 @@ class TogetherSession(
      * re-issuing it would restart the song repeatedly until it took.
      */
     private fun apply(peers: List<TogetherPeerState>, mine: LocalPlayback?) {
-        // The most recently updated peer is the one to follow when the room has more than two members.
+        // The most recently updated peer is the one to follow when the room has more than one candidate.
         val peer = peers.filter { it.hasSong }.maxByOrNull { it.updatedAt }
         if (peer == null) {
             // Logged only when there *was* a peer to consider, so an idle room is not noisy — but a room
             // where the other member is present and on a song is exactly the case that must not pass
             // silently.
             if (peers.isNotEmpty()) TogetherLog.add("APPLY nothing: peers present but none has a song")
+            return
+        }
+
+        // A server-authoritative room is followed on *every* poll, not only on a new command: the server is
+        // the truth, so the device converges to it rather than arbitrating with a peer. The only exception is
+        // the short window after this device's own action, during which the server has not yet caught up and
+        // obeying it would undo the user's tap.
+        if (transport.authoritative) {
+            applyAuthoritative(peer, mine)
             return
         }
 
@@ -627,6 +686,42 @@ class TogetherSession(
         // then reading playback back.
         lastPublishedSongId = peer.songId
         lastPublishedPlaying = peer.playing
+    }
+
+    /**
+     * Moves this device toward the **authoritative** room state, every poll.
+     *
+     * The room is one shared playback, so the "peer" here is the server's own state rather than another
+     * member's assertion. Nothing is negotiated: [TogetherSync.reconcile] returns what it takes to agree with
+     * the server, and a settled room yields [SyncAction.None] for free.
+     *
+     * The one guard is [lastLocalActionAt]: right after this device's own command the server has not yet
+     * recorded it, and obeying the stale state would undo the user's tap. The window is short — a round trip —
+     * so it cannot hide a real difference for long.
+     */
+    private fun applyAuthoritative(peer: TogetherPeerState, mine: LocalPlayback?) {
+        val now = System.currentTimeMillis()
+        if (now - lastLocalActionAt < LOCAL_INTENT_GRACE_MS) {
+            TogetherLog.add("APPLY authoritative skipped (own action settling)")
+            return
+        }
+        if (mine == null) {
+            // Nothing to preserve: adopt outright, once per distinct server state (the player loads
+            // asynchronously, so re-issuing on every poll would restart the song until it took).
+            val identity = TogetherSync.peerIdentity(peer)
+            if (identity == lastPeerIdentity) return
+            lastPeerIdentity = identity
+            lastAppliedAt = now
+            TogetherLog.add("APPLY adopt song=${peer.songId} pos=${peer.positionMs} (idle)")
+            applyAction(SyncAction.PlaySong(peer.songId, peer.positionMs, peer.playing))
+            return
+        }
+        val action = TogetherSync.reconcile(local = mine, peer = peer)
+        if (action == SyncAction.None) return
+        lastAppliedAt = now
+        lastPeerIdentity = TogetherSync.peerIdentity(peer)
+        TogetherLog.add("APPLY authoritative $action (local song=${mine.songId} play=${mine.playing})")
+        applyAction(action)
     }
 
     private fun stopLoop() {

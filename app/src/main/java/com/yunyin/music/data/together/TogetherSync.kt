@@ -91,6 +91,23 @@ object TogetherSync {
     const val SETTLE_MS = 6_000L
 
     /**
+     * The action that moves this device to an **authoritative** state, recomputed on every poll.
+     *
+     * This is the rule for a server-owned room, and it is deliberately *not* [decide]: there is no "is this
+     * new?" question, because the server is not a peer to arbitrate with — it holds the truth, so the device
+     * moves toward it every time. That is what removes the whole class of ping-pong bugs by construction:
+     * two devices cannot invert each other when neither is deciding anything.
+     *
+     * A repeated identical state is still free: the comparisons below yield [SyncAction.None] when the device
+     * already agrees, so "every poll" costs nothing while the room is settled.
+     */
+    fun reconcile(
+        local: LocalPlayback,
+        peer: TogetherPeerState,
+        driftToleranceMs: Long = DRIFT_TOLERANCE_MS,
+    ): SyncAction = followPeer(local, peer, driftToleranceMs)
+
+    /**
      * What identifies a peer command.
      *
      * Author, song, play state and *kind*: the things that change when the other person does something.

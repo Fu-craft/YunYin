@@ -67,6 +67,22 @@ class SettingsStore(context: Context) {
         }
 
     /**
+     * This installation's identity for the LTW service, as a **UUID**.
+     *
+     * Separate from [togetherMemberId] because that one is 16 hex characters by design (it is only ever a
+     * topic component), while the LTW service validates its `userUuid` as a real RFC-4122 UUID. Same
+     * reasoning as above for why it is per-installation rather than per-account: it is what lets one
+     * account test a room from two devices.
+     */
+    val togetherUserUuid: String
+        get() {
+            prefs.getString(KEY_TOGETHER_UUID, null)?.takeIf { it.isNotBlank() }?.let { return it }
+            val generated = java.util.UUID.randomUUID().toString()
+            prefs.edit().putString(KEY_TOGETHER_UUID, generated).apply()
+            return generated
+        }
+
+    /**
      * Whether to post the Flyme status-bar lyric notification.
      *
      * Opt-out rather than opt-in: on a ROM that supports it the user installed the app expecting the
@@ -269,6 +285,7 @@ class SettingsStore(context: Context) {
         private const val KEY_STATUS_BAR_LYRICS = "status_bar_lyrics"
         private const val KEY_LYRICON_ENABLED = "lyricon_enabled"
         private const val KEY_TOGETHER_MEMBER_ID = "together_member_id"
+        private const val KEY_TOGETHER_UUID = "together_uuid"
         private const val KEY_SEAMLESS_TRANSITION = "seamless_transition"
         private const val KEY_PLAYER_STYLE = "player_style"
         private const val KEY_PROFILE_SIGNATURE = "profile_signature"
