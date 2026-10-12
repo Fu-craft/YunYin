@@ -49,6 +49,11 @@ dist/
 # and device model, so it is kept local only.
 docs/DEVLOG.md
 
+# Hand-off document for whoever picks the project up. It names this machine's paths, the
+# local JDK/Git locations and the private server addresses, so it is local-only for the
+# same reason as the DEVLOG.
+docs/HANDOFF.md
+
 # ---------------------------------------------------------------- logs / scratch
 *.log
 
