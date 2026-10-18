@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -1015,6 +1017,19 @@ internal val IndexWidth = 30.dp
  * without it nothing on screen says the names are tappable at all, and nothing says *which* of three
  * names is about to open.
  */
+/**
+ * The artist index under [position], or null when the tap missed every name (a separator, or the text
+ * trailing the last name).
+ */
+private fun artistIndexAt(
+    spans: List<Pair<IntRange, Int>>,
+    layout: TextLayoutResult?,
+    position: Offset,
+): Int? {
+    val offset = (layout ?: return null).getOffsetForPosition(position)
+    return spans.firstOrNull { offset in it.first.first..it.first.last }?.second
+}
+
 @Composable
 internal fun ArtistLine(
     line: String,
@@ -1044,33 +1059,37 @@ internal fun ArtistLine(
     }
 
     val interaction = onArtistClick
+    val tapModifier = if (interaction == null) {
+        Modifier
+    } else {
+        Modifier.pointerInput(line, artists, interaction) {
+            detectTapGestures(
+                onPress = { position ->
+                    pressed = artistIndexAt(spans, layout, position) ?: -1
+                    tryAwaitRelease()
+                    pressed = -1
+                },
+                onTap = { position ->
+                    artistIndexAt(spans, layout, position)
+                        ?.let { artists.getOrNull(it) }
+                        ?.let(interaction::invoke)
+                },
+            )
+        }
+    }
+    Box(
+        Modifier.fillMaxWidth().heightIn(min = 44.dp).wrapContentHeight(Alignment.CenterVertically),
+        contentAlignment = Alignment.CenterStart,
+    ) {
     Text(
         text = annotated,
         style = style,
         maxLines = maxLines,
         overflow = TextOverflow.Ellipsis,
         onTextLayout = { layout = it },
-        modifier = if (interaction == null) {
-            Modifier
-        } else {
-            // Keyed on the stable inputs only. `layout` and `pressed` are read through their delegates,
-            // so the running gesture sees their current values without being restarted by them.
-            Modifier.pointerInput(line, artists, interaction) {
-                detectTapGestures(
-                    onPress = { position ->
-                        pressed = artistIndexAt(spans, layout, position) ?: -1
-                        tryAwaitRelease()
-                        pressed = -1
-                    },
-                    onTap = { position ->
-                        artistIndexAt(spans, layout, position)
-                            ?.let { artists.getOrNull(it) }
-                            ?.let(interaction::invoke)
-                    },
-                )
-            }
-        },
+        modifier = tapModifier,
     )
+    }
 }
 
 /**
@@ -1082,41 +1101,6 @@ internal fun ArtistLine(
  * artist, or a name that itself contains `" / "` — which falls back to opening the first artist rather
  * than leaving a dead tap target.
  */
-private fun artistSpans(line: String, artists: List<String>): List<Pair<IntRange, Int>> {
-    if (artists.size < 2) return listOf(0 until line.length to 0)
+private fun artistSpans(line: String, artists: List<String>): List<Pair<IntRange, Int>> =
+    ArtistSegments.segments(line, artists).map { it.range to it.index }
 
-    val separators = artists.dropLast(1).map { "$it / " }
-    var cursor = 0
-    val cuts = mutableListOf<Int>()
-    for (separator in separators) {
-        val at = line.indexOf(separator, cursor)
-        if (at < 0) return listOf(0 until line.length to 0)
-        // The artist starts where the previous separator ended; the separator itself stays unspanned,
-        // which is what makes it inert.
-        cuts += at + separator.length
-        cursor = at + separator.length
-    }
-
-    val starts = listOf(0) + cuts
-    return artists.indices.map { i ->
-        val end = if (i == artists.lastIndex) line.length else cuts[i] - separators[i].length
-        starts[i] until end to i
-    }
-}
-
-/**
- * The artist index under [position], or null when the tap missed every name (a separator, or the text
- * trailing the last name).
- *
- * Inclusive at a span's end: `getOffsetForPosition` reports the nearest character boundary, so a tap on
- * the last pixel of a name resolves to that name's *end* index and an exclusive test would drop it. The
- * separators are unspanned, so the inclusive edge steals nothing.
- */
-private fun artistIndexAt(
-    spans: List<Pair<IntRange, Int>>,
-    layout: TextLayoutResult?,
-    position: Offset,
-): Int? {
-    val offset = (layout ?: return null).getOffsetForPosition(position)
-    return spans.firstOrNull { offset in it.first.first..it.first.last }?.second
-}

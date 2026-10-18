@@ -5,6 +5,8 @@ data class Track(
     val id: Long,
     val name: String,
     val artists: List<String>,
+    /** Per-artist NetEase ids when known (same order as [artists]); provider tracks may leave it empty. */
+    val artistIds: List<Long> = emptyList(),
     val albumName: String,
     val albumId: Long,
     val coverUrl: String?,
@@ -54,6 +56,19 @@ data class ArtistInfo(
     val id: Long,
     val name: String,
     val coverUrl: String?,
+    val briefDesc: String = "",
+    val albumSize: Int = 0,
+    val musicSize: Int = 0,
+    val followed: Boolean = false,
+)
+
+/** An artist's album entry (artist-page 专辑 section). */
+data class AlbumInfo(
+    val id: Long,
+    val name: String,
+    val coverUrl: String?,
+    val trackCount: Int = 0,
+    val publishTime: Long = 0L,
 )
 
 /** Signed-in (or anonymous) account. */
