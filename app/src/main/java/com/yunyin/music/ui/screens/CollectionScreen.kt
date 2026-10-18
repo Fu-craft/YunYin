@@ -18,8 +18,6 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -61,6 +59,7 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.SpanStyle
@@ -71,6 +70,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.yunyin.music.core.Track
@@ -1037,6 +1038,17 @@ internal fun ArtistLine(
     style: TextStyle,
     maxLines: Int,
     onArtistClick: ((String) -> Unit)?,
+    /**
+     * Minimum height of the **tap region**, not of the line's layout.
+     *
+     * The line is laid out at the text's own height, so it sits tight under its title (the headers
+     * that use it space it 2 dp below the track name). The pointer region is instead extended below
+     * the line to this height: a one-character artist name is still comfortable to hit, but the
+     * 44 dp no longer becomes blank space inside the layout. Previously the minimum *was* the layout
+     * height and the 15 sp line was centred in it, adding ~13 dp of empty space above the artist
+     * text on top of the header's 2 dp gap — the "歌名和歌手间隔太长" regression.
+     */
+    minTouchHeight: Dp = 44.dp,
 ) {
     // Spans are computed once per (line, artists) and shared by the drawing and the hit test. The hit
     // test deliberately does **not** use string annotations: an annotation is part of the text, so
@@ -1059,36 +1071,52 @@ internal fun ArtistLine(
     }
 
     val interaction = onArtistClick
-    val tapModifier = if (interaction == null) {
-        Modifier
-    } else {
-        Modifier.pointerInput(line, artists, interaction) {
-            detectTapGestures(
-                onPress = { position ->
-                    pressed = artistIndexAt(spans, layout, position) ?: -1
-                    tryAwaitRelease()
-                    pressed = -1
-                },
-                onTap = { position ->
-                    artistIndexAt(spans, layout, position)
-                        ?.let { artists.getOrNull(it) }
-                        ?.let(interaction::invoke)
-                },
+    // Layout height is the text's; the tap region is a sibling that may extend below it and costs no
+    // layout space. Compose hit-tests children outside their parent's layout bounds (drawing and
+    // pointer hit testing are only clipped by a `clip` modifier, which nothing here applies), so the
+    // taller box is reachable without the header paying for the extra height.
+    val touchHeightPx = with(LocalDensity.current) { minTouchHeight.roundToPx() }
+    Layout(
+        modifier = Modifier.fillMaxWidth(),
+        content = {
+            Text(
+                text = annotated,
+                style = style,
+                maxLines = maxLines,
+                overflow = TextOverflow.Ellipsis,
+                onTextLayout = { layout = it },
             )
+            if (interaction != null) {
+                // Top-aligned with the text, so a pointer position maps to the same character offset
+                // the text-attached detector used to see — the per-artist hit test is unchanged.
+                Box(
+                    Modifier.pointerInput(line, artists, interaction) {
+                        detectTapGestures(
+                            onPress = { position ->
+                                pressed = artistIndexAt(spans, layout, position) ?: -1
+                                tryAwaitRelease()
+                                pressed = -1
+                            },
+                            onTap = { position ->
+                                artistIndexAt(spans, layout, position)
+                                    ?.let { artists.getOrNull(it) }
+                                    ?.let(interaction::invoke)
+                            },
+                        )
+                    },
+                )
+            }
+        },
+    ) { measurables, constraints ->
+        val textPlaceable = measurables[0].measure(constraints.copy(minHeight = 0))
+        val width = if (constraints.hasBoundedWidth) constraints.maxWidth else textPlaceable.width
+        val touchPlaceable = measurables.getOrNull(1)?.measure(
+            Constraints.fixed(width, maxOf(textPlaceable.height, touchHeightPx)),
+        )
+        layout(width, textPlaceable.height) {
+            textPlaceable.placeRelative(0, 0)
+            touchPlaceable?.placeRelative(0, 0)
         }
-    }
-    Box(
-        Modifier.fillMaxWidth().heightIn(min = 44.dp).wrapContentHeight(Alignment.CenterVertically),
-        contentAlignment = Alignment.CenterStart,
-    ) {
-    Text(
-        text = annotated,
-        style = style,
-        maxLines = maxLines,
-        overflow = TextOverflow.Ellipsis,
-        onTextLayout = { layout = it },
-        modifier = tapModifier,
-    )
     }
 }
 
