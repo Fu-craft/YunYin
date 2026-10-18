@@ -481,22 +481,22 @@ fun KaraokeLineText(
             AnimatedVisibility(
                 visible = isAccompanimentVisible,
                 enter = scaleIn(
-                    tween(600), transformOrigin = TransformOrigin(
+                    tween(600),
+                    initialScale = 0.92f,
+                    transformOrigin = TransformOrigin(
                         if (isRightAligned) 1f else 0f, if (isBefore) 1f else 0f
                     )
                 ) + fadeIn(tween(600)) + slideInVertically(
-                    tween(
-                        600
-                    )
+                    tween(600)
                 ) + expandVertically(tween(600), if (isBefore) Alignment.Top else Alignment.Bottom),
                 exit = scaleOut(
-                    tween(600), transformOrigin = TransformOrigin(
+                    tween(600),
+                    targetScale = 0.92f,
+                    transformOrigin = TransformOrigin(
                         if (isRightAligned) 1f else 0f, if (isBefore) 1f else 0f
                     )
                 ) + fadeOut(tween(600)) + slideOutVertically(
-                    tween(
-                        600
-                    )
+                    tween(600)
                 ) + shrinkVertically(tween(600), if (isBefore) Alignment.Top else Alignment.Bottom),
             ) {
                 LyricsLineItem(

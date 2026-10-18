@@ -2,6 +2,7 @@ package com.yunyin.music.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.yunyin.music.BuildConfig
 import com.yunyin.music.core.Account
 
 /**
@@ -43,44 +44,6 @@ class SettingsStore(context: Context) {
     var lyriconEnabled: Boolean
         get() = prefs.getBoolean(KEY_LYRICON_ENABLED, true)
         set(value) = prefs.edit().putBoolean(KEY_LYRICON_ENABLED, value).apply()
-
-    /**
-     * This installation's identity inside a listen-together room.
-     *
-     * Deliberately **not** the NetEase account id. Two reasons, and both bit before:
-     *
-     *  - The transport ignores messages whose sender id equals its own, so two devices sharing one
-     *    account could never see each other — which made the feature impossible to test with a single
-     *    account, and would also break a legitimate "same account on phone and tablet" case.
-     *  - A room is a conversation between *devices*, not accounts. The account only supplies a
-     *    nickname to show.
-     *
-     * Generated once per installation and persisted, so the peer sees a stable member across
-     * restarts. Never sent anywhere but the room topic.
-     */
-    val togetherMemberId: String
-        get() {
-            prefs.getString(KEY_TOGETHER_MEMBER_ID, null)?.takeIf { it.isNotBlank() }?.let { return it }
-            val generated = java.util.UUID.randomUUID().toString().replace("-", "").take(16)
-            prefs.edit().putString(KEY_TOGETHER_MEMBER_ID, generated).apply()
-            return generated
-        }
-
-    /**
-     * This installation's identity for the LTW service, as a **UUID**.
-     *
-     * Separate from [togetherMemberId] because that one is 16 hex characters by design (it is only ever a
-     * topic component), while the LTW service validates its `userUuid` as a real RFC-4122 UUID. Same
-     * reasoning as above for why it is per-installation rather than per-account: it is what lets one
-     * account test a room from two devices.
-     */
-    val togetherUserUuid: String
-        get() {
-            prefs.getString(KEY_TOGETHER_UUID, null)?.takeIf { it.isNotBlank() }?.let { return it }
-            val generated = java.util.UUID.randomUUID().toString()
-            prefs.edit().putString(KEY_TOGETHER_UUID, generated).apply()
-            return generated
-        }
 
     /**
      * Whether to post the Flyme status-bar lyric notification.
@@ -284,8 +247,6 @@ class SettingsStore(context: Context) {
         private const val KEY_LYRIC_OFFSETS = "lyric_offsets"
         private const val KEY_STATUS_BAR_LYRICS = "status_bar_lyrics"
         private const val KEY_LYRICON_ENABLED = "lyricon_enabled"
-        private const val KEY_TOGETHER_MEMBER_ID = "together_member_id"
-        private const val KEY_TOGETHER_UUID = "together_uuid"
         private const val KEY_SEAMLESS_TRANSITION = "seamless_transition"
         private const val KEY_PLAYER_STYLE = "player_style"
         private const val KEY_PROFILE_SIGNATURE = "profile_signature"

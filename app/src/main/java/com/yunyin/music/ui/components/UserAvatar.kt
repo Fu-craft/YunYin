@@ -25,10 +25,10 @@ import com.yunyin.music.ui.theme.AppTheme
  *
  * ## Why this is a shared component rather than three copies
  *
- * The same picture has to look the same wherever it appears — the library header, the profile editor, and
- * the listen-together room, which now shows two of them side by side. Each place having its own copy is how
- * the fallbacks drift apart (one showing a tinted glyph, another a blank circle), and the avatar is exactly
- * the kind of thing where a blank circle reads as "broken" rather than as "no picture".
+ * The same picture has to look the same wherever it appears — the library header and the profile editor.
+ * Each place having its own copy is how the fallbacks drift apart (one showing a tinted glyph, another a
+ * blank circle), and the avatar is exactly the kind of thing where a blank circle reads as "broken"
+ * rather than as "no picture".
  *
  * ## Precedence
  *

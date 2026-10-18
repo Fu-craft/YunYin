@@ -45,17 +45,23 @@ class PlaybackService : MediaSessionService() {
                 dataSpec
             } else {
                 // Runs on ExoPlayer's loading thread; a blocking resolve keeps the
-                // data-source contract simple. On failure the original spec is kept so the
-                // error surfaces as a normal playback error.
+                // data-source contract simple.
                 //
                 // A member-only track resolves to a short *trial* fragment; that is an
                 // entitlement limit, so it is played as-is (see PlayerController, which
                 // reports the trial window to the UI).
-                val resolved = runBlocking {
+                //
+                // No URL is a **specific** failure, not an opaque one: returning the synthetic `netease://` spec
+                // unchanged made ExoPlayer report "Source error", which the user saw on QQ tracks when the custom
+                // source could not produce a link. Throwing with a message that says so lets PlayerController show
+                // it, and the diagnostics log holds the source's own response.
+                val url = runBlocking {
                     container.music.streamUrl(trackId, container.settings.quality)
+                }?.url
+                if (url.isNullOrBlank()) {
+                    throw java.io.IOException("音源未返回可播放地址（详见设置 → 复制音源错误日志）")
                 }
-                val url = resolved?.url
-                if (url.isNullOrBlank()) dataSpec else dataSpec.withUri(android.net.Uri.parse(url))
+                dataSpec.withUri(android.net.Uri.parse(url))
             }
         }
 

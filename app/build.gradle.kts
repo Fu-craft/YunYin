@@ -35,8 +35,8 @@ android {
         // versionCode must increase for Android to accept a build as an update over a previous one;
         // versionName is what the user sees. Bumped together — a version name change with an unchanged
         // code would install as a downgrade and be rejected.
-        versionCode = 44
-        versionName = "3.12.0"
+        versionCode = 88
+        versionName = "3.31.2"
         vectorDrawables { useSupportLibrary = true }
 
         // The API endpoint is injected at build time rather than baked into the sources, so the
@@ -47,63 +47,6 @@ android {
             "String",
             "API_BASE_URL",
             "\"${localProps.getProperty("api.base.url") ?: ""}\"",
-        )
-
-        // Listen-together relay, same arrangement as the API endpoint: injected from local.properties
-        // (`together.base.url`) so no server address is committed, and empty by default so a clone
-        // simply does not offer the feature rather than pointing at someone else's relay.
-        buildConfigField(
-            "String",
-            "TOGETHER_BASE_URL",
-            "\"${localProps.getProperty("together.base.url") ?: ""}\"",
-        )
-
-        // The NeriPlayer listen-together service (`together.ltw.url`), a Cloudflare Worker + Durable
-        // Object. **This is the default transport when set**, and the one this app is built around: the
-        // room is server-authoritative, so the two devices cannot argue about play/pause — the failure
-        // that made every peer-to-peer version of this feature invert itself. Injected from
-        // local.properties for the same reason as the API endpoint: a published repository carries no
-        // server address, and a build with none simply does not offer the feature.
-        buildConfigField(
-            "String",
-            "TOGETHER_LTW_URL",
-            "\"${localProps.getProperty("together.ltw.url") ?: ""}\"",
-        )
-
-        // Optional shared secret for the relay (`together.token`). Empty means the relay is open,
-        // which is correct on a LAN and wrong on a public address — see the relay's RELAY_TOKEN.
-        buildConfigField(
-            "String",
-            "TOGETHER_TOKEN",
-            "\"${localProps.getProperty("together.token") ?: ""}\"",
-        )
-
-        // Override for the public pub/sub host used when no relay is configured. Blank means the
-        // default public instance, so the feature works with nothing deployed; set this to point at a
-        // self-hosted instance or a mirror.
-        buildConfigField(
-            "String",
-            "TOGETHER_NTFY_URL",
-            "\"${localProps.getProperty("together.ntfy.url") ?: ""}\"",
-        )
-
-        // MQTT broker for the default transport. Blank means the public default, so the feature works
-        // with nothing deployed and nothing configured; set these to point at your own broker.
-        buildConfigField(
-            "String",
-            "TOGETHER_MQTT_HOST",
-            "\"${localProps.getProperty("together.mqtt.host") ?: ""}\"",
-        )
-        buildConfigField(
-            "String",
-            "TOGETHER_MQTT_PORT",
-            "\"${localProps.getProperty("together.mqtt.port") ?: ""}\"",
-        )
-        // Any non-blank value turns TLS on (or just use port 8883, which implies it).
-        buildConfigField(
-            "String",
-            "TOGETHER_MQTT_TLS",
-            "\"${localProps.getProperty("together.mqtt.tls") ?: ""}\"",
         )
 
         // Where the update check looks. `owner/repo`, injected rather than hardcoded so each build points
@@ -222,6 +165,11 @@ dependencies {
     // Liquid Glass (Backdrop): samples and refracts what is actually behind a surface, so the
     // floating tab bar and mini player are real glass rather than a translucent fill.
     implementation(libs.backdrop)
+
+    // 自定义源 engine. A source is JavaScript that builds the `globalThis.lx` host API, and every
+    // source is written with async/await + Promises, so the engine must drain its microtask queue.
+    // See `gradle/libs.versions.toml` for why this binding rather than `quickjs-android`/Rhino/J2V8.
+    implementation(libs.quickjs.kt)
 
     testImplementation("junit:junit:4.13.2")
     // A real `org.json` for unit tests. The main source set gets the Android SDK's copy, but the unit-test

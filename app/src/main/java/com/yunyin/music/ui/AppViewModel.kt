@@ -12,10 +12,6 @@ import com.yunyin.music.core.Account
 import com.yunyin.music.core.HomeFeed
 import com.yunyin.music.core.Playlist
 import com.yunyin.music.core.Track
-import com.yunyin.music.data.together.LocalPlayback
-import com.yunyin.music.data.together.SyncAction
-import com.yunyin.music.data.together.TogetherSeed
-import com.yunyin.music.data.together.TogetherTrack
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -23,6 +19,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+
+/** Both search catalogues page in this size; the offset given to the repository is a multiple of it. */
+private const val SEARCH_PAGE_SIZE = 30
 
 /** Discover-tab content. */
 data class HomeUiState(
@@ -48,6 +47,10 @@ data class CollectionUiState(
 data class SearchUiState(
     val keyword: String = "",
     val loading: Boolean = false,
+    /** True while an additional page is being appended (the first page is [loading]). */
+    val loadingMore: Boolean = false,
+    /** Whether another page exists in either catalogue. */
+    val canLoadMore: Boolean = false,
     val results: List<Track> = emptyList(),
     val hot: List<String> = emptyList(),
     val history: List<String> = emptyList(),
@@ -110,6 +113,9 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
     private var loadedForUid: Long = 0L
 
     private var searchJob: Job? = null
+
+    /** Zero-based index of the page currently shown; the repository derives the provider page from the offset. */
+    private var searchPage = 0
     private var homeJob: Job? = null
     private var collectionJob: Job? = null
     private var collectionRequestId = 0L
@@ -144,6 +150,7 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
      * ```
      *
      * So every delegated-state property must be declared above this block, not merely referenced by it.
+     * `verify_init_order.py` fails the build if any delegated property drifts below this line.
      */
     init {
         refreshHome()
@@ -156,187 +163,6 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch {
             _search.value = _search.value.copy(hot = container.music.hotSearch())
         }
-        wireTogether()
-    }
-
-    // ---------------------------------------------------------------- listen together
-
-    private val together get() = container.together
-    val togetherState get() = together.state
-
-    /**
-     * Connects the room engine to the player, in both directions.
-     *
-     * Reading playback and applying a correction are supplied here rather than inside the engine so
-     * that `data.together` stays free of the playback and UI layers — it can then be exercised with a
-     * fake in a test, and the dependency arrow keeps pointing the way the rest of the app points it.
-     */
-    private fun wireTogether() {
-        together.localPlayback = {
-            val playback = container.player.state.value
-            playback.current?.let { track ->
-                LocalPlayback(
-                    songId = track.id,
-                    // `positionMsNow()` rather than the state's `positionMs`: the state only republishes
-                    // four times a second, so the published figure lags by up to 250ms, and the peer is
-                    // comparing against this.
-                    positionMs = container.player.positionMsNow(),
-                    playing = playback.isPlaying,
-                )
-            }
-        }
-        together.applyAction = { action -> applyTogetherAction(action) }
-        // The room publishes this device's queue once when a session starts, so the server side of the room
-        // is fully set up rather than only half of it (see TogetherSession.localQueue).
-        together.localQueue = { container.player.state.value.queue.map { it.id } }
-        // While the player is loading or buffering it is between two states, and reporting then announces a
-        // half-applied value as if the user had done it — the echo that made two devices overwrite each
-        // other. Ported from the reference's `transitioning` guard.
-        together.localTransitioning = {
-            val playback = container.player.state.value
-            playback.isBuffering
-        }
-        // The server-authoritative transport sends the whole track, so it needs the queue with metadata
-        // rather than bare ids. Supplied here because resolving it belongs to the player, not to the session.
-        together.transportSeedProvider = {
-            val playback = container.player.state.value
-            val queue = playback.queue
-            if (queue.isEmpty()) {
-                null
-            } else {
-                TogetherSeed(
-                    tracks = queue.map {
-                        TogetherTrack(
-                            id = it.id,
-                            name = it.name,
-                            artist = it.artistLine,
-                            album = it.albumName.ifBlank { null },
-                            durationMs = it.durationMs,
-                            coverUrl = it.coverUrl,
-                        )
-                    },
-                    currentIndex = playback.index.coerceIn(0, queue.lastIndex),
-                    positionMs = container.player.positionMsNow(),
-                    playing = playback.isPlaying,
-                    repeatMode = playback.repeatMode,
-                    shuffleEnabled = playback.shuffle,
-                )
-            }
-        }
-    }
-
-    /**
-     * Applies one correction from the room.
-     *
-     * A different song has to be *resolved* first: the peer only sends an id, and the player needs a
-     * full [com.yunyin.music.core.Track]. That fetch is asynchronous, so the action is handled in a
-     * coroutine and the resulting track is checked again against what the room says before it plays —
-     * otherwise a slow lookup could start a song the room moved on from.
-     */
-    private fun applyTogetherAction(action: SyncAction) {
-        when (action) {
-            SyncAction.None -> Unit
-            SyncAction.Play -> container.player.setPlaying(true)
-            SyncAction.Pause -> container.player.setPlaying(false)
-            is SyncAction.Seek -> container.player.seekTo(action.positionMs)
-            is SyncAction.PlaySong -> {
-                val wanted = action.songId
-                viewModelScope.launch {
-                    val roomQueue = together.state.value.peers
-                        .firstOrNull { it.songId == wanted }?.queue.orEmpty()
-                    // Resolve the room's whole list in one batched call. Fetching only the one track (as
-                    // this used to) leaves the follower on a one-item queue, where next/previous have
-                    // nowhere to go — the buttons appear dead ("他那边无法进行上一首下一首的操作").
-                    val roomTracks = container.music.tracks(roomQueue)
-                    val track = roomTracks.firstOrNull { it.id == wanted }
-                        ?: container.music.track(wanted)
-                        ?: return@launch
-                    // Re-check: the room may have moved on while the lookups were in flight.
-                    val stillWanted = together.state.value.peers.any { it.songId == wanted }
-                    if (!stillWanted) return@launch
-                    // Play inside the room's own list when it resolved, matching the sender's play state;
-                    // otherwise fall back to the single track, still honouring the state.
-                    val queue = roomTracks.ifEmpty { listOf(track) }
-                    container.player.playWithinQueue(track, queue, action.playing)
-                    container.player.seekTo(action.positionMs)
-                    container.playHistory.record(track)
-                    refreshRecentTracks()
-                }
-            }
-        }
-    }
-
-    /**
-     * Creates a room as this installation.
-     *
-     * Returns a message when the *transport* cannot proceed. Only a peer-to-peer transport needs a signed-in
-     * account (its member ids are the NetEase account's); the server-authoritative LTW room identifies the
-     * device by a generated UUID and shares tracks the app already has, so it needs no login at all — which
-     * also makes it testable from one account on two devices.
-     */
-    fun createTogetherRoom(): String? {
-        val uid = togetherMemberId() ?: return "请先登录后再使用一起听"
-        together.createRoom(uid = uid, name = togetherName())
-        return null
-    }
-
-    fun joinTogetherRoom(code: String): String? {
-        val uid = togetherMemberId() ?: return "请先登录后再使用一起听"
-        together.joinRoom(code = code, uid = uid, name = togetherName())
-        return null
-    }
-
-    /**
-     * Publishes the queue this device is playing from, so a joiner receives the list and not only the
-     * current song.
-     *
-     * The version is a millisecond stamp, which is what the endpoint expects to order successive
-     * replacements. The account id is resolved in the transport (it has to be a real one for the server
-     * to accept the command), so nothing account-shaped is needed here.
-     */
-    fun publishTogetherQueue(songIds: List<Long>) {
-        val uid = togetherMemberId() ?: return
-        together.publishQueue(songIds, uid, System.currentTimeMillis())
-    }
-
-    fun leaveTogetherRoom() {
-        val uid = togetherMemberId() ?: return
-        together.leaveRoom(uid)
-    }
-
-    /**
-     * Clears a transient room notice (an ended room, a failed join) without leaving.
-     *
-     * Called when the sheet closes, so reopening it does not re-present a message the user has
-     * already read.
-     */
-    fun dismissTogetherNotice() {
-        together.dismissEnded()
-    }
-
-    /**
-     * This installation's member id, or null when the transport needs an account it does not have.
-     *
-     * The id itself is per-installation rather than per-account, which is what makes the feature usable from
-     * one account on two devices — see `SettingsStore.togetherMemberId`. A peer-to-peer room still needs a
-     * *signed-in* account for its member ids to mean anything; a server-authoritative room does not, so the
-     * check is skipped there rather than blocking a feature that does not need it.
-     */
-    private fun togetherMemberId(): String? {
-        if (together.requiresAccount) {
-            val account = container.settings.account ?: return null
-            if (account.isAnonymous) return null
-            return container.settings.togetherMemberId
-        }
-        return container.settings.togetherMemberId
-    }
-
-    /** The name shown to the other member. */
-    private fun togetherName(): String {
-        val custom = container.settings.customNickname
-        if (custom.isNotBlank()) return custom
-        val account = container.settings.account
-        return account?.nickname?.takeIf { it.isNotBlank() } ?: "云音用户"
     }
 
     fun refreshHome() {
@@ -366,26 +192,69 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
         _search.value = _search.value.copy(
             keyword = trimmed,
             loading = true,
+            loadingMore = false,
+            canLoadMore = false,
             searched = true,
             history = container.searchHistory.load(),
         )
         searchJob = viewModelScope.launch {
-            when (val result = container.music.search(trimmed)) {
-                is com.yunyin.music.core.NetResult.Ok ->
-                    _search.value = _search.value.copy(loading = false, results = result.value)
+            when (val result = container.music.search(trimmed, offset = 0)) {
+                is com.yunyin.music.core.NetResult.Ok -> {
+                    searchPage = 0
+                    _search.value = _search.value.copy(
+                        loading = false,
+                        results = result.value.tracks,
+                        canLoadMore = result.value.hasMore,
+                    )
+                }
                 is com.yunyin.music.core.NetResult.Err ->
                     _search.value = _search.value.copy(loading = false, results = emptyList())
             }
         }
     }
 
+    /**
+     * Appends the next page of both catalogues.
+     *
+     * The offset is in NetEase's units and the provider page is derived from it, so the two lists advance
+     * together; results are appended by id (and by "same recording") so a provider duplicate of an earlier NetEase
+     * row cannot appear twice as the user scrolls.
+     */
+    fun loadMoreSearch() {
+        val state = _search.value
+        val keyword = state.keyword.trim()
+        if (keyword.isEmpty() || state.loading || state.loadingMore || !state.canLoadMore) return
+        _search.value = state.copy(loadingMore = true)
+        searchJob = viewModelScope.launch {
+            val nextPage = searchPage + 1
+            when (val result = container.music.search(keyword, offset = nextPage * SEARCH_PAGE_SIZE)) {
+                is com.yunyin.music.core.NetResult.Ok -> {
+                    searchPage = nextPage
+                    _search.value = _search.value.copy(
+                        loadingMore = false,
+                        results = com.yunyin.music.data.providers.SearchMerge.appendUnique(
+                            _search.value.results,
+                            result.value.tracks,
+                        ),
+                        canLoadMore = result.value.hasMore,
+                    )
+                }
+                is com.yunyin.music.core.NetResult.Err ->
+                    _search.value = _search.value.copy(loadingMore = false)
+            }
+        }
+    }
+
     fun clearSearch() {
         searchJob?.cancel()
+        searchPage = 0
         _search.value = _search.value.copy(
             keyword = "",
             results = emptyList(),
             searched = false,
             loading = false,
+            loadingMore = false,
+            canLoadMore = false,
         )
     }
 

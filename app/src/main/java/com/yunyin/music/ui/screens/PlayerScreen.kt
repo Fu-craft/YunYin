@@ -5,9 +5,10 @@ import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -47,6 +48,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -86,10 +88,10 @@ import com.yunyin.music.ui.LYRIC_OFFSET_LIMIT_MS
 import com.yunyin.music.ui.PlayerStyle
 import com.yunyin.music.ui.background.DynamicBackgroundPalette
 import com.yunyin.music.ui.background.HyperBackground
+import com.yunyin.music.ui.components.AnimatedSheet
 import com.yunyin.music.ui.components.Artwork
 import com.yunyin.music.ui.components.CrossfadeContent
-import com.yunyin.music.ui.components.TogetherPair
-import com.yunyin.music.ui.components.TogetherPairStrip
+import com.yunyin.music.ui.components.SheetPlacement
 import com.yunyin.music.ui.components.VinylDisc
 import com.yunyin.music.ui.components.formatDuration
 import com.yunyin.music.ui.components.pressableGestures
@@ -98,11 +100,17 @@ import com.yunyin.music.ui.icons.SfIcons
 import com.yunyin.music.ui.theme.AppleColors
 import com.yunyin.music.ui.theme.AppleShapes
 import com.yunyin.music.ui.theme.AppTheme
+import com.yunyin.music.ui.theme.Motion
 import com.yunyin.music.ui.theme.SFPro
+import com.yunyin.music.data.download.DownloadPhase
+import com.yunyin.music.data.download.TrackDownloadState
+import com.yunyin.music.ui.download.LocalDownloadController
 import com.yunyin.music.ui.DownloadState
 import com.mocharealm.accompanist.lyrics.core.model.SyncedLyrics
 import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * Full-screen player, in two presentations.
@@ -143,8 +151,6 @@ fun PlayerScreen(
     onToggleShuffle: () -> Unit,
     onShowQueue: () -> Unit,
     onShowSettings: () -> Unit,
-    /** Opens the listen-together room; null when no relay is configured, which hides the row. */
-    onListenTogether: (() -> Unit)? = null,
     /** Current per-track lyric offset, and its setter, for the manual timing control. */
     lyricOffsetMs: Long = 0L,
     onLyricOffsetChange: (Long) -> Unit = {},
@@ -168,13 +174,6 @@ fun PlayerScreen(
      * style cannot be a half-implemented second player.
      */
     playerStyle: PlayerStyle = PlayerStyle.Classic,
-    /**
-     * The two people in the current listen-together room, or null when not in one.
-     *
-     * Drawn as a strip **above the cover**, which is where the reference design puts it: the room is a
-     * property of what is playing, so it belongs on the player rather than on a screen of its own.
-     */
-    together: TogetherPair? = null,
     positionProvider: () -> Long,
     modifier: Modifier = Modifier,
 ) {
@@ -212,7 +211,8 @@ fun PlayerScreen(
     }
 
     var dragDistance by remember { mutableFloatStateOf(0f) }
-    var scrubFraction by remember { mutableFloatStateOf(-1f) }
+    val dragScope = rememberCoroutineScope()
+    var dragSettleJob by remember { mutableStateOf<Job?>(null) }
     var interaction by remember { mutableIntStateOf(0) }
     var immersive by remember { mutableStateOf(false) }
 
@@ -233,11 +233,35 @@ fun PlayerScreen(
         onDispose { AudioReactive.enabled = false }
     }
 
-    val displayedPosition = if (scrubFraction >= 0f) {
-        (state.durationMs * scrubFraction).toLong()
-    } else {
-        state.positionMs
-    }
+    // The player reports its position four times a second, which is what the elapsed-time label
+    // shows. The progress bar itself samples `positionProvider` per frame instead.
+    val displayedPosition = state.positionMs
+
+    // The cover settles down by 8% while the transport is paused and springs back on resume.
+    //
+    // Driven by `playWhenReady` — the transport's *intent* — rather than `isPlaying`, which is the
+    // audio *output*: the two disagree for the whole buffering window, so an output-driven scale
+    // would dip the cover on every seek and every track load and pop straight back up. The value is
+    // only read inside a `graphicsLayer` (see [ArtworkWithGestures]), so the spring costs a redraw.
+    val pausedArtworkScale by animateFloatAsState(
+        targetValue = if (state.playWhenReady) 1f else PAUSED_ARTWORK_SCALE,
+        animationSpec = Motion.SpringSettle,
+        label = "paused-artwork-scale",
+    )
+
+    // **One** scale, applied to both renderings of the shared cover: the full artwork in the artwork
+    // presentation and the 56 dp header thumbnail in the lyrics presentation.
+    //
+    // During a presentation change the two are the two ends of one shared element: [AnimatedContent]
+    // composes both presentations for the length of the cross-fade, and the shared element animates
+    // the cover's *bounds* from one end to the other. If only the full artwork carried the paused
+    // scale, the unscaled thumbnail would fade in over the settled 92 % artwork and the cover would
+    // visibly enlarge from 0.92 to 1.0 before the share animation started shrinking it — the
+    // "enlarge then shrink" wobble. With one value on both ends the scale is constant through the
+    // move, so the shared element's bounds are the only animated quantity; because a constant times a
+    // monotone sequence is monotone, the cover can only travel one way. See
+    // [sharedCoverPausedScale] and its unit test.
+    val sharedCoverScale: () -> Float = { sharedCoverPausedScale(pausedArtworkScale) }
 
     // 1 = chrome fully present, 0 = immersed. Everything that belongs to the chrome — the header,
     // the transport, the frosted split and the lyric fade zones — is derived from this one value,
@@ -265,8 +289,45 @@ fun PlayerScreen(
         Modifier
     }
 
-    BoxWithConstraints(modifier.fillMaxSize()) {
+    BoxWithConstraints(
+        modifier
+            .fillMaxSize()
+            // Drag-to-dismiss feedback. `dragDistance` is read only inside a layer block, so a
+            // pointer move invalidates the layer and never recomposes the player.
+            .graphicsLayer { translationY = dragDistance },
+    ) {
         val density = androidx.compose.ui.platform.LocalDensity.current
+        val dismissDistancePx = with(density) { 120.dp.toPx() }
+
+        // Called on every pointer move while dragging. Cancels an in-flight settle so a new drag
+        // starts exactly under the finger.
+        val onDrag: (Float) -> Unit = { distance ->
+            dragSettleJob?.cancel()
+            dragDistance = distance
+        }
+
+        // Called once on release.
+        val onDragFinished: (distancePx: Float, elapsedMs: Long) -> Unit = { distance, elapsedMs ->
+            val velocity = distance / elapsedMs // px per ms
+            if (distance > dismissDistancePx || velocity > 0.11f) {
+                // Leave `dragDistance` as it is: the existing slide-out exit continues from here,
+                // so the card keeps moving down instead of snapping back to 0 first.
+                onCollapse()
+            } else {
+                dragSettleJob = dragScope.launch {
+                    animate(
+                        initialValue = distance,
+                        targetValue = 0f,
+                        // Apple's 0.5s / bounce 0.2 spring: dampingRatio 0.8 is a subtle
+                        // overshoot, stiffness 400 settles in about half a second.
+                        animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f),
+                    ) { value, _ ->
+                        dragDistance = value
+                    }
+                }
+            }
+        }
+
         val screenHeightPx = with(density) { maxHeight.toPx() }
         val screenWidthPx = with(density) { maxWidth.toPx() }
         var panelHeightPx by remember { mutableIntStateOf(0) }
@@ -472,8 +533,8 @@ fun PlayerScreen(
                     // `sizeTransform` is set through the `using` infix because its setter is
                     // internal on ContentTransform; `targetContentZIndex` has a public setter.
                     (
-                        (fadeIn(tween(PRESENTATION_FADE_MS)) togetherWith
-                            fadeOut(tween(PRESENTATION_FADE_MS))) using null
+                        (fadeIn(tween(PRESENTATION_FADE_MS, easing = Motion.EaseOut)) togetherWith
+                            fadeOut(tween(PRESENTATION_FADE_MS, easing = Motion.EaseOut))) using null
                         ).apply { targetContentZIndex = 1f }
                 },
                 label = "presentation",
@@ -561,28 +622,13 @@ fun PlayerScreen(
                                     .padding(end = railWidth * chromeProgress),
                                 contentAlignment = Alignment.Center,
                             ) {
-                                // The room and the cover share the column: the strip is given its own row
-                                // so the artwork can never be drawn under it. (Letting the strip overlay
-                                // the record instead put two faces on top of the disc, which read as a
-                                // rendering fault rather than as an indicator.)
-                                val stripSize = TOGETHER_AVATAR_SIZE * 0.8f
-                                val stripHeight = if (together != null) stripSize * 1.4f + 8.dp else 0.dp
-                                val available = minOf(maxWidth, maxHeight) * 0.94f - stripHeight
+                                val available = minOf(maxWidth, maxHeight) * 0.94f
 
                                 Column(
                                     Modifier.fillMaxSize(),
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     verticalArrangement = Arrangement.Center,
                                 ) {
-                                    if (together != null && chromeProgress > 0.01f) {
-                                        TogetherPairStrip(
-                                            pair = together,
-                                            loader = loader,
-                                            avatarSize = stripSize,
-                                            modifier = Modifier.alpha(chromeProgress),
-                                        )
-                                        Spacer(Modifier.height(8.dp))
-                                    }
                                     ArtworkWithGestures(
                                         artSize = available,
                                         track = track,
@@ -592,11 +638,11 @@ fun PlayerScreen(
                                         onToggleLyrics = { interaction++; onToggleLyrics() },
                                         onSaveCover = { interaction++; onSaveCover() },
                                         onDownloadDismissed = onDownloadDismissed,
-                                        onCollapse = onCollapse,
-                                        dragDistance = { dragDistance },
-                                        setDragDistance = { dragDistance = it },
+                                        setDragDistance = onDrag,
+                                        onDragFinished = onDragFinished,
                                         playerStyle = playerStyle,
                                         isPlaying = state.isPlaying,
+                                        artworkScale = sharedCoverScale,
                                         sharedScope = this@SharedTransitionLayout,
                                         visibilityScope = this@AnimatedContent,
                                     )
@@ -672,6 +718,7 @@ fun PlayerScreen(
                                         },
                                         onArtistClick = onArtistClick,
                                         cover = cover,
+                                        artworkScale = sharedCoverScale,
                                         sharedScope = this@SharedTransitionLayout,
                                         visibilityScope = this@AnimatedContent,
                                     )
@@ -691,6 +738,7 @@ fun PlayerScreen(
                                 PlayerControls(
                                     state = state,
                                     displayedPosition = displayedPosition,
+                                    positionProvider = positionProvider,
                                     quality = quality,
                                     onQualityClick = {
                                         interaction++
@@ -698,7 +746,6 @@ fun PlayerScreen(
                                     },
                                     showLyrics = showLyrics,
                                     onSeek = { fraction ->
-                                        scrubFraction = -1f
                                         interaction++
                                         onSeek((state.durationMs * fraction).toLong())
                                     },
@@ -783,6 +830,7 @@ fun PlayerScreen(
                                     },
                                     onArtistClick = onArtistClick,
                                     cover = cover,
+                                    artworkScale = sharedCoverScale,
                                     sharedScope = this@SharedTransitionLayout,
                                     visibilityScope = this@AnimatedContent,
                                 )
@@ -817,6 +865,7 @@ fun PlayerScreen(
                             PlayerControls(
                                 state = state,
                                 displayedPosition = displayedPosition,
+                                positionProvider = positionProvider,
                                 quality = quality,
                                 onQualityClick = {
                                     interaction++
@@ -824,7 +873,6 @@ fun PlayerScreen(
                                 },
                                 showLyrics = showLyrics,
                                 onSeek = { fraction ->
-                                    scrubFraction = -1f
                                     interaction++
                                     onSeek((state.durationMs * fraction).toLong())
                                 },
@@ -849,22 +897,7 @@ fun PlayerScreen(
                             .statusBarsPadding()
                             .navigationBarsPadding(),
                     ) {
-                        // The room, when there is one, sits above the cover — the same place the reference
-                        // design puts the two faces. Without a room the spacer keeps the cover where it has
-                        // always been.
-                        if (together != null) {
-                            TogetherPairStrip(
-                                pair = together,
-                                loader = loader,
-                                avatarSize = TOGETHER_AVATAR_SIZE,
-                                modifier = Modifier
-                                    .align(Alignment.CenterHorizontally)
-                                    .padding(top = 10.dp),
-                            )
-                            Spacer(Modifier.height(10.dp))
-                        } else {
-                            Spacer(Modifier.height(56.dp))
-                        }
+                        Spacer(Modifier.height(56.dp))
 
                         BoxWithConstraints(
                             Modifier
@@ -882,11 +915,11 @@ fun PlayerScreen(
                                 onToggleLyrics = { interaction++; onToggleLyrics() },
                                 onSaveCover = { interaction++; onSaveCover() },
                                 onDownloadDismissed = onDownloadDismissed,
-                                onCollapse = onCollapse,
-                                dragDistance = { dragDistance },
-                                setDragDistance = { dragDistance = it },
+                                setDragDistance = onDrag,
+                                onDragFinished = onDragFinished,
                                 playerStyle = playerStyle,
                                 isPlaying = state.isPlaying,
+                                artworkScale = sharedCoverScale,
                                 sharedScope = this@SharedTransitionLayout,
                                 visibilityScope = this@AnimatedContent,
                             )
@@ -909,6 +942,7 @@ fun PlayerScreen(
                         PlayerControls(
                             state = state,
                             displayedPosition = displayedPosition,
+                            positionProvider = positionProvider,
                             quality = quality,
                             onQualityClick = {
                                 interaction++
@@ -916,7 +950,6 @@ fun PlayerScreen(
                             },
                             showLyrics = showLyrics,
                             onSeek = { fraction ->
-                                scrubFraction = -1f
                                 interaction++
                                 onSeek((state.durationMs * fraction).toLong())
                             },
@@ -952,12 +985,6 @@ fun PlayerScreen(
                     interaction++
                     onShowQueue()
                 },
-                onListenTogether = onListenTogether?.let { open ->
-                    {
-                        interaction++
-                        open()
-                    }
-                },
             )
         }
 
@@ -989,8 +1016,8 @@ fun PlayerScreen(
  * Kept in one place so the shared-element declaration exists exactly once: both arrangements must
  * register the same `COVER_SHARED_KEY`, and duplicating it would risk the two drifting apart.
  *
- * `dragDistance` is passed as a getter/setter pair because the value lives in the parent's state —
- * the gesture and the dismissal threshold belong together.
+ * The drag offset lives in the parent; the gesture reports distance and elapsed time on release —
+ * the offset, and the dismissal threshold that reads it, belong to the screen that moves.
  *
  * Gestures on the cover, in the order the user meets them:
  *  - **tap** switches to the lyrics presentation;
@@ -1008,13 +1035,17 @@ private fun ArtworkWithGestures(
     onToggleLyrics: () -> Unit,
     onSaveCover: () -> Unit,
     onDownloadDismissed: () -> Unit,
-    onCollapse: () -> Unit,
-    dragDistance: () -> Float,
     setDragDistance: (Float) -> Unit,
+    onDragFinished: (distancePx: Float, elapsedMs: Long) -> Unit,
     /** Classic rounded cover, or the rotating record. Only this centrepiece differs. */
     playerStyle: PlayerStyle,
     /** Drives the record's rotation; ignored by the classic cover. */
     isPlaying: Boolean,
+    /**
+     * The paused settle, as a **lambda**: read inside a `graphicsLayer`, so the spring animates in
+     * the layer phase instead of recomposing the player once per frame.
+     */
+    artworkScale: () -> Float,
     // Receiver scopes are passed in rather than captured: this is a separate composable, so the
     // caller's `this@SharedTransitionLayout` / `this@AnimatedContent` are not in scope here.
     sharedScope: SharedTransitionScope,
@@ -1034,12 +1065,8 @@ private fun ArtworkWithGestures(
             .pressableGestures(
                 onTap = onToggleLyrics,
                 onLongPress = onSaveCover,
-                dragDistance = dragDistance,
                 setDragDistance = setDragDistance,
-                onDragEnd = { distance ->
-                    if (distance > 90f) onCollapse()
-                    setDragDistance(0f)
-                },
+                onDragEnd = { distance, elapsedMs -> onDragFinished(distance, elapsedMs) },
             ),
         contentAlignment = Alignment.Center,
     ) {
@@ -1058,6 +1085,11 @@ private fun ArtworkWithGestures(
                 isPlaying = isPlaying,
                 modifier = Modifier
                     .size(artSize)
+                    .graphicsLayer {
+                        val scale = artworkScale()
+                        scaleX = scale
+                        scaleY = scale
+                    }
                     .shadow(14.dp, CircleShape),
             )
         } else {
@@ -1082,6 +1114,13 @@ private fun ArtworkWithGestures(
                             )
                         },
                     )
+                    // Inside the shared element, so the transition still animates full-size bounds:
+                    // the paused settle scales the pixels, not the element the cover travels as.
+                    .graphicsLayer {
+                        val scale = artworkScale()
+                        scaleX = scale
+                        scaleY = scale
+                    }
                     .shadow(14.dp, ContinuousRoundedRectangle(ARTWORK_CORNER)),
             )
         }
@@ -1130,13 +1169,13 @@ private fun DownloadOverlay(
 
     val scrim by animateFloatAsState(
         targetValue = if (state is DownloadState.Downloading) 0.55f else 0f,
-        animationSpec = tween(320, easing = ChromeEasing),
+        animationSpec = tween(320, easing = Motion.EaseOut),
         label = "download-scrim",
     )
     // The badge stays up while `badgeVisible`, and the whole overlay unmounts once it has faded.
     val badge by animateFloatAsState(
         targetValue = if (badgeVisible) 1f else 0f,
-        animationSpec = tween(BADGE_FADE_MS, easing = ChromeEasing),
+        animationSpec = tween(BADGE_FADE_MS, easing = Motion.EaseOut),
         label = "download-badge",
     )
 
@@ -1322,6 +1361,8 @@ private fun readPowerSaveMode(context: android.content.Context): Boolean =
 private fun PlayerControls(
     state: PlaybackUiState,
     displayedPosition: Long,
+    /** Interpolated position, safe to poll per frame; the progress bar samples this. */
+    positionProvider: () -> Long,
     quality: AudioQuality,
     onQualityClick: () -> Unit,
     showLyrics: Boolean,
@@ -1336,11 +1377,8 @@ private fun PlayerControls(
 ) {
     Column {
         PlayerProgressBar(
-            progress = if (state.durationMs > 0) {
-                (displayedPosition.toFloat() / state.durationMs).coerceIn(0f, 1f)
-            } else {
-                0f
-            },
+            positionProvider = positionProvider,
+            durationMs = state.durationMs,
             onSeek = onSeek,
             modifier = Modifier.padding(horizontal = 24.dp),
         )
@@ -1448,6 +1486,12 @@ private fun LyricsHeader(
     onArtistClick: (String) -> Unit,
     /** The already-decoded cover, so the thumbnail never shows a placeholder mid-transition. */
     cover: ImageBitmap?,
+    /**
+     * The paused settle, shared with the full artwork. Both ends of the shared element must render at
+     * one scale or the cross-fade between them reads as an enlargement — see
+     * [sharedCoverPausedScale].
+     */
+    artworkScale: () -> Float,
     // Receiver scopes required to declare a shared element. Both are provided by the surrounding
     // SharedTransitionLayout / AnimatedContent in PlayerScreen.
     sharedScope: SharedTransitionScope,
@@ -1479,7 +1523,17 @@ private fun LyricsHeader(
                     .sharedElement(
                         rememberSharedContentState(key = COVER_SHARED_KEY),
                         animatedVisibilityScope = visibilityScope,
-                    ),
+                    )
+                    // The same paused scale as the full artwork. This is the other end of the shared
+                    // element, so it must render at the same size: when only the artwork shrank, the
+                    // unscaled thumbnail faded in over it and the cover appeared to enlarge from
+                    // 0.92 back to 1.0 before shrinking into the header. See
+                    // [sharedCoverPausedScale].
+                    .graphicsLayer {
+                        val scale = artworkScale()
+                        scaleX = scale
+                        scaleY = scale
+                    },
             )
         }
         Spacer(Modifier.width(12.dp))
@@ -1536,91 +1590,91 @@ private fun TrackActionsSheet(
     onShare: () -> Unit,
     onCalibrateLyrics: () -> Unit,
     onShowQueue: () -> Unit,
-    /** Absent when the feature is unavailable — no relay configured. */
-    onListenTogether: (() -> Unit)? = null,
 ) {
-    androidx.compose.ui.window.Dialog(
-        onDismissRequest = onDismiss,
-        // `decorFitsSystemWindows = false` is what makes the scrim reach the screen's edges.
-        //
-        // A Compose `Dialog` gets a platform window, and by default that window is inset by the system
-        // bars — so a scrim drawn to `fillMaxSize()` inside it stops below the status bar and above the
-        // navigation bar, leaving undimmed strips. That is the bright band the user saw at the top of
-        // this sheet. With the flag off the window spans the whole screen and the scrim covers it; the
-        // sheet content compensates with its own `navigationBarsPadding()`.
+    AnimatedSheet(
+        onDismissed = onDismiss,
         properties = androidx.compose.ui.window.DialogProperties(
             usePlatformDefaultWidth = false,
             decorFitsSystemWindows = false,
         ),
-    ) {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.45f))
-                .clickable(indication = null, interactionSource = null, onClick = onDismiss),
-            contentAlignment = Alignment.BottomCenter,
-        ) {
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(horizontal = 12.dp, vertical = 12.dp)
-                    .clip(ContinuousRoundedRectangle(AppleShapes.sheet))
-                    .background(Color(0xFF1C1C1E))
-                    .clickable(enabled = false, indication = null, interactionSource = null) { }
-                    .padding(vertical = 6.dp),
-            ) {
-                Text(
-                    text = track?.name ?: "未在播放",
-                    fontFamily = SFPro,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 15.sp,
-                    color = Color.White.copy(alpha = 0.6f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
-                )
-                ActionRow(SfIcons.SquareAndArrowUp, "保存封面", true) {
-                    onDismiss(); onSaveCover()
-                }
-                ActionRow(SfIcons.QuoteOpening, "分享歌曲", track != null) {
-                    onDismiss(); onShare()
-                }
-                ActionRow(SfIcons.Clock, "歌词校准", hasLyrics) {
-                    onDismiss(); onCalibrateLyrics()
-                }
-                ActionRow(SfIcons.ListBullet, "播放队列", true) {
-                    onDismiss(); onShowQueue()
-                }
-                // Omitted entirely when no relay is configured, rather than shown disabled: without a
-                // relay the feature cannot work at all, and a row that can never succeed is worse than
-                // one that is not offered.
-                if (onListenTogether != null) {
-                    ActionRow(SfIcons.Person, "一起听", true) {
-                        onDismiss(); onListenTogether()
-                    }
-                }
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    text = "取消",
-                    fontFamily = SFPro,
-                    fontWeight = FontWeight.Medium,
-                    fontSize = 17.sp,
-                    color = Color.White,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(ContinuousRoundedRectangle(AppleShapes.control))
-                        .clickable(
-                            indication = rememberControlRipple(bounded = true),
-                            interactionSource = null,
-                            onClick = onDismiss,
-                        )
-                        .padding(vertical = 14.dp),
-                )
+        sheetModifier = Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(horizontal = 12.dp, vertical = 12.dp)
+            .clip(ContinuousRoundedRectangle(AppleShapes.sheet))
+            .background(Color(0xFF1C1C1E))
+            .clickable(enabled = false, indication = null, interactionSource = null) { }
+            .padding(vertical = 6.dp),
+    ) { close ->
+        Text(
+            text = track?.name ?: "未在播放",
+            fontFamily = SFPro,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 15.sp,
+            color = Color.White.copy(alpha = 0.6f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
+        )
+        ActionRow(SfIcons.SquareAndArrowUp, "保存封面", true) {
+            close { onSaveCover() }
+        }
+        // Downloads are orthogonal to the player chrome, so the sheet row reads the same controller the heart's
+        // neighbour does; the label carries the state (waiting / percent / done / failure reason).
+        val downloads = LocalDownloadController.current
+        val downloadTrack = track
+        if (downloads != null && downloadTrack != null) {
+            val state = downloads.stateOf(downloadTrack)
+            ActionRow(downloadIcon(state), downloadLabel(state), true) {
+                downloads.toggle(downloadTrack)
+                close()
             }
         }
+        ActionRow(SfIcons.QuoteOpening, "分享歌曲", track != null) {
+            close { onShare() }
+        }
+        ActionRow(SfIcons.Clock, "歌词校准", hasLyrics) {
+            close { onCalibrateLyrics() }
+        }
+        ActionRow(SfIcons.ListBullet, "播放队列", true) {
+            close { onShowQueue() }
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = "取消",
+            fontFamily = SFPro,
+            fontWeight = FontWeight.Medium,
+            fontSize = 17.sp,
+            color = Color.White,
+            textAlign = TextAlign.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(ContinuousRoundedRectangle(AppleShapes.control))
+                .clickable(
+                    indication = rememberControlRipple(bounded = true),
+                    interactionSource = null,
+                    onClick = { close() },
+                )
+                .padding(vertical = 14.dp),
+        )
     }
+}
+
+/** Icon for a download state: arrow while not saved, tick when done, retry arrow after a failure. */
+private fun downloadIcon(state: TrackDownloadState?) = when (state?.phase) {
+    DownloadPhase.DONE -> SfIcons.Checkmark
+    DownloadPhase.FAILED -> SfIcons.ArrowClockwise
+    else -> SfIcons.ArrowDownCircle
+}
+
+/** Action-sheet label, including the honest state (the sheet has no subtitle row). */
+private fun downloadLabel(state: TrackDownloadState?): String = when (state?.phase) {
+    null, DownloadPhase.IDLE -> "下载到本地"
+    DownloadPhase.WAITING -> "等待下载（点按取消）"
+    DownloadPhase.RESOLVING -> "正在解析地址…"
+    DownloadPhase.DOWNLOADING -> "取消下载（${state.progress?.let { "${(it * 100).toInt()}%" } ?: "进行中"}）"
+    DownloadPhase.DONE -> "已下载"
+    DownloadPhase.FAILED -> "重试下载：${state.message ?: "下载失败"}"
 }
 
 /** One row of the actions sheet: icon, label, chevron-free, disabled when unavailable. */
@@ -1679,128 +1733,109 @@ private fun LyricOffsetSheet(
     // The sheet is a dark surface too, so its pill buttons get the white indication as well. Bounded
     // here: a pill's ripple should stay inside the pill rather than spill past its rounded edge.
     val resetRipple = rememberControlRipple(bounded = true)
-    androidx.compose.ui.window.Dialog(
-        onDismissRequest = onDismiss,
-        // `decorFitsSystemWindows = false` is what makes the scrim reach the screen's edges.
-        //
-        // A Compose `Dialog` gets a platform window, and by default that window is inset by the system
-        // bars — so a scrim drawn to `fillMaxSize()` inside it stops below the status bar and above the
-        // navigation bar, leaving undimmed strips. That is the bright band the user saw at the top of
-        // this sheet. With the flag off the window spans the whole screen and the scrim covers it; the
-        // sheet content compensates with its own `navigationBarsPadding()`.
+    AnimatedSheet(
+        onDismissed = onDismiss,
         properties = androidx.compose.ui.window.DialogProperties(
             usePlatformDefaultWidth = false,
             decorFitsSystemWindows = false,
         ),
-    ) {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.45f))
-                // A scrim that dims the screen to catch a dismissal tap should not paint anything
-                // when pressed; the default indication would flash a large dark rectangle.
-                .clickable(indication = null, interactionSource = null, onClick = onDismiss),
-            contentAlignment = Alignment.Center,
-        ) {
-            Column(
-                Modifier
-                    .fillMaxWidth(0.86f)
-                    // Swallow taps so clicking the card does not dismiss it.
-                    .clickable(
-                        enabled = false,
-                        indication = null,
-                        interactionSource = null,
-                    ) { }
-                    .clip(ContinuousRoundedRectangle(AppleShapes.sheet))
-                    .background(Color(0xFF1C1C1E))
-                    .padding(20.dp),
-            ) {
+        placement = SheetPlacement.Center,
+        sheetModifier = Modifier
+            .fillMaxWidth(0.86f)
+            // Swallow taps so clicking the card does not dismiss it.
+            .clickable(
+                enabled = false,
+                indication = null,
+                interactionSource = null,
+            ) { }
+            .clip(ContinuousRoundedRectangle(AppleShapes.sheet))
+            .background(Color(0xFF1C1C1E))
+            .padding(20.dp),
+    ) { close ->
+        Text(
+            text = "歌词校准",
+            fontFamily = SFPro,
+            fontWeight = FontWeight.Bold,
+            fontSize = 20.sp,
+            color = Color.White,
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = if (hasLyrics) {
+                "歌词比声音早就向右拖，晚就向左拖。只对当前歌曲生效。"
+            } else {
+                "当前歌曲还没有歌词。"
+            },
+            fontFamily = SFPro,
+            fontSize = 13.sp,
+            color = Color.White.copy(alpha = 0.65f),
+        )
+        Spacer(Modifier.height(16.dp))
+
+        // Direct mapping: the slider's right-hand side is "later", which is a positive
+        // offset. The clock applies it as a lag (see LyricsView.offsetClock).
+        val sliderValue = offsetMs.toFloat() / LYRIC_OFFSET_LIMIT_MS
+        androidx.compose.material3.Slider(
+            value = sliderValue,
+            onValueChange = { onChange((it * LYRIC_OFFSET_LIMIT_MS).toLong()) },
+            valueRange = -1f..1f,
+            enabled = hasLyrics,
+        )
+
+        Spacer(Modifier.height(6.dp))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "提前",
+                fontFamily = SFPro,
+                fontSize = 12.sp,
+                color = Color.White.copy(alpha = 0.55f),
+            )
+            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                 Text(
-                    text = "歌词校准",
+                    text = if (offsetMs == 0L) "0 ms" else "%+d ms".format(offsetMs),
                     fontFamily = SFPro,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 20.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 15.sp,
                     color = Color.White,
                 )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = if (hasLyrics) {
-                        "歌词比声音早就向右拖，晚就向左拖。只对当前歌曲生效。"
-                    } else {
-                        "当前歌曲还没有歌词。"
-                    },
-                    fontFamily = SFPro,
-                    fontSize = 13.sp,
-                    color = Color.White.copy(alpha = 0.65f),
-                )
-                Spacer(Modifier.height(16.dp))
-
-                // Direct mapping: the slider's right-hand side is "later", which is a positive
-                // offset. The clock applies it as a lag (see LyricsView.offsetClock).
-                val sliderValue = offsetMs.toFloat() / LYRIC_OFFSET_LIMIT_MS
-                androidx.compose.material3.Slider(
-                    value = sliderValue,
-                    onValueChange = { onChange((it * LYRIC_OFFSET_LIMIT_MS).toLong()) },
-                    valueRange = -1f..1f,
-                    enabled = hasLyrics,
-                )
-
-                Spacer(Modifier.height(6.dp))
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = "提前",
-                        fontFamily = SFPro,
-                        fontSize = 12.sp,
-                        color = Color.White.copy(alpha = 0.55f),
-                    )
-                    Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                        Text(
-                            text = if (offsetMs == 0L) "0 ms" else "%+d ms".format(offsetMs),
-                            fontFamily = SFPro,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 15.sp,
-                            color = Color.White,
-                        )
-                    }
-                    Text(
-                        text = "延后",
-                        fontFamily = SFPro,
-                        fontSize = 12.sp,
-                        color = Color.White.copy(alpha = 0.55f),
-                    )
-                }
-
-                Spacer(Modifier.height(14.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    Text(
-                        text = "重置",
-                        fontFamily = SFPro,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 15.sp,
-                        color = Color.White.copy(alpha = 0.75f),
-                        modifier = Modifier
-                            .clip(ContinuousRoundedRectangle(AppleShapes.pill))
-                            .clickable(
-                                indication = resetRipple,
-                                interactionSource = null,
-                            ) { onChange(0L) }
-                            .padding(horizontal = 14.dp, vertical = 8.dp),
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        text = "完成",
-                        fontFamily = SFPro,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 15.sp,
-                        color = Color.White,
-                        modifier = Modifier
-                            .clip(ContinuousRoundedRectangle(AppleShapes.pill))
-                            .background(Color.White.copy(alpha = 0.16f))
-                            .clickable(indication = resetRipple, interactionSource = null, onClick = onDismiss)
-                            .padding(horizontal = 18.dp, vertical = 8.dp),
-                    )
-                }
             }
+            Text(
+                text = "延后",
+                fontFamily = SFPro,
+                fontSize = 12.sp,
+                color = Color.White.copy(alpha = 0.55f),
+            )
+        }
+
+        Spacer(Modifier.height(14.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            Text(
+                text = "重置",
+                fontFamily = SFPro,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 15.sp,
+                color = Color.White.copy(alpha = 0.75f),
+                modifier = Modifier
+                    .clip(ContinuousRoundedRectangle(AppleShapes.pill))
+                    .clickable(
+                        indication = resetRipple,
+                        interactionSource = null,
+                    ) { onChange(0L) }
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = "完成",
+                fontFamily = SFPro,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 15.sp,
+                color = Color.White,
+                modifier = Modifier
+                    .clip(ContinuousRoundedRectangle(AppleShapes.pill))
+                    .background(Color.White.copy(alpha = 0.16f))
+                    .clickable(indication = resetRipple, interactionSource = null, onClick = { close() })
+                    .padding(horizontal = 18.dp, vertical = 8.dp),
+            )
         }
     }
 }
@@ -1997,73 +2032,55 @@ private fun QualitySheet(
     onSelect: (AudioQuality) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    androidx.compose.ui.window.Dialog(
-        onDismissRequest = onDismiss,
-        // `decorFitsSystemWindows = false` is what makes the scrim reach the screen's edges.
-        //
-        // A Compose `Dialog` gets a platform window, and by default that window is inset by the system
-        // bars — so a scrim drawn to `fillMaxSize()` inside it stops below the status bar and above the
-        // navigation bar, leaving undimmed strips. That is the bright band the user saw at the top of
-        // this sheet. With the flag off the window spans the whole screen and the scrim covers it; the
-        // sheet content compensates with its own `navigationBarsPadding()`.
+    AnimatedSheet(
+        onDismissed = onDismiss,
         properties = androidx.compose.ui.window.DialogProperties(
             usePlatformDefaultWidth = false,
             decorFitsSystemWindows = false,
         ),
-    ) {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.45f))
-                .clickable(indication = null, interactionSource = null, onClick = onDismiss),
-            contentAlignment = Alignment.BottomCenter,
-        ) {
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(horizontal = 12.dp, vertical = 12.dp)
-                    .clip(ContinuousRoundedRectangle(AppleShapes.sheet))
-                    .background(Color(0xFF1C1C1E))
-                    // Swallows taps on the sheet body so they do not reach the dismiss scrim behind it.
-                    .clickable(enabled = false, indication = null, interactionSource = null) { }
-                    .padding(vertical = 6.dp),
-            ) {
-                Text(
-                    text = "音质",
-                    fontFamily = SFPro,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 15.sp,
-                    color = Color.White.copy(alpha = 0.6f),
-                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
-                )
-                AudioQuality.entries.forEach { tier ->
-                    QualityRow(
-                        tier = tier,
-                        selected = tier == current,
-                        onClick = { onSelect(tier) },
-                    )
-                }
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    text = "取消",
-                    fontFamily = SFPro,
-                    fontWeight = FontWeight.Medium,
-                    fontSize = 17.sp,
-                    color = Color.White,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(ContinuousRoundedRectangle(AppleShapes.control))
-                        .clickable(
-                            indication = rememberControlRipple(bounded = true),
-                            interactionSource = null,
-                            onClick = onDismiss,
-                        )
-                        .padding(vertical = 14.dp),
-                )
-            }
+        sheetModifier = Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(horizontal = 12.dp, vertical = 12.dp)
+            .clip(ContinuousRoundedRectangle(AppleShapes.sheet))
+            .background(Color(0xFF1C1C1E))
+            // Swallows taps on the sheet body so they do not reach the dismiss scrim behind it.
+            .clickable(enabled = false, indication = null, interactionSource = null) { }
+            .padding(vertical = 6.dp),
+    ) { close ->
+        Text(
+            text = "音质",
+            fontFamily = SFPro,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 15.sp,
+            color = Color.White.copy(alpha = 0.6f),
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
+        )
+        AudioQuality.entries.forEach { tier ->
+            QualityRow(
+                tier = tier,
+                selected = tier == current,
+                onClick = { close { onSelect(tier) } },
+            )
         }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = "取消",
+            fontFamily = SFPro,
+            fontWeight = FontWeight.Medium,
+            fontSize = 17.sp,
+            color = Color.White,
+            textAlign = TextAlign.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(ContinuousRoundedRectangle(AppleShapes.control))
+                .clickable(
+                    indication = rememberControlRipple(bounded = true),
+                    interactionSource = null,
+                    onClick = { close() },
+                )
+                .padding(vertical = 14.dp),
+        )
     }
 }
 
@@ -2280,12 +2297,33 @@ private val ARTWORK_CORNER = 14.dp
 private val HEADER_COVER_CORNER = 10.dp
 
 /**
- * Diameter of each face in the listen-together strip above the cover.
+ * How far the cover settles down while the transport is paused.
  *
- * Deliberately small: the strip is an indicator that a room is active, and at cover scale it would compete
- * with the album art it sits above. Landscape scales it down further (see the landscape branch).
+ * Small on purpose: the cover is the player's anchor, and the change should read as "the music
+ * stopped", not as a different layout. Applied as a layer scale on the artwork only, so nothing
+ * around it reflows — the drag-to-dismiss translation is a layer on the player body and the cover
+ * transition's shared element keeps full-size bounds, so the three transform systems compose
+ * without fighting (see [ArtworkWithGestures]).
  */
-private val TOGETHER_AVATAR_SIZE = 56.dp
+private const val PAUSED_ARTWORK_SCALE = 0.92f
+
+/**
+ * The paused-cover scale as seen by **both** renderings of the shared album cover — the full artwork
+ * and the lyrics-header thumbnail.
+ *
+ * They are the two ends of one shared element, and [AnimatedContent] composes both presentations for
+ * the length of a presentation change, so at every instant of the cross-fade the two renderings are
+ * blended and their shared bounds are animating. That means the two ends must render at the **same**
+ * scale. The earlier code applied the paused scale to the full artwork only, so the unscaled header
+ * thumbnail faded in over the settled 92 % artwork: the apparent scale slid 0.92 -> 1.0 and only then
+ * started shrinking into the header, which is the "enlarge then shrink" the user saw. Sharing one
+ * value keeps the scale constant through the move, so the transition's own bounds animation is the
+ * only animated quantity and the visible size (bounds x scale) is monotone by construction.
+ *
+ * Kept as a pure function so the curve can be unit-tested (see `SharedCoverScaleTest`).
+ */
+internal fun sharedCoverPausedScale(pausedCoverScale: Float): Float =
+    pausedCoverScale.coerceIn(0f, 1f)
 
 /**
  * The full-size cover's corner radius, exposed for the cover transition.
@@ -2297,14 +2335,6 @@ val PlayerArtworkCorner = ARTWORK_CORNER
 
 /** How long the backdrop stays frozen after a presentation change begins. */
 private const val TRANSITION_SETTLE_MS = 600L
-
-/**
- * Easing for the cover-download badge and its scrim.
- *
- * A single decelerating curve, which suits a small overlay materialising on its own — it is not the
- * immersive transition, whose progress curve is deliberately linear (see `chromeProgress`).
- */
-private val ChromeEasing = CubicBezierEasing(0.22f, 0.61f, 0.36f, 1f)
 
 /**
  * Fraction of the chrome's travel that happens *after* it has faded out completely.

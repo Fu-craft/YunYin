@@ -34,6 +34,7 @@ import com.yunyin.music.core.ChartInfo
 import com.yunyin.music.core.Playlist
 import com.yunyin.music.core.Track
 import com.yunyin.music.data.ArtworkLoader
+import com.yunyin.music.data.providers.ProviderLabels
 import com.yunyin.music.ui.icons.SfIcons
 import com.yunyin.music.ui.theme.AppleShapes
 import com.yunyin.music.ui.theme.AppTheme
@@ -280,8 +281,13 @@ fun TrackRow(
 ) {
     MediaRow(
         title = track.name,
-        subtitle = listOfNotNull(track.artistLine.takeIf { it.isNotBlank() }, track.albumName.takeIf { it.isNotBlank() })
-            .joinToString(" — "),
+        // A result from another catalogue says so: the platform is where its URL comes from, and it tells the user
+        // why a song NetEase does not have is playable at all.
+        subtitle = listOfNotNull(
+            track.providerRef?.let { ProviderLabels.of(it.provider) },
+            track.artistLine.takeIf { it.isNotBlank() },
+            track.albumName.takeIf { it.isNotBlank() },
+        ).joinToString(" — "),
         artwork = {
             Artwork(
                 url = track.coverUrl,

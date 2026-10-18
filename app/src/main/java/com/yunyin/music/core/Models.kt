@@ -11,6 +11,13 @@ data class Track(
     val durationMs: Long,
     /** NetEase `fee` flag: 0 free, 1 VIP, 4 paid album, 8 low-quality free. */
     val fee: Int = 0,
+    /**
+     * Set when the track came from another platform's search (QQ/Kuwo/…) and is played through a custom source.
+     *
+     * Its [id] is then a synthetic negative id from `ProviderTrackIds`, not a NetEase id; the provider id lives
+     * here. See [ProviderRef] for why the identity has to travel with the track.
+     */
+    val providerRef: ProviderRef? = null,
 ) {
     val artistLine: String get() = artists.joinToString(" / ")
 }
@@ -41,65 +48,6 @@ data class ArtistInfo(
     val name: String,
     val coverUrl: String?,
 )
-
-/**
- * A created together-listen room.
- *
- * Both fields are needed to join: the id identifies the room, and the inviter id says whose invite is
- * being accepted. That is why the UI shares them as a pair rather than showing a bare code.
- */
-data class TogetherRoomInfo(
-    val roomId: String,
-    val inviterId: Long,
-)
-
-/** One member of a together-listen room, as `/listentogether/status` reports them. */
-data class TogetherUser(
-    val uid: Long,
-    val nickname: String,
-    val avatarUrl: String?,
-)
-
-/** Who is in the room. */
-data class TogetherStatus(
-    val inRoom: Boolean,
-    val roomId: String,
-    val members: List<TogetherUser>,
-)
-
-/**
- * The room's playback state — what the *other* member has done.
- *
- * Measured: a room whose only member is the caller reads back as `data: {}` even after that caller
- * issued a command, so this reports the **peer**, never the caller's own echo. That is what makes
- * polling work — and what makes the feature un-demonstrable with a single account.
- *
- * [serverSeq] is assigned by NetEase and increases per command. It is the natural answer to "whose
- * action is newer?", with no client clocks involved — which matters because the two devices' clocks
- * disagree by tens of seconds (measured), so a timestamp comparison would pick the wrong winner.
- */
-data class TogetherRemoteState(
-    /** Whose command this is; 0 when nobody has acted yet. */
-    val userId: Long = 0L,
-    val songId: Long = 0L,
-    val positionMs: Long = 0L,
-    val playing: Boolean = false,
-    val serverSeq: Long = 0L,
-    /**
-     * Which command this is: `GOTO` / `NEXT` / `PREV` / `PROGRESS` / `PLAY` / `PAUSE`.
-     *
-     * Not decoration — it is how the room says *what happened*, and it is the only trustworthy source
-     * for the play state when the command changes the track. The official client sends a `GOTO` whose
-     * `playStatus` can lag by a frame, and it is the type (`GOTO`/`NEXT`/`PREV`/`PLAY` all mean
-     * "playing") that has to decide. Reading the flag alone made each device announce the opposite of
-     * what the other had just done, and the two then took turns pausing each other.
-     */
-    val commandType: String = "",
-    /** The room's queue, as published through `sync/list/command`. */
-    val queue: List<Long> = emptyList(),
-) {
-    val hasCommand: Boolean get() = songId > 0L
-}
 
 /** Signed-in (or anonymous) account. */
 data class Account(

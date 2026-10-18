@@ -8,7 +8,6 @@ import com.yunyin.music.core.NetResult
 import com.yunyin.music.core.Playlist
 import com.yunyin.music.core.Track
 import com.yunyin.music.core.map
-import com.yunyin.music.data.together.TogetherLog
 import com.yunyin.music.data.SettingsStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers

@@ -59,12 +59,18 @@ import com.yunyin.music.core.Playlist
 import com.yunyin.music.core.Track
 import com.yunyin.music.data.ArtworkLoader
 import com.yunyin.music.ui.components.Artwork
+import com.yunyin.music.ui.components.GlassTopBar
 import com.yunyin.music.ui.components.UserAvatar
+import com.yunyin.music.ui.components.chromeContentBottomPadding
+import com.yunyin.music.ui.components.glassTopBarTopPadding
 import com.yunyin.music.ui.components.rememberControlRipple
+import com.yunyin.music.ui.components.rememberGlassTopBarBackdrop
 import com.yunyin.music.ui.icons.SfIcons
 import com.yunyin.music.ui.theme.AppleShapes
 import com.yunyin.music.ui.theme.AppTheme
+import com.yunyin.music.ui.theme.Motion
 import com.yunyin.music.ui.theme.SFPro
+import com.kyant.backdrop.backdrops.layerBackdrop
 import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
 
 /**
@@ -145,6 +151,10 @@ fun LibraryScreen(
     // pushed page is a dead end for anyone using the gesture instead of the on-screen back chip.
     BackHandler(enabled = openPage != null) { openPage = null }
 
+    // No top bar on the profile page, deliberately: the page's top band is the user's own background
+    // image, and a blurred strip over it both covers and blurs that image — which is exactly what the
+    // user reported. The banner's actions live on the banner itself (below), so they scroll with it.
+    // The pushed subpages still get the strip; they sit on the plain page background.
     Box(modifier.fillMaxSize()) {
     LibraryContent(
         account = account,
@@ -176,8 +186,10 @@ fun LibraryScreen(
     // page's exit invisible).
     AnimatedVisibility(
         visible = openPage == LibraryPage.Playlists,
-        enter = slideInHorizontally(tween(LIB_PAGE_MS)) { it } + fadeIn(tween(200)),
-        exit = slideOutHorizontally(tween(LIB_PAGE_EXIT_MS)) { it } + fadeOut(tween(160)),
+        enter = slideInHorizontally(tween(LIB_PAGE_MS, easing = Motion.EaseOut)) { it } +
+            fadeIn(tween(200, easing = Motion.EaseOut)),
+        exit = slideOutHorizontally(tween(LIB_PAGE_EXIT_MS, easing = Motion.EaseOut)) { it } +
+            fadeOut(tween(160, easing = Motion.EaseOut)),
     ) {
         PlaylistsPage(
             playlists = normalPlaylists,
@@ -191,8 +203,10 @@ fun LibraryScreen(
 
     AnimatedVisibility(
         visible = openPage == LibraryPage.Recent,
-        enter = slideInHorizontally(tween(LIB_PAGE_MS)) { it } + fadeIn(tween(200)),
-        exit = slideOutHorizontally(tween(LIB_PAGE_EXIT_MS)) { it } + fadeOut(tween(160)),
+        enter = slideInHorizontally(tween(LIB_PAGE_MS, easing = Motion.EaseOut)) { it } +
+            fadeIn(tween(200, easing = Motion.EaseOut)),
+        exit = slideOutHorizontally(tween(LIB_PAGE_EXIT_MS, easing = Motion.EaseOut)) { it } +
+            fadeOut(tween(160, easing = Motion.EaseOut)),
     ) {
         RecentPage(
             tracks = recentTracks,
@@ -242,7 +256,7 @@ private fun LibraryContent(
         modifier = Modifier.fillMaxSize(),
         // No status-bar spacer here: the profile header is the first thing on the page and runs under the
         // status bar on purpose, so the banner reads as full-bleed rather than as an inset image.
-        contentPadding = PaddingValues(bottom = 150.dp),
+        contentPadding = PaddingValues(bottom = chromeContentBottomPadding()),
         verticalArrangement = Arrangement.spacedBy(CardGap),
     ) {
         // ------------------------------------------------------------ profile header
@@ -512,8 +526,8 @@ private fun ProfileBanner(background: ImageBitmap?) {
 /**
  * The library header's own picture.
  *
- * Delegates to the shared [UserAvatar] so the header, the profile editor and the listen-together room
- * cannot drift apart — the wrapper only maps "the signed-in account" onto the component's two inputs.
+ * Delegates to the shared [UserAvatar] so the header and the profile editor cannot drift apart — the
+ * wrapper only maps "the signed-in account" onto the component's two inputs.
  */
 @Composable
 private fun Avatar(
@@ -533,7 +547,12 @@ private fun Avatar(
 
 /** A white glyph on the banner, with its own hit area. */
 @Composable
-private fun BannerIcon(icon: ImageVector, description: String, onClick: () -> Unit) {
+private fun BannerIcon(
+    icon: ImageVector,
+    description: String,
+    onClick: () -> Unit,
+    tint: Color = Color.White,
+) {
     Box(
         Modifier
             .size(44.dp)
@@ -545,7 +564,7 @@ private fun BannerIcon(icon: ImageVector, description: String, onClick: () -> Un
             ),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, contentDescription = description, tint = Color.White, modifier = Modifier.size(24.dp))
+        Icon(icon, contentDescription = description, tint = tint, modifier = Modifier.size(24.dp))
     }
 }
 
@@ -691,50 +710,65 @@ private fun EmptyHint(text: String) {
 private fun LibrarySubpage(
     title: String,
     onBack: () -> Unit,
-    content: @Composable ColumnScope.() -> Unit,
+    content: @Composable ColumnScope.(topInset: Dp) -> Unit,
 ) {
-    Column(
+    // Same material arrangement as the profile page behind it: the list is recorded into its own
+    // layer (background painted first) and the bar is composed outside it.
+    val topBarBackdrop = rememberGlassTopBarBackdrop()
+    val topInset = glassTopBarTopPadding()
+
+    Box(
         Modifier
             .fillMaxSize()
+            // The subpage is layered over the profile page, so it must paint its own page background
+            // or the two show through each other during the slide. The recorded layer paints the
+            // same colour into the blur field as well.
             .background(AppTheme.palette.background),
     ) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .statusBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        Box(Modifier.fillMaxSize().layerBackdrop(topBarBackdrop)) {
+            Column(Modifier.fillMaxSize()) {
+                content(topInset)
+            }
+        }
+
+        GlassTopBar(
+            backdrop = topBarBackdrop,
+            modifier = Modifier.align(Alignment.TopCenter),
         ) {
-            Box(
-                Modifier
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .clickable(
-                        indication = rememberControlRipple(bounded = false),
-                        interactionSource = null,
-                        onClick = onBack,
-                    ),
-                contentAlignment = Alignment.Center,
+            Row(
+                Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(
-                    SfIcons.ChevronLeft,
-                    contentDescription = "返回",
-                    tint = AppTheme.palette.accent,
-                    modifier = Modifier.size(22.dp),
+                Box(
+                    Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .clickable(
+                            indication = rememberControlRipple(bounded = false),
+                            interactionSource = null,
+                            onClick = onBack,
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        SfIcons.ChevronLeft,
+                        contentDescription = "返回",
+                        tint = AppTheme.palette.accent,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = title,
+                    fontFamily = SFPro,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 28.sp,
+                    color = AppTheme.palette.label,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
-            Spacer(Modifier.width(6.dp))
-            Text(
-                text = title,
-                fontFamily = SFPro,
-                fontWeight = FontWeight.Bold,
-                fontSize = 28.sp,
-                color = AppTheme.palette.label,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
         }
-        content()
     }
 }
 
@@ -754,11 +788,14 @@ private fun PlaylistsPage(
     onBack: () -> Unit,
     onPlaylistClick: (Playlist) -> Unit,
 ) {
-    LibrarySubpage(title = "我的歌单", onBack = onBack) {
+    LibrarySubpage(title = "我的歌单", onBack = onBack) { topInset ->
         when {
             playlists.isNotEmpty() -> LazyColumn(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
-                contentPadding = PaddingValues(bottom = 150.dp),
+                contentPadding = PaddingValues(
+                    top = topInset,
+                    bottom = chromeContentBottomPadding(),
+                ),
             ) {
                 itemsIndexed(playlists, key = { _, p -> p.id }) { index, playlist ->
                     PlaylistRow(
@@ -773,7 +810,7 @@ private fun PlaylistsPage(
             }
 
             loading -> Box(
-                Modifier.weight(1f).fillMaxWidth(),
+                Modifier.weight(1f).fillMaxWidth().padding(top = topInset),
                 contentAlignment = Alignment.TopCenter,
             ) {
                 CircularProgressIndicator(
@@ -783,7 +820,9 @@ private fun PlaylistsPage(
                 )
             }
 
-            else -> EmptyHint(if (signedIn) "还没有歌单" else "登录后可同步你的歌单")
+            else -> Column(Modifier.fillMaxWidth().padding(top = topInset)) {
+                EmptyHint(if (signedIn) "还没有歌单" else "登录后可同步你的歌单")
+            }
         }
     }
 }
@@ -796,13 +835,18 @@ private fun RecentPage(
     onBack: () -> Unit,
     onTrackClick: (Track) -> Unit,
 ) {
-    LibrarySubpage(title = "最近播放", onBack = onBack) {
+    LibrarySubpage(title = "最近播放", onBack = onBack) { topInset ->
         if (tracks.isEmpty()) {
-            EmptyHint("还没有播放记录")
+            Column(Modifier.fillMaxWidth().padding(top = topInset)) {
+                EmptyHint("还没有播放记录")
+            }
         } else {
             LazyColumn(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
-                contentPadding = PaddingValues(bottom = 150.dp),
+                contentPadding = PaddingValues(
+                    top = topInset,
+                    bottom = chromeContentBottomPadding(),
+                ),
             ) {
                 itemsIndexed(tracks, key = { _, t -> t.id }) { index, track ->
                     RecentTrackRow(

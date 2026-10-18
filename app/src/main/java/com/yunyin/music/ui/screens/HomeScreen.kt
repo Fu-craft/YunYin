@@ -1,7 +1,6 @@
 package com.yunyin.music.ui.screens
 
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,13 +13,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -28,27 +27,31 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kyant.backdrop.Backdrop
 import com.yunyin.music.core.Playlist
 import com.yunyin.music.core.Track
 import com.yunyin.music.data.ArtworkLoader
 import com.yunyin.music.ui.HomeUiState
 import com.yunyin.music.ui.components.Artwork
 import com.yunyin.music.ui.components.ChartRow
+import com.yunyin.music.ui.components.GlassTopBar
 import com.yunyin.music.ui.components.InsetSeparator
 import com.yunyin.music.ui.components.PlaylistCarousel
 import com.yunyin.music.ui.components.SectionHeader
 import com.yunyin.music.ui.components.TrackCarousel
 import com.yunyin.music.ui.components.TrackRow
+import com.yunyin.music.ui.components.chromeContentBottomPadding
 import com.yunyin.music.ui.components.formatCount
+import com.yunyin.music.ui.components.glassTopBarTopPadding
+import com.yunyin.music.ui.components.liquidGlassControl
+import com.yunyin.music.ui.components.rememberGlassTopBarBackdrop
 import com.yunyin.music.ui.icons.SfIcons
-import com.yunyin.music.ui.theme.AppleShapes
 import com.yunyin.music.ui.theme.AppTheme
 import com.yunyin.music.ui.theme.SFPro
-import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
+import com.kyant.backdrop.backdrops.layerBackdrop
 
 /**
  * Discover tab.
@@ -86,17 +89,22 @@ fun HomeScreen(
 ) {
     val feed = state.feed
 
-    LazyColumn(
-        modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 140.dp),
-    ) {
-        item("status-bar") { Spacer(Modifier.statusBarsPadding().height(4.dp)) }
+    // One recorded page layer for the frosted top bar; the bar is composed outside it (below). The
+    // search affordance used to be the first item of the list, so it scrolled away with the feed.
+    // It is now the fixed bar's content — iOS's navigation strip — and the shelves start below it
+    // and scroll up under its progressive blur.
+    val topBarBackdrop = rememberGlassTopBarBackdrop()
 
-        item("search") {
-            SearchBar(onClick = onSearchClick)
-        }
-
-        if (feed.featuredPlaylists.isNotEmpty()) {
+    Box(modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().layerBackdrop(topBarBackdrop)) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    top = glassTopBarTopPadding(),
+                    bottom = chromeContentBottomPadding(),
+                ),
+            ) {
+                if (feed.featuredPlaylists.isNotEmpty()) {
             item("featured-header") {
                 SectionHeader(
                     title = "精选歌单",
@@ -216,28 +224,42 @@ fun HomeScreen(
                 }
             }
         }
+            }
+        }
+
+        // The fixed frosted strip: composed outside the recorded layer, so it samples the feed
+        // scrolling underneath rather than itself. The search field inside it is a small
+        // liquid-glass capsule on top of that strip, sampling the same recorded layer.
+        GlassTopBar(
+            backdrop = topBarBackdrop,
+            modifier = Modifier.align(Alignment.TopCenter),
+        ) {
+            SearchBar(onClick = onSearchClick, backdrop = topBarBackdrop)
+        }
     }
 }
 
 /**
- * iOS search field: capsule, translucent fill, magnifier at the leading edge.
+ * iOS search field: a liquid-glass capsule with the magnifier at the leading edge.
  *
  * Rendered as a tappable control here (not an input) because tapping it pushes the
- * dedicated search screen, which is how the search experience behaves on iOS.
+ * dedicated search screen, which is how the search experience behaves on iOS. The glass is the
+ * bottom chrome's material on the strip's own recorded layer — see [liquidGlassControl].
  */
 @Composable
 fun SearchBar(
     onClick: () -> Unit,
+    backdrop: Backdrop,
     modifier: Modifier = Modifier,
     placeholder: String = "搜索",
 ) {
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
+            // 2dp vertical padding + the 44dp field = the strip's 48dp title row.
+            .padding(horizontal = 16.dp, vertical = 2.dp)
             .height(44.dp)
-            .clip(ContinuousRoundedRectangle(AppleShapes.pill))
-            .background(AppTheme.palette.secondaryBackground)
+            .liquidGlassControl(backdrop, RoundedCornerShape(percent = 50))
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,

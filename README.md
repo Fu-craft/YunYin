@@ -1,113 +1,64 @@
-# 云音
+# 云音（YunYin）
 
-一个仿 Apple Music 风格的网易云音乐第三方 Android 播放器。
-
-用 **Kotlin + Jetpack Compose** 从零实现，界面遵循 Apple Human Interface Guidelines，
-核心能力是**逐字歌词**与**封面驱动的流动背景**。
-
-[![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
-![Platform](https://img.shields.io/badge/Platform-Android%2033%2B-3DDC84.svg)
-![Kotlin](https://img.shields.io/badge/Kotlin-2.4-7F52FF.svg)
-![Compose](https://img.shields.io/badge/Compose-1.12-4285F4.svg)
-
-> **非官方客户端。** 本项目与网易云音乐、Apple 均无关联，仅供个人学习与技术研究。
-> 音乐内容、歌词、商标及相关权利归各自权利人所有。使用前请自行确认符合当地法律与服务条款。
->
-> **温馨提示：** 本项目不提供免费听歌功能，收听网易云会员歌曲需自行开通网易云音乐会员。
-
----
-
-## 目录
-
-- [功能](#功能)
-- [截图](#截图)
-- [快速开始](#快速开始)
-- [技术栈](#技术栈)
-- [实现要点](#实现要点)
-- [项目结构](#项目结构)
-- [测试](#测试)
-- [许可证与致谢](#许可证与致谢)
-- [免责声明](#免责声明)
-
----
+网易云音乐第三方 Android 播放器，Kotlin + Jetpack Compose 实现，界面仿 Apple Music。
+非官方客户端，与网易云音乐、Apple 均无关联；需要 Android 13（API 33）及以上。
 
 ## 功能
 
-### 播放
+**播放**
 
-- **Apple Music 式播放页** —— 封面驱动的整页背景、可拖拽收起的封面手势、进度条拖拽与逐帧位置插值。
-- **两套播放器界面** —— 经典圆角封面，或**旋转的黑胶唱片**（同心纹路 + 中心封面 + 轴孔，播放时转、
-  暂停即停在原角度）；在 **设置 → 播放 → 播放器界面** 里切换，只换封面区域，其余完全一致。
-- **逐字歌词** —— 支持 AMLL TTML 与网易云 YRC 两路逐字时间轴，含逐字渐变填充、逐字跳动、
-  和声/伴奏分轨、间奏呼吸点、翻译与注音；两路来源自动择优合并并做时间轴对齐。
-- **沉浸歌词** —— 静置数秒自动隐藏界面，歌词铺满全屏；横竖屏分别适配，横屏为「左侧控制栏 + 右侧歌词」。
-- **音质切换** —— 标准 / 较高 / 极高 / 无损 / Hi-Res 五档，切换后即时重载当前曲目。
-- **播放队列** —— 底部 Sheet 展示队列，支持跳转、播放模式（顺序 / 单曲 / 随机）切换。
-- **后台播放** —— Media3 ExoPlayer + `MediaSessionService`，支持锁屏与通知控制。
+- 标准 / 较高 / 极高 / 无损 / Hi-Res 五档音质切换
+- 经典圆角封面与黑胶唱片两种播放器界面；暂停时封面轻微缩小
+- 沉浸播放页：封面驱动流动背景、向下拖动收起、播放队列、循环与随机
+- 下载到本地：经 MediaStore 写入系统音乐库，可取消与重试
+- 后台播放与锁屏 / 通知栏控制（Media3 `MediaSessionService`）
+- 无缝衔接播放；会员曲目 45 秒试听片段自动识别
+- 本地优先收藏、分享歌曲、保存封面
 
-### 浏览
+**歌词**
 
-- **首页** —— 推荐歌单、每日推荐、新歌速递、排行榜。
-- **搜索** —— 关键词搜索与热门搜索，带搜索历史。
-- **歌单详情** —— 封面放大加模糊作为整页色场，正文颜色由封面**亮度测得**（暗封面白字、亮封面深字）；
-  顶部返回/分享条常驻并随滚动过渡为不透明；列表标注序号与正在播放行。
-- **歌手详情** —— 播放页点歌手名进入；多人合作曲的**每个歌手都可单独点击**。
-  圆形头像、姓名与播放/随机操作，列表沿用歌单页的行样式。
-- **个人资料** —— 自定义背景图、头像、个性签名与昵称；头像与昵称可分别选择是否跟随网易云账号，
-  未登录时显示占位资料。
+- AMLL TTML 与网易云 YRC 逐字歌词，无逐字时回退 LRC；两路来源并发获取并整体对齐
+- 逐字渐变、对唱双声部、间奏呼吸点、翻译
+- 歌词校准；长按歌词行复制
+- 沉浸歌词（静置隐藏界面）、横屏侧栏布局
+- 状态栏歌词：推送到 Lyricon，或使用 Flyme 系统通知栏
 
-### 收藏与系统集成
+**浏览与设置**
 
-- **本地优先的收藏** —— 爱心直接写入本地列表并与云端收藏合并，未登录或离线也可用。
-- **一起听** —— 和另一个人同步听同一首歌。**默认走网易云官方的一起听接口**，不需要部署任何东西、
-  也不需要自建服务器；见下方「一起听」。
-- **应用内更新** —— 有新版本时下载并交给系统安装器安装，**不需要服务器**：版本信息和安装包都放在
-  本仓库的 GitHub Release 上；见下方「更新」。
-- **分享** —— 歌曲与歌单分享文本。
-- **词幕（Lyricon）状态栏歌词** —— 可选集成，安装词幕后由它渲染到状态栏／锁屏。
-- **Flyme 状态栏歌词** —— 在支持该功能的 Flyme 系 ROM 上把当前歌词显示在状态栏。
-- **网页登录** —— 应用内嵌浏览器登录，自动获取登录态，无需手动复制 Cookie。
-
----
+- 首页：精选歌单、每日推荐、为你推荐、新歌速递、排行榜、探索更多
+- 搜索：关键词、最近搜索、热门搜索；可合并其它平台曲目（经自定义音源播放）
+- 歌单详情（封面模糊色场、播放全部、随机播放、分享）、歌手详情
+- 资料库：喜欢、我的歌单、最近播放；网页登录；资料编辑（头像 / 背景 / 昵称 / 签名）
+- 自定义音源：导入 LX Music 脚本（.js 文件或链接），校验后用于解析播放地址，失败回退内置接口
+- 单行液态玻璃底栏：主页 / 资料库 tab 与迷你播放器
+- 应用内更新（GitHub Release）
 
 ## 截图
 
-| 播放页 | 逐字歌词 | 首页 |
+| 播放页 | 资料库 | 歌词页 |
 |:--:|:--:|:--:|
-| <img src="docs/screenshots/player.png" width="230" alt="播放页"> | <img src="docs/screenshots/lyrics.png" width="230" alt="逐字歌词"> | <img src="docs/screenshots/home.png" width="230" alt="首页"> |
+| <img src="docs/screenshots/player.png" width="240" alt="播放页"> | <img src="docs/screenshots/library.png" width="240" alt="资料库"> | <img src="docs/screenshots/lyrics.png" width="240" alt="歌词页"> |
 
-| 搜索 | 资料库 | |
+| 首页 | 搜索 | |
 |:--:|:--:|:--:|
-| <img src="docs/screenshots/search.png" width="230" alt="搜索"> | <img src="docs/screenshots/library.png" width="230" alt="资料库"> | |
+| <img src="docs/screenshots/home.png" width="240" alt="首页"> | <img src="docs/screenshots/search.png" width="240" alt="搜索"> | |
 
----
+## 构建
 
-## 快速开始
+需要 JDK 17+、Android SDK（`compileSdk = 37`、build-tools 37.0.0）。
 
-### 环境要求
-
-| 项 | 要求 |
-|---|---|
-| JDK | 17 或更高 |
-| Android SDK | `compileSdk` 37，含 build-tools 37.0.0 |
-| 设备 | Android 13（API 33）及以上 |
-
-项目自带 Gradle Wrapper，无需单独安装 Gradle。
-
-### 配置（两项都在本地，不进仓库）
-
-项目通过两个 **git-ignored** 的配置文件读取本地配置。
-
-**`local.properties`** —— 除 SDK 路径外，增加接口地址：
+`local.properties`（本地配置，不进仓库）：
 
 ```properties
+sdk.dir=/path/to/Android/Sdk
+# 自部署的 NeteaseCloudMusicApi 地址；留空可构建，但应用无法加载内容
 api.base.url=https://your-netease-api.example.com
+# 应用内更新指向的 GitHub 仓库；留空则隐藏检查更新
+update.repo.owner=your-github-name
+update.repo.name=your-repo-name
 ```
 
-该值在编译期注入 `BuildConfig.API_BASE_URL`，**源码中不含任何服务器地址**。
-留空时应用能正常构建与启动，只是在调用接口时提示「未配置接口地址」。
-
-**`keystore.properties`** —— 签名（不配置则 release 包不签名，但构建不会失败）：
+`keystore.properties`（可选，用于签名 release；缺失时产出未签名 APK）：
 
 ```properties
 storeFile=my-release.jks
@@ -116,366 +67,30 @@ keyAlias=mykey
 keyPassword=****
 ```
 
-生成自己的密钥：
+字体：界面使用 **SF Pro**，因授权限制不随仓库分发。构建前需把字体文件放到
+`app/src/main/res/font/sf_pro.ttf`，或把 `ui/theme/Type.kt` 中的 `SFPro` 换成可自由分发的字体。
 
 ```bash
-keytool -genkeypair -v -keystore my-release.jks -alias mykey \
-        -keyalg RSA -keysize 2048 -validity 10000
+./gradlew :app:assembleDebug      # 调试包
+./gradlew :app:assembleRelease    # 发布包（未配置签名则不签名）
+./gradlew :app:testDebugUnitTest  # 单元测试
 ```
 
-**一个坑：别名不是 ASCII 时要写成转义。** Gradle 是用 `Properties.load(InputStream)` 读这个文件的，
-它按 **ISO-8859-1** 解码：直接写中文（UTF-8）会变成乱码、别名找不到，而报错只会说 keystore 有问题，
-不会提编码。Java properties 支持 `\uXXXX` 转义，所以中文别名要这样写：
+Windows 使用 `gradlew.bat`。release APK 输出在 `app/build/outputs/apk/release/`。
 
-```properties
-# 别名「赋」
-keyAlias=\u8d4b
-```
+## 特别鸣谢
 
-**密钥必须固定。** Android 拒绝安装签名不同的包，所以第一次发布用的密钥就决定了以后所有更新：
-换钥匙 = 已安装的用户**再也装不上更新**，而且这个错误只会在手机上以"安装失败"出现。
-`tools/publish_release.py` 因此记录了已发布版本的证书指纹（`dist/signing-cert.sha256`，本地文件），
-指纹不一致时**直接拒绝发布**，把"装了更新不了"提前变成一条明确的报错。
+本项目使用了以下开源项目，感谢作者们的贡献：
 
-### 构建
+- [NeriPlayer](https://github.com/cwuom/NeriPlayer) —— 流动背景、封面取色、音频响应管线
+- [AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass) —— 液态玻璃底栏与顶栏材质
+- [accompanist-lyrics-ui](https://github.com/6xingyv/accompanist-lyrics-ui) —— 歌词渲染组件
+- [accompanist-lyrics-core](https://github.com/6xingyv/accompanist-lyrics-core) —— 歌词解析
+- [AMLL TTML DB](https://github.com/amll-dev/amll-ttml-db) —— 逐字歌词数据
+- [Lyricon](https://github.com/tomakino/lyricon) —— 状态栏歌词
+- [Material Symbols](https://github.com/google/material-design-icons) —— 图标
+- [quickjs-kt](https://github.com/dokar3/quickjs-kt) —— 自定义音源 JS 引擎
 
-```bash
-./gradlew :app:assembleDebug       # 调试包
-./gradlew :app:assembleRelease     # 发布包（未配置签名则不签名）
-python tools/run_suite.py          # 全部校验（静态检查 + 单元测试）
-```
+## 许可证
 
-若环境中 `java` 不在 PATH，设置 `JAVA_HOME` 指向你的 JDK 即可。
-
-### 字体
-
-界面使用 **SF Pro**。因许可限制，该字体**不包含在本仓库**，请自行获取后放入：
-
-```
-app/src/main/res/font/sf_pro.ttf
-```
-
-或把 `ui/theme/Type.kt` 中的 `SFPro` 换成 Inter / Noto Sans 等可自由分发的字体。
-
-> 仓库中的图标为**手绘矢量**，命名对齐 SF Symbols，未使用 Apple 的任何资产。
-
----
-
-## 技术栈
-
-| 项 | 版本 / 说明 |
-|---|---|
-| 语言 | Kotlin 2.4 |
-| UI | Jetpack Compose（Compose Multiplatform 构件）1.12 / Material 3 1.9 |
-| 播放 | Media3 ExoPlayer + MediaSessionService 1.11 |
-| 网络 | OkHttp 4.12 |
-| 图像取色 | AndroidX Palette |
-| 流动背景 | AGSL（`android.graphics.RuntimeShader`，需 API 33+） |
-| 底栏 | [Backdrop](https://github.com/Kyant0/AndroidLiquidGlass)（Apache-2.0） |
-| 逐字歌词 | 渲染 [accompanist-lyrics](https://github.com/6xingyv/accompanist-lyrics-ui)（Apache-2.0）＋ 数据 [AMLL TTML DB](https://github.com/amll-dev/amll-ttml-db)（CC0-1.0） |
-| 状态栏歌词 | 词幕 Lyricon Provider（Apache-2.0）+ Flyme 通知 ticker |
-| 构建 | Gradle 9.7.1 / AGP 9.3.2 |
-| minSdk / targetSdk | 33 / 37 |
-
----
-
-## 实现要点
-
-### 逐字歌词
-
-两路来源，按「有逐字优先」并发竞速合并，统一解析为一种 `SyncedLyrics`：
-
-1. **[AMLL TTML DB](https://github.com/amll-dev/amll-ttml-db)**（首选，与 Apple Music 同源的逐字歌词）
-   `ncm-lyrics/{网易云歌曲ID}.ttml`，按网易云 ID 直取，
-   含逐音节时间、对唱左右声道与翻译。多镜像（jsDelivr / fastly / gcore / raw / ghproxy）
-   并发竞速，取第一个可用结果。该库的歌词数据以 **CC0-1.0** 公有领域贡献。
-2. **网易云 `/lyric/new`**：`yrc`（逐字）优先，否则 `lrc`（逐行）；
-   翻译优先取 `ytlrc`（对齐逐字），其次 `tlyric`（对齐逐行）。
-
-两路来源若时间轴不一致（同一首歌的 Apple Music 版本前奏更短），
-会以网易首行时间为准做整体平移对齐。
-
-播放位置以**每帧插值**提供，而非低频轮询——否则逐字时间轴会抖。
-
-### 流动背景
-
-不是模糊。组成：
-
-1. **封面取色** —— AndroidX Palette 取 5 个角色色并做 HSL 柔化。
-2. **色场** —— AGSL 着色器把五个柔和色场按反平方权重混合；
-   色场被映射到一条色带再拉伸，这是斜向大色带的来源（铺满全屏只会得到一片柔糊）。
-3. **流动** —— 色场中心随时间做轨道运动，另由音频响应的 beat/motion 波位移采样坐标。
-4. **音频响应** —— 从 ExoPlayer 音频管线 `TeeAudioProcessor` 取 PCM，
-   经 RMS → 快/慢 EMA → 自适应噪声底 → 节拍检测，再非对称平滑后驱动 uniforms。
-
-底栏由**同一份背景场**渲染两层实现：一层模糊、一层清晰，
-清晰层在面板边界渐隐——两层颜色逐像素一致，交界处只改变锐度，因此不会出现色阶。
-
-### 播放
-
-`Media3 ExoPlayer` + `MediaSessionService`（后台播放、锁屏与通知控制）。
-
-网易云返回的是**短时效签名 URL**，因此队列项用 `netease://track/{id}` 占位，
-由 `ResolvingDataSource` 在真正加载时才换真链——队列因此保持稳定，
-ExoPlayer 可正常处理切歌与重试。
-
-会员曲（`fee=1`）在免费会话下只返回 45 秒试听片段，应用会识别并提示，
-同时避免把片段当作完整歌曲循环。
-
-### 状态栏歌词
-
-**词幕（Lyricon）**：接入其官方 Provider 接口对应用完全可选，未安装词幕时整个功能是空操作，
-应用其余部分不受影响；设置页显示当前连接状态并可重试。
-（[词幕 Lyricon](https://github.com/tomakino/lyricon)，Apache-2.0）
-
-**Flyme**：Flyme 的状态栏歌词是**系统功能**，它改造了 Android 通知的 ticker。
-应用按 Flyme 官方适配说明发一条常驻通知：歌词放在 `setTicker(...)`，
-并设置其私有的 `FLAG_ALWAYS_SHOW_TICKER` 与 `FLAG_ONLY_UPDATE_TICKER`。
-这两个 flag 只存在于移植了该功能的 ROM 上，大多数机型都不支持，
-此时不创建任何通知，设置页也直接说明「当前系统未内置该功能」。
-
-### 一起听
-
-**默认走一个服务端权威的一起听服务**（[NeriPlayer-LTW](https://github.com/TheSmallHanCat/NeriPlayer-LTW)，
-一个 Cloudflare Worker + Durable Object），用 `together.ltw.url` 配置。**一个服务端持有房间的播放状态**，
-两端都只是读它、朝它靠拢——这是这一版重做的全部原因。
-
-**为什么推倒重来。** 之前的所有实现都是**点对点**的：每台设备发布自己的状态，各自判断对方在干什么。
-那其实是个分布式共识问题，而它的招牌故障正是用户反复报告的——**"我点播放他那边就暂停"**。
-两台设备的时钟对不上，就无法就"谁最后操作的"达成一致；于是每一次纠正看起来都像是"值得纠正的差异"，
-两边互相纠正下去。之前每一版都在"把冲突挪个位置"，而不是消除冲突。
-
-服务端权威把这个问题**从根上删掉**：只有一个地方说了算，没有"谁更新"可争，两台设备只可能同向收敛。
-
-**房间怎么显示**：不单独开页面——**在播放器里、封面正上方**显示一条"两个人"：
-两个重叠的圆形头像 + 一条耳机弧线（耳罩落在两人外侧）。房间是"正在播放的这首歌"的属性，
-所以它长在播放器上，而不是一个要跳进去的界面。房间只提供昵称（服务端不存头像），
-没有头像时回退为人形占位图，不会空白。
-
-**为什么没有"相距 X 公里、一起听了 X 小时"**：服务端的房间信息里只有 id、成员和昵称，
-没有这类统计；拿不到就宁可不显示，也不编一个数字出来。
-
-**协议**（全部实测过，`LtwApi` / `LtwTransport` 就是照它写的）：
-
-| 操作 | 请求 |
-|---|---|
-| 建房 | `POST /api/rooms`，带 `userUuid`（必须是合法 UUID）、`nickname`、`initialSnapshot` |
-| 加入 | `POST /api/rooms/:id/join`，新成员带 `joinSecret`，重连带自己的 `memberSecret` |
-| 读状态 | `GET /api/rooms/:id/state`（Bearer token），返回快照 + `expectedPositionMs` + `serverNowMs` |
-| 控制 | `POST /api/rooms/:id/control` |
-| 实时 | `GET /api/rooms/:id/ws?token=…`（WebSocket） |
-| 离开 | `POST /api/rooms/:id/leave` |
-
-- **房间码 6 位**（可读字母表），所以既能**读出来手打**，也能**粘贴邀请**。邀请是
-  `房间码|joinSecret`，粘贴时整串保留（不会被截断或大写化，否则 secret 就废了）。
-- **进度由服务端算**：`expectedPositionMs = basePositionMs + 流逝时间 × rate`，暂停时不动。
-  客户端不需要自己"补时"，也不该用自己的时钟去判断。
-- **事件有类型**：控制器发 `PLAY`/`PAUSE`/`SEEK`/`SET_TRACK`/`SET_QUEUE`；成员发对应的
-  `REQUEST_*`，由服务端仲裁，并带上目标曲目的 `stableKey` 供服务端校验。
-- **成员控制要求控制器在线**：服务端检查 `controllerSessions().length`，也就是房主必须**保持
-  WebSocket 连接**（`np_ping` 心跳同时维持在线并同步时钟）。这一点是实测出来的：只用轮询、不开
-  socket 时，成员的任何 `REQUEST_*` 都会返回 `controller offline`。所以客户端**一定会开 socket**。
-- **房间身份是每台设备一个 UUID**，不是网易账号——所以**同一账号在两台设备上就能测**，
-  也不需要登录才能用一起听。
-
-**同步怎么保证两边一致。** 权威房间走的是一条**收敛**规则（`TogetherSync.reconcile`），而不是
-旧的"只跟随新命令"：每次轮询都朝服务端状态靠拢（换歌 / 对齐播放状态 / 超出容差才 seek），
-已经一致时自然什么都不做、零成本。唯一的例外是**自己操作后的一个往返窗口**：那段时间服务端还没
-记下这次操作，照着它做会把用户刚点的操作撤销，所以短暂忽略。
-
-**客户端只发"明确的操作"，绝不把推断出来的状态变化发出去。** 这直接消掉了旧版最大的坑：
-播放器**缓冲期间 `isPlaying` 是 `false`**，如果这时把"状态变化"当成一次操作上报，
-按播放会被读成暂停发出去——又回到"我点播放他那边暂停"。现在房间的播放状态由服务端持有，
-客户端不需要（也不能）自己广播状态。
-
-**旧的几条通路仍保留**（`together.base.url` / `together.mqtt.host` / `together.ntfy.url`，
-以及网易官方接口），但只在明确配置时启用，且都不是默认。它们是点对点的，历史教训见下，
-留作维护参考；**两台设备必须用同一条通路**，否则会各自待在一间空房间里而屏幕上什么都不说明。
-
-```properties
-# 服务端权威的一起听（默认；自己部署 github.com/TheSmallHanCat/NeriPlayer-LTW 后填自己的地址）
-together.ltw.url=https://neriplayer-ltw.huang2216555241.workers.dev
-# 以下都是点对点旧通路，配置了才会用
-together.base.url=
-together.token=
-together.mqtt.host=
-together.ntfy.url=
-```
-
-点对点旧通路的历史教训（保留，供维护者参考）：
-
-- **MQTT 用 WebSocket（`wss://…:8084`）而不是默认端口**：实测用户手机上 **1883 与 8883 都被拒绝**
-  （运营商按端口/协议特征拦截 MQTT），而 **8084 + TLS 立刻连上**，看起来就是普通加密流量。
-- **HTTP 发布/订阅的额度是每日消息配额、按来源地址共享。** 实测错误是
-  `42908 daily message quota reached`——**不是"太快"，是当天额度用完**，要等第二天。
-- **订阅必须等确认，没确认就重发。** 公共 broker 会**间歇性**收下 SUBSCRIBE 却不回 SUBACK
-  （实测：6 个全新订阅里 1 个要 9 次尝试、约 7 秒），表现为"房间里只有我一个人"。
-
-**为什么这些点对点通道会被换掉。** 它们共同的病根是"两台设备各自决定该听谁的"：
-`isPlaying` 在缓冲期读数不对、位置是快照需要补时、两端的"谁最后操作"没有可信依据——
-每一条都会让两边互相纠正。服务端权威不是把这些问题修得更好，而是让它们**不再存在**。
-
-**已实测（`LtwLiveTest`，跑的是线上真实服务，不是 mock）**：建房 → 第二个成员加入 →
-控制器 `PLAY`（监听端读成 playing，且进度由服务端推进）→ `PAUSE`（读成 paused 且不再推进）→
-成员发起 `REQUEST_SET_TRACK`（在控制器保持 socket 时被服务端采纳、房间切歌）。
-
-### 更新
-
-**应用内更新不需要任何服务器。** 版本信息和安装包都放在**本仓库的 GitHub Release** 上：GitHub 免费
-托管、免费分发，所以"云下发"里的"云"就是项目的发布页，没有要部署或维护的东西。本机实测过整条链路
-（DNS 15ms 内解析、`releases/latest` 约 600ms 返回、安装包会 302 到
-`release-assets.githubusercontent.com` 并能下载）。
-
-流程：**设置 → 关于 → 检查更新**（有新版本时会自动弹面板；也会每天静默检查一次）。下载完成后交给
-**系统安装器**安装——Android 会弹自己的确认框，从"未知来源"安装还需要你允许一次。这是 Android 的规矩：
-应用只能**请求**安装，不能静默替换自己。
-
-几点必须说清楚：
-
-- **不是静默更新。** 系统确认框一定会出现，这是刻意的设计。
-- **签名必须一致。** Android 拒绝安装签名不同的更新包，所以发布用的 keystore 不能换；
-  发布脚本会先校验签名、再核对包内版本号与 tag 是否一致，避免把错版本发出去。
-- **网络不通时保持安静。** GitHub 在部分移动网络下不通，所以检查失败**只在手动点的时候提示**，
-  自动检查失败不打扰、第二天再试。它也不参与启动流程。
-- **GPL 要求**：分发 APK 就要在同一渠道提供对应源码——仓库 + 对应的 tag 正好满足。
-
-发布一个新版本（需要 `gh` 已登录，见「快速开始」）：
-
-```bash
-python tools/publish_release.py                 # 打包 + 校验签名与版本 + 建 Release + 上传 APK
-python tools/publish_release.py --notes 说明.md # 带上更新说明（会显示在应用内的更新面板里）
-python tools/publish_release.py --dry-run       # 只做检查，不真的发布
-```
-
-配置在 `local.properties`（不进仓库，所以 fork 会指向自己的仓库，而不是替上游分发）：
-
-```properties
-update.repo.owner=你的GitHub用户名
-update.repo.name=仓库名
-```
-
-留空则整行"检查更新"不显示，而不是点了报错。
-
-
----
-
-## 项目结构
-
-```
-app/src/main/java/com/yunyin/music/
-├── MainActivity.kt      单 Activity，手写状态机式导航
-├── core/                模型与工具
-│   └── player/effects/  音频响应（RMS / 节拍检测）
-├── data/                接口、解析、缓存、本地存储
-│   ├── net/             NeteaseClient（所有 HTTP 调用）
-│   └── together/        一起听：传输层 + 同步规则
-│       └── ltw/         服务端权威的一起听（LTW 协议：HTTP + WebSocket）
-├── lyrics/              逐字歌词渲染器（vendored）
-├── playback/            ExoPlayer 封装、数据源解析、音频管线
-└── ui/                  Compose 界面
-    ├── background/      流动背景（AGSL + Palette）
-    ├── components/      通用组件（卡片、玻璃、队列、过渡）
-    ├── icons/           手绘矢量图标
-    ├── screens/         各页面
-    └── theme/           颜色、字体、形状
-
-server/                  一起听旧的传输通路（可选自建中继 + 协议端到端测试）
-```
-
----
-
-## 测试
-
-```bash
-python tools/run_suite.py           # 全套：静态校验 + 单元测试（推荐，一条命令跑完）
-./gradlew :app:testDebugUnitTest    # 只跑单元测试
-```
-
-**`tools/run_suite.py` 才是"全绿"的入口。** 它先跑 `tools/verify_*.py` 这些静态校验脚本
-（每条规则都先在**有 bug 的版本**上验证过能报警，否则一条永远通过的检查没有意义），
-**然后才真的执行 `testDebugUnitTest`**。之所以要强调这件事：之前这个套件只跑静态正则、
-**根本没跑过单元测试**，于是"216 项单测全过"和"28/28 套件通过"是可以同时成立却毫无保证的——
-直到它真的执行代码，才补上了这道防线。
-
-单元测试覆盖歌词解析与对齐、渲染折叠、逐字滚动的纯逻辑、位置插值、收藏合并规则、
-异步结果竞态、一起听（LTW 协议解析、服务端权威的收敛判定、邀请解析）、房间码与主题映射、
-房间状态的两类清理等，共 **285 项**。
-
-其中两个值得单独说明：
-
-- **`LtwLiveTest` 真的连线上服务**（不是 mock）：建房 → 第二人加入 → 控制器 `PLAY`/`PAUSE` →
-  成员 `REQUEST_SET_TRACK`，断言的是服务端返回的真实状态与进度。它是这次重做的关键——
-  之前每一版都坏在同一件事上：**读通路从没被端到端跑过**。默认跳过（`LTW_LIVE=1` 才跑），
-  因为单测不该依赖网络。
-- `TogetherTwoDeviceTest` 用**一台机器、一个模拟房间**跑两个 `TogetherSession`，覆盖点对点旧通路
-  的行为（加入者跟随、房主跟随暂停、状态稳定后不再互相纠正）。
-这个测试第一次运行就抓出一个真 bug——**本机没在播放时，`apply` 会提前返回**，
-于是刚进房间什么都不会发生，正是"房间里只有我 / 没有切换到起风了"。
-
-静态校验里有一条值得单独说明：`tools/verify_init_order.py` 检查**任何类都不允许把
-`by` 委托属性声明在 `init` 之后**。这不是风格要求——Kotlin 类体按源码顺序初始化，
-`init` 执行时它下面的委托属性还是 `null`，而 `init` 里的写入会因此抛 NPE 让进程在
-第一帧就死掉。3.8.0 起 App 打不开就是这个原因（`refreshLikedCount()` 写 `likedCount`，
-而 `likedCount` 声明在 250 行之后），所以这条规则被固化成了检查。
-
-静态校验里有一条值得单独说明：`tools/verify_init_order.py` 检查**任何类都不允许把
-`by` 委托属性声明在 `init` 之后**。这不是风格要求——Kotlin 类体按源码顺序初始化，
-`init` 执行时它下面的委托属性还是 `null`，而 `init` 里的写入会因此抛 NPE 让进程在
-第一帧就死掉。3.8.0 起 App 打不开就是这个原因（`refreshLikedCount()` 写 `likedCount`，
-而 `likedCount` 声明在 250 行之后），所以这条规则被固化成了检查。
-
-`server/` 下另有几个端到端测试，都模拟两个成员跑完整流程（都会真的连公共 broker/服务）：
-
-```bash
-node server/test_mqtt.js              # MQTT 报文：连接 / 订阅 / 发布 / 保留消息
-node server/test_mqtt_room.js         # 房间布局：每人独立槽位、通配订阅、离开清槽
-node server/test_mqtt_connect_wait.js # 连接是异步的：必须在连接就绪后再发布
-node server/test_mqtt_subscribe_retry.js # 订阅确认会丢：未确认必须重发
-node server/test_relay.js             # 自建中继的房间生命周期
-node server/test_token.js             # 中继的访问令牌
-node server/test_ntfy.js              # 可选 HTTP 通道的协议
-```
-
----
-
-## 许可证与致谢
-
-### 代码来源
-
-| 部分 | 来源 | 许可证 |
-|---|---|---|
-| 流动背景（着色器、painter、调色板、音频响应） | [NeriPlayer](https://github.com/cwuom/NeriPlayer) | **GPL-3.0** |
-| 逐字歌词渲染器（`lyrics/`，vendored） | [accompanist-lyrics-ui](https://github.com/6xingyv/accompanist-lyrics-ui) | Apache-2.0 |
-| 逐字歌词解析（`lyrics-core` 依赖） | [accompanist-lyrics-core](https://github.com/6xingyv/accompanist-lyrics-core) | Apache-2.0 |
-| 逐字歌词数据（运行时获取，不随仓库分发） | [AMLL TTML DB](https://github.com/amll-dev/amll-ttml-db) | **CC0-1.0** |
-| 词幕接入（`LyriconBridge` / `LyriconMapper`） | 本项目代码，依赖 [词幕 Lyricon](https://github.com/tomakino/lyricon) 的 Provider 接口 | Apache-2.0 |
-| 底栏 | [AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass) | Apache-2.0 |
-| 音质图标 | Google Material Symbols | Apache-2.0 |
-| 其余界面 / 数据 / 网络 / 播放 | 本项目 | 见下 |
-
-### 许可证
-
-由于流动背景与音频响应源自 **GPL-3.0** 的 NeriPlayer，
-按 GPL-3.0 的分发条款，**整个组合作品需以 GPL-3.0 分发**。
-本仓库因此以 **GPL-3.0** 发布，全文见 [LICENSE](LICENSE)。
-
-若希望改用 MIT / Apache-2.0 等宽松许可，需先将上述 GPL 来源的部分
-**独立重写**（而非修改注释）。
-
-### 第三方
-
-- **SF Pro** —— Apple 的字体，**不包含在本仓库**，请自行获取或替换（见「字体」）。
-- **SF Symbols 同款图标** —— 项目内为手绘矢量，命名对齐 SF Symbols，未使用 Apple 资产。
-- **NeteaseCloudMusicApi** —— 服务端由使用者自行部署。
-
----
-
-## 免责声明
-
-本项目为个人学习与技术研究项目，**非网易云音乐或 Apple 官方客户端**，
-与二者无任何关联。「网易云音乐」「Apple Music」「SF Pro」等名称与商标
-归各自权利人所有。
-
-**温馨提示：** 本项目不提供免费听歌功能，收听网易云会员歌曲需自行开通网易云音乐会员。
-
-请勿将本项目用于商业用途。使用者需自行承担因使用本软件产生的一切责任。
+GPL-3.0，全文见 [LICENSE](LICENSE)。

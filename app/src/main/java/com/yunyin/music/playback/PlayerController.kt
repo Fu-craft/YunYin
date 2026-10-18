@@ -29,6 +29,17 @@ data class PlaybackUiState(
     val connected: Boolean = false,
     val isPlaying: Boolean = false,
     val isBuffering: Boolean = false,
+    /**
+     * The transport's **intent** (`playWhenReady`) — whether the player has been asked to play —
+     * as opposed to [isPlaying], which is whether audio is coming out right now.
+     *
+     * The two disagree for the whole buffering window, and for anything that keys off "paused"
+     * that difference is visible: `isPlaying` reads `false` while a seek or a track change loads,
+     * so an animation driven by it dips down and straight back up on every buffer. Mirrored here
+     * so the UI can read the intent from the same snapshot as everything else, and republished on
+     * [Player.Listener.onPlayWhenReadyChanged] so it is current the moment the transport changes.
+     */
+    val playWhenReady: Boolean = false,
     val current: Track? = null,
     val positionMs: Long = 0L,
     val durationMs: Long = 0L,
@@ -68,6 +79,12 @@ data class PlaybackUiState(
 class PlayerController(
     context: Context,
     private val resolveStream: suspend (Long) -> NeteaseClient.SongUrl?,
+    /** Invoked with the new item's id; a source lookup for a different track is superseded (never the same one). */
+    private val onMediaItemChanged: (Long?) -> Unit = {},
+    /** Why a custom source failed for the track (for the trial notice), or null when none was consulted. */
+    private val sourceFailureNote: (Long) -> String? = { null },
+    /** Called with a track id when its playback failed, so the resolver can drop a cached (expired) URL. */
+    private val onStreamError: (Long) -> Unit = {},
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
@@ -97,6 +114,13 @@ class PlayerController(
         override fun onPlaybackStateChanged(playbackState: Int) = publish()
 
         /**
+         * The transport's intent changed (play/pause, including from the notification or a
+         * Bluetooth headset). Republish so `playWhenReady` reaches the UI without waiting for the
+         * next position tick — paused players do not tick.
+         */
+        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) = publish()
+
+        /**
          * Repeat and shuffle changes must republish.
          *
          * These were missing, which matters for any change that does not come from this class's own
@@ -115,13 +139,18 @@ class PlayerController(
             _state.value = _state.value.copy(trialEndMs = null, notice = null)
             publish()
             val trackId = mediaItem?.mediaId?.toLongOrNull()
+            // Only a lookup for a *different* track is superseded; see [onMediaItemChanged].
+            runCatching { onMediaItemChanged(trackId) }
             trialJob?.cancel()
             val requestId = ++trialRequestId
             trialJob = scope.launch { refreshTrialAndQueueMode(trackId, requestId = requestId) }
+            schedulePrefetch(trackId)
         }
 
+        /** Renders a specific reason instead of ExoPlayer's bare "Source error"; see [userMessageFor]. */
         override fun onPlayerError(error: PlaybackException) {
-            _state.value = _state.value.copy(error = error.message ?: "播放失败")
+            dropFailedStreamCached()
+            _state.value = _state.value.copy(error = userMessageFor(error))
         }
     }
 
@@ -181,11 +210,14 @@ class PlayerController(
             return
         }
         val trial = info.trialEndMs
+        // A source failure is not the same cause as "this account cannot play the track"; say which it was.
+        val sourceNote = if (trial != null) sourceFailureNote(trackId) else null
         _state.value = _state.value.copy(
             trialEndMs = trial,
             notice = when {
                 info.unavailable -> "《${_state.value.current?.name ?: ""}》无版权或已下架，无法播放"
-                trial != null -> "会员歌曲：仅可试听 ${trial / 1000} 秒"
+                trial != null -> "会员歌曲：仅可试听 ${trial / 1000} 秒" +
+                    (sourceNote?.let { "（$it）" } ?: "")
                 else -> null
             },
         )
@@ -284,40 +316,24 @@ class PlayerController(
         playQueue(if (queue.isEmpty()) listOf(track) else queue, index, autoPlay = autoPlay)
     }
 
-    /**
-     * Plays [track] from [queue], starting only when [autoPlay] asks, positioned at its index.
-     *
-     * [queue] is already resolved, so this is the single place a listen-together correction reaches the
-     * player. The play state is a parameter because the caller may be reproducing someone else's state: a
-     * room `GOTO` sent while the sender was paused must land paused, and `playQueue`'s unconditional
-     * `play()` would silently override exactly that.
-     */
-    fun playWithinQueue(track: Track, queue: List<Track>, autoPlay: Boolean) {
-        val ordered = queue.ifEmpty { listOf(track) }
-        val index = ordered.indexOfFirst { it.id == track.id }.takeIf { it >= 0 } ?: 0
-        playQueue(ordered, index, autoPlay = autoPlay)
-    }
-
     fun next() = controller?.let { it.seekToNextMediaItem(); publish() }
     fun previous() = controller?.let { it.seekToPreviousMediaItem(); publish() }
 
+    /**
+     * Whether the transport has been **asked** to play, as opposed to whether audio is coming out.
+     *
+     * The two disagree for the whole time the player is filling its buffer, and that window is exactly when
+     * a user presses the button again. Deciding on `isPlaying` made a second press take the opposite of
+     * what the user did: the player was buffering (`isPlaying == false`), so a press that pauses was read
+     * as a press that plays.
+     */
+    val transportPlaying: Boolean get() = controller?.playWhenReady ?: false
+
     fun togglePlayPause() {
         val mediaController = controller ?: return
-        if (mediaController.isPlaying) mediaController.pause() else mediaController.play()
-        publish()
-    }
-
-    /**
-     * Discrete play/pause, for callers that must set a state rather than flip one.
-     *
-     * Listen-together needs these: the peer's state is "playing" or "paused", and toggling would
-     * invert whatever this device happens to be doing — right only half the time, and visibly wrong
-     * the other half. Idempotent, so an unchanged state is a no-op.
-     */
-    fun setPlaying(playing: Boolean) {
-        val mediaController = controller ?: return
-        if (mediaController.isPlaying == playing) return
-        if (playing) mediaController.play() else mediaController.pause()
+        // `playWhenReady`, not `isPlaying`: see [transportPlaying]. A toggle has to invert the *intent*, or
+        // the button does nothing while the player buffers and then inverts itself once audio starts.
+        if (mediaController.playWhenReady) mediaController.pause() else mediaController.play()
         publish()
     }
 
@@ -427,6 +443,7 @@ class PlayerController(
         _state.value = _state.value.copy(
             isPlaying = mediaController.isPlaying,
             isBuffering = mediaController.playbackState == Player.STATE_BUFFERING,
+            playWhenReady = mediaController.playWhenReady,
             current = current,
             positionMs = position,
             durationMs = duration.coerceAtLeast(0L),
@@ -454,9 +471,57 @@ class PlayerController(
 
     fun release() {
         stopPositionTicker()
+        prefetchJob?.cancel()
+        prefetchTrackId = null
         controller?.removeListener(listener)
         controller?.release()
         controller = null
+    }
+
+    private var prefetchJob: Job? = null
+    private var prefetchTrackId: Long? = null
+
+    /**
+     * Warms the next queue item's URL while the current track plays.
+     *
+     * Deliberately not part of the trial/lookup machinery: it runs on the same scope but is never passed to
+     * `cancelPending`, so it cannot cancel or be cancelled by the live lookup (see [PlaybackPrefetchPolicy]). Its
+     * result is discarded here; the win is that the real transition's resolution hits the repository cache.
+     */
+    private fun schedulePrefetch(currentTrackId: Long?) {
+        val state = _state.value
+        val nextId = PlaybackPrefetchPolicy.nextTrackId(state.queue.map { it.id }, state.index) ?: return
+        if (!PlaybackPrefetchPolicy.shouldStart(currentTrackId, nextId, prefetchTrackId)) return
+        prefetchJob?.cancel()
+        prefetchTrackId = nextId
+        prefetchJob = scope.launch {
+            try {
+                delay(PlaybackPrefetchPolicy.PREFETCH_DELAY_MS)
+                runCatching { resolveStream(nextId) }
+            } finally {
+                if (prefetchTrackId == nextId) prefetchTrackId = null
+            }
+        }
+    }
+
+    /** Maps an ExoPlayer failure to a message that says what actually failed (see the resolver in PlaybackService). */
+    private fun userMessageFor(error: PlaybackException): String {
+        val causeMessage = error.cause?.message?.takeIf { it.isNotBlank() }
+        if (causeMessage != null && causeMessage.contains("音源")) return causeMessage
+        return when (error.errorCode) {
+            PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> "音源地址无法加载（HTTP 错误），可能是音源地址已失效"
+            PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+            PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT -> "网络错误，无法加载音源地址"
+            PlaybackException.ERROR_CODE_IO_INVALID_HTTP_CONTENT_TYPE -> "音源返回的地址不是有效音频"
+            PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED,
+            PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED -> "音源返回的音频无法解析（可能不是音频文件）"
+            else -> causeMessage ?: error.message ?: "播放失败"
+        }
+    }
+
+    /** Drops the cached URL for the failed track so the next attempt resolves fresh (see [onStreamError]). */
+    private fun dropFailedStreamCached() {
+        runCatching { controller?.currentMediaItem?.mediaId?.toLongOrNull()?.let(onStreamError) }
     }
 
     private companion object {

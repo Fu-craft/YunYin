@@ -7,6 +7,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import com.yunyin.music.ui.theme.Motion
 
 /**
  * Cross-fades between content states.
@@ -38,8 +39,10 @@ fun <T> CrossfadeContent(
         targetState = targetState,
         modifier = modifier,
         transitionSpec = {
-            (fadeIn(tween(durationMillis)) togetherWith
-                fadeOut(tween((durationMillis - 60).coerceAtLeast(1)))) using null
+            (
+                fadeIn(tween(durationMillis, easing = Motion.EaseOut)) togetherWith
+                    fadeOut(tween((durationMillis - 60).coerceAtLeast(1), easing = Motion.EaseOut))
+                ) using null
         },
         label = label,
     ) { state ->

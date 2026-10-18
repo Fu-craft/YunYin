@@ -13,6 +13,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -22,11 +23,11 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Row
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -42,18 +43,16 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.yunyin.music.core.NetResult
 import com.yunyin.music.data.SettingsStore
 import com.yunyin.music.data.ShareText
-import com.yunyin.music.data.together.TogetherLocalAction
 import com.yunyin.music.playback.LocalPlayerController
 import com.yunyin.music.playback.PlaybackUiState
 import com.yunyin.music.ui.AppViewModel
@@ -62,31 +61,39 @@ import com.yunyin.music.ui.AudioQuality
 import com.yunyin.music.ui.CollectionUiState
 import com.yunyin.music.ui.PlayerViewModel
 import com.yunyin.music.ui.components.CrossfadeContent
+import com.yunyin.music.ui.components.FloatingChromeBottomGap
+import com.yunyin.music.ui.components.FloatingChromePlaceholder
 import com.yunyin.music.ui.components.FloatingMiniPlayer
 import com.yunyin.music.ui.components.FloatingTabBar
-import com.yunyin.music.ui.components.PlayerTab
-import com.yunyin.music.ui.components.QueueSheet
+import com.yunyin.music.ui.components.LocalChromePlaceholderContentAlpha
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.yunyin.music.ui.components.PlayerTab
+import com.yunyin.music.ui.components.QueueSheet
+import com.yunyin.music.ui.components.TabBarInset
 import com.yunyin.music.ui.screens.CollectionScreen
 import com.yunyin.music.ui.screens.ArtistScreen
 import com.yunyin.music.ui.screens.HomeScreen
 import com.yunyin.music.ui.screens.LibraryScreen
 import com.yunyin.music.ui.screens.LoginScreen
 import com.yunyin.music.ui.screens.PROJECT_URL
+import com.yunyin.music.ui.download.DownloadController
+import com.yunyin.music.ui.download.LocalDownloadController
 import com.yunyin.music.ui.screens.PlayerScreen
+import com.yunyin.music.ui.screens.LxSourceUrlSheet
 import com.yunyin.music.ui.screens.ProfileEditSheet
 import com.yunyin.music.ui.screens.PlayerArtworkCorner
 import com.yunyin.music.ui.screens.SearchScreen
+import com.yunyin.music.data.lxsource.LxImportResult
+import com.yunyin.music.data.lxsource.LxToggleResult
 import com.yunyin.music.ui.screens.SettingsScreen
 import com.yunyin.music.ui.screens.SplashScreen
-import com.yunyin.music.ui.screens.TogetherSheet
 import com.yunyin.music.ui.screens.PlayerStyleSheet
 import com.yunyin.music.ui.PlayerStyle
-import com.yunyin.music.ui.components.TogetherPair
 import com.yunyin.music.ui.screens.UpdateSheet
 import com.yunyin.music.ui.theme.AmllTheme
 import com.yunyin.music.ui.theme.AppTheme
+import com.yunyin.music.ui.theme.Motion
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -95,11 +102,11 @@ import kotlinx.coroutines.launch
 /**
  * Single-activity host.
  *
- * Navigation is a small explicit state machine rather than a nav graph: there are three
- * tabs, two full-screen presentations (player, settings/login) and an optional collection
- * page, so a graph would add indirection without removing a decision. Overlays are
- * animated in and out while the tab content stays mounted, which is what makes the player
- * feel like it rises over the app instead of replacing it.
+ * Navigation is a small explicit state machine rather than a nav graph: there are two tabs in the
+ * bottom bar (home and library), a search screen reached from the home screen's search box, two
+ * full-screen presentations (player, settings/login) and an optional collection page, so a graph would
+ * add indirection without removing a decision. Overlays are animated in and out while the tab content
+ * stays mounted, which is what makes the player feel like it rises over the app instead of replacing it.
  */
 class MainActivity : ComponentActivity() {
 
@@ -178,10 +185,6 @@ class MainActivity : ComponentActivity() {
         // where it is first needed.
         val updateState by container.update.state.collectAsState()
 
-        // The listen-together room, as a strip the player draws above its cover: two faces under one
-        // headphone band. Collected here because the player is composed before the sheet is.
-        val togetherState by appViewModel.togetherState.collectAsState()
-
         var tab by remember { mutableStateOf(PlayerTab.Home) }
         var showPlayer by remember { mutableStateOf(false) }
         var showLyrics by remember { mutableStateOf(false) }
@@ -208,7 +211,6 @@ class MainActivity : ComponentActivity() {
         // straight from the store would change only on the next launch.
         var playerStyle by remember { mutableStateOf(PlayerStyle.from(container.settings.playerStyle)) }
         var showPlayerStyle by remember { mutableStateOf(false) }
-        var showTogether by remember { mutableStateOf(false) }
 
         // ------------------------------------------------------------ profile
         var showProfileEdit by remember { mutableStateOf(false) }
@@ -250,6 +252,80 @@ class MainActivity : ComponentActivity() {
             if (uri != null) {
                 scope.launch {
                     if (container.profile.setBackground(context, uri)) profileRevision++
+                }
+            }
+        }
+
+        // ------------------------------------------------------------ 自定义音源
+        //
+        // Imported sources are a small list read once and refreshed after every change. The import itself is a
+        // suspend call: it runs the picked script in the JS engine and waits for its `inited` event, which is
+        // the only way to know the source actually works. `OpenDocument` gives a readable content:// URI with no
+        // storage permission, the same arrangement the photo pickers above use.
+        var lxSources by remember { mutableStateOf(container.lxSources.list()) }
+        var lxImporting by remember { mutableStateOf(false) }
+        var lxImportMessage by remember { mutableStateOf<String?>(null) }
+        // 从链接导入 dialog state: the URL being typed and whether the dialog is open. Kept out of
+        // LxSourceUrlSheet so the dialog stays a pure function of its inputs.
+        var showLxUrlSheet by remember { mutableStateOf(false) }
+        var lxUrlDraft by remember { mutableStateOf("") }
+        fun lxResultMessage(result: LxImportResult): String = when (result) {
+            is LxImportResult.Success -> {
+                val imported = "已导入「${result.source.header.name}」"
+                val key = result.collision
+                val base = if (key == null) {
+                    imported
+                } else {
+                    "$imported，但 ${key.wire} 已被「${result.collidedWith ?: "另一个脚本"}」占用，未启用"
+                }
+                // Say when a mirror delivered the script: the origin row below still shows the pasted address.
+                result.viaMirror?.let { "$base（已通过镜像导入：$it）" } ?: base
+            }
+
+            is LxImportResult.Failure -> result.message
+        }
+
+        fun importLxFromUrl() {
+            if (lxImporting) return
+            val url = lxUrlDraft.trim()
+            lxImporting = true
+            lxImportMessage = null
+            scope.launch {
+                // Policy, download and validation all live in the manager: the dialog only supplies the URL.
+                // The manager itself is already a "return an outcome, never throw" boundary; this second guard is
+                // here because the import runs from a settings tap — an exception escaping the coroutine is an app
+                // crash, and there is no reason to risk that for a download.
+                try {
+                    val result = container.lxSources.importFromUrl(url)
+                    lxImportMessage = lxResultMessage(result)
+                    if (result is LxImportResult.Success) {
+                        // Only a successful import closes the dialog; a failure keeps the URL there to fix.
+                        showLxUrlSheet = false
+                        lxUrlDraft = ""
+                    }
+                } catch (t: Throwable) {
+                    lxImportMessage = "导入时发生内部错误：${(t.message ?: t.javaClass.simpleName).take(120)}"
+                    runCatching {
+                        container.lxLog.record("从链接导入异常", t.stackTraceToString())
+                    }
+                } finally {
+                    lxImporting = false
+                    // Listing is a file read; if it fails the old list stays on screen instead of crashing.
+                    runCatching { lxSources = container.lxSources.list() }
+                }
+            }
+        }
+        val lxScriptPicker = rememberLauncherForActivityResult(
+            ActivityResultContracts.OpenDocument(),
+        ) { uri: Uri? ->
+            if (uri != null) {
+                lxImporting = true
+                lxImportMessage = null
+                scope.launch {
+                    val result = container.lxSources.import(uri)
+                    lxImporting = false
+                    lxImportMessage = lxResultMessage(result)
+                    lxSources = container.lxSources.list()
                 }
             }
         }
@@ -357,13 +433,6 @@ class MainActivity : ComponentActivity() {
         fun play(track: com.yunyin.music.core.Track, queue: List<com.yunyin.music.core.Track>) {
             val safeQueue = queue.ifEmpty { listOf(track) }
             val index = safeQueue.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
-            // Starting a track from a list is a user action on playback, so the room must yield to it
-            // just as it does for next/previous. Claimed before the player call so the new song is
-            // published (and wins) rather than being pulled back to the peer's track. The action is
-            // named because the official protocol distinguishes a track change from a seek, and the
-            // queue goes with it so a joiner gets the list this track belongs to.
-            container.together.noteUserAction(TogetherLocalAction.Goto)
-            appViewModel.publishTogetherQueue(safeQueue.map { it.id })
             runCatching { container.player.playQueue(safeQueue, index) }
                 .onSuccess {
                     showPlayer = true
@@ -395,22 +464,34 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        Box(Modifier.fillMaxSize().background(AppTheme.palette.background)) {
-            /**
-             * Records the app's content so the floating chrome can sample it.
-             *
-             * `layerBackdrop` makes the subtree draw into a shared layer; `drawBackdrop` on the glass
-             * then reads it. The chrome itself is deliberately **outside** this subtree — including it
-             * would put the bars into the layer they sample, so they would blur themselves.
-             */
-            val bottomBackdrop = rememberLayerBackdrop()
+        // The glass's pixel source: a Compose layer recorded from the page content — `LayerBackdrop`, the
+        // library's documented approach (kyant.gitbook.io/backdrop, "Glass Bottom Bar"). The chrome is
+        // composed **outside** that layer, so it can never sample itself, and no draw gate is needed: a gate
+        // was tried, Compose baked its "draw nothing" into the display list, and the bar went blank.
+        // The documented form (kyant.gitbook.io/backdrop, "Glass Bottom Bar", step 2):
+        //
+        //     rememberLayerBackdrop { drawRect(backgroundColor); drawContent() }
+        //
+        // The background **must be painted into the backdrop**. Ours used to live on an ancestor Box, i.e.
+        // outside the recorded layer, so everywhere the content did not paint the layer was transparent — and
+        // a RenderEffect over a transparent layer produces nothing to see, which is what "the blur does
+        // nothing" looks like from the outside. Drawing the page colour first gives the blur an actual field.
+        val pageBackground = AppTheme.palette.background
+        val bottomBackdrop = rememberLayerBackdrop {
+            drawRect(pageBackground)
+            drawContent()
+        }
 
+
+        Box(Modifier.fillMaxSize().background(AppTheme.palette.background)) {
             // ------------------------------------------------ primary content
             Box(Modifier.fillMaxSize().layerBackdrop(bottomBackdrop)) {
                 Box(Modifier.fillMaxSize()) {
-                    // Cross-fade between tabs: switching previously swapped the whole screen in a
-                    // single frame, which read as a flicker.
-                    CrossfadeContent(targetState = tab, label = "tab") { activeTab ->
+                    // Cross-fade between screens. Kept — an instant swap read as a flicker — but
+                    // short: switching is a tens-of-times-a-day action, so it must not read as a
+                    // transition. 120ms in / 60ms out keeps the overlap of two screens below the
+                    // point where two artworks are legibly superimposed.
+                    CrossfadeContent(targetState = tab, durationMillis = 120, label = "tab") { activeTab ->
                     when (activeTab) {
                         PlayerTab.Home -> HomeScreen(
                             state = homeState,
@@ -431,6 +512,7 @@ class MainActivity : ComponentActivity() {
                             onClear = { appViewModel.clearSearch() },
                             onRemoveHistory = appViewModel::removeHistory,
                             onTrackClick = { play(it, searchState.results) },
+                            onLoadMore = appViewModel::loadMoreSearch,
                         )
 
                         PlayerTab.Library -> LibraryScreen(
@@ -463,46 +545,85 @@ class MainActivity : ComponentActivity() {
             }
 
             /**
-             * Floating chrome: frosted-blur panels that float above the content.
+             * Floating chrome: liquid-glass panels that float above the content.
              *
-             * Overlaid rather than laid out in a column, which is what makes it float — the lists scroll
-             * underneath and their colour comes through the material. The bottom padding of each screen
-             * keeps its last rows clear of the bars. `bottomBackdrop` records that content and the panels
-             * diffuse it, so what shows through is a blurred colour field rather than readable rows.
+             * **One horizontal row**, as the reference's chrome is: the tab capsule wraps its two tabs on
+             * the left and the right-hand weighted slot holds the mini player — or, while nothing is
+             * loaded, the placeholder capsule of the same glass and height — so the row reads as one
+             * line in either state. Overlaid rather than laid out in a column, which is what makes it
+             * float — the lists scroll underneath and their colour comes through the material. The
+             * bottom padding of each screen keeps its last rows clear of the chrome. `backdrop` captures
+             * the window underneath them, and both panels draw that same capture through the reference's
+             * material, so what shows through is a blurred field rather than readable rows.
              */
-            Column(
+            Row(
                 Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
                     .navigationBarsPadding()
+                    // Inset once, here, rather than on each panel: the bar and the mini player share
+                    // the same left/right margin now that they share the row.
+                    .padding(horizontal = TabBarInset)
                     .padding(bottom = FloatingChromeBottomGap),
-                verticalArrangement = Arrangement.spacedBy(FloatingChromeGap),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(FloatingChromeGap),
             ) {
-                // Mini player floats directly above the tab bar whenever something is loaded.
-                //
-                // Kept composed while the player is open: the expand transition grows the player's cover
-                // *out of this capsule's artwork*, so the source has to still be measured for the start
-                // of that animation to be anchored to it. It does not need hiding — the player screen is
-                // drawn after it and is opaque once the transition completes.
-                AnimatedVisibility(
-                    visible = hasTrack,
-                    enter = fadeIn(tween(200)) + slideInVertically { it / 2 },
-                    exit = fadeOut(tween(160)) + slideOutVertically { it / 2 },
-                ) {
-                    FloatingMiniPlayer(
-                        state = miniPlayerState,
-                        loader = container.artwork,
-                        backdrop = bottomBackdrop,
-                        onExpand = { showPlayer = true },
-                        onTogglePlay = container.player::togglePlayPause,
-                    )
-                }
-
+                // The bar wraps its two tabs, so it takes only the width its slots need.
                 FloatingTabBar(
                     selected = tab,
                     onSelect = { tab = if (showSettings) tab else it; showSettings = false },
                     backdrop = bottomBackdrop,
                 )
+
+                // The right half of the row: the mini player when a track is loaded, and the placeholder
+                // capsule when it is not. The weighted slot itself is unconditional — it is always
+                // occupied, so the row never collapses to just the bar and never leaves a gap waiting
+                // for a card (the empty right-hand side the user circled).
+                //
+                // 0 while only the placeholder is showing, 1 while the mini player is fully in. The two
+                // contents cross-fade against each other — the placeholder's content alpha is the exact
+                // complement of the card's — so no label ghosts through the card, while the glass
+                // (the same material on both panels) never changes density.
+                val chromeSwap by animateFloatAsState(
+                    targetValue = if (hasTrack) 1f else 0f,
+                    animationSpec = tween(durationMillis = if (hasTrack) 200 else 160),
+                    label = "chrome-swap",
+                )
+                Box(Modifier.weight(1f)) {
+                    // Under the card, always: the same glass, the same weighted width and the same
+                    // height, so the slot reads as one line before the first track and the card's exit
+                    // fades down onto a panel instead of revealing a hole. Its material stays opaque
+                    // through the swap; only the label/icon fade (see `chromeSwap`).
+                    CompositionLocalProvider(
+                        LocalChromePlaceholderContentAlpha provides { 1f - chromeSwap },
+                    ) {
+                        FloatingChromePlaceholder(backdrop = bottomBackdrop)
+                    }
+
+                    // Kept composed for the duration of its exit animation: the placeholder is the
+                    // reference for the player's entrance, and an exit running on nothing would read as
+                    // a jump. Both children are exactly the row's height, so the transition can never
+                    // resize the row in either state.
+                    // Fully qualified because this call sits inside the Box's scope, where the bare
+                    // name also resolves to the RowScope overload the outer `Row` makes implicit — and
+                    // that overload cannot take an implicit receiver through the Box. The unscoped
+                    // overload is the one whose entrance grows from nothing without claiming a slot.
+                    // The slide shares the fade's clock — one surface, one duration — and `it / 2` is
+                    // half the row's height, so the card rises out of the slot rather than across it.
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = hasTrack,
+                        enter = fadeIn(tween(200)) + slideInVertically(tween(200)) { it / 2 },
+                        exit = fadeOut(tween(160)) + slideOutVertically(tween(160)) { it / 2 },
+                    ) {
+                        FloatingMiniPlayer(
+                            state = miniPlayerState,
+                            loader = container.artwork,
+                            backdrop = bottomBackdrop,
+                            onExpand = { showPlayer = true },
+                            onTogglePlay = { container.player.togglePlayPause() },
+                        )
+                    }
+                }
             }
 
             // ------------------------------------------------ overlays
@@ -517,8 +638,10 @@ class MainActivity : ComponentActivity() {
 
             AnimatedVisibility(
                 visible = collectionState != null,
-                enter = slideInVertically(tween(320)) { it } + fadeIn(tween(200)),
-                exit = slideOutVertically(tween(260)) { it } + fadeOut(tween(160)),
+                enter = slideInVertically(tween(320, easing = Motion.EaseOut)) { it } +
+                    fadeIn(tween(200, easing = Motion.EaseOut)),
+                exit = slideOutVertically(tween(260, easing = Motion.EaseOut)) { it } +
+                    fadeOut(tween(160, easing = Motion.EaseOut)),
             ) {
                 val state = lastCollection
                 if (state != null) {
@@ -558,8 +681,8 @@ class MainActivity : ComponentActivity() {
 
             AnimatedVisibility(
                 visible = showSettings,
-                enter = slideInVertically(tween(320)) { it },
-                exit = slideOutVertically(tween(280)) { it },
+                enter = slideInVertically(tween(320, easing = Motion.EaseOut)) { it },
+                exit = slideOutVertically(tween(280, easing = Motion.EaseOut)) { it },
             ) {
                 SettingsScreen(
                     onClearLyricsCache = {
@@ -617,15 +740,6 @@ class MainActivity : ComponentActivity() {
                             Toast.makeText(context, "崩溃日志已复制", Toast.LENGTH_SHORT).show()
                         }
                     },
-                    onCopyTogetherLog = {
-                        val report = com.yunyin.music.data.together.TogetherLog.report()
-                        val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
-                            as android.content.ClipboardManager
-                        clipboard.setPrimaryClip(
-                            android.content.ClipData.newPlainText("一起听日志", report),
-                        )
-                        Toast.makeText(context, "一起听日志已复制", Toast.LENGTH_SHORT).show()
-                    },
                     updateState = updateState,
                     updateConfigured = container.update.configured,
                     onCheckUpdate = {
@@ -636,6 +750,96 @@ class MainActivity : ComponentActivity() {
                     },
                     playerStyle = playerStyle,
                     onShowPlayerStyle = { showPlayerStyle = true },
+                    lxSources = lxSources,
+                    lxImporting = lxImporting,
+                    lxImportMessage = lxImportMessage,
+                    // Recomputed when Settings opens or after an import attempt, because the file is written by
+                    // the failure path — a value captured once would never show the row it exists for.
+                    lxErrorLogAvailable = remember(showSettings, lxImportMessage) {
+                        container.lxSources.lastError() != null
+                    },
+                    onCopyLxErrorLog = {
+                        val detail = container.lxSources.lastError()
+                        if (detail == null) {
+                            Toast.makeText(context, "没有音源错误日志", Toast.LENGTH_SHORT).show()
+                        } else {
+                            val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+                                as android.content.ClipboardManager
+                            clipboard.setPrimaryClip(
+                                android.content.ClipData.newPlainText("音源错误日志", detail),
+                            )
+                            Toast.makeText(context, "音源错误日志已复制", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    onImportLxSource = {
+                        // `*/*` rather than a JS mime type: a source is distributed as a plain `.js` file and
+                        // many providers report it as text/plain or octet-stream, so filtering by mime would
+                        // hide the file the user came to pick. The content is validated after reading it.
+                        lxScriptPicker.launch(arrayOf("*/*"))
+                    },
+                    onImportLxSourceFromUrl = {
+                        // Opening the dialog is the tap the device crashed on. Nothing here can legitimately throw,
+                        // but this is the UI boundary for a brand-new path: a failure becomes a message, not a crash.
+                        runCatching {
+                            lxUrlDraft = ""
+                            lxImportMessage = null
+                            showLxUrlSheet = true
+                        }.onFailure { t ->
+                            lxImportMessage = "无法打开导入窗口：${(t.message ?: t.javaClass.simpleName).take(120)}"
+                            runCatching { container.lxLog.record("打开从链接导入失败", t.stackTraceToString()) }
+                        }
+                    },
+                    onRefreshLxSource = { id ->
+                        scope.launch {
+                            try {
+                                val source = lxSources.firstOrNull { it.id == id } ?: return@launch
+                                lxImporting = true
+                                lxImportMessage = null
+                                lxImportMessage = lxResultMessage(container.lxSources.refreshFromUrl(source))
+                            } catch (t: Throwable) {
+                                lxImportMessage = "导入时发生内部错误：${(t.message ?: t.javaClass.simpleName).take(120)}"
+                                runCatching {
+                                    container.lxLog.record("重新拉取音源异常", t.stackTraceToString())
+                                }
+                            } finally {
+                                lxImporting = false
+                                runCatching { lxSources = container.lxSources.list() }
+                            }
+                        }
+                    },
+                    onToggleLxSource = { id, enabled ->
+                        scope.launch {
+                            lxImportMessage = when (val result = container.lxSources.setEnabled(id, enabled)) {
+                                is LxToggleResult.Collision ->
+                                    "${result.key.wire} 已被「${result.otherName}」占用，同一音源只能启用一个脚本"
+                                else -> null
+                            }
+                            lxSources = container.lxSources.list()
+                        }
+                    },
+                    onDeleteLxSource = { id ->
+                        scope.launch {
+                            container.lxSources.delete(id)
+                            lxSources = container.lxSources.list()
+                        }
+                    },
+                )
+            }
+
+            // 从链接导入 dialog. A failure keeps it open with the URL and the specific reason; a success closes it
+            // and the section underneath shows the usual "已导入「…」" line.
+            if (showLxUrlSheet) {
+                LxSourceUrlSheet(
+                    url = lxUrlDraft,
+                    importing = lxImporting,
+                    message = lxImportMessage,
+                    onUrlChange = { lxUrlDraft = it },
+                    onImport = { importLxFromUrl() },
+                    onDismiss = {
+                        showLxUrlSheet = false
+                        lxUrlDraft = ""
+                        lxImportMessage = null
+                    },
                 )
             }
 
@@ -700,8 +904,8 @@ class MainActivity : ComponentActivity() {
 
             AnimatedVisibility(
                 visible = showLogin,
-                enter = slideInVertically(tween(320)) { it },
-                exit = slideOutVertically(tween(280)) { it },
+                enter = slideInVertically(tween(320, easing = Motion.EaseOut)) { it },
+                exit = slideOutVertically(tween(280, easing = Motion.EaseOut)) { it },
             ) {                LoginScreen(
                     currentAccount = account,
                     client = container.client,
@@ -727,13 +931,23 @@ class MainActivity : ComponentActivity() {
             // gives the player its motion.
             AnimatedVisibility(
                 visible = showPlayer,
-                enter = slideInVertically(tween(380)) { it } + fadeIn(tween(220)),
-                exit = slideOutVertically(tween(320)) { it } + fadeOut(tween(200)),
+                enter = slideInVertically(tween(380, easing = Motion.EaseOut)) { it } + fadeIn(tween(220, easing = Motion.EaseOut)),
+                exit = slideOutVertically(tween(320, easing = Motion.EaseOut)) { it } + fadeOut(tween(200, easing = Motion.EaseOut)),
             ) {
                 // Collected here, inside the player's own branch, so the 4x/second position tick
                 // invalidates only the player screen and never the browsing tabs behind it.
                 val playback by container.player.state.collectAsState()
-                PlayerScreen(
+                // One shared controller for the player chrome and its action sheet. The state map lives in the
+                // container, so a download survives navigating away from the player (and the sheet reflects it).
+                val downloadStates by container.downloads.states.collectAsState()
+                CompositionLocalProvider(
+                    LocalDownloadController provides DownloadController(
+                        states = downloadStates,
+                        onDownload = { track -> container.downloads.download(track) },
+                        onCancel = { trackId -> container.downloads.cancel(trackId) },
+                    ),
+                ) {
+                    PlayerScreen(
                     state = playback,
                     cover = playerViewModel.coverBitmap,
                     palette = playerViewModel.palette,
@@ -753,50 +967,14 @@ class MainActivity : ComponentActivity() {
                     showLyrics = showLyrics,
                     onToggleLyrics = { showLyrics = !showLyrics },
                     onCollapse = { showPlayer = false },
-                    // Every one of these is a *user* action on playback, so each must claim priority in
-                    // the room (`noteUserAction`) before it runs. The room yields to whoever acted
-                    // last; without the claim the peer's previous state still disagrees, reads as out
-                    // of sync, and undoes the action within a poll — which is why "加入房间后无法切歌".
-                    // The action is also named: the official protocol has separate commands for a
-                    // track change, a seek and a play/pause, and sending the wrong one makes the peer
-                    // reload a song it is already playing.
-                    // These are the UI's callbacks only: a correction applied *from* the room calls the
-                    // player directly, so it cannot claim priority against itself.
-                    onTogglePlay = {
-                        // The *resulting* state decides which command to send; `isPlaying` here is the
-                        // state being left, not the one being entered.
-                        val willPause = container.player.state.value.isPlaying
-                        container.together.noteUserAction(
-                            if (willPause) TogetherLocalAction.Pause else TogetherLocalAction.Play,
-                        )
-                        container.player.togglePlayPause()
-                    },
-                    onNext = {
-                        container.together.noteUserAction(TogetherLocalAction.Goto)
-                        container.player.next()
-                    },
-                    onPrevious = {
-                        container.together.noteUserAction(TogetherLocalAction.Goto)
-                        container.player.previous()
-                    },
-                    onSeek = { positionMs ->
-                        container.together.noteUserAction(TogetherLocalAction.Seek)
-                        container.player.seekTo(positionMs)
-                    },
-                    onCycleRepeat = container.player::cycleRepeat,
-                    onToggleShuffle = container.player::toggleShuffle,
+                    onTogglePlay = { container.player.togglePlayPause() },
+                    onNext = { container.player.next() },
+                    onPrevious = { container.player.previous() },
+                    onSeek = { positionMs -> container.player.seekTo(positionMs) },
+                    onCycleRepeat = { container.player.cycleRepeat() },
+                    onToggleShuffle = { container.player.toggleShuffle() },
                     onShowQueue = { showQueue = true },
                     onShowSettings = { showSettings = true; showPlayer = false },
-                    // Hidden entirely when no relay is configured: without one the feature cannot
-                    // work, so offering the row would only produce a failure.
-                    onListenTogether = if (appViewModel.togetherState.value.configured) {
-                        // Always the sheet: it owns creating, joining, inviting and leaving. The room
-                        // itself is shown on the player above the cover, so there is no separate screen to
-                        // navigate to.
-                        { showTogether = true }
-                    } else {
-                        null
-                    },
                     onArtistClick = { name ->
                         // The artist page sits above the player: closing it returns to where the tap
                         // happened, which is the least surprising layering for a page reached mid-play.
@@ -827,18 +1005,8 @@ class MainActivity : ComponentActivity() {
                     },
                     positionProvider = container.player::positionMsNow,
                     playerStyle = playerStyle,
-                    together = if (togetherState.inRoom) {
-                        val peer = togetherState.peers.maxByOrNull { it.updatedAt }
-                            ?: togetherState.peers.firstOrNull()
-                        TogetherPair(
-                            ownAvatarUrl = account?.takeIf { !it.isAnonymous }?.avatarUrl,
-                            ownAvatar = avatarBitmap,
-                            peerAvatarUrl = peer?.avatarUrl,
-                        )
-                    } else {
-                        null
-                    },
                 )
+                }
             }
 
             // Transient messages from the player (a refused like, a failed share).
@@ -846,6 +1014,15 @@ class MainActivity : ComponentActivity() {
                 val message = playerViewModel.notice ?: return@LaunchedEffect
                 Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
                 playerViewModel.clearNotice()
+            }
+
+            // Download results are a Toast, matching the app's existing transient-message language. The manager emits
+            // one per event ("正在下载…", "已保存到 …", "下载失败：…", "已取消下载") so a tap can never be a silent
+            // no-op — the sheet closes on tap, so a changed row label alone was not visible enough.
+            LaunchedEffect(Unit) {
+                container.downloads.notices.collect { message ->
+                    Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                }
             }
 
             // The artist page, layered over the player.
@@ -858,8 +1035,10 @@ class MainActivity : ComponentActivity() {
 
             AnimatedVisibility(
                 visible = artistState != null,
-                enter = slideInVertically(tween(320)) { it } + fadeIn(tween(200)),
-                exit = slideOutVertically(tween(260)) { it } + fadeOut(tween(160)),
+                enter = slideInVertically(tween(320, easing = Motion.EaseOut)) { it } +
+                    fadeIn(tween(200, easing = Motion.EaseOut)),
+                exit = slideOutVertically(tween(260, easing = Motion.EaseOut)) { it } +
+                    fadeOut(tween(160, easing = Motion.EaseOut)),
             ) {
                 val artist = lastArtist
                 if (artist != null) {
@@ -891,62 +1070,16 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            AnimatedVisibility(
-                visible = showQueue,
-                enter = fadeIn(tween(200)),
-                exit = fadeOut(tween(160)),
-            ) {
+            // Queue sheet. It animates itself inside the Dialog; an outer AnimatedVisibility would
+            // be a second, redundant transition (same reason as the profile editor).
+            if (showQueue) {
                 val playback by container.player.state.collectAsState()
                 QueueSheet(
                     queue = playback.queue,
                     currentIndex = playback.index,
                     loader = container.artwork,
-                    onSelect = { index ->
-                        // Picking a track from the queue is a user action too — same claim as next/prev.
-                        container.together.noteUserAction(TogetherLocalAction.Goto)
-                        container.player.seekToIndex(index)
-                        showQueue = false
-                    },
+                    onSelect = { index -> container.player.seekToIndex(index) },
                     onDismiss = { showQueue = false },
-                )
-            }
-
-            // 一起听. A plain `if`, matching the profile editor: the sheet animates itself inside the
-            // Dialog, so an outer AnimatedVisibility would be a second, redundant transition.
-            //
-            // The room state is collected here rather than at the top of the activity on purpose: it
-            // updates on every poll (twice a second), and reading it at the top would recompose the
-            // whole tab tree at that rate — the same trap the player screen documents for position.
-            if (showTogether) {
-                val room by appViewModel.togetherState.collectAsState()
-                TogetherSheet(
-                    state = room,
-                    onCreate = {
-                        appViewModel.createTogetherRoom()?.let { reason ->
-                            Toast.makeText(context, reason, Toast.LENGTH_SHORT).show()
-                        }
-                    },
-                    onJoin = { code ->
-                        appViewModel.joinTogetherRoom(code)?.let { reason ->
-                            Toast.makeText(context, reason, Toast.LENGTH_SHORT).show()
-                        }
-                    },
-                    onLeave = { appViewModel.leaveTogetherRoom() },
-                    onDismiss = {
-                        // The room keeps running when the sheet closes — it is a panel over the app,
-                        // not the feature itself. Only an explicit leave ends it.
-                        appViewModel.dismissTogetherNotice()
-                        showTogether = false
-                    },
-                    onShareCode = { code ->
-                        shareText("和我一起听歌吧，房间码：$code", "邀请一起听")
-                    },
-                    onCopyCode = { code ->
-                        val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
-                            as android.content.ClipboardManager
-                        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("房间码", code))
-                        Toast.makeText(context, "房间码已复制", Toast.LENGTH_SHORT).show()
-                    },
                 )
             }
 
@@ -1022,8 +1155,8 @@ class MainActivity : ComponentActivity() {
             AnimatedVisibility(
                 visible = splashVisible,
                 enter = fadeIn(tween(1)),
-                exit = fadeOut(tween(SPLASH_EXIT_MS)) + scaleOut(
-                    tween(SPLASH_EXIT_MS),
+                exit = fadeOut(tween(SPLASH_EXIT_MS, easing = Motion.EaseOut)) + scaleOut(
+                    tween(SPLASH_EXIT_MS, easing = Motion.EaseOut),
                     targetScale = 1.06f,
                 ),
             ) {
@@ -1043,10 +1176,6 @@ class MainActivity : ComponentActivity() {
         BackHandler(enabled = showSettings) { showSettings = false }
         BackHandler(enabled = showLogin) { showLogin = false }
         BackHandler(enabled = showQueue) { showQueue = false }
-        BackHandler(enabled = showTogether) {
-            appViewModel.dismissTogetherNotice()
-            showTogether = false
-        }
 
         // Surface playback errors once, then clear them.
         LaunchedEffect(playbackError) {
@@ -1127,14 +1256,13 @@ private const val SPLASH_MAX_MS = 6000L
 private const val SPLASH_EXIT_MS = 480
 
 /**
- * Floating chrome metrics.
+ * Gap between the two panels of the chrome's one row (the tab capsule and the now-playing slot).
  *
- * The bars are inset from the bottom so they read as floating rather than docked; [FloatingChromeGap]
- * separates the mini player from the tab bar, and [FloatingChromeBottomGap] leaves the home indicator
- * area clear on top of the navigation-bar inset applied by the caller.
+ * The chrome's height and its bottom gap live with the chrome itself, in `ui/components/LiquidGlass.kt`
+ * (`FloatingChromeHeight` and `FloatingChromeBottomGap`), because scrolling content reads them through
+ * `chromeContentBottomPadding()`. The screen-edge inset is [TabBarInset], applied once to the row.
  */
 private val FloatingChromeGap = 8.dp
-private val FloatingChromeBottomGap = 10.dp
 
 /**
  * Minimal `ViewModelProvider.Factory` for the two view models, both container-backed.
@@ -1149,4 +1277,3 @@ private fun viewModelFactory(container: AppContainer) = object : androidx.lifecy
         }
     }
 }
-

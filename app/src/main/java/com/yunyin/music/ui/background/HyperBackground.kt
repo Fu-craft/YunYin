@@ -108,6 +108,13 @@ fun HyperBackground(
 
     var frameTick by remember { mutableIntStateOf(0) }
 
+    // Honour the system animation setting the way SplashScreen and VinylDisc do: with animations
+    // off the backdrop stops drifting and stops reacting to audio. Album-colour changes still reach
+    // the screen (see the palette cross-fade below) — a static background is not a stale one.
+    val animatorsOn = remember {
+        runCatching { android.animation.ValueAnimator.areAnimatorsEnabled() }.getOrDefault(true)
+    }
+
     LaunchedEffect(painter) {
         val shader = painter ?: return@LaunchedEffect
         shader.setIdlePoints()
@@ -125,8 +132,12 @@ fun HyperBackground(
         var lastDark = latestIsDark
 
         shader.setPalette(fromColors, latestPalette.saturateOffset, latestPalette.lightOffset)
+        // Draw the initialised shader once, even if the first frames take the paused/animations-off
+        // path (which never increments the counter again until something changes).
+        frameTick++
 
         while (isActive) {
+            var advanced = false
             withFrameNanos { frameNs ->
                 // Frozen: keep the last drawn frame and do no work at all.
                 if (latestPaused) return@withFrameNanos
@@ -139,10 +150,9 @@ fun HyperBackground(
                     nextRenderNs + intervalNs
                 }
 
-                // Absolute time: shared by every instance, so they stay in step.
-                shader.setAnimTime((frameNs / 1_000_000_000f) % ANIM_TIME_WRAP)
-
                 // --- palette crossfade -----------------------------------------
+                // Runs regardless of the animation setting: a new track's colours must still reach
+                // the screen, it is only the ambient drift that stops.
                 val currentPalette = latestPalette
                 if (currentPalette != lastPalette || latestIsDark != lastDark) {
                     fromColors = blendedColors(fromColors, toColors, fadeProgress(fadeStartNs, frameNs))
@@ -154,21 +164,32 @@ fun HyperBackground(
                 }
                 val colors = blendedColors(fromColors, toColors, fadeProgress(fadeStartNs, frameNs))
                 shader.setPalette(colors, currentPalette.saturateOffset, currentPalette.lightOffset)
+                val paletteSettling = fadeProgress(fadeStartNs, frameNs) < 1f
 
-                // --- audio reactivity ------------------------------------------
-                val targetLevel = AudioReactive.level.value.coerceIn(0f, 1f)
-                val targetBeat = AudioReactive.beat.value.coerceIn(0f, 1f)
-                // Asymmetric smoothing: fast attack, slow release, so beats read crisply
-                // without the whole screen flickering.
-                smoothLevel += (targetLevel - smoothLevel) *
-                    (if (targetLevel > smoothLevel) LEVEL_ATTACK else LEVEL_RELEASE)
-                smoothBeat += (targetBeat - smoothBeat) *
-                    (if (targetBeat > smoothBeat) BEAT_ATTACK else BEAT_RELEASE)
-                shader.setReactive(smoothLevel, smoothBeat)
+                if (animatorsOn) {
+                    // Absolute time: shared by every instance, so they stay in step.
+                    shader.setAnimTime((frameNs / 1_000_000_000f) % ANIM_TIME_WRAP)
 
-                shader.updateMaterials()
+                    // --- audio reactivity -------------------------------------
+                    val targetLevel = AudioReactive.level.value.coerceIn(0f, 1f)
+                    val targetBeat = AudioReactive.beat.value.coerceIn(0f, 1f)
+                    // Asymmetric smoothing: fast attack, slow release, so beats read crisply
+                    // without the whole screen flickering.
+                    smoothLevel += (targetLevel - smoothLevel) *
+                        (if (targetLevel > smoothLevel) LEVEL_ATTACK else LEVEL_RELEASE)
+                    smoothBeat += (targetBeat - smoothBeat) *
+                        (if (targetBeat > smoothBeat) BEAT_ATTACK else BEAT_RELEASE)
+                    shader.setReactive(smoothLevel, smoothBeat)
+
+                    shader.updateMaterials()
+                }
+
+                // The counter exists only to invalidate the Canvas. Advancing it on a frame that
+                // changed nothing means issuing the full-screen shader draw for no reason — the
+                // exact cost this class's `paused` flag was added to avoid.
+                advanced = animatorsOn || paletteSettling
             }
-            frameTick++
+            if (advanced) frameTick++
         }
     }
 

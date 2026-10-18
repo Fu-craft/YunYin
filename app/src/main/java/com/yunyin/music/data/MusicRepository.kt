@@ -5,9 +5,27 @@ import com.yunyin.music.core.ArtistInfo
 import com.yunyin.music.core.NetResult
 import com.yunyin.music.core.Playlist
 import com.yunyin.music.core.Track
+import com.yunyin.music.data.lxsource.LxResolveCacheRules
+import com.yunyin.music.data.lxsource.LxSourceKey
+import com.yunyin.music.data.lxsource.LxSourceLog
+import com.yunyin.music.data.lxsource.LxTrackMemory
+import com.yunyin.music.data.lxsource.LxSourcePlayback
+import com.yunyin.music.data.lxsource.ResolutionConsultPolicy
+import com.yunyin.music.data.lxsource.ResolutionCache
 import com.yunyin.music.data.net.NeteaseClient
+import com.yunyin.music.data.providers.MusicSearchPage
+import com.yunyin.music.data.providers.ProviderMatcher
+import com.yunyin.music.data.providers.ProviderPlayback
+import com.yunyin.music.data.providers.SearchMerge
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.selects.select
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Read-side facade over [NeteaseClient].
@@ -15,7 +33,25 @@ import kotlinx.coroutines.coroutineScope
  * Groups the per-endpoint calls into the shapes the screens consume, and hides the
  * fact that some sections require a signed-in account (those fail soft to empty).
  */
-class MusicRepository(private val client: NeteaseClient) {
+class MusicRepository(
+    private val client: NeteaseClient,
+    /**
+     * Custom-source playback, or null when the feature is not wired.
+     *
+     * The constructor default keeps the repository testable without an Android context: a unit test constructs
+     * `MusicRepository(client)` and exercises the built-in path unchanged.
+     */
+    private val lxPlayback: LxSourcePlayback? = null,
+    /**
+     * Built-in provider SDK (search on another platform) plus cross-platform playback, or null when not wired.
+     *
+     * Not to be confused with [lxPlayback]: this path searches *itself* (pure Kotlin, no JS) and only uses a
+     * custom source for the final URL of a track that belongs to another catalogue.
+     */
+    private val providers: ProviderPlayback? = null,
+    /** Diagnostics sink: resolution timing lines (`stage=resolve`) go to the same trail as source lookups. */
+    private val log: LxSourceLog? = null,
+) {
 
     /**
      * Assembles the Discover tab.
@@ -45,22 +81,298 @@ class MusicRepository(private val client: NeteaseClient) {
         }
     }
 
-    suspend fun search(keyword: String, offset: Int = 0): NetResult<List<Track>> =
-        when (val result = client.search(keyword, offset = offset)) {
-            is NetResult.Err -> result
+    /**
+     * Search both catalogues.
+     *
+     * NetEase's own results come first and keep the app's existing behaviour (artwork hydration). The built-in
+     * provider SDK ([providers]) is searched **alongside** it for the same keyword and its results are appended
+     * with a platform badge — they carry the other platform's id, so they are playable even when NetEase does not
+     * have the song at all, or only as a fragment.
+     *
+     * A provider failure is not a search failure: its half becomes empty and the log records why.
+     *
+     * @param offset page offset in NetEase's units; the provider page is derived from it so both advance together.
+     */
+    suspend fun search(keyword: String, offset: Int = 0): NetResult<MusicSearchPage> = coroutineScope {
+        val providerPage = (offset / SEARCH_PAGE_SIZE) + 1
+        val neteaseDeferred = async { client.search(keyword, limit = SEARCH_PAGE_SIZE, offset = offset) }
+        val providerDeferred = async {
+            providers?.search(keyword, page = providerPage, limit = SEARCH_PAGE_SIZE)
+        }
+        when (val netease = neteaseDeferred.await()) {
+            is NetResult.Err -> {
+                // NetEase failing must not hide a working provider half, but if both are empty the search failed.
+                val providerResult = providerDeferred.await()
+                val providerTracks = (providerResult as? NetResult.Ok)?.value?.tracks.orEmpty()
+                if (providerTracks.isEmpty()) {
+                    netease
+                } else {
+                    NetResult.Ok(MusicSearchPage(providerTracks, hasMore = false, providers = listOf("tx")))
+                }
+            }
             is NetResult.Ok -> {
                 // Search returns no artwork, so hydrate the page in a single extra call.
-                val byId = client.songDetail(result.value.map { it.id }).listOrEmpty().associateBy { it.id }
+                val byId = client.songDetail(netease.value.map { it.id }).listOrEmpty().associateBy { it.id }
                 // Preserve search ordering, backfilling anything detail omitted.
-                NetResult.Ok(result.value.map { byId[it.id] ?: it })
+                val neteaseTracks = netease.value.map { byId[it.id] ?: it }
+                val providerPageResult = providerDeferred.await()
+                val providerTracks = (providerPageResult as? NetResult.Ok)?.value?.tracks.orEmpty()
+                val providerHasMore = (providerPageResult as? NetResult.Ok)?.value?.hasMore ?: false
+                providerTracks.forEach { providers?.remember(it) }
+                NetResult.Ok(
+                    MusicSearchPage(
+                        tracks = SearchMerge.merge(neteaseTracks, providerTracks),
+                        hasMore = neteaseTracks.size >= SEARCH_PAGE_SIZE || providerHasMore,
+                        providers = if (providerTracks.isEmpty()) emptyList() else listOf("tx"),
+                    ),
+                )
             }
         }
+    }
 
     suspend fun hotSearch(): List<String> = client.hotSearch().listOrEmpty()
+    /**
+     * Resolves a stream URL, or null when the track is unavailable. Trials pass through.
+     *
+     * ## One resolution per track, shared by both callers
+     *
+     * A track load resolves its URL twice: once for ExoPlayer's data source and once for the member-preview
+     * check. When a custom source is enabled, two independent resolutions meant two source requests that could
+     * disagree — the audio could come from the source while the trial check fell back and showed a trial notice.
+     * Per `(track, quality)` single-flight plus a short cache ([LxResolveCacheRules.TTL_MS]) makes both callers
+     * share one answer, so the trial state always describes the URL that is actually playing.
+     *
+     * ## Order: 自定义源 first, then the built-in route
+     *
+     * An enabled custom source exists because the built-in route can fail (region locks, VIP-only tracks,
+     * removed songs), so it is asked first when one claims the 网易云 key. Every failure inside it — no source,
+     * script missing, init failed, handler error, timeout, a preview clip — comes back as `null` with a
+     * diagnostic block, and this falls through to the existing NetEase call. A broken source can therefore cost a
+     * little latency but can never leave the player silent.
+     */
+    /**
+     * Resolves a stream URL, or null when the track is unavailable. Trials pass through.
+     *
+     * ## Cache and single-flight
+     *
+     * One track load resolves the URL **twice** (ExoPlayer data source + trial check), so per `(track, quality)`
+     * single-flight keeps both callers on one answer. The result is also cached — successful URLs for
+     * [LxResolveCacheRules.SUCCESS_TTL_MS], failures for [LxResolveCacheRules.NEGATIVE_TTL_MS] — in a bounded LRU.
+     * A playback error invalidates the track's entries ([invalidateResolution]), so an expired CDN URL is never
+     * served twice. Re-playing or seeking back to a track therefore costs no network hop at all.
+     *
+     * ## NetEase first, custom source only when it can add something
+     *
+     * The old order asked the custom source first and only then NetEase: for a track NetEase serves directly, the
+     * source's network hop + JS-engine call was pure latency on the critical path. Now:
+     *  - no enabled `wy` source, a provider track whose provider the source does not declare, or a cached answer ⇒
+     *    the source is **not consulted at all**;
+     *  - with a `wy` source, NetEase is asked first and given [FAST_NETEASE_WINDOW_MS] to return a **full** URL.
+     *    A full answer wins and the source is never called;
+     *  - if NetEase answers with a trial/unavailable result, or is slower than the window, the source lookup runs
+     *    concurrently with the remaining NetEase wait and the **first full URL wins** (the loser is cancelled; an
+     *    in-flight HTTP request is cheap to drop). A trial is never accepted over a full URL;
+     *  - when only a trial is available, the existing cross-platform toggle (QQ match) still runs after.
+     */
+    suspend fun streamUrl(id: Long, quality: String): NeteaseClient.SongUrl? {
+        val key = LxResolveCacheRules.key(id, quality)
+        cachedResolution(key, id, quality)?.let { return it }
+        if (resolveLocks.size > MAX_LOCK_ENTRIES) resolveLocks.clear()
+        return resolveLocks.computeIfAbsent(key) { Mutex() }.withLock {
+            // Re-check inside the lock: the other caller may have filled the cache while this one waited.
+            cachedResolution(key, id, quality)?.let { return@withLock it }
+            val started = System.nanoTime()
+            val value = resolveStreamUrl(id, quality)
+            synchronized(resolutionCache) {
+                resolutionCache.put(key, ResolvedBox(value), System.currentTimeMillis())
+            }
+            recordResolution(id, quality, "total", started, "result=${describe(value)} cached=false")
+            value
+        }
+    }
 
-    /** Resolves a stream URL, or null when the track is unavailable. Trials pass through. */
-    suspend fun streamUrl(id: Long, quality: String): com.yunyin.music.data.net.NeteaseClient.SongUrl? =
-        client.songUrl(id, quality).valueOrNull()
+    /**
+     * Drops cached resolutions for [trackId] (all qualities). Called when the player reports an error for the track:
+     * the cached URL is then assumed expired/refused and the next attempt resolves fresh.
+     */
+    fun invalidateResolution(trackId: Long) {
+        synchronized(resolutionCache) {
+            resolutionCache.removeWhere { key -> key.startsWith("$trackId:") }
+        }
+    }
+
+    private suspend fun resolveStreamUrl(id: Long, quality: String): NeteaseClient.SongUrl? {
+        val started = System.nanoTime()
+
+        // 1. A track from another platform has no NetEase id; its provider is authoritative.
+        val providerTrack = providers?.findProviderTrack(id)
+        if (providerTrack?.providerRef != null) {
+            val provider = providerTrack.providerRef.provider
+            // Skip the source entirely when it does not declare this provider: the lookup cannot succeed, and the
+            // skip avoids building musicInfo + writing a trace for a source that cannot answer.
+            if (providers?.supports(provider) == true) {
+                val url = providers.musicUrlFor(providerTrack, quality)
+                if (!url.isNullOrBlank()) {
+                    recordResolution(id, quality, "provider", started, "provider=$provider result=url")
+                    return NeteaseClient.SongUrl(url = url)
+                }
+            } else {
+                recordResolution(id, quality, "provider", started, "provider=$provider skip=source-unsupported")
+            }
+            // The source refused it or cannot serve it. Look the song up on NetEase so the track can still play.
+            val fallback = neteaseMatchFor(providerTrack)?.let { client.songUrl(it.id, quality).valueOrNull() }
+            recordResolution(id, quality, "provider-fallback", started, "result=${describe(fallback)}")
+            return fallback
+        }
+
+        val sourceEnabled = runCatching { lxPlayback?.supports(LxSourceKey.WY.wire) == true }.getOrDefault(false)
+        if (!ResolutionConsultPolicy.needsSource(sourceEnabled, netease = null)) {
+            val netease = client.songUrl(id, quality).valueOrNull()
+            val final = toggleIfTrial(id, quality, netease)
+            recordResolution(id, quality, "netease", started, "source=disabled result=${describe(final)}")
+            return final
+        }
+
+        return coroutineScope {
+            val netease = async { client.songUrl(id, quality).valueOrNull() }
+            // Fast window: a NetEase-served track never pays for a source round trip.
+            val fast = withTimeoutOrNull(FAST_NETEASE_WINDOW_MS) { netease.await() }
+            if (fast != null && isFull(fast)) {
+                recordResolution(id, quality, "netease-fast", started, "result=url")
+                return@coroutineScope fast
+            }
+            val source = async { runCatching { lxPlayback?.musicUrl(id, quality) }.getOrNull() }
+            val chosen: NeteaseClient.SongUrl? = if (fast != null) {
+                // NetEase already answered but it is a trial/unavailable: the source may still have the full song.
+                val sourceUrl = withTimeoutOrNull(MAX_RACE_WAIT_MS) { source.await() }
+                if (!sourceUrl.isNullOrBlank()) {
+                    netease.cancel()
+                    NeteaseClient.SongUrl(url = sourceUrl)
+                } else {
+                    toggleIfTrial(id, quality, fast)
+                }
+            } else {
+                // NetEase is slower than the window: race the source against the remaining NetEase wait.
+                val race = raceFull(netease, source)
+                when (race.winner) {
+                    RaceWinner.SOURCE -> netease.cancel()
+                    RaceWinner.NETEASE -> source.cancel()
+                    RaceWinner.NONE -> {
+                        netease.cancel()
+                        source.cancel()
+                    }
+                }
+                race.value
+            }
+            val final = if (chosen != null && isFull(chosen)) chosen else toggleIfTrial(id, quality, chosen)
+            recordResolution(
+                id,
+                quality,
+                "race",
+                started,
+                "neteaseFast=${fast != null} sourceStarted=true result=${describe(final)}",
+            )
+            final
+        }
+    }
+
+    private suspend fun toggleIfTrial(
+        id: Long,
+        quality: String,
+        netease: NeteaseClient.SongUrl?,
+    ): NeteaseClient.SongUrl? {
+        // NetEase only has a fragment (or nothing) → try the same song on another platform before accepting it.
+        // This is the answer to "会员歌曲还是只能试听": a full version elsewhere beats a 45 s preview.
+        if (netease != null && !netease.isTrial && !netease.unavailable) return netease
+        val track = LxTrackMemory.find(id) ?: return netease
+        val otherUrl = providers?.otherSourceUrl(track, quality)
+        return if (!otherUrl.isNullOrBlank()) NeteaseClient.SongUrl(url = otherUrl) else netease
+    }
+
+    /** First full URL of the two racing lookups; trials only when neither produced a full one. */
+    private suspend fun raceFull(
+        netease: Deferred<NeteaseClient.SongUrl?>,
+        source: Deferred<String?>,
+    ): RaceResult {
+        val first = select<RaceEvent> {
+            netease.onAwait { RaceEvent.Netease(it) }
+            source.onAwait { RaceEvent.Source(it) }
+        }
+        return when (first) {
+            is RaceEvent.Source -> {
+                if (!first.url.isNullOrBlank()) {
+                    RaceResult(NeteaseClient.SongUrl(url = first.url), RaceWinner.SOURCE)
+                } else {
+                    val neteaseValue = withTimeoutOrNull(MAX_RACE_WAIT_MS) { netease.await() }
+                    RaceResult(neteaseValue, RaceWinner.NETEASE)
+                }
+            }
+            is RaceEvent.Netease -> {
+                if (isFull(first.value)) {
+                    RaceResult(first.value, RaceWinner.NETEASE)
+                } else {
+                    val sourceUrl = withTimeoutOrNull(MAX_RACE_WAIT_MS) { source.await() }
+                    if (!sourceUrl.isNullOrBlank()) {
+                        RaceResult(NeteaseClient.SongUrl(url = sourceUrl), RaceWinner.SOURCE)
+                    } else {
+                        RaceResult(first.value, RaceWinner.NETEASE)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun recordResolution(id: Long, quality: String, path: String, startedNs: Long, detail: String) {
+        val elapsed = (System.nanoTime() - startedNs) / 1_000_000
+        runCatching {
+            log?.record(
+                "解析",
+                "stage=resolve track=$id quality=$quality path=$path elapsedMs=$elapsed $detail",
+            )
+        }
+    }
+
+    private fun cachedResolution(key: String, id: Long, quality: String): NeteaseClient.SongUrl? {
+        val box = synchronized(resolutionCache) {
+            resolutionCache.get(key, System.currentTimeMillis()) { candidate ->
+                if (candidate.value == null) LxResolveCacheRules.NEGATIVE_TTL_MS else LxResolveCacheRules.SUCCESS_TTL_MS
+            }
+        } ?: return null
+        recordResolution(id, quality, "cache-hit", System.nanoTime(), "result=${describe(box.value)} cached=true")
+        return box.value
+    }
+
+    private fun isFull(song: NeteaseClient.SongUrl?): Boolean =
+        song != null && song.playable && !song.isTrial && !song.unavailable
+
+    private fun describe(song: NeteaseClient.SongUrl?): String = when {
+        song == null -> "none"
+        song.unavailable -> "unavailable"
+        song.isTrial -> "trial"
+        else -> "url"
+    }
+
+    private class ResolvedBox(val value: NeteaseClient.SongUrl?)
+
+    private sealed interface RaceEvent {
+        data class Netease(val value: NeteaseClient.SongUrl?) : RaceEvent
+        data class Source(val url: String?) : RaceEvent
+    }
+
+    private enum class RaceWinner { NETEASE, SOURCE, NONE }
+
+    private class RaceResult(val value: NeteaseClient.SongUrl?, val winner: RaceWinner)
+
+    /** A NetEase track whose title/artist/album/duration match a track from another platform, if one exists. */
+    private suspend fun neteaseMatchFor(track: Track): Track? {
+        if (track.name.isBlank()) return null
+        val candidates = client.search("${track.name} ${track.artistLine}", limit = 10).listOrEmpty()
+        return ProviderMatcher.bestMatch(candidates, track)
+    }
+
+    private val resolutionCache = ResolutionCache<ResolvedBox>()
+
+    private val resolveLocks = ConcurrentHashMap<String, Mutex>()
 
     suspend fun playlist(id: Long): Playlist? = client.playlistDetail(id).valueOrNull()
 
@@ -108,25 +420,25 @@ class MusicRepository(private val client: NeteaseClient) {
     suspend fun coverUrlFor(id: Long): String? =
         client.songDetail(listOf(id)).valueOrNull()?.firstOrNull()?.coverUrl
 
-    /**
-     * A single track by id, for listen-together.
-     *
-     * The relay carries only a song id (that is all the peer knows), so the receiving device has to
-     * turn it back into a playable [com.yunyin.music.core.Track]. Goes through `/song/detail`, the same
-     * call [coverUrlFor] uses.
-     */
-    suspend fun track(id: Long): com.yunyin.music.core.Track? =
-        client.songDetail(listOf(id)).valueOrNull()?.firstOrNull()
+    private companion object {
+        /** Both catalogues page in this size, so one offset drives both. */
+        const val SEARCH_PAGE_SIZE = 30
 
-    /**
-     * Resolves many ids into tracks in one or two batched calls, skipping any that fail to resolve.
-     *
-     * For installing a listen-together room's queue: the list can be hundreds of ids, and resolving them one
-     * at a time would issue hundreds of requests. Order is not preserved here because the caller re-selects
-     * by id — but unresolvable ids are dropped rather than inserted as gaps.
-     */
-    suspend fun tracks(ids: List<Long>): List<com.yunyin.music.core.Track> =
-        if (ids.isEmpty()) emptyList() else client.songDetail(ids).listOrEmpty()
+        /**
+         * How long NetEase gets to answer with a **full** URL before the custom source is started concurrently.
+         *
+         * Long enough for the built-in API's normal round trip (typically 100–400 ms from this app's network), short
+         * enough that a slow NetEase cannot make a source-served track wait for it. A trial/unavailable answer does not
+         * need to wait for the window — it starts the source immediately.
+         */
+        const val FAST_NETEASE_WINDOW_MS = 450L
+
+        /** Once one side of the race has won, the other is awaited at most this long for a better answer. */
+        const val MAX_RACE_WAIT_MS = 8_000L
+
+        /** Bound on per-key mutexes; clearing is safe (at worst one duplicate resolution). */
+        const val MAX_LOCK_ENTRIES = 64
+    }
 }
 
 /**

@@ -5,6 +5,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
 
@@ -39,9 +40,9 @@ fun Modifier.pressableGestures(
     longPressMs: Long = DEFAULT_LONG_PRESS_MS,
     onTap: () -> Unit,
     onLongPress: () -> Unit,
-    dragDistance: () -> Float,
     setDragDistance: (Float) -> Unit,
-    onDragEnd: (Float) -> Unit,
+    /** Total distance in px and the elapsed time of the drag in ms (always >= 1). */
+    onDragEnd: (distancePx: Float, elapsedMs: Long) -> Unit,
 ): Modifier = composed {
     pointerInput(Unit) {
         awaitEachGesture {
@@ -93,22 +94,26 @@ fun Modifier.pressableGestures(
             // Phase 2a: the press became a drag.
             if (dragging) {
                 setDragDistance(reported)
-                var lastY = downPosition.y
                 var active = true
+                // The last event's own timestamp, so the velocity handed back covers the drag only.
+                var lastEventMs = downTime
                 while (active) {
                     val event = awaitPointerEvent()
                     val change = event.changes.firstOrNull { it.id == down.id }
                     if (change == null || !change.pressed) {
                         active = false
                     } else {
-                        val delta = change.position.y - lastY
-                        lastY = change.position.y
-                        reported = (reported + delta).coerceAtLeast(0f)
+                        // `positionChange()` is re-mapped against the CURRENT layout every event, so it
+                        // still measures real finger travel when the surface being dragged is itself
+                        // translated by this gesture. `change.position.y - lastY` would cancel the
+                        // movement out and the drag would stall after the first few pixels.
+                        reported = (reported + change.positionChange().y).coerceAtLeast(0f)
+                        lastEventMs = change.uptimeMillis
                         change.consume()
                         setDragDistance(reported)
                     }
                 }
-                onDragEnd(reported)
+                onDragEnd(reported, (lastEventMs - downTime).coerceAtLeast(1L))
                 return@awaitEachGesture
             }
 

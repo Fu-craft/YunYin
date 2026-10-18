@@ -13,18 +13,16 @@ import com.yunyin.music.data.SettingsStore
 import com.yunyin.music.data.CoverDownloader
 import com.yunyin.music.data.FlymeLyricNotifier
 import com.yunyin.music.data.LyriconBridge
+import com.yunyin.music.data.lxsource.LxSourceLog
+import com.yunyin.music.data.lxsource.LxSourceManager
+import com.yunyin.music.data.lxsource.LxSourcePlayback
 import com.yunyin.music.data.net.NeteaseClient
-import com.yunyin.music.data.net.EapiClient
-import com.yunyin.music.data.together.NeteaseTogetherApi
+import com.yunyin.music.data.providers.ProviderLyrics
+import com.yunyin.music.data.providers.ProviderPlayback
+import com.yunyin.music.data.providers.ProviderTrackStore
+import com.yunyin.music.data.providers.tx.TxSearch
+import java.io.File
 import com.yunyin.music.BuildConfig
-import com.yunyin.music.data.together.MqttTransport
-import com.yunyin.music.data.together.NtfyTransport
-import com.yunyin.music.data.together.OfficialTogetherTransport
-import com.yunyin.music.data.together.RelayTransport
-import com.yunyin.music.data.together.TogetherSession
-import com.yunyin.music.data.together.TogetherTransport
-import com.yunyin.music.data.together.ltw.LtwApi
-import com.yunyin.music.data.together.ltw.LtwTransport
 import com.yunyin.music.data.update.UpdateManager
 import com.yunyin.music.playback.PlayerController
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -44,22 +42,9 @@ class AppContainer(val appContext: Context) {
 
     val client: NeteaseClient by lazy { NeteaseClient(settings) }
 
-    val music: MusicRepository by lazy { MusicRepository(client) }
+    val music: MusicRepository by lazy { MusicRepository(client, lxPlayback, providers, lxLog) }
 
-    /**
-     * NetEase's own eapi endpoint, for the one feature the API proxy cannot serve.
-     *
-     * Listen-together lives here because the proxy does not carry it properly: two of the routes the official
-     * protocol needs (`sync/list/command/report`, `heartbeat`) do not exist on the proxy at all, and its read
-     * path returns an empty room. The session cookie is read live on each call, so signing in or out takes
-     * effect without rebuilding anything.
-     */
-    val eapi: EapiClient by lazy { EapiClient(cookieProvider = { settings.cookie }) }
-
-    /** Listen-together, spoken the way NetEase's own client speaks it. */
-    val togetherApi: NeteaseTogetherApi by lazy { NeteaseTogetherApi(eapi) }
-
-    val lyrics: LyricsRepository by lazy { LyricsRepository(appContext, client) }
+    val lyrics: LyricsRepository by lazy { LyricsRepository(appContext, client, providerLyrics) }
 
     val artwork: ArtworkLoader by lazy { ArtworkLoader(appContext) }
 
@@ -69,6 +54,42 @@ class AppContainer(val appContext: Context) {
 
     /** Songs liked inside this app, plus the removals that mark cloud likes as un-liked here. */
     val likedSongs: LikedSongsStore by lazy { LikedSongsStore(appContext) }
+
+    /**
+     * Single-track downloads.
+     *
+     * The scope belongs to the container, not to a screen: leaving the player while a long flac downloads must not
+     * cancel it. MediaStore writes are plain IO, so a small dedicated client with bounded timeouts is used for both
+     * the download stream and the advisory preview probe (no new permission: the app writes only its own
+     * `Music/云音` collection).
+     */
+    val downloads: com.yunyin.music.data.download.TrackDownloadManager by lazy {
+        val downloadClient = okhttp3.OkHttpClient.Builder()
+            .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
+            .callTimeout(0, java.util.concurrent.TimeUnit.SECONDS)
+            .followRedirects(true)
+            .build()
+        com.yunyin.music.data.download.TrackDownloadManager(
+            resolve = { trackId, quality -> music.streamUrl(trackId, quality) },
+            preferredQuality = { settings.quality },
+            sink = com.yunyin.music.data.download.MediaStoreAudioWriter(appContext, downloadClient, lxLog),
+            log = lxLog,
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
+            probe = { url, duration ->
+                val (verdict, length) =
+                    com.yunyin.music.data.lxsource.LxPreviewProbe.inspect(url, duration, downloadClient)
+                when (verdict) {
+                    com.yunyin.music.data.lxsource.LxPreviewProbe.Verdict.FULL ->
+                        com.yunyin.music.data.download.DownloadProbeVerdict.FULL to length
+                    com.yunyin.music.data.lxsource.LxPreviewProbe.Verdict.PREVIEW_CLIP ->
+                        com.yunyin.music.data.download.DownloadProbeVerdict.PREVIEW_CLIP to length
+                    com.yunyin.music.data.lxsource.LxPreviewProbe.Verdict.UNKNOWN ->
+                        com.yunyin.music.data.download.DownloadProbeVerdict.UNKNOWN to length
+                }
+            },
+        )
+    }
 
     /**
      * The liked rule shared by the heart, the liked list and its count.
@@ -91,6 +112,56 @@ class AppContainer(val appContext: Context) {
     val tickerLyrics: FlymeLyricNotifier by lazy { FlymeLyricNotifier(appContext) }
 
     /**
+     * Imported LX (洛雪) custom sources.
+     *
+     * A source is a JavaScript file speaking the `globalThis.lx` host API; importing one runs it in the bundled
+     * QuickJS engine to prove it initialises, then keeps the script and its metadata under `filesDir/lxsource`.
+     */
+    val lxSources: LxSourceManager by lazy { LxSourceManager(appContext) }
+
+    /**
+     * Diagnostics shared by the custom-source path and the built-in provider path.
+     *
+     * One instance means the Settings copy row shows both kinds of failure in the order they happened, which is
+     * what makes "which of the two paths failed for this song" answerable from one paste.
+     */
+    val lxLog: LxSourceLog by lazy { LxSourceLog(appContext) }
+
+    /**
+     * Resolves playback URLs through an enabled [lxSources] script.
+     *
+     * Kept hot rather than constructed per lookup: it owns one QuickJS runtime per source and reuses it across
+     * track loads, because creating an engine and executing a source takes long enough to be heard at the start
+     * of a track.
+     */
+    val lxPlayback: LxSourcePlayback by lazy {
+        LxSourcePlayback(lxSources, lxLog)
+    }
+
+    /** Persisted identity of tracks that came from another platform's catalogue (see `ProviderTrackStore`). */
+    val providerTracks: ProviderTrackStore by lazy {
+        ProviderTrackStore(File(appContext.filesDir, "providers/tracks.json"))
+    }
+
+    /** Built-in QQ Music search (pure Kotlin + OkHttp; see `TxSearch` for provenance). */
+    val txSearch: TxSearch by lazy { TxSearch(lxLog) }
+
+    /** Cross-platform playback: provider tracks, and the NetEase-VIP retry on another platform. */
+    val providers: ProviderPlayback by lazy {
+        ProviderPlayback(lxPlayback, txSearch, providerTracks, lxLog)
+    }
+
+    /**
+     * Lyrics for provider tracks (QQ Music QRC), with the NetEase lyric path as the fallback.
+     *
+     * Shares [providerTracks] with playback, so a track that was found and played by the provider port can be
+     * looked up for lyrics by the same persisted identity.
+     */
+    val providerLyrics: ProviderLyrics by lazy {
+        ProviderLyrics(providerTracks, log = lxLog)
+    }
+
+    /**
      * Self-update, over GitHub Releases.
      *
      * The "cloud" here is the project's own release page: GitHub hosts and serves the APK, so there is no
@@ -99,10 +170,10 @@ class AppContainer(val appContext: Context) {
      * offer its users builds published by someone else; when they are blank the feature reports itself as
      * unconfigured instead of failing a check.
      *
-     * The scope carries an exception handler for the same reason the listen-together one does: this is
-     * long-running background work on the main dispatcher, and a network failure escaping it would be an
-     * uncaught exception on the main thread — which kills the process. An updater that can crash the app is
-     * worse than no updater, and this app has already died on launch once.
+     * The scope carries an exception handler: this is long-running background work on the main dispatcher,
+     * and a network failure escaping it would be an uncaught exception on the main thread — which kills the
+     * process. An updater that can crash the app is worse than no updater, and this app has already died on
+     * launch once.
      */
     val update: UpdateManager by lazy {
         val handler = CoroutineExceptionHandler { _, throwable ->
@@ -118,68 +189,20 @@ class AppContainer(val appContext: Context) {
         )
     }
 
-    /**
-     * Listen-together room engine.
-     *
-     * **The default is the NeriPlayer LTW service**, which is *server-authoritative*: one server owns the
-     * room's playback and computes the position from its own clock, so the two devices read the same truth
-     * instead of negotiating. That is the property the earlier transports could not have, and its absence is
-     * what produced the whole family of "I press play and the other side pauses" reports — two peers with
-     * disagreeing clocks cannot agree on who acted last, so each correction looks like something worth
-     * correcting.
-     *
-     * The alternatives below remain, selected by configuration rather than by fallback, because a transport
-     * is a *rendezvous*: two devices on different ones sit in two rooms that both look empty, with nothing
-     * on screen to explain why. They are no longer the default.
-     *
-     *  - `together.ltw.url` — the LTW service (the default when configured).
-     *  - `together.base.url` — a self-hosted peer-to-peer relay.
-     *  - `together.mqtt.host` — a public MQTT broker.
-     *  - `together.ntfy.url` — an HTTP pub/sub service.
-     */
-    val together: TogetherSession by lazy {
-        // The scope **must** carry an exception handler.
-        //
-        // Both the session and the MQTT client run on this one scope, and it is `Main.immediate` — so an
-        // exception thrown out of any of those coroutines is an uncaught exception *on the main thread*,
-        // which takes the process down. A `SupervisorJob` isolates siblings from each other but does not
-        // install a handler, so "the child failed" still means "the app crashed". A transport's reconnect
-        // loop is exactly the kind of long-running background work that must never be able to do that.
-        //
-        // This is the backstop: the session and the transport each turn their own failures into messages,
-        // and anything that somehow slips past them is recorded instead of fatal.
-        val handler = CoroutineExceptionHandler { _, throwable ->
-            android.util.Log.e("YunYin/Together", "uncaught in the together scope", throwable)
-        }
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate + handler)
-        val transport: TogetherTransport = when {
-            BuildConfig.TOGETHER_LTW_URL.isNotBlank() ->
-                LtwTransport(
-                    api = LtwApi(),
-                    scope = scope,
-                    identityProvider = { settings.togetherUserUuid to togetherName() },
-                ).also { it.configure(BuildConfig.TOGETHER_LTW_URL) }
-            BuildConfig.TOGETHER_BASE_URL.isNotBlank() -> RelayTransport()
-            BuildConfig.TOGETHER_MQTT_HOST.isNotBlank() -> MqttTransport(scope)
-            BuildConfig.TOGETHER_NTFY_URL.isNotBlank() -> NtfyTransport(scope)
-            else -> OfficialTogetherTransport(
-                api = togetherApi,
-                ownUid = { settings.account?.userId ?: 0L },
-            )
-        }
-        TogetherSession(transport = transport, scope = scope)
-    }
-
-    /** The nickname shown to the other member: the custom one, else the account's, else a default. */
-    private fun togetherName(): String =
-        settings.customNickname.takeIf { it.isNotBlank() }
-            ?: settings.account?.nickname?.takeIf { it.isNotBlank() }
-            ?: "云音用户"
-
     val player: PlayerController by lazy {
-        PlayerController(appContext) { trackId ->
-            music.streamUrl(trackId, settings.quality)
-        }
+        PlayerController(
+            context = appContext,
+            resolveStream = { trackId -> music.streamUrl(trackId, settings.quality) },
+            // A lookup for a *different* track is superseded when the player moves on. The new item's id is passed
+            // so a callback that arrives after its load started cannot discard the very lookup it needs — that race
+            // produced "Source error" on some tracks.
+            onMediaItemChanged = { trackId -> lxPlayback.cancelPending("media_item_transition", trackId) },
+            // So the trial notice can say whether the source itself failed, instead of implying the account did.
+            sourceFailureNote = { trackId -> lxPlayback.lastOutcome(trackId) },
+            // A failed playback drops the cached URL for that track, so an expired CDN token is re-resolved instead
+            // of being served from the cache until it ages out.
+            onStreamError = { trackId -> music.invalidateResolution(trackId) },
+        )
     }
 
     companion object {

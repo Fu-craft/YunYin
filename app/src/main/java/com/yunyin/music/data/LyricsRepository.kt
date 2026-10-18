@@ -3,7 +3,12 @@ package com.yunyin.music.data
 import android.content.Context
 import com.yunyin.music.core.LyricBundle
 import com.yunyin.music.core.NetResult
+import com.yunyin.music.core.Track
 import com.yunyin.music.data.net.NeteaseClient
+import com.yunyin.music.data.providers.ProviderLyricDocument
+import com.yunyin.music.data.providers.ProviderLyrics
+import com.yunyin.music.data.providers.ProviderMatcher
+import com.yunyin.music.data.providers.tx.TxLyric
 import com.mocharealm.accompanist.lyrics.core.model.SyncedLyrics
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeLine
 import com.mocharealm.accompanist.lyrics.core.parser.AutoParser
@@ -47,6 +52,13 @@ import java.util.concurrent.TimeUnit
 class LyricsRepository(
     context: Context,
     private val client: NeteaseClient,
+    /**
+     * Lyrics for tracks that came from another platform, or null when that feature is not wired.
+     *
+     * A provider track has no NetEase id, so the NetEase path below cannot serve it. This dependency is optional so
+     * the existing path is unchanged for every NetEase track and for tests.
+     */
+    private val providerLyrics: ProviderLyrics? = null,
 ) {
 
     private val cacheDir = File(context.cacheDir, "lyrics").apply { mkdirs() }
@@ -103,6 +115,14 @@ class LyricsRepository(
         onFirstDoc: ((SyncedLyrics) -> Unit)? = null,
         onUpgraded: ((SyncedLyrics) -> Unit)? = null,
     ): SyncedLyrics? {
+        // A track from another platform has no NetEase id, so the NetEase/AMLL race below cannot serve it: its own
+        // provider is asked first (and the NetEase route is only a fallback, by matching the track there).
+        providerLyrics?.let { provider ->
+            if (provider.supports(trackId)) {
+                return providerLyricsFor(trackId, provider, onFirstDoc)
+            }
+        }
+
         val cached = cachedLyrics(trackId)
 
         // Only a word-by-word document is final, so only it may short-circuit the load. A cached
@@ -404,6 +424,73 @@ class LyricsRepository(
         return bundle
     }
 
+    /**
+     * Lyrics for a provider track: ask its platform first, then fall back to the NetEase pipeline by matching the
+     * track there, then to "no lyrics".
+     *
+     * The provider half returns QRC-decoded text: a word-by-word track (`<startMs,duration>` tags, YRC-shaped) when
+     * the platform had QRC word timing, otherwise line-level LRC. Both are fed through the app's existing parsers —
+     * [NeteaseYrcParser] for the word track and [autoParser] for plain text — so karaoke rendering is identical to
+     * NetEase tracks, including the credit-line stripping and translation merge.
+     *
+     * Romanisation is carried by the provider but not displayed: the app's lyric model has no romanisation lane, and
+     * inventing one here would be a UI change outside this task.
+     */
+    private suspend fun providerLyricsFor(
+        trackId: Long,
+        provider: ProviderLyrics,
+        onFirstDoc: ((SyncedLyrics) -> Unit)?,
+    ): SyncedLyrics? {
+        val cached = cachedLyrics(trackId)
+        if (cached != null && isWordByWord(cached)) return cached
+
+        val payload = withTimeoutOrNull(PROVIDER_LYRIC_WAIT_MS) { provider.fetch(trackId) }
+        val document = payload?.let { toProviderDocument(it) }
+        if (document != null) {
+            store(trackId, document)
+            onFirstDoc?.invoke(document)
+            return document
+        }
+
+        // Provider lyric failed or absent: try the existing NetEase lyric path with the *matched* NetEase song. The
+        // provider track is persisted with title/artist/duration, which is what the cross-platform matcher needs.
+        val neteaseId = withTimeoutOrNull(PROVIDER_LYRIC_WAIT_MS) { neteaseIdFor(provider.trackFor(trackId)) }
+        if (neteaseId != null) {
+            val netease = NeteaseSide(fetchBundle(neteaseId))
+            val candidate = netease.doc?.takeIf { it.lines.isNotEmpty() }
+            if (candidate != null) {
+                val resolved = resolve(Candidate(candidate, fromAmll = false), netease)
+                if (resolved != null) {
+                    store(trackId, resolved.lyrics)
+                    onFirstDoc?.invoke(resolved.lyrics)
+                    return resolved.lyrics
+                }
+            }
+        }
+        return cached
+    }
+
+    /** Parses a provider lyric payload into the app's lyric model. Null when nothing usable came back. */
+    private fun toProviderDocument(payload: TxLyric.Parsed): SyncedLyrics? {
+        // Karaoke first: QRC word timings are converted straight into the app's karaoke model
+        // (see `ProviderLyricDocument` for why the word track is not parsed from text).
+        val base = ProviderLyricDocument.build(payload)
+            ?: payload.plain?.takeIf { it.isNotBlank() }
+                ?.let { raw -> runCatching { autoParser.parse(raw) }.getOrNull() }
+                ?.takeIf { it.lines.isNotEmpty() }
+            ?: return null
+        val stripped = stripMetadata(base)
+        val merged = LyricTranslation.merge(stripped, payload.translation)
+        return merged.takeIf { it.lines.isNotEmpty() }
+    }
+
+    /** The NetEase id of the same recording, for a provider track whose own lyric lookup failed. */
+    private suspend fun neteaseIdFor(track: Track?): Long? {
+        if (track == null || track.name.isBlank()) return null
+        val candidates = client.search("${track.name} ${track.artistLine}", limit = 10).listOrEmpty()
+        return ProviderMatcher.bestMatch(candidates, track)?.id
+    }
+
     // ---------------------------------------------------------------- bundle persistence
 
     /**
@@ -622,6 +709,15 @@ class LyricsRepository(
 
         /** Ceiling for a single AMLL mirror request. */
         const val MIRROR_CALL_TIMEOUT_MS = 4500L
+
+        /**
+         * How long the provider lyric path may take, per step (provider fetch, NetEase fallback match).
+         *
+         * The provider endpoint answered in well under a second when measured; this is a guard against an
+         * unreachable endpoint, not a latency budget. Two steps are bounded, so a broken provider costs at most ~2×
+         * this before the screen shows "no lyrics".
+         */
+        const val PROVIDER_LYRIC_WAIT_MS = 8000L
 
         /**
          * AMLL DB mirrors. `%d` is the NetEase song id. jsDelivr is fastest when

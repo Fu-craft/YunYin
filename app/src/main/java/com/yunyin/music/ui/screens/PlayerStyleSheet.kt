@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -26,10 +25,10 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
 import com.yunyin.music.ui.PlayerStyle
+import com.yunyin.music.ui.components.AnimatedSheet
 import com.yunyin.music.ui.icons.SfIcons
 import com.yunyin.music.ui.theme.AppleShapes
 import com.yunyin.music.ui.theme.AppTheme
@@ -57,59 +56,48 @@ fun PlayerStyleSheet(
     val label = Color.White
     val secondary = Color.White.copy(alpha = 0.55f)
 
-    Dialog(
-        onDismissRequest = onDismiss,
+    AnimatedSheet(
+        onDismissed = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
-    ) {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.45f))
-                .clickable(indication = null, interactionSource = null, onClick = onDismiss),
-            contentAlignment = Alignment.BottomCenter,
-        ) {
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(horizontal = 12.dp, vertical = 12.dp)
-                    .clip(ContinuousRoundedRectangle(AppleShapes.sheet))
-                    .background(surface)
-                    // Swallow taps so tapping inside does not dismiss.
-                    .clickable(enabled = false, indication = null, interactionSource = null) { }
-                    .padding(vertical = 8.dp),
-            ) {
-                Text(
-                    text = "播放器界面",
-                    fontFamily = SFPro,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 15.sp,
-                    color = secondary,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-                )
+        sheetModifier = Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(horizontal = 12.dp, vertical = 12.dp)
+            .clip(ContinuousRoundedRectangle(AppleShapes.sheet))
+            .background(surface)
+            // Swallow taps so tapping inside does not dismiss.
+            .clickable(enabled = false, indication = null, interactionSource = null) { }
+            .padding(vertical = 8.dp),
+    ) { close ->
+        Text(
+            text = "播放器界面",
+            fontFamily = SFPro,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 15.sp,
+            color = secondary,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+        )
 
-                PlayerStyle.entries.forEach { style ->
-                    PlayerStyleRow(
-                        style = style,
-                        selected = style == current,
-                        onClick = { onSelect(style) },
-                    )
-                }
-
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    text = "取消",
-                    fontFamily = SFPro,
-                    fontSize = 16.sp,
-                    color = secondary,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(ContinuousRoundedRectangle(12.dp))
-                        .clickable(onClick = onDismiss)
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
-                )
-            }
+        PlayerStyle.entries.forEach { style ->
+            PlayerStyleRow(
+                style = style,
+                selected = style == current,
+                onClick = { close { onSelect(style) } },
+            )
         }
+
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = "取消",
+            fontFamily = SFPro,
+            fontSize = 16.sp,
+            color = secondary,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(ContinuousRoundedRectangle(12.dp))
+                .clickable(onClick = { close() })
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+        )
     }
 }
 

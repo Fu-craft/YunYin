@@ -28,6 +28,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -72,14 +73,20 @@ import com.yunyin.music.core.Track
 import com.yunyin.music.data.ArtworkLoader
 import com.yunyin.music.ui.CollectionUiState
 import com.yunyin.music.ui.components.Artwork
+import com.yunyin.music.ui.components.DefaultTopBarTintIntensity
 import com.yunyin.music.ui.components.EmptyState
+import com.yunyin.music.ui.components.GlassTopBar
 import com.yunyin.music.ui.components.formatCount
 import com.yunyin.music.ui.components.formatDuration
+import com.yunyin.music.ui.components.liquidGlassControl
 import com.yunyin.music.ui.components.rememberControlRipple
+import com.yunyin.music.ui.components.rememberGlassTopBarBackdrop
 import com.yunyin.music.ui.icons.SfIcons
 import com.yunyin.music.ui.theme.AppleShapes
 import com.yunyin.music.ui.theme.AppTheme
 import com.yunyin.music.ui.theme.SFPro
+import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.backdrops.layerBackdrop
 import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
 
 /**
@@ -143,6 +150,11 @@ fun CollectionScreen(
     val listState = rememberLazyListState()
     val density = LocalDensity.current
 
+    // The frosted top bar's pixel source: the page content recorded with the page background painted
+    // in first. The bar is composed outside this layer (see [TopBar]), so it samples the artwork and
+    // rows scrolling under it rather than itself.
+    val topBarBackdrop = rememberGlassTopBarBackdrop()
+
     // The header reports its measured height so the bar knows exactly when to take on a surface.
     var headerHeightPx by remember(state.coverUrl) { mutableIntStateOf(0) }
 
@@ -163,11 +175,12 @@ fun CollectionScreen(
     val barSolidThreshold = (headerHeightPx - fadePx - barBottomPx).coerceAtLeast(0f)
 
     Box(modifier.fillMaxSize()) {
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = 32.dp),
-        ) {
+        Box(Modifier.fillMaxSize().layerBackdrop(topBarBackdrop)) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 32.dp),
+            ) {
             item("header") {
                 Header(
                     state = state,
@@ -221,10 +234,13 @@ fun CollectionScreen(
             }
 
             item("bottom") { Spacer(Modifier.navigationBarsPadding().height(12.dp)) }
+            }
         }
 
-        // Pinned last so it draws over the scrolling artwork.
+        // Pinned last, outside the recorded layer, so it draws over the scrolling artwork and
+        // samples it instead of sampling itself.
         TopBar(
+            backdrop = topBarBackdrop,
             onCover = onCover,
             // The opposite of the ink, so the scrim always separates the controls from whatever
             // scrolls under them regardless of which ink the cover chose.
@@ -576,6 +592,7 @@ internal fun HeaderAction(
  */
 @Composable
 internal fun TopBar(
+    backdrop: Backdrop,
     onCover: Color,
     scrimTint: Color,
     listState: LazyListState,
@@ -604,63 +621,49 @@ internal fun TopBar(
     }
     val ink = lerp(onCover, palette.label, surface)
 
-    // The surface spans the *whole* bar including the status bar inset, and is followed by a short fade
-    // band rather than a hairline.
+    // The bar is the app's one progressive-blur top strip ([GlassTopBar]): the recorded page layer is
+    // blurred under a colour gradient, and the gradient's density is what used to be the opaque
+    // surface — 0 over artwork (pure progressive blur, which is the iOS look over a cover), ramping to
+    // [DefaultTopBarTintIntensity] as the page background arrives under it.
     //
-    // An earlier version padded the outer Column for the inset, which left the top ~24dp of the bar
-    // unfilled: once the bar went solid, the status strip above it stayed a different colour and read
-    // as a separate white band sitting on top of the app. Insets belong inside the filled area, not
-    // around it.
-    //
-    // The band replaces a 0.5dp `separator` line under the bar. Two reasons it had to go: it read as a
-    // hard dark rule across the page (the user reported it as a black line), and a one-pixel rule is the
-    // wrong tool for this edge anyway — what belongs where content slides under floating chrome is a
-    // short gradient, so a row dissolves under the bar instead of being sliced by a line.
+    // The strip spans the *whole* bar including the status bar inset, and its bottom edge eases to
+    // transparent by itself (the shader's alpha mask), so it needs no separate fade band: the old
+    // 12dp gradient under an opaque surface would now paint a page-coloured band over the very rows
+    // the strip is meant to dissolve into.
     Column(modifier.fillMaxWidth()) {
-        Box(Modifier.fillMaxWidth().background(palette.background.copy(alpha = surface))) {
-            Box(
-                Modifier
-                    .matchParentSize()
-                    .background(
-                        Brush.verticalGradient(
-                            // Both stops are the same colour; only the alpha differs. Fading to
-                            // `Color.Transparent` instead would interpolate its black RGB through the
-                            // middle of the scrim — the same grey-band defect the page fade documents.
-                            0f to scrimTint.copy(alpha = TopBarScrim * (1f - surface)),
-                            1f to scrimTint.copy(alpha = 0f),
+        GlassTopBar(
+            backdrop = backdrop,
+            tintIntensity = DefaultTopBarTintIntensity * surface,
+            contentHeight = TopBarHeight,
+            overlay = {
+                Box(
+                    Modifier
+                        .matchParentSize()
+                        .background(
+                            Brush.verticalGradient(
+                                // Both stops are the same colour; only the alpha differs. Fading to
+                                // `Color.Transparent` instead would interpolate its black RGB through the
+                                // middle of the scrim — the same grey-band defect the page fade documents.
+                                0f to scrimTint.copy(alpha = TopBarScrim * (1f - surface)),
+                                1f to scrimTint.copy(alpha = 0f),
+                            ),
                         ),
-                    ),
-            )
-            Column(Modifier.fillMaxWidth().statusBarsPadding()) {
-                Box(Modifier.fillMaxWidth().height(TopBarHeight)) {
-                    Row(
-                        Modifier.fillMaxSize().padding(horizontal = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                    BarIconButton(SfIcons.ChevronDown, "返回", ink, onBack)
-                    Spacer(Modifier.weight(1f))
-                    // Absent on pages with nothing worth sharing (the artist page), where an inert
-                    // button would be worse than the asymmetry.
-                    if (onShare != null) {
-                        BarIconButton(SfIcons.SquareAndArrowUp, "分享", ink, onShare)
-                    }
-                    }
+                )
+            },
+        ) {
+            Row(
+                Modifier.fillMaxSize().padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                BarIconButton(SfIcons.ChevronDown, "返回", ink, onBack, backdrop, scrimTint)
+                Spacer(Modifier.weight(1f))
+                // Absent on pages with nothing worth sharing (the artist page), where an inert
+                // button would be worse than the asymmetry.
+                if (onShare != null) {
+                    BarIconButton(SfIcons.SquareAndArrowUp, "分享", ink, onShare, backdrop, scrimTint)
                 }
             }
         }
-
-        // The scroll edge: rows fade out as they pass under the bar instead of being cut off by it.
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(TopBarEdgeFade)
-                .background(
-                    Brush.verticalGradient(
-                        0f to palette.background.copy(alpha = surface),
-                        1f to palette.background.copy(alpha = 0f),
-                    ),
-                ),
-        )
     }
 }
 
@@ -676,13 +679,19 @@ private fun BarIconButton(
     description: String,
     ink: Color,
     onClick: () -> Unit,
+    backdrop: Backdrop,
+    /**
+     * Opaque glass tint. The bar passes the opposite of its measured ink, so the disc always sits
+     * between the glyph and whatever artwork is behind it — the same contrast rule the scrim uses.
+     */
+    glassTint: Color,
 ) {
     Box(
         Modifier
-            // 44dp for a comfortable touch target; the glyph stays 19dp.
+            // 44dp for a comfortable touch target; the glyph stays 19dp. The glass disc is the whole
+            // 44dp target, so adding the material never shrinks the tap area.
             .size(44.dp)
-            .clip(ContinuousRoundedRectangle(AppleShapes.pill))
-            .background(ink.copy(alpha = 0.16f))
+            .liquidGlassControl(backdrop, CircleShape, tint = glassTint)
             .clickable(
                 indication = rememberControlRipple(bounded = true),
                 interactionSource = null,
@@ -854,15 +863,6 @@ private val TopBarSurfaceRamp = 44.dp
 
 /** The ramp in pixels, for the scroll-offset arithmetic. */
 private val TopBarSurfaceRampPx = TopBarSurfaceRamp.value
-
-/**
- * Height of the fade at the bar's lower edge.
- *
- * Replaces the 0.5dp separator that used to sit there: a gradient dissolves the row passing underneath,
- * where a hairline sliced it. Short, because it only has to cover the few dp in which a row's top edge
- * would otherwise meet the bar's fill.
- */
-private val TopBarEdgeFade = 12.dp
 
 /** Clearance between the bottom of that row and the first thing in the hero (the cover). */
 internal val BarClearance = 6.dp

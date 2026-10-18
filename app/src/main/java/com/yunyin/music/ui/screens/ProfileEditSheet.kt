@@ -34,7 +34,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
+import com.yunyin.music.ui.components.AnimatedSheet
+import com.yunyin.music.ui.components.SheetPlacement
 import com.yunyin.music.ui.components.rememberControlRipple
 import com.yunyin.music.ui.icons.SfIcons
 import com.yunyin.music.ui.theme.AppleShapes
@@ -85,150 +86,74 @@ fun ProfileEditSheet(
         onSignatureChange(signatureDraft)
     }
 
-    Dialog(onDismissRequest = { commit(); onDismiss() }) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .clip(ContinuousRoundedRectangle(AppleShapes.sheet))
-                .background(AppTheme.palette.background)
-                .verticalScroll(rememberScrollState())
-                .padding(20.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = "编辑资料",
-                    fontFamily = SFPro,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 20.sp,
-                    color = AppTheme.palette.label,
-                    modifier = Modifier.weight(1f),
-                )
-                Box(
-                    Modifier
-                        .size(44.dp)
-                        .clip(CircleShape)
-                        .clickable(
-                            indication = rememberControlRipple(bounded = false),
-                            interactionSource = null,
-                            onClick = { commit(); onDismiss() },
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        SfIcons.Checkmark,
-                        contentDescription = "完成",
-                        tint = AppTheme.palette.accent,
-                        modifier = Modifier.size(22.dp),
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(6.dp))
+    AnimatedSheet(
+        onDismissed = { commit(); onDismiss() },
+        placement = SheetPlacement.Center,
+        scrim = false,
+        sheetModifier = Modifier
+            .fillMaxWidth()
+            .clip(ContinuousRoundedRectangle(AppleShapes.sheet))
+            .background(AppTheme.palette.background)
+            .verticalScroll(rememberScrollState())
+            .padding(20.dp),
+    ) { close ->
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = nickname.ifBlank { "云音用户" },
+                text = "编辑资料",
                 fontFamily = SFPro,
-                fontSize = 14.sp,
-                color = AppTheme.palette.secondaryLabel,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                fontWeight = FontWeight.Bold,
+                fontSize = 20.sp,
+                color = AppTheme.palette.label,
+                modifier = Modifier.weight(1f),
             )
-
-            Spacer(Modifier.height(20.dp))
-
-            // ------------------------------------------------------------ nickname
-            SectionLabel("昵称")
-            SwitchRow(
-                title = "跟随网易云音乐昵称",
-                subtitle = if (useNeteaseName) {
-                    "当前显示「${nickname.ifBlank { "云音用户" }}」"
-                } else {
-                    "关闭后使用你设置的昵称"
-                },
-                checked = useNeteaseName,
-                onCheckedChange = onUseNeteaseNameChange,
-            )
-            // The field only makes sense while the name is the user's own; hiding it while following
-            // keeps the sheet from showing an input that editing would have no effect.
-            if (!useNeteaseName) {
-                Spacer(Modifier.height(8.dp))
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(ContinuousRoundedRectangle(AppleShapes.control))
-                        .background(AppTheme.palette.secondaryBackground)
-                        .padding(horizontal = 14.dp, vertical = 12.dp),
-                ) {
-                    if (nameDraft.isEmpty()) {
-                        Text(
-                            text = "设置你的昵称",
-                            fontFamily = SFPro,
-                            fontSize = 16.sp,
-                            color = AppTheme.palette.tertiaryLabel,
-                        )
-                    }
-                    BasicTextField(
-                        value = nameDraft,
-                        onValueChange = { nameDraft = it.take(MAX_NICKNAME) },
-                        textStyle = TextStyle(
-                            fontFamily = SFPro,
-                            fontSize = 16.sp,
-                            color = AppTheme.palette.label,
-                        ),
-                        cursorBrush = androidx.compose.ui.graphics.SolidColor(AppTheme.palette.accent),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
+            Box(
+                Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .clickable(
+                        indication = rememberControlRipple(bounded = false),
+                        interactionSource = null,
+                        onClick = { commit(); close() },
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    SfIcons.Checkmark,
+                    contentDescription = "完成",
+                    tint = AppTheme.palette.accent,
+                    modifier = Modifier.size(22.dp),
+                )
             }
+        }
 
-            Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = nickname.ifBlank { "云音用户" },
+            fontFamily = SFPro,
+            fontSize = 14.sp,
+            color = AppTheme.palette.secondaryLabel,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
 
-            // ------------------------------------------------------------ avatar
-            SectionLabel("头像")
-            ActionTile(
-                title = if (hasCustomAvatar) "更换自定义头像" else "选择自定义头像",
-                subtitle = "从相册中选择一张图片",
-                onClick = onPickAvatar,
-            )
+        Spacer(Modifier.height(20.dp))
+
+        // ------------------------------------------------------------ nickname
+        SectionLabel("昵称")
+        SwitchRow(
+            title = "跟随网易云音乐昵称",
+            subtitle = if (useNeteaseName) {
+                "当前显示「${nickname.ifBlank { "云音用户" }}」"
+            } else {
+                "关闭后使用你设置的昵称"
+            },
+            checked = useNeteaseName,
+            onCheckedChange = onUseNeteaseNameChange,
+        )
+        // The field only makes sense while the name is the user's own; hiding it while following
+        // keeps the sheet from showing an input that editing would have no effect.
+        if (!useNeteaseName) {
             Spacer(Modifier.height(8.dp))
-            SwitchRow(
-                title = "跟随网易云音乐头像",
-                subtitle = "关闭后使用你选择的自定义头像",
-                checked = useNeteaseAvatar,
-                onCheckedChange = onUseNeteaseAvatarChange,
-            )
-            if (hasCustomAvatar) {
-                Spacer(Modifier.height(8.dp))
-                ActionTile(
-                    title = "移除自定义头像",
-                    subtitle = "恢复为网易云音乐头像",
-                    tint = AppTheme.palette.accent,
-                    onClick = onClearAvatar,
-                )
-            }
-
-            Spacer(Modifier.height(20.dp))
-
-            // ------------------------------------------------------------ header image
-            SectionLabel("背景图")
-            ActionTile(
-                title = if (hasCustomBackground) "更换背景图" else "选择背景图",
-                subtitle = "显示在资料页顶部",
-                onClick = onPickBackground,
-            )
-            if (hasCustomBackground) {
-                Spacer(Modifier.height(8.dp))
-                ActionTile(
-                    title = "移除背景图",
-                    subtitle = "恢复为默认渐变",
-                    tint = AppTheme.palette.accent,
-                    onClick = onClearBackground,
-                )
-            }
-
-            Spacer(Modifier.height(20.dp))
-
-            // ------------------------------------------------------------ signature
-            SectionLabel("个性签名")
             Box(
                 Modifier
                     .fillMaxWidth()
@@ -236,17 +161,17 @@ fun ProfileEditSheet(
                     .background(AppTheme.palette.secondaryBackground)
                     .padding(horizontal = 14.dp, vertical = 12.dp),
             ) {
-                if (signatureDraft.isEmpty()) {
+                if (nameDraft.isEmpty()) {
                     Text(
-                        text = "写点什么…",
+                        text = "设置你的昵称",
                         fontFamily = SFPro,
                         fontSize = 16.sp,
                         color = AppTheme.palette.tertiaryLabel,
                     )
                 }
                 BasicTextField(
-                    value = signatureDraft,
-                    onValueChange = { signatureDraft = it.take(MAX_SIGNATURE) },
+                    value = nameDraft,
+                    onValueChange = { nameDraft = it.take(MAX_NICKNAME) },
                     textStyle = TextStyle(
                         fontFamily = SFPro,
                         fontSize = 16.sp,
@@ -256,15 +181,92 @@ fun ProfileEditSheet(
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = "${signatureDraft.length}/$MAX_SIGNATURE",
-                fontFamily = SFPro,
-                fontSize = 11.sp,
-                color = AppTheme.palette.tertiaryLabel,
-                modifier = Modifier.align(Alignment.End),
+        }
+
+        Spacer(Modifier.height(20.dp))
+
+        // ------------------------------------------------------------ avatar
+        SectionLabel("头像")
+        ActionTile(
+            title = if (hasCustomAvatar) "更换自定义头像" else "选择自定义头像",
+            subtitle = "从相册中选择一张图片",
+            onClick = onPickAvatar,
+        )
+        Spacer(Modifier.height(8.dp))
+        SwitchRow(
+            title = "跟随网易云音乐头像",
+            subtitle = "关闭后使用你选择的自定义头像",
+            checked = useNeteaseAvatar,
+            onCheckedChange = onUseNeteaseAvatarChange,
+        )
+        if (hasCustomAvatar) {
+            Spacer(Modifier.height(8.dp))
+            ActionTile(
+                title = "移除自定义头像",
+                subtitle = "恢复为网易云音乐头像",
+                tint = AppTheme.palette.accent,
+                onClick = onClearAvatar,
             )
         }
+
+        Spacer(Modifier.height(20.dp))
+
+        // ------------------------------------------------------------ header image
+        SectionLabel("背景图")
+        ActionTile(
+            title = if (hasCustomBackground) "更换背景图" else "选择背景图",
+            subtitle = "显示在资料页顶部",
+            onClick = onPickBackground,
+        )
+        if (hasCustomBackground) {
+            Spacer(Modifier.height(8.dp))
+            ActionTile(
+                title = "移除背景图",
+                subtitle = "恢复为默认渐变",
+                tint = AppTheme.palette.accent,
+                onClick = onClearBackground,
+            )
+        }
+
+        Spacer(Modifier.height(20.dp))
+
+        // ------------------------------------------------------------ signature
+        SectionLabel("个性签名")
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .clip(ContinuousRoundedRectangle(AppleShapes.control))
+                .background(AppTheme.palette.secondaryBackground)
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+        ) {
+            if (signatureDraft.isEmpty()) {
+                Text(
+                    text = "写点什么…",
+                    fontFamily = SFPro,
+                    fontSize = 16.sp,
+                    color = AppTheme.palette.tertiaryLabel,
+                )
+            }
+            BasicTextField(
+                value = signatureDraft,
+                onValueChange = { signatureDraft = it.take(MAX_SIGNATURE) },
+                textStyle = TextStyle(
+                    fontFamily = SFPro,
+                    fontSize = 16.sp,
+                    color = AppTheme.palette.label,
+                ),
+                cursorBrush = androidx.compose.ui.graphics.SolidColor(AppTheme.palette.accent),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = "${signatureDraft.length}/$MAX_SIGNATURE",
+            fontFamily = SFPro,
+            fontSize = 11.sp,
+            color = AppTheme.palette.tertiaryLabel,
+            modifier = Modifier.align(Alignment.End),
+        )
     }
 }
 

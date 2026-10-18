@@ -55,9 +55,11 @@ import com.yunyin.music.core.Track
 import com.yunyin.music.data.ArtworkLoader
 import com.yunyin.music.ui.ArtistUiState
 import com.yunyin.music.ui.components.EmptyState
+import com.yunyin.music.ui.components.rememberGlassTopBarBackdrop
 import com.yunyin.music.ui.icons.SfIcons
 import com.yunyin.music.ui.theme.AppTheme
 import com.yunyin.music.ui.theme.SFPro
+import com.kyant.backdrop.backdrops.layerBackdrop
 
 /**
  * An artist's page: identity on top, top songs below — the playlist screen's layout with an artist's
@@ -123,6 +125,10 @@ fun ArtistScreen(
     val density = LocalDensity.current
     var headerHeightPx by remember(state.id) { mutableIntStateOf(0) }
 
+    // The frosted top bar's pixel source (same arrangement as the playlist page): page content
+    // recorded with the page background painted in first, with the bar composed outside it.
+    val topBarBackdrop = rememberGlassTopBarBackdrop()
+
     // Derived exactly as the playlist derives it: the bar goes opaque on the frame the fade's band
     // reaches it, which is when the colour under the bar stops being artwork.
     val fadePx = with(density) { PageFade.toPx() }
@@ -130,11 +136,12 @@ fun ArtistScreen(
     val barSolidThreshold = (headerHeightPx - fadePx - barBottomPx).coerceAtLeast(0f)
 
     Box(modifier.fillMaxSize()) {
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = 32.dp),
-        ) {
+        Box(Modifier.fillMaxSize().layerBackdrop(topBarBackdrop)) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 32.dp),
+            ) {
             item("header") {
                 ArtistHeader(
                     state = state,
@@ -189,10 +196,13 @@ fun ArtistScreen(
             }
 
             item("bottom") { Spacer(Modifier.navigationBarsPadding().height(12.dp)) }
+            }
         }
 
-        // Pinned last so it draws over the scrolling artwork.
+        // Pinned last, outside the recorded layer, so it draws over the scrolling artwork and
+        // samples it instead of sampling itself.
         TopBar(
+            backdrop = topBarBackdrop,
             onCover = onCover,
             // The opposite of the ink, so the scrim always separates the controls from whatever
             // scrolls under them regardless of which ink the artwork chose.

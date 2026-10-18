@@ -2,6 +2,7 @@ package com.yunyin.music.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,18 +28,25 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import com.yunyin.music.ui.AppViewModel
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.yunyin.music.data.lxsource.LxImportedSource
+import com.yunyin.music.data.lxsource.LxSourceKey
 import com.yunyin.music.data.update.UpdateUiState
 import com.yunyin.music.ui.PlayerStyle
+import com.yunyin.music.ui.components.GlassTopBar
+import com.yunyin.music.ui.components.glassTopBarTopPadding
+import com.yunyin.music.ui.components.rememberGlassTopBarBackdrop
 import com.yunyin.music.ui.icons.SfIcons
 import com.yunyin.music.ui.theme.AppleShapes
 import com.yunyin.music.ui.theme.AppTheme
 import com.yunyin.music.ui.theme.SFPro
+import com.kyant.backdrop.backdrops.layerBackdrop
 import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
 
 /**
@@ -105,13 +113,6 @@ fun SettingsScreen(
     /** Copies the recorded crash text to the clipboard so it can be pasted into a message. */
     onCopyCrashLog: () -> Unit = {},
     /**
-     * Copies the listen-together engine's recent activity.
-     *
-     * Needed because the feature cannot be exercised without two accounts: when a room will not join or
-     * will not sync, the only observable is what the app recorded doing.
-     */
-    onCopyTogetherLog: () -> Unit = {},
-    /**
      * The update check's state, for the "检查更新" row.
      *
      * A whole state rather than a boolean because the row has to say four different things — checking,
@@ -126,46 +127,52 @@ fun SettingsScreen(
     playerStyle: PlayerStyle = PlayerStyle.Classic,
     /** Opens the picker; the choosing itself lives in the sheet so this screen stays a list. */
     onShowPlayerStyle: () -> Unit = {},
+    /** Imported LX (洛雪) custom sources; empty until one is imported. */
+    lxSources: List<LxImportedSource> = emptyList(),
+    /** True while a picked script is being run and validated. */
+    lxImporting: Boolean = false,
+    /** The result of the last import or toggle, shown under the import row. */
+    lxImportMessage: String? = null,
+    /**
+     * Whether a custom-source failure detail has been recorded.
+     *
+     * The short reason is in [lxImportMessage]; the JS stack that explains *why* is in a file, and on an
+     * unrooted device that file is unreachable without adb — the same problem the crash-log row solves. The
+     * row therefore appears only when there is something to copy.
+     */
+    lxErrorLogAvailable: Boolean = false,
+    /** Copies the recorded custom-source failure detail to the clipboard. */
+    onCopyLxErrorLog: () -> Unit = {},
+    /** Opens the document picker; the picking and importing live in the host so this screen stays a list. */
+    onImportLxSource: () -> Unit = {},
+    /** Opens the URL dialog; the fetching/validation happens in the host. */
+    onImportLxSourceFromUrl: () -> Unit = {},
+    /** Re-downloads a URL-sourced script and replaces it. */
+    onRefreshLxSource: (String) -> Unit = {},
+    onToggleLxSource: (String, Boolean) -> Unit = { _, _ -> },
+    onDeleteLxSource: (String) -> Unit = {},
 ) {
-    Column(
+    // The frosted navigation strip: the recorded page layer the bar samples, with the bar itself
+    // composed outside it (after the scroll column closes, below).
+    val topBarBackdrop = rememberGlassTopBarBackdrop()
+
+    Box(
         modifier = modifier
             .fillMaxSize()
-            .background(AppTheme.palette.background)
-            .statusBarsPadding()
-            .navigationBarsPadding(),
+            // The screen is a full-window overlay and is not wrapped in a Surface by its host, so it
+            // has to paint its own page background; the recorded layer above paints the same colour
+            // *into the blur field* (that fill is what the top strip's blur samples).
+            .background(AppTheme.palette.background),
     ) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            // 44dp for a comfortable touch target; the glyph stays 22dp so the header reads the same.
-            Box(
-                Modifier.size(44.dp).clip(CircleShape).clickable(onClick = onBack),
-                contentAlignment = Alignment.Center,
+        Box(Modifier.fillMaxSize().layerBackdrop(topBarBackdrop)) {
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .navigationBarsPadding()
+                    .padding(top = glassTopBarTopPadding())
+                    .padding(horizontal = 20.dp, vertical = 8.dp),
             ) {
-                Icon(
-                    SfIcons.ChevronLeft,
-                    contentDescription = "返回",
-                    tint = AppTheme.palette.accent,
-                    modifier = Modifier.size(22.dp),
-                )
-            }
-            Spacer(Modifier.width(6.dp))
-            Text(
-                "设置",
-                fontFamily = SFPro,
-                fontWeight = FontWeight.Bold,
-                fontSize = 28.sp,
-                color = AppTheme.palette.label,
-            )
-        }
-
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 8.dp),
-        ) {
             SectionLabel("状态栏歌词")
             // The enable switch leads, because it decides whether the two rows below have anything to
             // say: with 词幕 publishing off there is no connection to report and no status to retry.
@@ -207,6 +214,22 @@ fun SettingsScreen(
 
             Spacer(Modifier.height(28.dp))
 
+            SectionLabel("音源")
+            LxSourcesSection(
+                sources = lxSources,
+                importing = lxImporting,
+                message = lxImportMessage,
+                errorLogAvailable = lxErrorLogAvailable,
+                onCopyErrorLog = onCopyLxErrorLog,
+                onImport = onImportLxSource,
+                onImportFromUrl = onImportLxSourceFromUrl,
+                onRefresh = onRefreshLxSource,
+                onToggle = onToggleLxSource,
+                onDelete = onDeleteLxSource,
+            )
+
+            Spacer(Modifier.height(28.dp))
+
             SectionLabel("存储")
             ActionRow(text = "清除歌词缓存", onClick = onClearLyricsCache)
 
@@ -236,11 +259,38 @@ fun SettingsScreen(
             if (hasCrashLog) {
                 ActionRow(text = "复制上次崩溃日志", onClick = onCopyCrashLog)
             }
-            // The listen-together log. Shown always rather than conditionally: a room that failed to join
-            // or failed to sync leaves no crash and no visible error, so the user needs a way to hand over
-            // what the engine actually did. (Two accounts are required to reproduce it, which is why it
-            // cannot be diagnosed from the outside.)
-            ActionRow(text = "复制一起听日志", onClick = onCopyTogetherLog)
+            }
+        }
+
+        GlassTopBar(
+            backdrop = topBarBackdrop,
+            modifier = Modifier.align(Alignment.TopCenter),
+        ) {
+            Row(
+                Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                // 44dp for a comfortable touch target; the glyph stays 22dp so the header reads the same.
+                Box(
+                    Modifier.size(44.dp).clip(CircleShape).clickable(onClick = onBack),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        SfIcons.ChevronLeft,
+                        contentDescription = "返回",
+                        tint = AppTheme.palette.accent,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    "设置",
+                    fontFamily = SFPro,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 28.sp,
+                    color = AppTheme.palette.label,
+                )
+            }
         }
     }
 }
@@ -522,3 +572,179 @@ private fun LinkRow(text: String, value: String, onClick: () -> Unit) {
         )
     }
 }
+
+/**
+ * The 音源 section of Settings: import a script, then manage what was imported.
+ *
+ * ## Why the list is inline rather than a sheet
+ *
+ * The set is small (a handful of sources), and the whole point of the section is to answer "what is installed
+ * and which one is on". A sheet would hide that behind a tap; three rows say it at a glance, in the same
+ * visual language as every other settings row.
+ *
+ * ## The rule shown at the bottom
+ *
+ * At most **one enabled source may claim a given source key** (`kw`/`kg`/`tx`/`wy`/`mg`/`local`), because two
+ * scripts answering for the same provider would make every later request ambiguous. The enforcement lives in
+ * `LxSourceStore`; the line here exists so the refusal is explainable rather than surprising. A newly imported
+ * source starts enabled when no other enabled script claims its keys, and stays disabled (with the reason in
+ * [message]) when one does.
+ */
+@Composable
+private fun LxSourcesSection(
+    sources: List<LxImportedSource>,
+    importing: Boolean,
+    message: String?,
+    errorLogAvailable: Boolean,
+    onCopyErrorLog: () -> Unit,
+    onImport: () -> Unit,
+    onImportFromUrl: () -> Unit,
+    onRefresh: (String) -> Unit,
+    onToggle: (String, Boolean) -> Unit,
+    onDelete: (String) -> Unit,
+) {
+    LinkRow(
+        text = "导入自定义音源",
+        value = if (importing) "校验中…" else "选择 .js 文件",
+        // A second tap while the first script is running would start a second engine; the row says what it is
+        // doing instead of silently ignoring the tap.
+        onClick = { if (!importing) onImport() },
+    )
+    // URL import goes through exactly the same validation pipeline after the download; the row is separate
+    // because the user is choosing a *delivery method*, not a different kind of script.
+    LinkRow(
+        text = "从链接导入",
+        value = if (importing) "校验中…" else "粘贴网络音源地址",
+        onClick = { if (!importing) onImportFromUrl() },
+    )
+    if (importing) {
+        HintRow("正在运行脚本并等待它发送 inited 事件…")
+    }
+    if (message != null) {
+        HintRow(message)
+    }
+    // Only when a failure was recorded: the detail is a JS stack, and copying it is how an author gets a report
+    // they can act on. A permanently visible row would be noise for everyone whose sources work.
+    if (errorLogAvailable) {
+        ActionRow(text = "复制音源错误日志", onClick = onCopyErrorLog)
+    }
+    if (sources.isEmpty()) {
+        if (!importing) {
+            HintRow("尚未导入音源脚本。支持 LX Music（洛雪音乐）自定义源，导入时会校验脚本能否初始化。")
+        }
+        return
+    }
+    sources.forEach { source ->
+        LxSourceRow(
+            source = source,
+            onToggle = { enabled -> onToggle(source.id, enabled) },
+            onDelete = { onDelete(source.id) },
+            onRefresh = if (source.originUrl != null) ({ onRefresh(source.id) }) else null,
+        )
+    }
+    if (sources.size > 1) {
+        HintRow("同一个音源标识（如 wy）只能启用一个脚本，避免同一个平台由两个脚本同时应答。")
+    }
+    if (sources.any { it.enabled && LxSourceKey.WY in it.keys }) {
+        HintRow("已启用的音源会优先解析网易云播放链接；解析失败或超时会自动回退到内置接口。")
+    }
+}
+
+/** One imported source: name and its declaration on the left, delete and the enable switch on the right. */
+@Composable
+private fun LxSourceRow(
+    source: LxImportedSource,
+    onToggle: (Boolean) -> Unit,
+    onDelete: () -> Unit,
+    /** Present only for a URL-sourced script, whose origin can be re-fetched. */
+    onRefresh: (() -> Unit)? = null,
+) {
+    val subtitle = buildString {
+        append("支持 ").append(source.keysLabel)
+        source.versionAuthorLabel.takeIf { it.isNotBlank() }?.let { append(" · ").append(it) }
+    }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(ContinuousRoundedRectangle(10.dp))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = source.header.name,
+                fontFamily = SFPro,
+                fontSize = 16.sp,
+                color = AppTheme.palette.label,
+            )
+            Text(
+                text = subtitle,
+                fontFamily = SFPro,
+                fontSize = 12.sp,
+                color = AppTheme.palette.secondaryLabel,
+            )
+            // The origin is part of the source's identity: a URL script is updatable, and the user needs to know
+            // where it came from before reloading or deleting it.
+            source.originUrl?.let { origin ->
+                Text(
+                    text = origin,
+                    fontFamily = SFPro,
+                    fontSize = 11.sp,
+                    color = AppTheme.palette.tertiaryLabel,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        if (onRefresh != null) {
+            Text(
+                text = "更新",
+                fontFamily = SFPro,
+                fontSize = 13.sp,
+                color = AppTheme.palette.accent,
+                modifier = Modifier
+                    .clip(ContinuousRoundedRectangle(8.dp))
+                    .clickable(onClick = onRefresh)
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+            )
+            Spacer(Modifier.width(2.dp))
+        }
+        // Delete is a word, not an icon: the switch already owns the right-hand edge, and two unlabelled
+        // glyphs next to each other would be a guessing game about which one toggles and which one removes.
+        Text(
+            text = "删除",
+            fontFamily = SFPro,
+            fontSize = 13.sp,
+            color = AppTheme.palette.accent,
+            modifier = Modifier
+                .clip(ContinuousRoundedRectangle(8.dp))
+                .clickable(onClick = onDelete)
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+        )
+        Spacer(Modifier.width(4.dp))
+        Switch(
+            checked = source.enabled,
+            onCheckedChange = onToggle,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = androidx.compose.ui.graphics.Color.White,
+                checkedTrackColor = AppTheme.palette.accent,
+            ),
+        )
+    }
+}
+
+/** A one-line explanation under the 音源 rows: status, why a source is off, or the collision rule. */
+@Composable
+private fun HintRow(text: String) {
+    Text(
+        text = text,
+        fontFamily = SFPro,
+        fontSize = 12.sp,
+        lineHeight = 17.sp,
+        color = AppTheme.palette.tertiaryLabel,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+    )
+}
+
