@@ -1084,38 +1084,52 @@ code { font-family: var(--mono); font-size: .92em; color: var(--brand-ink); }
 
 .card__rows {
   margin-top: auto;
-  display: grid;
-  gap: 8px;
+  padding-top: 2px;
+  border-top: 1px solid var(--line);
 }
-.card__rows span {
-  display: block;
-  height: 9px;
-  border-radius: 999px;
-  background: linear-gradient(90deg, rgba(255, 255, 255, .16), rgba(255, 255, 255, .05));
+.card__rows li {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, .07);
+  font-size: .86rem;
+  color: var(--ink-2);
 }
-.card__rows span:nth-child(2) { width: 78%; }
-.card__rows span:nth-child(3) { width: 58%; }
+.card__rows li:last-child { padding-bottom: 0; border-bottom: 0; }
+.card__rows-label { flex: 1; }
+.card__rows-icon {
+  width: 15px;
+  height: 15px;
+  color: var(--ink-3);
+}
+.card__rows-chevron {
+  width: 13px;
+  height: 13px;
+  color: var(--ink-3);
+}
 
 .card--shot {
   grid-column: 3;
   grid-row: 1 / span 2;
-  padding: 0;
+  padding: clamp(16px, 2vw, 26px);
   min-height: 396px;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: center;
   background:
     radial-gradient(80% 60% at 50% 100%, rgba(90, 200, 250, .14), transparent 70%),
     rgba(9, 9, 13, .4);
 }
 .phone--mini {
-  width: 84%;
-  margin-bottom: -12%;
-  border-bottom-left-radius: 0;
-  border-bottom-right-radius: 0;
-  box-shadow: 0 -10px 60px -20px rgba(0, 0, 0, .8);
+  /* fully inside its card and centred on both axes — same equal-gap framing at every width */
+  width: min(100%, 232px);
+  margin: 0;
+  padding: 6px;
+  border-radius: 36px;
+  box-shadow: 0 26px 60px -30px rgba(0, 0, 0, .8);
 }
-.phone--mini .phone__screen { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.phone--mini .phone__screen { border-radius: 30px; }
 
 .card--oss {
   grid-column: 1 / -1;
@@ -1294,10 +1308,15 @@ code { font-family: var(--mono); font-size: .92em; color: var(--brand-ink); }
   .phone--glass, .phone--lyrics, .phone--search { width: clamp(220px, 52vw, 280px); }
 
   .bento { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .card--field { grid-column: span 2; grid-row: auto; min-height: 340px; }
-  .card--shot { grid-column: auto; grid-row: auto; min-height: 320px; }
-  .card--seek, .card--downloads, .card--library { grid-column: auto; grid-row: auto; }
-  .card--oss { grid-column: 1 / -1; grid-row: auto; }
+  /* 2-column masonry: field across the top, then seek/downloads, then the library card
+     beside the tall screenshot card, with the GPL card closing the left column. This keeps
+     the library card at its own content height instead of stretching it beside the phone. */
+  .card--field { grid-column: 1 / -1; grid-row: 1; min-height: 340px; }
+  .card--seek { grid-column: 1; grid-row: 2; }
+  .card--downloads { grid-column: 2; grid-row: 2; }
+  .card--library { grid-column: 1; grid-row: 3; }
+  .card--shot { grid-column: 2; grid-row: 3 / span 2; min-height: 320px; }
+  .card--oss { grid-column: 1; grid-row: 4; flex-direction: column; align-items: flex-start; gap: 12px; }
 
   .download-panel { grid-template-columns: minmax(0, 1fr); }
   .download__mark { order: -1; min-height: 190px; }
@@ -1336,7 +1355,12 @@ code { font-family: var(--mono); font-size: .92em; color: var(--brand-ink); }
   .karaoke__foot { flex-wrap: wrap; }
 
   .bento { grid-template-columns: minmax(0, 1fr); gap: 12px; }
-  .card--field { grid-column: auto; }
+  .card--field,
+  .card--seek,
+  .card--downloads,
+  .card--library,
+  .card--shot,
+  .card--oss { grid-column: auto; grid-row: auto; }
   .card--oss { flex-direction: column; align-items: flex-start; }
 
   .facts { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }

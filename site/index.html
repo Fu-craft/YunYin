@@ -294,9 +294,23 @@
             <h3>资料库</h3>
             <p>歌单、专辑、榜单、喜欢的歌、最近播放，都在一处。</p>
           </div>
-          <div class="card__rows" aria-hidden="true">
-            <span></span><span></span><span></span>
-          </div>
+          <ul class="card__rows" aria-label="资料库里的内容">
+            <li>
+              <svg class="icon card__rows-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20.2c-3.9-2.4-7-4.9-7-8.2A3.9 3.9 0 0 1 12 9.4a3.9 3.9 0 0 1 7 2.6c0 3.3-3.1 5.8-7 8.2Z"/></svg>
+              <span class="card__rows-label">喜欢</span>
+              <svg class="icon card__rows-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 6.5 16 12l-6.5 5.5"/></svg>
+            </li>
+            <li>
+              <svg class="icon card__rows-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h11M4 17h7"/></svg>
+              <span class="card__rows-label">我的歌单</span>
+              <svg class="icon card__rows-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 6.5 16 12l-6.5 5.5"/></svg>
+            </li>
+            <li>
+              <svg class="icon card__rows-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4.4l3 1.8"/></svg>
+              <span class="card__rows-label">最近播放</span>
+              <svg class="icon card__rows-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 6.5 16 12l-6.5 5.5"/></svg>
+            </li>
+          </ul>
         </article>
 
         <article class="card card--shot reveal" style="--i:4">
