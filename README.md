@@ -3,6 +3,8 @@
 网易云音乐第三方 Android 播放器，Kotlin + Jetpack Compose 实现，界面仿 Apple Music。
 非官方客户端，与网易云音乐、Apple 均无关联；需要 Android 13（API 33）及以上。
 
+**[官网](https://fu-craft.github.io/YunYin/)** · **[下载 APK](https://github.com/Fu-craft/YunYin/releases/latest)** · **[源码](https://github.com/Fu-craft/YunYin)**
+
 ## 功能
 
 **播放**
