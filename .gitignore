@@ -58,6 +58,8 @@ docs/HANDOFF.md
 *.jpeg
 !app/src/main/res/drawable*/**/*.png
 !docs/screenshots/*.png
+!site/assets/*.png
+!site/favicon.png
 
 # ---------------------------------------------------------------- fonts
 # SF Pro is Apple's font and its licence does not permit redistribution in a

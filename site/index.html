@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="zh-CN" class="no-js">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>云音 YunYin — 把音乐装进一块会流动的玻璃</title>
+<meta name="description" content="云音是一个开源的 Android 网易云音乐客户端：液态玻璃界面、AMLL 逐字歌词、网易云与 QQ 双源搜索。GPL-3.0，v3.31.2，APK 24.2 MB。">
+<meta name="theme-color" content="#060608">
+<meta name="color-scheme" content="dark">
+<link rel="icon" type="image/png" href="assets/favicon.png">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<link rel="stylesheet" href="styles.css">
+<script>document.documentElement.classList.replace('no-js', 'js');</script>
+<script src="main.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到主要内容</a>
+
+<!-- the app's cover-derived colour field: pure CSS gradients, decorative -->
+<div class="field" aria-hidden="true">
+  <div class="field__blob field__blob--rose"></div>
+  <div class="field__blob field__blob--teal"></div>
+  <div class="field__blob field__blob--amber"></div>
+  <div class="field__blob field__blob--sage"></div>
+  <div class="field__grain"></div>
+  <div class="field__vignette"></div>
+</div>
+<div class="scroll-progress" aria-hidden="true"></div>
+
+<header class="nav" data-nav>
+  <div class="wrap nav__inner">
+    <a class="brand" href="#top" aria-label="云音 YunYin — 回到顶部">
+      <img class="brand__mark" src="assets/brand-note.webp" width="22" height="22" alt="">
+      <span class="brand__name">云音</span>
+      <span class="brand__en" aria-hidden="true">YunYin</span>
+    </a>
+    <nav class="nav__links" aria-label="页面导航">
+      <a href="#glass">材质</a>
+      <a href="#lyrics">歌词</a>
+      <a href="#sources">双源搜索</a>
+      <a href="#features">功能</a>
+    </nav>
+    <a class="btn btn--primary btn--nav" href="https://github.com/Fu-craft/YunYin/releases/latest">
+      下载 APK
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M12 15l-4-4M12 15l4-4M5 20h14"/></svg>
+    </a>
+  </div>
+</header>
+
+<main id="main">
+  <!-- ============================================================ hero -->
+  <section class="hero" id="top" aria-labelledby="hero-title">
+    <div class="wrap hero__grid">
+      <div class="hero__copy">
+        <p class="eyebrow reveal">开源 · Android · GPL-3.0</p>
+        <h1 class="hero__title reveal" id="hero-title" style="--i:1">云音</h1>
+        <p class="hero__lead reveal" style="--i:2">把音乐装进一块会流动的玻璃。</p>
+        <p class="hero__sub reveal" style="--i:3">网易云音乐的开源 Android 客户端。<br>封面取色、逐字歌词、双源搜索，<br>全在一块玻璃里。</p>
+        <div class="hero__actions reveal" style="--i:4">
+          <a class="btn btn--primary" href="https://github.com/Fu-craft/YunYin/releases/latest">
+            下载 APK
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M12 15l-4-4M12 15l4-4M5 20h14"/></svg>
+          </a>
+          <a class="btn btn--ghost" href="https://github.com/Fu-craft/YunYin">
+            <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" stroke="none" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.4 7.4 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+            GitHub 源码
+          </a>
+        </div>
+        <ul class="chips reveal" style="--i:5" aria-label="版本信息">
+          <li class="chip">v3.31.2</li>
+          <li class="chip">APK 24.2 MB</li>
+          <li class="chip">GPL-3.0</li>
+        </ul>
+      </div>
+
+      <div class="hero__visual reveal" style="--i:2" data-tilt>
+        <div class="hero__stage" data-tilt-stage>
+          <figure class="phone phone--back" aria-hidden="true">
+            <div class="phone__screen">
+              <div class="shot-wrap" style="background-image:url('assets/lyrics-lqip.webp')">
+                <img class="shot" src="assets/lyrics.webp" width="720" height="1600" alt="" loading="lazy" decoding="async">
+              </div>
+              <span class="phone__glare"></span>
+            </div>
+          </figure>
+          <figure class="phone phone--front">
+            <div class="phone__screen">
+              <div class="shot-wrap" style="background-image:url('assets/player-lqip.webp')">
+                <img class="shot" src="assets/player.webp" width="720" height="1600"
+                     alt="云音播放界面：模糊的封面背景上，居中显示专辑封面、标题、进度条和播放控制。"
+                     fetchpriority="high" decoding="async">
+              </div>
+              <span class="phone__glare"></span>
+            </div>
+          </figure>
+        </div>
+        <span class="hero__sheen" aria-hidden="true"></span>
+      </div>
+    </div>
+    <a class="scroll-hint" href="#glass">
+      <span>向下看看</span>
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+    </a>
+  </section>
+
+  <!-- ============================================================ 01 glass -->
+  <section class="section" id="glass" aria-labelledby="glass-title">
+    <div class="wrap">
+      <div class="section__head">
+        <p class="eyebrow reveal"><span class="eyebrow__num" aria-hidden="true">01</span> 材质 · Liquid Glass</p>
+        <h2 class="section__title reveal" id="glass-title" style="--i:1">底栏不是一张图片，<br>是一块玻璃。</h2>
+        <p class="section__lead reveal" style="--i:2">标签栏、播放胶囊和顶栏共用同一份材质：先模糊背后的画面，再把饱和度提起来，最后在胶囊边缘做折射。歌词滚过时，封面的颜色从玻璃后面透上来，字始终清楚。</p>
+      </div>
+
+      <div class="glass__grid">
+        <div class="stage reveal" aria-labelledby="stage-label">
+          <div class="stage__art" aria-hidden="true"></div>
+          <span class="stage__grain" aria-hidden="true"></span>
+          <p class="stage__label" id="stage-label">底栏材质 · 可交互</p>
+          <span class="callout callout--a" aria-hidden="true">blur 4dp</span>
+          <span class="callout callout--b" aria-hidden="true">lens 16 / 32dp</span>
+          <span class="callout callout--c" aria-hidden="true">α 0.50</span>
+          <span class="callout callout--d" aria-hidden="true">h 64dp</span>
+
+          <div class="bbar-wrap">
+            <div class="bbar">
+              <div class="bbar__tabs" role="tablist" aria-label="底栏标签演示" aria-describedby="bbar-hint">
+                <span class="bbar__pill" aria-hidden="true"></span>
+                <button class="bbar__tab is-selected" type="button" role="tab" aria-selected="true" tabindex="0" data-index="0">
+                  <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11.5 12 4l8 7.5V20a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1v-8.5Z"/></svg>
+                  <span>主页</span>
+                </button>
+                <button class="bbar__tab" type="button" role="tab" aria-selected="false" tabindex="-1" data-index="1">
+                  <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="9" r="3.4"/><path d="M5 20c.9-3.1 3.6-4.6 7-4.6s6.1 1.5 7 4.6"/></svg>
+                  <span>资料库</span>
+                </button>
+              </div>
+              <div class="bbar__player">
+                <span class="bbar__cover" aria-hidden="true">
+                  <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="7.5" cy="17" r="2.6"/><circle cx="17.5" cy="15" r="2.6"/><path d="M10.1 17V6.6L20.1 4.8v10.2"/></svg>
+                </span>
+                <span class="bbar__now">
+                  <strong>未在播放</strong>
+                  <span>底栏与播放胶囊，同一份玻璃</span>
+                </span>
+              </div>
+            </div>
+            <p class="bbar-hint" id="bbar-hint">拖动选中块试试，也可以点按标签或用方向键切换。</p>
+          </div>
+        </div>
+
+        <figure class="phone phone--glass reveal" style="--i:1">
+          <div class="phone__screen">
+            <div class="shot-wrap" style="background-image:url('assets/home-lqip.webp')">
+              <img class="shot" src="assets/home.webp" width="720" height="1600"
+                   alt="云音首页：搜索框、精选歌单与每日推荐；底部是彩色的液态玻璃标签栏和正在播放的胶囊。"
+                   loading="lazy" decoding="async">
+            </div>
+            <span class="phone__glare"></span>
+          </div>
+          <figcaption class="phone__caption">真实截图 · 底栏与播放胶囊</figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ 02 lyrics -->
+  <section class="section" id="lyrics" aria-labelledby="lyrics-title">
+    <div class="wrap lyrics__grid">
+      <div class="lyrics__copy">
+        <p class="eyebrow reveal"><span class="eyebrow__num" aria-hidden="true">02</span> 歌词 · Lyrics</p>
+        <h2 class="section__title reveal" id="lyrics-title" style="--i:1">每一个字，<br>都有自己的时间点。</h2>
+        <p class="section__lead reveal" style="--i:2">逐字高亮，卡拉 OK 式填充；翻译与音译分行跟随当前行，背景人声单独成行。支持 AMLL TTML 歌词格式。</p>
+        <ul class="list reveal" style="--i:3">
+          <li>逐字点亮，不是整行一起变色</li>
+          <li>翻译 / 音译分行显示</li>
+          <li>背景人声行单独排版</li>
+          <li>AMLL TTML 自定义歌词</li>
+        </ul>
+
+        <div class="karaoke reveal" style="--i:4" data-karaoke>
+          <p class="karaoke__line" data-karaoke-line><span class="w">让</span><span class="w">每</span><span class="w">一</span><span class="w">个</span><span class="w">字</span><span class="w">，</span><span class="w">都</span><span class="w">踩</span><span class="w">在</span><span class="w">拍</span><span class="w">子</span><span class="w">上。</span></p>
+          <p class="karaoke__translation" aria-hidden="true">每个字都落在它自己的时间点上</p>
+          <div class="karaoke__foot">
+            <span class="karaoke__caption" id="karaoke-caption">逐字高亮演示 · 示例文本</span>
+            <button class="btn btn--tiny" type="button" data-karaoke-replay aria-describedby="karaoke-caption">重播</button>
+          </div>
+        </div>
+      </div>
+
+      <figure class="phone phone--lyrics reveal" style="--i:1">
+        <div class="phone__screen">
+          <div class="shot-wrap" style="background-image:url('assets/lyrics-lqip.webp')">
+            <img class="shot" src="assets/lyrics.webp" width="720" height="1600"
+                 alt="云音歌词页：当前歌词放大居中，翻译在其下方，上下两行歌词带模糊效果。"
+                 loading="lazy" decoding="async">
+          </div>
+          <span class="phone__glare"></span>
+        </div>
+        <figcaption class="phone__caption">歌词页 · 当前行放大，其余行渐隐</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ============================================================ 03 sources -->
+  <section class="section" id="sources" aria-labelledby="sources-title">
+    <div class="wrap sources__grid">
+      <div class="sources__copy">
+        <p class="eyebrow reveal"><span class="eyebrow__num" aria-hidden="true">03</span> 搜索与音源 · Sources</p>
+        <h2 class="section__title reveal" id="sources-title" style="--i:1">一次搜索，<br>两个曲库。</h2>
+        <p class="section__lead reveal" style="--i:2">网易云与 QQ 音乐同时参与搜索。VIP 或缺失的曲目会自动回退到另一个源，不用手动切来切去。</p>
+        <ul class="source-list reveal" style="--i:3">
+          <li class="source">
+            <span class="source__icon" aria-hidden="true">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M7.5 18.5a4 4 0 0 1-.6-7.95 5.8 5.8 0 0 1 11.1 1.2 3.5 3.5 0 0 1-.8 6.75H7.5Z"/></svg>
+            </span>
+            <span class="source__text"><strong>网易云音乐</strong><span>默认曲库</span></span>
+          </li>
+          <li class="source">
+            <span class="source__icon" aria-hidden="true">
+              <svg class="icon" viewBox="0 0 24 24"><circle cx="7.5" cy="17" r="2.6"/><circle cx="17.5" cy="15" r="2.6"/><path d="M10.1 17V6.6L20.1 4.8v10.2"/></svg>
+            </span>
+            <span class="source__text"><strong>QQ 音乐</strong><span>第二个曲库</span></span>
+          </li>
+          <li class="source">
+            <span class="source__icon" aria-hidden="true">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M4 9h13l-3.2-3.2M20 15H7l3.2 3.2"/></svg>
+            </span>
+            <span class="source__text"><strong>自动回退</strong><span>VIP / 无版权曲目，自动换源</span></span>
+          </li>
+          <li class="source">
+            <span class="source__icon" aria-hidden="true">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M10.5 13.5a3.5 3.5 0 0 0 5 0l3-3a3.5 3.5 0 0 0-5-5l-1.6 1.6"/><path d="M13.5 10.5a3.5 3.5 0 0 0-5 0l-3 3a3.5 3.5 0 0 0 5 5l1.6-1.6"/></svg>
+            </span>
+            <span class="source__text"><strong>LX Music 自定义音源</strong><span>文件或 URL 导入</span></span>
+          </li>
+        </ul>
+      </div>
+
+      <figure class="phone phone--search reveal" style="--i:1">
+        <div class="phone__screen">
+          <div class="shot-wrap" style="background-image:url('assets/search-lqip.webp')">
+            <img class="shot" src="assets/search.webp" width="720" height="1600"
+                 alt="云音搜索页：顶部搜索框与热门搜索列表，底部玻璃标签栏中主页处于选中状态。"
+                 loading="lazy" decoding="async">
+          </div>
+          <span class="phone__glare"></span>
+        </div>
+        <figcaption class="phone__caption">搜索页 · 进入搜索，底栏仍停在主页</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ============================================================ 04 features -->
+  <section class="section" id="features" aria-labelledby="features-title">
+    <div class="wrap">
+      <div class="section__head">
+        <p class="eyebrow reveal"><span class="eyebrow__num" aria-hidden="true">04</span> 其余 · Everything Else</p>
+        <h2 class="section__title reveal" id="features-title" style="--i:1">剩下的，<br>也都做完了。</h2>
+      </div>
+
+      <div class="bento">
+        <article class="card card--field reveal">
+          <div class="card__field" aria-hidden="true"></div>
+          <div class="card__body">
+            <h3>背景场</h3>
+            <p>从封面取色，整块界面跟着一起流动；播放时随音频起伏。</p>
+          </div>
+        </article>
+
+        <article class="card card--seek reveal" style="--i:1">
+          <div class="card__body">
+            <h3>每帧进度条</h3>
+            <p>进度按帧更新，拖动跟手，不跳格。</p>
+          </div>
+          <div class="seek" aria-hidden="true">
+            <span class="seek__fill"></span>
+            <span class="seek__knob"></span>
+          </div>
+        </article>
+
+        <article class="card card--downloads reveal" style="--i:2">
+          <div class="card__body">
+            <h3>下载与更新</h3>
+            <p>保存到 <code>Music/云音</code>；在应用内检查并安装新版本。</p>
+          </div>
+          <div class="card__icon" aria-hidden="true">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M12 4v10M12 14l-3.4-3.4M12 14l3.4-3.4M5 19h14"/></svg>
+          </div>
+        </article>
+
+        <article class="card card--library reveal" style="--i:3">
+          <div class="card__body">
+            <h3>资料库</h3>
+            <p>歌单、专辑、榜单、喜欢的歌、最近播放，都在一处。</p>
+          </div>
+          <div class="card__rows" aria-hidden="true">
+            <span></span><span></span><span></span>
+          </div>
+        </article>
+
+        <article class="card card--shot reveal" style="--i:4">
+          <div class="phone phone--mini">
+            <div class="phone__screen">
+              <div class="shot-wrap" style="background-image:url('assets/library-lqip.webp')">
+                <img class="shot" src="assets/library.webp" width="720" height="1600"
+                     alt="云音资料库页：个人资料卡片与分组列表，底栏玻璃清晰可见。"
+                     loading="lazy" decoding="async">
+              </div>
+              <span class="phone__glare"></span>
+            </div>
+          </div>
+        </article>
+
+        <article class="card card--oss reveal" style="--i:5">
+          <div class="card__body">
+            <h3>GPL-3.0，代码全在 GitHub</h3>
+            <p>自己构建、改界面、提 issue。没有黑盒。</p>
+          </div>
+          <a class="arrow-link" href="https://github.com/Fu-craft/YunYin">
+            查看仓库
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </a>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ 05 download -->
+  <section class="section section--download" id="download" aria-labelledby="download-title">
+    <div class="wrap">
+      <div class="download-panel reveal">
+        <div class="download__copy">
+          <p class="eyebrow"><span class="eyebrow__num" aria-hidden="true">05</span> 下载 · Download</p>
+          <h2 class="section__title" id="download-title">现在装上。</h2>
+          <p class="section__lead">下载 APK 直接安装；也可以去 GitHub Releases 查看所有版本与更新日志。</p>
+          <dl class="facts">
+            <div class="fact"><dt>版本</dt><dd>3.31.2</dd></div>
+            <div class="fact"><dt>大小</dt><dd>24.2 MB</dd></div>
+            <div class="fact"><dt>授权</dt><dd>GPL-3.0</dd></div>
+            <div class="fact"><dt>平台</dt><dd>Android</dd></div>
+          </dl>
+          <div class="hero__actions">
+            <a class="btn btn--primary" href="https://github.com/Fu-craft/YunYin/releases/latest">
+              下载 APK
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M12 15l-4-4M12 15l4-4M5 20h14"/></svg>
+            </a>
+            <a class="btn btn--ghost" href="https://github.com/Fu-craft/YunYin/releases">所有版本</a>
+          </div>
+        </div>
+        <div class="download__mark" aria-hidden="true">
+          <span class="download__bloom"></span>
+          <span class="download__ring"></span>
+          <img src="assets/brand-note.webp" width="160" height="160" alt="">
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="wrap footer__grid">
+    <div class="footer__brand">
+      <a class="brand" href="#top" aria-label="云音 YunYin — 回到顶部">
+        <img class="brand__mark" src="assets/brand-note.webp" width="20" height="20" alt="">
+        <span class="brand__name">云音</span>
+        <span class="brand__en" aria-hidden="true">YunYin</span>
+      </a>
+      <p class="footer__note">开源的网易云音乐 Android 客户端。<br>界面即产品：一块玻璃、一层颜色、一段逐字歌词。</p>
+    </div>
+    <nav class="footer__links" aria-label="页脚链接">
+      <div class="footer__col">
+        <h2 class="footer__heading">项目</h2>
+        <ul>
+          <li><a href="https://github.com/Fu-craft/YunYin">GitHub 仓库</a></li>
+          <li><a href="https://github.com/Fu-craft/YunYin/releases">下载与更新日志</a></li>
+          <li><a href="https://github.com/Fu-craft/YunYin/issues">问题反馈</a></li>
+        </ul>
+      </div>
+      <div class="footer__col">
+        <h2 class="footer__heading">本站</h2>
+        <ul>
+          <li><a href="#glass">材质</a></li>
+          <li><a href="#lyrics">歌词</a></li>
+          <li><a href="#sources">双源搜索</a></li>
+          <li><a href="#features">功能</a></li>
+        </ul>
+      </div>
+      <div class="footer__col">
+        <h2 class="footer__heading">授权</h2>
+        <ul>
+          <li><a href="https://www.gnu.org/licenses/gpl-3.0.html">GPL-3.0</a></li>
+          <li>无追踪脚本</li>
+          <li>无第三方字体</li>
+        </ul>
+      </div>
+    </nav>
+  </div>
+  <div class="wrap footer__bottom">
+    <p>非官方客户端，与网易云音乐无关。界面截图来自应用本体。</p>
+    <p>云音 · GPL-3.0 · 2026</p>
+  </div>
+</footer>
+</body>
+</html>
