@@ -13,6 +13,7 @@ import com.yunyin.music.data.lxsource.LxSourcePlayback
 import com.yunyin.music.data.lxsource.ResolutionConsultPolicy
 import com.yunyin.music.data.lxsource.ResolutionCache
 import com.yunyin.music.data.net.NeteaseClient
+import com.yunyin.music.data.net.PlaylistPagingRules
 import com.yunyin.music.data.providers.MusicSearchPage
 import com.yunyin.music.data.providers.ProviderMatcher
 import com.yunyin.music.data.providers.ProviderPlayback
@@ -386,7 +387,75 @@ class MusicRepository(
 
     suspend fun playlist(id: Long): Playlist? = client.playlistDetail(id).valueOrNull()
 
-    suspend fun playlistTracks(id: Long): List<Track> = client.playlistTracks(id).listOrEmpty()
+    /**
+     * Loads a playlist's **full** track list, progressively.
+     *
+     * `/playlist/track/all` used to be called once with `limit = 200`, so larger playlists were silently cut (the
+     * "566 tracks only shows 200" report). Now the complete `trackIds` list is read from `/playlist/detail`, the
+     * objects are fetched in [com.yunyin.music.data.net.PlaylistPagingRules.TRACK_BATCH]-sized batches, and the result
+     * is rebuilt in id order. [onBatch] receives the ordered list after every batch, so the screen renders the first
+     * rows immediately instead of waiting for the whole playlist.
+     *
+     * If the id list is unavailable, a bounded paging loop over `/playlist/track/all` is used as a fallback
+     * ([PlaylistPagingRules.MAX_PAGES]/[PlaylistPagingRules.MAX_TRACKS]) with a fresh cache-bust per page. Loading
+     * fewer rows than the header's `trackCount` is acceptable (deleted/unavailable entries) and logged.
+     */
+    suspend fun playlistTracksProgressive(
+        id: Long,
+        onBatch: (List<Track>) -> Unit = {},
+    ): List<Track> {
+        val ids = (client.playlistTrackIds(id) as? NetResult.Ok)?.value
+        if (!ids.isNullOrEmpty()) {
+            val unique = ids.distinct()
+            val byId = HashMap<Long, Track>(unique.size)
+            var failedBatches = 0
+            for (chunk in com.yunyin.music.data.net.PlaylistPagingRules.chunks(unique)) {
+                when (val fetched = client.songDetails(chunk)) {
+                    is NetResult.Ok -> fetched.value.forEach { byId[it.id] = it }
+                    is NetResult.Err -> failedBatches++
+                }
+                onBatch(com.yunyin.music.data.net.PlaylistPagingRules.assemble(ids, byId))
+            }
+            val final = com.yunyin.music.data.net.PlaylistPagingRules.assemble(ids, byId)
+            log?.record(
+                "解析",
+                "stage=playlist-load id=$id loaded=${final.size} total=${ids.size} " +
+                    "failedBatches=$failedBatches capped=false",
+            )
+            return final
+        }
+
+        // Fallback: page `/playlist/track/all` itself. Each page is cache-busted by the client.
+        val out = ArrayList<Track>()
+        var offset = 0
+        var page = 0
+        var capped = false
+        while (true) {
+            val batch = client.playlistTracks(id, limit = PlaylistPagingRules.FALLBACK_PAGE_LIMIT, offset = offset)
+                .listOrEmpty()
+            out += batch
+            val decision = PlaylistPagingRules.pageDecision(
+                returned = batch.size,
+                requested = PlaylistPagingRules.FALLBACK_PAGE_LIMIT,
+                loaded = out.size,
+                pageIndex = page,
+            )
+            onBatch(out.toList())
+            if (decision.stop) {
+                capped = decision.capped
+                break
+            }
+            offset = out.size
+            page++
+        }
+        log?.record(
+            "解析",
+            "stage=playlist-load id=$id loaded=${out.size} total=unknown fallback=true capped=$capped",
+        )
+        return out
+    }
+
+    suspend fun playlistTracks(id: Long): List<Track> = playlistTracksProgressive(id)
 
     // ---------------------------------------------------------------- playlist management
     //

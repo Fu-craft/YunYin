@@ -303,12 +303,29 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
             owned = com.yunyin.music.data.playlist.PlaylistOwnership.canEdit(playlist, uid),
         )
         collectionJob = viewModelScope.launch {
-            val tracks = container.music.playlistTracks(playlist.id)
+            // Progressive: the first batch renders immediately, later batches append in order. A 566/1267-track
+            // playlist used to stop at 200 because the loader made one `limit = 200` request.
+            val tracks = container.music.playlistTracksProgressive(playlist.id) { partial ->
+                val shown = _collection.value?.id
+                if (shown != null &&
+                    collectionResultApplies(requestId, collectionRequestId, shown, playlist.id)
+                ) {
+                    _collection.value = _collection.value?.copy(
+                        tracks = partial,
+                        loading = partial.isEmpty(),
+                        subtitle = "${partial.size} 首",
+                    )
+                }
+            }
             val shown = _collection.value?.id
             if (shown != null &&
                 collectionResultApplies(requestId, collectionRequestId, shown, playlist.id)
             ) {
-                _collection.value = _collection.value?.copy(tracks = tracks, loading = false)
+                _collection.value = _collection.value?.copy(
+                    tracks = tracks,
+                    loading = false,
+                    subtitle = "${tracks.size} 首",
+                )
             }
         }
     }

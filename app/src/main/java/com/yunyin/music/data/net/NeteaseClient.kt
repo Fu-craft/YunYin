@@ -469,7 +469,24 @@ class NeteaseClient(
         )
     }
 
-    suspend fun playlistTracks(id: Long, limit: Int = 200, offset: Int = 0): NetResult<List<Track>> = request(
+    /**
+     * The playlist's **complete ordered id list** from `/playlist/detail` (`playlist.trackIds`).
+     *
+     * Probe on a 1267-track playlist: `trackIds` had all 1267 ids while the embedded `tracks[]` array stopped at
+     * 1000. This is the authoritative list the batched loader follows.
+     */
+    suspend fun playlistTrackIds(id: Long): NetResult<List<Long>> = request(
+        "/playlist/detail",
+        query = PlaylistRequestRules.withCacheBust(mapOf("id" to "$id"), System.currentTimeMillis()),
+    ).map { json ->
+        val ids = json.optJSONObject("playlist")?.optJSONArray("trackIds") ?: return@map emptyList()
+        (0 until ids.length()).mapNotNull { i -> ids.optJSONObject(i)?.optLong("id")?.takeIf { it > 0L } }
+    }
+
+    /** Batched track objects for the playlist loader (500 ids per `/song/detail` call in the deployed instance). */
+    suspend fun songDetails(ids: List<Long>): NetResult<List<Track>> = songsByIds(ids)
+
+    suspend fun playlistTracks(id: Long, limit: Int = 1000, offset: Int = 0): NetResult<List<Track>> = request(
         "/playlist/track/all",
         query = PlaylistRequestRules.withCacheBust(
             mapOf("id" to "$id", "limit" to "$limit", "offset" to "$offset"),

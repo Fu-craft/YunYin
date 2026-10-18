@@ -14,17 +14,19 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,18 +35,28 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.backdrops.layerBackdrop
 import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
 import com.yunyin.music.core.AlbumInfo
 import com.yunyin.music.core.Track
 import com.yunyin.music.data.ArtworkLoader
 import com.yunyin.music.ui.ArtistUiState
 import com.yunyin.music.ui.components.Artwork
+import com.yunyin.music.ui.components.DefaultTopBarTintIntensity
 import com.yunyin.music.ui.components.EmptyState
+import com.yunyin.music.ui.components.GlassTopBar
+import com.yunyin.music.ui.components.glassTopBarTopPadding
+import com.yunyin.music.ui.components.liquidGlassControl
 import com.yunyin.music.ui.components.rememberControlRipple
+import com.yunyin.music.ui.components.rememberGlassTopBarBackdrop
 import com.yunyin.music.ui.icons.SfIcons
 import com.yunyin.music.ui.theme.AppTheme
 import com.yunyin.music.ui.theme.AppleShapes
@@ -78,40 +90,22 @@ fun ArtistScreen(
     val palette = AppTheme.palette
     var bioExpanded by remember(state.briefDesc) { mutableStateOf(false) }
 
-    Column(modifier.fillMaxSize()) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .statusBarsPadding()
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(palette.secondaryBackground)
-                    .clickable(indication = rememberControlRipple(bounded = false), interactionSource = null, onClick = onBack),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(SfIcons.ChevronDown, contentDescription = "返回", tint = palette.label, modifier = Modifier.size(20.dp))
-            }
-            Spacer(Modifier.width(12.dp))
-            Text(
-                text = state.name.ifBlank { "歌手" },
-                fontFamily = SFPro,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 18.sp,
-                color = palette.label,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
+    val listState = rememberLazyListState()
 
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = 32.dp),
-        ) {
+    // The frosted top bar's pixel source: the page content recorded with the page background painted
+    // in first (`rememberGlassTopBarBackdrop`), which is the arrangement that makes the strip render
+    // at all. The bar itself is composed outside this layer below, so it samples the header and rows
+    // scrolling under it rather than sampling itself.
+    val topBarBackdrop = rememberGlassTopBarBackdrop()
+
+    Box(modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().layerBackdrop(topBarBackdrop)) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize(),
+                // The strip floats over the content: the first row starts below it and scrolls under it.
+                contentPadding = PaddingValues(top = glassTopBarTopPadding(), bottom = 32.dp),
+            ) {
             item("header") {
                 ArtistHeaderBlock(
                     state = state,
@@ -119,7 +113,6 @@ fun ArtistScreen(
                     bioExpanded = bioExpanded,
                     onToggleBio = { bioExpanded = !bioExpanded },
                     onPlayAll = onPlayAll,
-                    onShufflePlay = onShufflePlay,
                 )
             }
 
@@ -216,7 +209,135 @@ fun ArtistScreen(
             }
 
             item("bottom") { Spacer(Modifier.navigationBarsPadding().height(12.dp)) }
+            }
         }
+
+        // Pinned last, outside the recorded layer, so it draws over the scrolling header and samples
+        // it instead of sampling itself — the collection page's arrangement, reused verbatim.
+        ArtistTopBar(
+            backdrop = topBarBackdrop,
+            name = state.name.ifBlank { "歌手" },
+            listState = listState,
+            onBack = onBack,
+            onShuffle = onShufflePlay,
+            modifier = Modifier.align(Alignment.TopCenter),
+        )
+    }
+}
+
+/** The offset of the header's big name from the content's top: 8dp gap + 128dp artwork + 12dp gap. */
+private val HeaderNameTop = 148.dp
+
+/** Distance over which the bar's title fades in once the header name starts sliding under the bar. */
+private val TitleFadeRamp = 44.dp
+
+/**
+ * The artist page's pinned bar: the app's progressive-blur strip with the page's controls as liquid
+ * glass, matching the collection page.
+ *
+ * Scroll state is read **here**, scoped to the bar, exactly like [CollectionScreen]'s `TopBar`: a
+ * per-frame scroll value read in the page body would recompose the whole 500-row list every frame.
+ * Only the bar's title alpha is scroll-driven; the strip's tint is constant because the artist header
+ * is a centred circular cover on the page background, so from the first frame everything behind the
+ * bar is the page background (the same situation as the settings/search strips), not cover artwork.
+ *
+ * The title swaps over as the header's own 26sp name slides under the strip: it is invisible while
+ * that name is on screen and fully present once it has passed behind the bar, so exactly one name is
+ * legible at any scroll position and it never appears as a second copy of a visible title.
+ */
+@Composable
+private fun ArtistTopBar(
+    backdrop: Backdrop,
+    name: String,
+    listState: LazyListState,
+    onBack: () -> Unit,
+    onShuffle: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val palette = AppTheme.palette
+    val density = LocalDensity.current
+    val fadeStartPx = with(density) { HeaderNameTop.toPx() }
+    val fadeRampPx = with(density) { TitleFadeRamp.toPx() }
+
+    val titleAlpha by remember(listState, fadeStartPx, fadeRampPx) {
+        derivedStateOf {
+            if (listState.firstVisibleItemIndex > 0) {
+                1f
+            } else {
+                ((listState.firstVisibleItemScrollOffset - fadeStartPx) / fadeRampPx).coerceIn(0f, 1f)
+            }
+        }
+    }
+
+    GlassTopBar(
+        backdrop = backdrop,
+        tintIntensity = DefaultTopBarTintIntensity,
+        modifier = modifier,
+    ) {
+        Row(
+            Modifier.fillMaxSize().padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ArtistBarButton(
+                icon = SfIcons.ChevronDown,
+                description = "返回",
+                backdrop = backdrop,
+                onClick = onBack,
+            )
+            Text(
+                text = name,
+                fontFamily = SFPro,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 17.sp,
+                color = palette.label,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 8.dp)
+                    // Read in the layer phase, so the per-frame fade never recomposes the page.
+                    .graphicsLayer { alpha = titleAlpha },
+            )
+            ArtistBarButton(
+                icon = SfIcons.Shuffle,
+                description = "随机播放",
+                backdrop = backdrop,
+                onClick = onShuffle,
+            )
+        }
+    }
+}
+
+/**
+ * A control on the pinned bar: a 44dp liquid-glass disc that samples the bar's recorded page layer.
+ *
+ * The disc and the touch target are the same 44dp object (the collection bar's back/share discs use
+ * the same arrangement), so the glass never shrinks the tap area.
+ */
+@Composable
+private fun ArtistBarButton(
+    icon: ImageVector,
+    description: String,
+    backdrop: Backdrop,
+    onClick: () -> Unit,
+) {
+    Box(
+        Modifier
+            .size(44.dp)
+            .liquidGlassControl(backdrop, CircleShape)
+            .clickable(
+                indication = rememberControlRipple(bounded = true),
+                interactionSource = null,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            icon,
+            contentDescription = description,
+            tint = AppTheme.palette.label,
+            modifier = Modifier.size(20.dp),
+        )
     }
 }
 
@@ -227,7 +348,6 @@ private fun ArtistHeaderBlock(
     bioExpanded: Boolean,
     onToggleBio: () -> Unit,
     onPlayAll: () -> Unit,
-    onShufflePlay: () -> Unit,
 ) {
     val palette = AppTheme.palette
     Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -280,10 +400,16 @@ private fun ArtistHeaderBlock(
             Text(state.error, fontFamily = SFPro, fontSize = 12.sp, color = palette.accent)
         }
         Spacer(Modifier.height(14.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            PillAction("播放全部", SfIcons.Play, primary = true, onClick = onPlayAll, modifier = Modifier.weight(1f))
-            PillAction("随机播放", SfIcons.Shuffle, primary = false, onClick = onShufflePlay, modifier = Modifier.weight(1f))
-        }
+        // The header keeps the one primary action, full width so it stays the page's most prominent
+        // control. The secondary action (shuffle) moved to the pinned bar as a glass disc: it is
+        // needed at any scroll depth, and the bar is where the glass controls live.
+        PillAction(
+            label = "播放全部",
+            icon = SfIcons.Play,
+            primary = true,
+            onClick = onPlayAll,
+            modifier = Modifier.fillMaxWidth(),
+        )
         Spacer(Modifier.height(8.dp))
     }
 }
