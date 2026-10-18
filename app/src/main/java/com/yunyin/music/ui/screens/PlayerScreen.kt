@@ -130,6 +130,8 @@ fun PlayerScreen(
     palette: DynamicBackgroundPalette,
     lyrics: SyncedLyrics?,
     lyricsLoading: Boolean,
+    /** Shown when the track has no lyric document; distinguishes lyricless from not-found. */
+    lyricsEmptyText: String = "暂无歌词",
     loader: ArtworkLoader,
     /**
      * The audio quality to request, and its setter.
@@ -597,6 +599,7 @@ fun PlayerScreen(
                                 LyricsView(
                                     lyrics = lyrics,
                                     loading = lyricsLoading,
+                                    emptyText = lyricsEmptyText,
                                     isPlaying = state.isPlaying,
                                     positionProvider = positionProvider,
                                     onSeekToLine = { onSeek(it.toLong()) },
@@ -771,6 +774,7 @@ fun PlayerScreen(
                             LyricsView(
                                 lyrics = lyrics,
                                 loading = lyricsLoading,
+                                    emptyText = lyricsEmptyText,
                                 isPlaying = state.isPlaying,
                                 positionProvider = positionProvider,
                                 onSeekToLine = { onSeek(it.toLong()) },

@@ -65,6 +65,8 @@ import com.mocharealm.accompanist.lyrics.core.model.SyncedLyrics
 fun LyricsView(
     lyrics: SyncedLyrics?,
     loading: Boolean,
+    /** Empty-state text: "该歌曲没有歌词" vs "暂无歌词" (not found). */
+    emptyText: String = "暂无歌词",
     isPlaying: Boolean,
     /** Interpolated playback position, safe to poll per frame. */
     positionProvider: () -> Long,
@@ -215,7 +217,7 @@ fun LyricsView(
         when (active) {
             "loading" -> LyricsPlaceholder(text = null, loading = true)
 
-            "empty" -> LyricsPlaceholder(text = "暂无歌词")
+            "empty" -> LyricsPlaceholder(text = emptyText)
 
             else -> {
                 // Captured locally because branching on a String loses the smart cast that the

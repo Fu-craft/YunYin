@@ -40,6 +40,8 @@ class PlayerViewModel(private val container: AppContainer) : ViewModel() {
         private set
 
     var lyricsLoading by mutableStateOf(false)
+    /** Empty-state text for the lyric panel; set after a load so "该歌曲没有歌词" is not confused with a failure. */
+    var lyricsEmptyMessage by mutableStateOf("暂无歌词")
         private set
 
     /** True when the lyrics carry per-syllable timing. */
@@ -403,6 +405,7 @@ class PlayerViewModel(private val container: AppContainer) : ViewModel() {
     private fun applyIfCurrent(trackId: Long, lyrics: SyncedLyrics?) {
         if (lastTrackId != trackId) return
         this.lyrics = lyrics
+        if (lyrics == null) lyricsEmptyMessage = container.lyrics.lyricEmptyMessage()
         wordByWord = container.lyrics.isWordByWord(lyrics)
         lyricsLoading = false
         // Re-publish: the song was already sent when the track changed, but without its lyrics —

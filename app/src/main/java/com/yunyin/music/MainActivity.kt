@@ -1261,6 +1261,7 @@ class MainActivity : ComponentActivity() {
                     palette = playerViewModel.palette,
                     lyrics = playerViewModel.lyrics,
                     lyricsLoading = playerViewModel.lyricsLoading,
+                    lyricsEmptyText = playerViewModel.lyricsEmptyMessage,
                     loader = container.artwork,
                     quality = quality,
                     onQualityChange = { tier ->

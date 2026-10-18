@@ -33,7 +33,11 @@ import java.util.concurrent.TimeUnit
  *  - Every call funnels through [request], which attaches the persisted cookie and
  *    converts failures into [NetResult.Err] so the UI never sees an exception.
  */
-class NeteaseClient(private val settings: SettingsStore) {
+class NeteaseClient(
+    private val settings: SettingsStore,
+    /** Optional diagnostics trail (lxsource log) for lyric-fetch evidence. */
+    private val diag: com.yunyin.music.data.lxsource.LxSourceLog? = null,
+) {
 
     /**
      * Reads a string field, treating JSON null as absent.
@@ -316,20 +320,71 @@ class NeteaseClient(private val settings: SettingsStore) {
         form = emptyMap(),
     ).map { it.optBoolean("success", false) }
 
-    suspend fun lyric(id: Long): NetResult<LyricBundle> = request(
-        "/lyric/new",
-        query = mapOf("id" to "$id"),
-    ).map { json ->
+    suspend fun lyric(id: Long): NetResult<LyricBundle> {
+        val now = System.currentTimeMillis()
+        val firstResult = request(
+            "/lyric/new",
+            query = RequestCacheBust.withCacheBust(mapOf("id" to "$id"), now),
+        )
+        val firstJson = (firstResult as? NetResult.Ok)?.value
+        val first = firstJson?.let { parseLyric(id, it) }
+        diag?.record("歌词", buildString {
+            append("stage=lyric id=").append(id)
+            append(" endpoint=/lyric/new")
+            append(" code=").append(firstJson?.optInt("code", -1) ?: -1)
+            append(" nolyric=").append(firstJson?.optBoolean("nolyric") ?: false)
+            append(" uncollected=").append(firstJson?.optBoolean("uncollected") ?: false)
+            append(" sgc=").append(firstJson?.optBoolean("sgc") ?: false)
+            append(" lrcLen=").append(first?.lrc?.length ?: 0)
+            append(" yrcLen=").append(first?.yrc?.length ?: 0)
+            append(" tlyricLen=").append(first?.translation?.length ?: 0)
+        })
+        if (first != null && !LyricEndpointRules.needsLegacyFallback(first.nolyric, first.lrc, first.yrc)) {
+            return NetResult.Ok(first)
+        }
+        // Legacy endpoint: it is not a superset on this deployment, but it still answers with clean line-level LRC
+        // for tracks whose "new" payload is empty or only the mixed word-format blob.
+        val legacyResult = request(
+            "/lyric",
+            query = RequestCacheBust.withCacheBust(mapOf("id" to "$id"), System.currentTimeMillis()),
+        )
+        val legacyJson = (legacyResult as? NetResult.Ok)?.value
+        val legacy = legacyJson?.let { parseLyric(id, it) }
+        diag?.record("歌词", buildString {
+            append("stage=lyric id=").append(id)
+            append(" endpoint=/lyric")
+            append(" code=").append(legacyJson?.optInt("code", -1) ?: -1)
+            append(" nolyric=").append(legacyJson?.optBoolean("nolyric") ?: false)
+            append(" uncollected=").append(legacyJson?.optBoolean("uncollected") ?: false)
+            append(" sgc=").append(legacyJson?.optBoolean("sgc") ?: false)
+            append(" lrcLen=").append(legacy?.lrc?.length ?: 0)
+            append(" yrcLen=").append(legacy?.yrc?.length ?: 0)
+            append(" tlyricLen=").append(legacy?.translation?.length ?: 0)
+        })
+        val legacyUsable = legacy != null && LyricEndpointRules.hasLines(legacy.lrc, legacy.yrc)
+        val chosen = if (legacyUsable) legacy else first ?: legacy
+            ?: return (legacyResult as? NetResult.Err ?: firstResult as? NetResult.Err ?: NetResult.Err("歌词获取失败"))
+        diag?.record(
+            "歌词",
+            "stage=lyric id=$id chosen=${if (legacyUsable) "/lyric" else "/lyric/new"} " +
+                "result=${if (LyricEndpointRules.hasLines(chosen.lrc, chosen.yrc)) "lines" else "nolyric"}",
+        )
+        return NetResult.Ok(chosen)
+    }
+
+    private fun parseLyric(id: Long, json: JSONObject): LyricBundle {
         fun track(name: String) = json.optJSONObject(name)?.optString("lyric")?.ifBlank { null }
-        LyricBundle(
+        val lrc = track("lrc")
+        val yrc = track("yrc")
+        return LyricBundle(
             id = id,
-            lrc = track("lrc"),
+            lrc = lrc,
             translation = track("tlyric"),
-            yrc = track("yrc"),
+            yrc = yrc,
             romanized = track("romalrc"),
-            // YRC-aligned tracks; used in preference to the LRC-aligned ones above.
             wordTranslation = track("ytlrc") ?: track("ytlyric"),
             wordRomanized = track("yromalrc"),
+            nolyric = json.optBoolean("nolyric") || !LyricEndpointRules.hasLines(lrc, yrc),
         )
     }
 

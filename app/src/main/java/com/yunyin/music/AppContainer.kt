@@ -40,7 +40,7 @@ class AppContainer(val appContext: Context) {
 
     val settings: SettingsStore by lazy { SettingsStore(appContext) }
 
-    val client: NeteaseClient by lazy { NeteaseClient(settings) }
+    val client: NeteaseClient by lazy { NeteaseClient(settings, lxLog) }
 
     /** Process-wide local-music index, filled by [LocalMusicScanner] when the user opens 本地音乐. */
     val localMusic: com.yunyin.music.data.local.LocalMusicStore by lazy {

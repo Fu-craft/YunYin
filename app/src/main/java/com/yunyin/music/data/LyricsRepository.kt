@@ -64,6 +64,10 @@ class LyricsRepository(
     private val cacheDir = File(context.cacheDir, "lyrics").apply { mkdirs() }
     private val memory = LinkedHashMap<Long, SyncedLyrics>(MEMORY_CACHE)
 
+    /** Whether the last NetEase lyric payload said the track genuinely has no lyrics. */
+    @Volatile
+    private var lastFetchWasNolyric = false
+
     /**
      * Owns the in-flight fetches.
      *
@@ -417,12 +421,19 @@ class LyricsRepository(
      * answers instantly, which is what lets a previously-seen track resolve with no network at all.
      */
     private suspend fun fetchBundle(trackId: Long): LyricBundle? {
-        readCachedBundle(trackId)?.let { return it }
+        readCachedBundle(trackId)?.let { cached ->
+            lastFetchWasNolyric = cached.nolyric
+            return cached
+        }
         val result = runCatching { client.lyric(trackId) }.getOrNull()
         val bundle = (result as? NetResult.Ok)?.value ?: return null
+        lastFetchWasNolyric = bundle.nolyric
         writeCachedBundle(trackId, bundle)
         return bundle
     }
+
+    /** Empty-state text for the current track: lyricless is a fact, "not found" is not. */
+    fun lyricEmptyMessage(): String = com.yunyin.music.data.net.LyricEndpointRules.emptyMessage(lastFetchWasNolyric)
 
     /**
      * Lyrics for a provider track: ask its platform first, then fall back to the NetEase pipeline by matching the

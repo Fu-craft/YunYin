@@ -80,6 +80,8 @@ data class LyricBundle(
     /** Line-level translation, aligned to [lrc]. */
     val translation: String? = null,
     val yrc: String? = null,
+    /** `nolyric` from the API: the track genuinely has no lyrics. */
+    val nolyric: Boolean = false,
     val romanized: String? = null,
     /**
      * Word-by-word translation, aligned to [yrc].
