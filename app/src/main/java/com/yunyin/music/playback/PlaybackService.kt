@@ -39,7 +39,11 @@ class PlaybackService : MediaSessionService() {
             .setReadTimeoutMs(20_000)
             .setAllowCrossProtocolRedirects(true)
 
-        val resolvingFactory = ResolvingDataSource.Factory(httpFactory) { dataSpec ->
+        // DefaultDataSource wraps HTTP (with the same factory) **and** content:// / file:// URIs. Local music streams
+        // from MediaStore content URIs, so the resolving data source must accept them as well as network URLs.
+        val resolvingBase = androidx.media3.datasource.DefaultDataSource.Factory(this, httpFactory)
+
+        val resolvingFactory = ResolvingDataSource.Factory(resolvingBase) { dataSpec ->
             val trackId = TrackMediaItem.trackIdOf(dataSpec.uri)
             if (trackId == null) {
                 dataSpec

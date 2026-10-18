@@ -51,6 +51,11 @@ class MusicRepository(
     private val providers: ProviderPlayback? = null,
     /** Diagnostics sink: resolution timing lines (`stage=resolve`) go to the same trail as source lookups. */
     private val log: LxSourceLog? = null,
+    /**
+     * Local device audio index. A local track's synthetic id resolves to its `content://` URI; null in unit tests and
+     * in builds where local music is not wired.
+     */
+    private val localMusic: com.yunyin.music.data.local.LocalMusicStore? = null,
 ) {
 
     /**
@@ -175,6 +180,11 @@ class MusicRepository(
      *  - when only a trial is available, the existing cross-platform toggle (QQ match) still runs after.
      */
     suspend fun streamUrl(id: Long, quality: String): NeteaseClient.SongUrl? {
+        // Local device audio: the MediaStore content URI is the stream. No network, no cache, no quality tiers.
+        localMusic?.uriFor(id)?.let { uri ->
+            recordResolution(id, quality, "local", System.nanoTime(), "result=uri")
+            return NeteaseClient.SongUrl(url = uri)
+        }
         val key = LxResolveCacheRules.key(id, quality)
         cachedResolution(key, id, quality)?.let { return it }
         if (resolveLocks.size > MAX_LOCK_ENTRIES) resolveLocks.clear()

@@ -1,6 +1,18 @@
 package com.yunyin.music.ui.screens
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.core.content.ContextCompat
+import com.yunyin.music.AppContainer
+import kotlinx.coroutines.launch
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -139,6 +151,8 @@ fun LibraryScreen(
     onTrackClick: (Track) -> Unit,
     /** Opens the create-playlist sheet; shown only for a signed-in account. */
     onCreatePlaylist: () -> Unit = {},
+    /** Plays the local-music list; index is the tapped row. */
+    onPlayLocalTracks: (List<Track>, Int) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier,
 ) {
     val signedIn = account != null && !account.isAnonymous
@@ -152,6 +166,54 @@ fun LibraryScreen(
     // The system back gesture has to close the subpage rather than escape the whole tab: without this a
     // pushed page is a dead end for anyone using the gesture instead of the on-screen back chip.
     BackHandler(enabled = openPage != null) { openPage = null }
+
+    // ------------------------------------------------------------ 本地音乐
+    var showLocalMusic by remember { mutableStateOf(false) }
+    var localTracks by remember { mutableStateOf<List<Track>>(emptyList()) }
+    var localLoading by remember { mutableStateOf(false) }
+    var localError by remember { mutableStateOf<String?>(null) }
+    val localContext = androidx.compose.ui.platform.LocalContext.current
+    val localScope = rememberCoroutineScope()
+    val localContainer = AppContainer.from(localContext)
+    fun openLocalSettings() = runCatching {
+        localContext.startActivity(
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", localContext.packageName, null)),
+        )
+    }
+    fun scanLocal() {
+        if (localLoading) return
+        localLoading = true
+        localError = null
+        showLocalMusic = true
+        localScope.launch {
+            localContainer.localMusicScanner.scan()
+                .onSuccess { localTracks = it }
+                .onFailure {
+                    localError = if (it is SecurityException) {
+                        "需要音频读取权限才能显示本地音乐"
+                    } else {
+                        "扫描本地音乐失败：${(it.message ?: it.javaClass.simpleName).take(120)}"
+                    }
+                }
+            localLoading = false
+        }
+    }
+    val localPermissionRequest = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            scanLocal()
+        } else {
+            showLocalMusic = true
+            localError = "需要音频读取权限才能显示本地音乐"
+            Toast.makeText(localContext, "需要音频读取权限", Toast.LENGTH_SHORT).show()
+        }
+    }
+    fun openLocalMusic() {
+        val granted = ContextCompat.checkSelfPermission(
+            localContext,
+            Manifest.permission.READ_MEDIA_AUDIO,
+        ) == PackageManager.PERMISSION_GRANTED
+        if (granted) scanLocal() else localPermissionRequest.launch(Manifest.permission.READ_MEDIA_AUDIO)
+    }
 
     // No top bar on the profile page, deliberately: the page's top band is the user's own background
     // image, and a blurred strip over it both covers and blurs that image — which is exactly what the
@@ -178,11 +240,33 @@ fun LibraryScreen(
         onLikedSongsClick = onLikedSongsClick,
         onTrackClick = onTrackClick,
         onCreatePlaylist = onCreatePlaylist,
+        onLocalMusicClick = { openLocalMusic() },
         onOpenPage = { openPage = it },
     )
 
     // The subpages themselves.
     //
+    // 本地音乐 list sheet: permission/scanning states live here, so a denial is an explanation + a settings button,
+    // never an empty list.
+    if (showLocalMusic) {
+        LocalMusicSheet(
+            tracks = localTracks,
+            loading = localLoading,
+            error = localError,
+            loader = loader,
+            onPlayTrack = { index ->
+                if (index in localTracks.indices) onPlayLocalTracks(localTracks, index)
+                showLocalMusic = false
+            },
+            onPlayAll = {
+                if (localTracks.isNotEmpty()) onPlayLocalTracks(localTracks, 0)
+                showLocalMusic = false
+            },
+            onOpenSettings = { openLocalSettings() },
+            onDismiss = { showLocalMusic = false },
+        )
+    }
+
     // An `AnimatedVisibility` per page, so each animates its own presence: only the entering page
     // animates in, and on back the leaving page animates out with its content still composed (the route
     // is not cleared until the transition has finished, which is the same trap that made the collection
@@ -253,6 +337,7 @@ private fun LibraryContent(
     onLikedSongsClick: () -> Unit,
     onTrackClick: (Track) -> Unit,
     onCreatePlaylist: () -> Unit = {},
+    onLocalMusicClick: () -> Unit = {},
     onOpenPage: (LibraryPage) -> Unit,
 ) {
     val signedIn = account != null && !account.isAnonymous
@@ -314,6 +399,14 @@ private fun LibraryContent(
                     label = "最近播放",
                     trailing = if (recentTracks.isNotEmpty()) "${recentTracks.size}" else null,
                     onClick = { onOpenPage(LibraryPage.Recent) },
+                )
+
+                // 本地音乐 — scanned on tap; the permission is requested at that moment, never at launch.
+                LibraryRow(
+                    icon = SfIcons.MusicNote,
+                    label = "本地音乐",
+                    trailing = null,
+                    onClick = onLocalMusicClick,
                 )
 
                 // 设置 is reached from the header's gear, so it is not repeated here.

@@ -43,6 +43,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.yunyin.music.ui.components.AnimatedSheet
+import com.yunyin.music.ui.components.SheetPlacement
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
@@ -128,13 +130,14 @@ fun CollectionScreen(
     /** Id of the track the player is on, so its row can be marked. */
     nowPlayingId: Long? = null,
     isPlaying: Boolean = false,
-    /** Present only when [state] is owned by the signed-in user; host shows an editor sheet. */
+    /** Owned-playlist actions are in this sheet, not beside the play button: two controls only. */
     onEditPlaylist: (() -> Unit)? = null,
     /** Present only when owned; host confirms then deletes and closes the page. */
     onDeletePlaylist: (() -> Unit)? = null,
     /** Present only when owned; host confirms then removes the track and refreshes the page. */
     onRemoveTrack: ((Track) -> Unit)? = null,
 ) {
+    var showMenu by remember { mutableStateOf(false) }
     // A small decode is plenty — it is blurred heavily, so detail would be discarded anyway.
     var backdrop by remember(state.coverUrl) { mutableStateOf<ImageBitmap?>(null) }
     // Defaults to "dark cover" so the first frame (before the image lands) already has white ink:
@@ -196,9 +199,7 @@ fun CollectionScreen(
                     onCover = onCover,
                     inverseOnCover = inverseOnCover,
                     onPlayAll = onPlayAll,
-                    onShufflePlay = onShufflePlay,
-                    onEditPlaylist = onEditPlaylist,
-                    onDeletePlaylist = onDeletePlaylist,
+                    onMoreClick = { showMenu = true },
                     onHeightChanged = { headerHeightPx = it },
                 )
             }
@@ -260,6 +261,60 @@ fun CollectionScreen(
             onShare = onShare,
             modifier = Modifier.align(Alignment.TopCenter),
         )
+
+        // The single secondary control: one sheet holds shuffle/share/edit/delete instead of four buttons.
+        // The destructive row is last and coloured differently; ownership still gates whether it exists.
+        if (showMenu) {
+            AnimatedSheet(
+                onDismissed = { showMenu = false },
+                properties = androidx.compose.ui.window.DialogProperties(
+                    usePlatformDefaultWidth = false,
+                    decorFitsSystemWindows = false,
+                ),
+                placement = SheetPlacement.Bottom,
+                scrim = true,
+                sheetModifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 12.dp, vertical = 12.dp)
+                    .clip(ContinuousRoundedRectangle(AppleShapes.sheet))
+                    .background(AppTheme.palette.background)
+                    .padding(vertical = 6.dp),
+            ) { close ->
+                CollectionMenuRow(icon = SfIcons.Shuffle, label = "随机播放") { close { onShufflePlay() } }
+                CollectionMenuRow(SfIcons.SquareAndArrowUp, "分享歌单") { close { onShare() } }
+                if (onEditPlaylist != null) {
+                    CollectionMenuRow(SfIcons.Pencil, "编辑歌单") { close { onEditPlaylist() } }
+                }
+                if (onDeletePlaylist != null) {
+                    Spacer(Modifier.height(6.dp))
+                    Box(Modifier.fillMaxWidth().height(1.dp).background(AppTheme.palette.separator))
+                    CollectionMenuRow(SfIcons.Trash, "删除歌单", destructive = true) { close { onDeletePlaylist() } }
+                }
+            }
+        }
+    }
+}
+
+/** One row of the collection 更多 sheet; `destructive` is the red delete entry, shown last. */
+@Composable
+private fun CollectionMenuRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    destructive: Boolean = false,
+    onClick: () -> Unit,
+) {
+    val tint = if (destructive) AppTheme.palette.accent else AppTheme.palette.label
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 18.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(12.dp))
+        Text(label, fontFamily = SFPro, fontSize = 16.sp, color = tint)
     }
 }
 
@@ -348,9 +403,8 @@ private fun Header(
     onCover: Color,
     inverseOnCover: Color,
     onPlayAll: () -> Unit,
-    onShufflePlay: () -> Unit,
-    onEditPlaylist: (() -> Unit)? = null,
-    onDeletePlaylist: (() -> Unit)? = null,
+    /** Opens the header's 更多 sheet: 随机播放 / 分享 / 编辑 / 删除. */
+    onMoreClick: () -> Unit,
     /** Reports the measured height so the pinned bar can time its surface to the ramp. */
     onHeightChanged: (Int) -> Unit,
 ) {
@@ -452,47 +506,14 @@ private fun Header(
                     modifier = Modifier.weight(1f),
                 )
                 HeaderAction(
-                    icon = SfIcons.Shuffle,
-                    label = "随机播放",
+                    icon = SfIcons.Ellipsis,
+                    label = "更多",
                     fill = onCover.copy(alpha = 0.16f),
                     content = onCover,
                     border = onCover.copy(alpha = 0.22f),
-                    onClick = onShufflePlay,
+                    onClick = onMoreClick,
                     modifier = Modifier.weight(1f),
                 )
-            }
-
-            // Owner-only actions. Never rendered for someone else's playlist or the liked list — the host passes
-            // null in those cases, so there is no affordance that would fail with a 401.
-            if (onEditPlaylist != null || onDeletePlaylist != null) {
-                Spacer(Modifier.height(10.dp))
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    if (onEditPlaylist != null) {
-                        HeaderAction(
-                            icon = SfIcons.Pencil,
-                            label = "编辑歌单",
-                            fill = onCover.copy(alpha = 0.16f),
-                            content = onCover,
-                            border = onCover.copy(alpha = 0.22f),
-                            onClick = onEditPlaylist,
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-                    if (onDeletePlaylist != null) {
-                        HeaderAction(
-                            icon = SfIcons.Trash,
-                            label = "删除歌单",
-                            fill = onCover.copy(alpha = 0.16f),
-                            content = onCover,
-                            border = onCover.copy(alpha = 0.22f),
-                            onClick = onDeletePlaylist,
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-                }
             }
 
             // The band the fade completes in. Text-free by construction, and given a margin above it

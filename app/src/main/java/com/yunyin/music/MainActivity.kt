@@ -745,6 +745,9 @@ class MainActivity : ComponentActivity() {
                                 )
                             },
                             onTrackClick = { play(it, appViewModel.recentTracks) },
+                            onPlayLocalTracks = { list, index ->
+                                list.getOrNull(index)?.let { play(it, list) }
+                            },
                         )
                     }
                     }

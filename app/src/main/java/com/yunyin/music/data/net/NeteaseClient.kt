@@ -1,4 +1,4 @@
-﻿package com.yunyin.music.data.net
+package com.yunyin.music.data.net
 
 import com.yunyin.music.core.Account
 import com.yunyin.music.core.ArtistInfo
@@ -9,6 +9,7 @@ import com.yunyin.music.core.Playlist
 import com.yunyin.music.core.Track
 import com.yunyin.music.core.map
 import com.yunyin.music.data.SettingsStore
+import com.yunyin.music.data.playlist.PlaylistRequestRules
 import com.yunyin.music.data.playlist.PlaylistWrites
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -398,7 +399,8 @@ class NeteaseClient(private val settings: SettingsStore) {
 
     suspend fun playlistDetail(id: Long): NetResult<Playlist> = request(
         "/playlist/detail",
-        query = mapOf("id" to "$id"),
+        // Timestamp: the API caches this endpoint; a rename/create would otherwise be invisible for a while.
+        query = PlaylistRequestRules.withCacheBust(mapOf("id" to "$id"), System.currentTimeMillis()),
     ).map { json ->
         val p = json.optJSONObject("playlist") ?: JSONObject()
         Playlist(
@@ -414,7 +416,10 @@ class NeteaseClient(private val settings: SettingsStore) {
 
     suspend fun playlistTracks(id: Long, limit: Int = 200, offset: Int = 0): NetResult<List<Track>> = request(
         "/playlist/track/all",
-        query = mapOf("id" to "$id", "limit" to "$limit", "offset" to "$offset"),
+        query = PlaylistRequestRules.withCacheBust(
+            mapOf("id" to "$id", "limit" to "$limit", "offset" to "$offset"),
+            System.currentTimeMillis(),
+        ),
     ).map { json -> json.optJSONArray("songs")?.mapDetailTracks().orEmpty() }
 
     // ---------------------------------------------------------------- playlist writes
@@ -448,9 +453,13 @@ class NeteaseClient(private val settings: SettingsStore) {
         return loginAware(
             request("/playlist/create", form = PlaylistWrites.createForm(name, description, isPrivate)),
         ).map { json ->
-            json.optJSONObject("playlist")?.optLong("id")?.takeIf { it > 0L }
+            val newId = json.optJSONObject("playlist")?.optLong("id")?.takeIf { it > 0L }
                 ?: json.optLong("id").takeIf { it > 0L }
+                ?: json.optLong("playlistId").takeIf { it > 0L }
                 ?: 0L
+            // A "created but not shown" report needs the id we were given, so it goes to the diagnostics trail.
+            android.util.Log.i("YunYin/Playlist", "create name=$name -> id=$newId code=${json.optInt("code")}")
+            newId
         }
     }
 
@@ -583,10 +592,15 @@ class NeteaseClient(private val settings: SettingsStore) {
      */
     suspend fun userPlaylists(uid: Long, limit: Int = 100, offset: Int = 0): NetResult<List<Playlist>> = request(
         "/user/playlist",
-        query = mapOf("uid" to "$uid", "limit" to "$limit", "offset" to "$offset"),
+        // The list that must reflect a just-created playlist: without `timestamp` the API answers from its cache and
+        // the new playlist is missing until that cache expires (the "创建了但不显示" report).
+        query = PlaylistRequestRules.withCacheBust(
+            mapOf("uid" to "$uid", "limit" to "$limit", "offset" to "$offset"),
+            System.currentTimeMillis(),
+        ),
     ).map { json ->
         val list = json.optJSONArray("playlist") ?: return@map emptyList()
-        (0 until list.length()).mapNotNull { i ->
+        val mapped = (0 until list.length()).mapNotNull { i ->
             val o = list.optJSONObject(i) ?: return@mapNotNull null
             if (o.optLong("id") == 0L) return@mapNotNull null
             Playlist(
@@ -600,6 +614,12 @@ class NeteaseClient(private val settings: SettingsStore) {
                 creatorUserId = o.optJSONObject("creator")?.optLong("userId") ?: 0L,
             )
         }
+        // Diagnostics: the cache-busted refetch result (ids + count) next to the create line above.
+        android.util.Log.i(
+            "YunYin/Playlist",
+            "userPlaylists uid=$uid count=${mapped.size} ids=${mapped.take(8).joinToString(",") { it.id.toString() }}",
+        )
+        mapped
     }
 
     /** Ids of every song the user has liked. */
