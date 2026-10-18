@@ -139,6 +139,8 @@ fun CollectionScreen(
     onDeletePlaylist: (() -> Unit)? = null,
     /** Present only when owned; host confirms then removes the track and refreshes the page. */
     onRemoveTrack: ((Track) -> Unit)? = null,
+    /** Manual refresh: always bypasses the playlist cache and goes to the network. */
+    onRefresh: (() -> Unit)? = null,
 ) {
     var showMenu by remember { mutableStateOf(false) }
     // A small decode is plenty — it is blurred heavily, so detail would be discarded anyway.
@@ -221,12 +223,26 @@ fun CollectionScreen(
                 item("empty") { EmptyState("这个歌单还没有歌曲") }
             } else {
                 item("count") {
-                    CountRow(
-                        count = state.tracks.size,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = PageInset, end = PageInset, top = 14.dp, bottom = 2.dp),
-                    )
+                    Column(Modifier.fillMaxWidth()) {
+                        CountRow(
+                            count = state.tracks.size,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = PageInset, end = PageInset, top = 14.dp, bottom = 2.dp),
+                        )
+                        if (onRefresh != null) {
+                            Text(
+                                text = "刷新",
+                                fontFamily = SFPro,
+                                fontSize = 12.sp,
+                                color = AppTheme.palette.accent,
+                                modifier = Modifier
+                                    .padding(horizontal = PageInset, vertical = 4.dp)
+                                    .clickable(onClick = onRefresh)
+                                    .padding(4.dp),
+                            )
+                        }
+                    }
                 }
                 // Index-based so duplicate songs in a playlist still resolve to the row that was
                 // tapped (`indexOf` would always return the first duplicate).

@@ -305,7 +305,7 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
         collectionJob = viewModelScope.launch {
             // Progressive: the first batch renders immediately, later batches append in order. A 566/1267-track
             // playlist used to stop at 200 because the loader made one `limit = 200` request.
-            val tracks = container.music.playlistTracksProgressive(playlist.id) { partial ->
+            val tracks = container.music.playlistTracksProgressive(playlist.id, totalHint = playlist.trackCount) { partial ->
                 val shown = _collection.value?.id
                 if (shown != null &&
                     collectionResultApplies(requestId, collectionRequestId, shown, playlist.id)
@@ -331,14 +331,26 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     /** Re-reads the visible collection's tracks after a write, and reloads playlist metadata (name/description). */
-    fun refreshCollection() {
+    fun refreshCollection(forceNetwork: Boolean = false) {
         val current = _collection.value ?: return
         if (current.id <= 0L) return
         collectionJob?.cancel()
         val requestId = ++collectionRequestId
         collectionJob = viewModelScope.launch {
+            val tracks = container.music.playlistTracksProgressive(
+                id = current.id,
+                totalHint = current.tracks.size.coerceAtLeast(0),
+                forceRefresh = forceNetwork,
+            ) { partial ->
+                if (requestId == collectionRequestId) {
+                    _collection.value = _collection.value?.copy(
+                        tracks = partial,
+                        loading = partial.isEmpty(),
+                        subtitle = "${partial.size} 首",
+                    )
+                }
+            }
             val detail = container.music.playlist(current.id)
-            val tracks = container.music.playlistTracks(current.id)
             if (requestId == collectionRequestId) {
                 _collection.value = _collection.value?.copy(
                     title = detail?.name ?: current.title,

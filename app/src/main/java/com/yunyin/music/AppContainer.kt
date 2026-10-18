@@ -51,7 +51,14 @@ class AppContainer(val appContext: Context) {
         com.yunyin.music.data.local.LocalMusicScanner(appContext, localMusic)
     }
 
-    val music: MusicRepository by lazy { MusicRepository(client, lxPlayback, providers, lxLog, localMusic) }
+    /** Memory + 10-minute disk cache of playlist track lists (re-entering a playlist is instant). */
+    val playlistTrackCache: com.yunyin.music.data.playlist.PlaylistTrackCache by lazy {
+        com.yunyin.music.data.playlist.PlaylistTrackCache(
+            java.io.File(appContext.cacheDir, "playlist-tracks"),
+        )
+    }
+
+    val music: MusicRepository by lazy { MusicRepository(client, lxPlayback, providers, lxLog, localMusic, playlistTrackCache) }
 
     val lyrics: LyricsRepository by lazy { LyricsRepository(appContext, client, providerLyrics) }
 

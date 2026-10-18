@@ -94,8 +94,11 @@ class NeteaseClient(
                 builder.get()
             }
 
+            val startedNs = System.nanoTime()
             http.newCall(builder.build()).execute().use { response ->
                 val text = response.body?.string().orEmpty()
+                lastHttpBytes = text.toByteArray(Charsets.UTF_8).size
+                lastHttpMs = (System.nanoTime() - startedNs) / 1_000_000
 
                 // NetEase reports problems with a JSON body even on 4xx/5xx — notably risk
                 // control, which comes back as HTTP 400 with code 10004 and a human
@@ -493,6 +496,37 @@ class NeteaseClient(
             System.currentTimeMillis(),
         ),
     ).map { json -> json.optJSONArray("songs")?.mapDetailTracks().orEmpty() }
+
+    /** Last request's transfer size/time (advisory: parallel requests may overwrite each other). */
+    @Volatile
+    private var lastHttpBytes: Int = 0
+
+    @Volatile
+    private var lastHttpMs: Long = 0L
+
+    /** A playlist page plus the measured transfer stats, for the loading breakdown log. */
+    suspend fun playlistTracksPageMeasured(id: Long, limit: Int, offset: Int): NetResult<LoadedPlaylistPage> {
+        val started = System.nanoTime()
+        val result = request(
+            "/playlist/track/all",
+            query = PlaylistRequestRules.withCacheBust(
+                mapOf("id" to "$id", "limit" to "$limit", "offset" to "$offset"),
+                System.currentTimeMillis(),
+            ),
+        )
+        val totalMs = (System.nanoTime() - started) / 1_000_000
+        return when (result) {
+            is NetResult.Ok -> NetResult.Ok(
+                LoadedPlaylistPage(
+                    offset = offset,
+                    tracks = result.value.optJSONArray("songs")?.mapDetailTracks().orEmpty(),
+                    bytes = lastHttpBytes,
+                    durationMs = if (lastHttpMs > 0L) lastHttpMs else totalMs,
+                ),
+            )
+            is NetResult.Err -> result
+        }
+    }
 
     // ---------------------------------------------------------------- playlist writes
     //
