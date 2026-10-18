@@ -105,6 +105,7 @@ import com.yunyin.music.ui.theme.SFPro
 import com.yunyin.music.data.download.DownloadPhase
 import com.yunyin.music.data.download.TrackDownloadState
 import com.yunyin.music.ui.download.LocalDownloadController
+import com.yunyin.music.ui.playlist.LocalPlaylistActions
 import com.yunyin.music.ui.DownloadState
 import com.mocharealm.accompanist.lyrics.core.model.SyncedLyrics
 import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
@@ -1618,6 +1619,12 @@ private fun TrackActionsSheet(
         )
         ActionRow(SfIcons.SquareAndArrowUp, "保存封面", true) {
             close { onSaveCover() }
+        }
+        val playlistActions = LocalPlaylistActions.current
+        if (playlistActions != null && track != null) {
+            ActionRow(SfIcons.Plus, "添加到歌单", true) {
+                close { playlistActions.onAddToPlaylist(track) }
+            }
         }
         // Downloads are orthogonal to the player chrome, so the sheet row reads the same controller the heart's
         // neighbour does; the label carries the state (waiting / percent / done / failure reason).

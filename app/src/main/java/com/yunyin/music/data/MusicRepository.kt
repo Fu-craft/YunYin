@@ -378,6 +378,26 @@ class MusicRepository(
 
     suspend fun playlistTracks(id: Long): List<Track> = client.playlistTracks(id).listOrEmpty()
 
+    // ---------------------------------------------------------------- playlist management
+    //
+    // Thin wrappers over the mutation endpoints. UI callers get a NetResult and turn a failure into a specific
+    // message; the session/ownership rules live next to the callers (PlaylistOwnership) so a guest never attempts a
+    // write in the first place.
+
+    suspend fun createPlaylist(name: String, description: String, isPrivate: Boolean = false): NetResult<Long> =
+        client.createPlaylist(name, description, isPrivate)
+
+    suspend fun updatePlaylist(id: Long, name: String, description: String): NetResult<Unit> =
+        client.updatePlaylist(id, name, description)
+
+    suspend fun deletePlaylist(id: Long): NetResult<Unit> = client.deletePlaylist(id)
+
+    suspend fun addTracksToPlaylist(playlistId: Long, trackIds: List<Long>): NetResult<Unit> =
+        client.addTracksToPlaylist(playlistId, trackIds)
+
+    suspend fun removeTracksFromPlaylist(playlistId: Long, trackIds: List<Long>): NetResult<Unit> =
+        client.removeTracksFromPlaylist(playlistId, trackIds)
+
     /** The signed-in user's playlists. Errors remain distinguishable from a genuinely empty library. */
     suspend fun userPlaylists(uid: Long): NetResult<List<Playlist>> = client.userPlaylists(uid)
 

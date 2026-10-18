@@ -128,6 +128,12 @@ fun CollectionScreen(
     /** Id of the track the player is on, so its row can be marked. */
     nowPlayingId: Long? = null,
     isPlaying: Boolean = false,
+    /** Present only when [state] is owned by the signed-in user; host shows an editor sheet. */
+    onEditPlaylist: (() -> Unit)? = null,
+    /** Present only when owned; host confirms then deletes and closes the page. */
+    onDeletePlaylist: (() -> Unit)? = null,
+    /** Present only when owned; host confirms then removes the track and refreshes the page. */
+    onRemoveTrack: ((Track) -> Unit)? = null,
 ) {
     // A small decode is plenty — it is blurred heavily, so detail would be discarded anyway.
     var backdrop by remember(state.coverUrl) { mutableStateOf<ImageBitmap?>(null) }
@@ -191,6 +197,8 @@ fun CollectionScreen(
                     inverseOnCover = inverseOnCover,
                     onPlayAll = onPlayAll,
                     onShufflePlay = onShufflePlay,
+                    onEditPlaylist = onEditPlaylist,
+                    onDeletePlaylist = onDeletePlaylist,
                     onHeightChanged = { headerHeightPx = it },
                 )
             }
@@ -229,6 +237,7 @@ fun CollectionScreen(
                         isCurrent = track.id == nowPlayingId,
                         isPlaying = isPlaying && track.id == nowPlayingId,
                         onClick = { onTrackClick(track, index) },
+                        onRemove = onRemoveTrack?.let { remove -> { remove(track) } },
                     )
                 }
             }
@@ -340,6 +349,8 @@ private fun Header(
     inverseOnCover: Color,
     onPlayAll: () -> Unit,
     onShufflePlay: () -> Unit,
+    onEditPlaylist: (() -> Unit)? = null,
+    onDeletePlaylist: (() -> Unit)? = null,
     /** Reports the measured height so the pinned bar can time its surface to the ramp. */
     onHeightChanged: (Int) -> Unit,
 ) {
@@ -449,6 +460,39 @@ private fun Header(
                     onClick = onShufflePlay,
                     modifier = Modifier.weight(1f),
                 )
+            }
+
+            // Owner-only actions. Never rendered for someone else's playlist or the liked list — the host passes
+            // null in those cases, so there is no affordance that would fail with a 401.
+            if (onEditPlaylist != null || onDeletePlaylist != null) {
+                Spacer(Modifier.height(10.dp))
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    if (onEditPlaylist != null) {
+                        HeaderAction(
+                            icon = SfIcons.Pencil,
+                            label = "编辑歌单",
+                            fill = onCover.copy(alpha = 0.16f),
+                            content = onCover,
+                            border = onCover.copy(alpha = 0.22f),
+                            onClick = onEditPlaylist,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    if (onDeletePlaylist != null) {
+                        HeaderAction(
+                            icon = SfIcons.Trash,
+                            label = "删除歌单",
+                            fill = onCover.copy(alpha = 0.16f),
+                            content = onCover,
+                            border = onCover.copy(alpha = 0.22f),
+                            onClick = onDeletePlaylist,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
             }
 
             // The band the fade completes in. Text-free by construction, and given a margin above it
@@ -731,6 +775,8 @@ internal fun CollectionTrackRow(
     isCurrent: Boolean,
     isPlaying: Boolean,
     onClick: () -> Unit,
+    /** Owner-only "移除" affordance; null everywhere else. */
+    onRemove: (() -> Unit)? = null,
 ) {
     val palette = AppTheme.palette
     Row(
@@ -788,6 +834,19 @@ internal fun CollectionTrackRow(
                 color = palette.secondaryLabel,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (onRemove != null) {
+            Spacer(Modifier.width(10.dp))
+            Text(
+                text = "移除",
+                fontFamily = SFPro,
+                fontSize = 13.sp,
+                color = palette.accent,
+                modifier = Modifier
+                    .clip(ContinuousRoundedRectangle(AppleShapes.control))
+                    .clickable(onClick = onRemove)
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
             )
         }
         if (track.durationMs > 0) {

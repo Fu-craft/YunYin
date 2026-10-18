@@ -145,6 +145,7 @@ class PlayerController(
             val requestId = ++trialRequestId
             trialJob = scope.launch { refreshTrialAndQueueMode(trackId, requestId = requestId) }
             schedulePrefetch(trackId)
+            pauseAtTrackEndIfArmed()
         }
 
         /** Renders a specific reason instead of ExoPlayer's bare "Source error"; see [userMessageFor]. */
@@ -488,8 +489,7 @@ class PlayerController(
      * `cancelPending`, so it cannot cancel or be cancelled by the live lookup (see [PlaybackPrefetchPolicy]). Its
      * result is discarded here; the win is that the real transition's resolution hits the repository cache.
      */
-    private fun schedulePrefetch(currentTrackId: Long?) {
-        val state = _state.value
+    private fun schedulePrefetch(currentTrackId: Long?) {        val state = _state.value
         val nextId = PlaybackPrefetchPolicy.nextTrackId(state.queue.map { it.id }, state.index) ?: return
         if (!PlaybackPrefetchPolicy.shouldStart(currentTrackId, nextId, prefetchTrackId)) return
         prefetchJob?.cancel()
@@ -517,6 +517,58 @@ class PlayerController(
             PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED -> "音源返回的音频无法解析（可能不是音频文件）"
             else -> causeMessage ?: error.message ?: "播放失败"
         }
+    }
+
+    // ---------------------------------------------------------------- sleep timer
+    //
+    // Lives on the controller so it survives screen navigation, but deliberately not across process death: a timer
+    // armed yesterday must not pause a freshly restarted app.
+    //
+    // Semantics: only an explicit 关闭 or the deadline disarms it. Manually pausing/playing the transport does **not**
+    // cancel it (a user asking for "pause in 30 minutes" does not expect their own pause to disarm it).
+    // 播完当前歌 pauses when the current item transitions, not the whole queue.
+
+    private val _sleepTimerEnd = MutableStateFlow<Long?>(null)
+    val sleepTimerEnd: StateFlow<Long?> = _sleepTimerEnd.asStateFlow()
+    private val _sleepTimerEndOfTrack = MutableStateFlow(false)
+    /** True while "播完当前歌" is armed (no deadline; fires on the next transition). */
+    val sleepTimerEndOfTrack: StateFlow<Boolean> = _sleepTimerEndOfTrack.asStateFlow()
+    private var sleepTimerJob: Job? = null
+    private var sleepTimerPauseAtTrackEnd = false
+
+    /** null/0 cancels; minutes > 0 pauses at that deadline; [PlaybackSleepTimerRules.END_OF_TRACK] at track end. */
+    fun setSleepTimer(minutes: Int?) {
+        sleepTimerJob?.cancel()
+        _sleepTimerEnd.value = null
+        _sleepTimerEndOfTrack.value = false
+        sleepTimerPauseAtTrackEnd = false
+        if (minutes == null || minutes == PlaybackSleepTimerRules.OFF) return
+        if (minutes == PlaybackSleepTimerRules.END_OF_TRACK) {
+            sleepTimerPauseAtTrackEnd = true
+            _sleepTimerEndOfTrack.value = true
+            return
+        }
+        val end = PlaybackSleepTimerRules.deadline(System.currentTimeMillis(), minutes)
+        _sleepTimerEnd.value = end
+        sleepTimerJob = scope.launch {
+            delay(minutes.coerceAtLeast(1) * 60_000L)
+            runCatching { controller?.pause() }
+            _sleepTimerEnd.value = null
+            publish()
+        }
+    }
+
+    /** Remaining whole minutes (rounded up), or null when no countdown timer is armed. */
+    fun sleepTimerMinutesLeft(): Int? =
+        PlaybackSleepTimerRules.remainingMinutes(System.currentTimeMillis(), _sleepTimerEnd.value)
+
+    /** "播完当前歌": pauses once, at the transition to the next item. */
+    private fun pauseAtTrackEndIfArmed() {
+        if (!sleepTimerPauseAtTrackEnd) return
+        sleepTimerPauseAtTrackEnd = false
+        _sleepTimerEndOfTrack.value = false
+        runCatching { controller?.pause() }
+        publish()
     }
 
     /** Drops the cached URL for the failed track so the next attempt resolves fresh (see [onStreamError]). */

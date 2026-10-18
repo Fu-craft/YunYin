@@ -41,6 +41,8 @@ data class CollectionUiState(
     val playCount: Long = 0L,
     val tracks: List<Track> = emptyList(),
     val loading: Boolean = true,
+    /** True when the signed-in user created this playlist; gates edit/delete/remove affordances. */
+    val owned: Boolean = false,
 )
 
 /** Search tab content. */
@@ -270,7 +272,7 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
 
     // ---------------------------------------------------------------- detail
 
-    fun openPlaylist(playlist: Playlist) {
+    fun openPlaylist(playlist: Playlist, uid: Long = 0L) {
         collectionJob?.cancel()
         val requestId = ++collectionRequestId
         _collection.value = CollectionUiState(
@@ -280,6 +282,7 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
             coverUrl = playlist.coverUrl,
             description = playlist.description,
             playCount = playlist.playCount,
+            owned = com.yunyin.music.data.playlist.PlaylistOwnership.canEdit(playlist, uid),
         )
         collectionJob = viewModelScope.launch {
             val tracks = container.music.playlistTracks(playlist.id)
@@ -290,6 +293,33 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
                 _collection.value = _collection.value?.copy(tracks = tracks, loading = false)
             }
         }
+    }
+
+    /** Re-reads the visible collection's tracks after a write, and reloads playlist metadata (name/description). */
+    fun refreshCollection() {
+        val current = _collection.value ?: return
+        if (current.id <= 0L) return
+        collectionJob?.cancel()
+        val requestId = ++collectionRequestId
+        collectionJob = viewModelScope.launch {
+            val detail = container.music.playlist(current.id)
+            val tracks = container.music.playlistTracks(current.id)
+            if (requestId == collectionRequestId) {
+                _collection.value = _collection.value?.copy(
+                    title = detail?.name ?: current.title,
+                    description = detail?.description ?: current.description,
+                    tracks = tracks,
+                    loading = false,
+                    subtitle = "${tracks.size} 首",
+                )
+            }
+        }
+    }
+
+    /** Force-refreshes the library after a playlist write (create/rename/delete). */
+    fun refreshUserPlaylists(account: Account?) {
+        loadedForUid = 0L
+        loadUserPlaylists(account)
     }
 
     /**

@@ -79,6 +79,10 @@ import com.yunyin.music.ui.screens.LoginScreen
 import com.yunyin.music.ui.screens.PROJECT_URL
 import com.yunyin.music.ui.download.DownloadController
 import com.yunyin.music.ui.download.LocalDownloadController
+import com.yunyin.music.ui.screens.PlaylistConfirmSheet
+import com.yunyin.music.ui.screens.PlaylistEditorSheet
+import com.yunyin.music.ui.screens.PlaylistPickerSheet
+import com.yunyin.music.ui.screens.SleepTimerSheet
 import com.yunyin.music.ui.screens.PlayerScreen
 import com.yunyin.music.ui.screens.LxSourceUrlSheet
 import com.yunyin.music.ui.screens.ProfileEditSheet
@@ -211,6 +215,208 @@ class MainActivity : ComponentActivity() {
         // straight from the store would change only on the next launch.
         var playerStyle by remember { mutableStateOf(PlayerStyle.from(container.settings.playerStyle)) }
         var showPlayerStyle by remember { mutableStateOf(false) }
+
+        // ------------------------------------------------------------ playlist management
+        var showPlaylistEditor by remember { mutableStateOf(false) }
+        var playlistEditorTarget by remember { mutableStateOf<com.yunyin.music.core.Playlist?>(null) }
+        var playlistEditorBusy by remember { mutableStateOf(false) }
+        var playlistEditorMessage by remember { mutableStateOf<String?>(null) }
+        var showPlaylistPicker by remember { mutableStateOf(false) }
+        var playlistPickerTrack by remember { mutableStateOf<com.yunyin.music.core.Track?>(null) }
+        var playlistPickerPlaylists by remember { mutableStateOf<List<com.yunyin.music.core.Playlist>>(emptyList()) }
+        var playlistPickerLoading by remember { mutableStateOf(false) }
+        var playlistPickerError by remember { mutableStateOf<String?>(null) }
+        var pendingDeletePlaylist by remember { mutableStateOf<com.yunyin.music.core.Playlist?>(null) }
+        var pendingRemoveTrack by remember { mutableStateOf<com.yunyin.music.core.Track?>(null) }
+        var playlistWriteBusy by remember { mutableStateOf(false) }
+        var showSleepTimer by remember { mutableStateOf(false) }
+        val sleepTimerEnd by container.player.sleepTimerEnd.collectAsState()
+        val sleepTimerEndOfTrack by container.player.sleepTimerEndOfTrack.collectAsState()
+
+        fun toast(message: String) {
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
+
+        fun currentUid(): Long = account?.takeIf { !it.isAnonymous }?.userId ?: 0L
+
+        fun openPlaylistCreate() {
+            val uid = currentUid()
+            if (uid <= 0L) {
+                toast(com.yunyin.music.data.playlist.PlaylistOwnership.loginMessage(0L))
+                return
+            }
+            playlistEditorTarget = null
+            playlistEditorMessage = null
+            showPlaylistEditor = true
+        }
+
+        fun openPlaylistEdit(target: com.yunyin.music.core.Playlist) {
+            playlistEditorTarget = target
+            playlistEditorMessage = null
+            showPlaylistEditor = true
+        }
+
+        fun submitPlaylist(name: String, description: String) {
+            val uid = currentUid()
+            if (uid <= 0L) {
+                playlistEditorMessage = com.yunyin.music.data.playlist.PlaylistOwnership.loginMessage(0L)
+                return
+            }
+            val invalid = com.yunyin.music.data.playlist.PlaylistWrites.validateName(name)
+                ?: com.yunyin.music.data.playlist.PlaylistWrites.validateDescription(description)
+            if (invalid != null) {
+                playlistEditorMessage = invalid
+                return
+            }
+            if (playlistEditorBusy) return
+            playlistEditorBusy = true
+            playlistEditorMessage = null
+            val target = playlistEditorTarget
+            scope.launch {
+                try {
+                    val result: com.yunyin.music.core.NetResult<*> =
+                        if (target == null) {
+                            container.music.createPlaylist(name, description)
+                        } else {
+                            container.music.updatePlaylist(target.id, name, description)
+                        }
+                    when (result) {
+                        is com.yunyin.music.core.NetResult.Ok -> {
+                            toast(if (target == null) "已创建歌单「${name.trim()}」" else "已保存歌单「${name.trim()}」")
+                            appViewModel.refreshUserPlaylists(account)
+                            if (target != null) appViewModel.refreshCollection()
+                            showPlaylistEditor = false
+                        }
+                        is com.yunyin.music.core.NetResult.Err -> playlistEditorMessage = result.message
+                    }
+                } catch (t: Throwable) {
+                    playlistEditorMessage = "操作失败：${(t.message ?: t.javaClass.simpleName).take(120)}"
+                } finally {
+                    playlistEditorBusy = false
+                }
+            }
+        }
+
+        fun openPlaylistPicker(track: com.yunyin.music.core.Track) {
+            playlistPickerTrack = track
+            playlistPickerPlaylists = emptyList()
+            playlistPickerError = null
+            showPlaylistPicker = true
+            val uid = currentUid()
+            if (uid <= 0L) {
+                playlistPickerError = com.yunyin.music.data.playlist.PlaylistOwnership.loginMessage(0L)
+                return
+            }
+            playlistPickerLoading = true
+            scope.launch {
+                try {
+                    when (val result = container.music.userPlaylists(uid)) {
+                        is com.yunyin.music.core.NetResult.Ok ->
+                            playlistPickerPlaylists = result.value.filterNot { it.isLikedSongs }
+                        is com.yunyin.music.core.NetResult.Err -> playlistPickerError = result.message
+                    }
+                } catch (t: Throwable) {
+                    playlistPickerError = "加载歌单失败：${(t.message ?: t.javaClass.simpleName).take(120)}"
+                } finally {
+                    playlistPickerLoading = false
+                }
+            }
+        }
+
+        fun addTrackToPlaylist(target: com.yunyin.music.core.Playlist) {
+            val track = playlistPickerTrack ?: return
+            if (playlistWriteBusy) return
+            playlistWriteBusy = true
+            scope.launch {
+                try {
+                    when (val result = container.music.addTracksToPlaylist(target.id, listOf(track.id))) {
+                        is com.yunyin.music.core.NetResult.Ok -> {
+                            toast("已添加到「${target.name}」")
+                            showPlaylistPicker = false
+                            if (collectionState?.id == target.id) appViewModel.refreshCollection()
+                        }
+                        is com.yunyin.music.core.NetResult.Err -> {
+                            playlistPickerError = result.message
+                            toast(result.message)
+                        }
+                    }
+                } catch (t: Throwable) {
+                    val message = "添加失败：${(t.message ?: t.javaClass.simpleName).take(120)}"
+                    playlistPickerError = message
+                    toast(message)
+                } finally {
+                    playlistWriteBusy = false
+                }
+            }
+        }
+
+        fun deletePlaylistNow() {
+            val target = pendingDeletePlaylist ?: return
+            if (playlistWriteBusy) return
+            playlistWriteBusy = true
+            scope.launch {
+                try {
+                    when (val result = container.music.deletePlaylist(target.id)) {
+                        is com.yunyin.music.core.NetResult.Ok -> {
+                            toast("已删除歌单")
+                            pendingDeletePlaylist = null
+                            appViewModel.closeCollection()
+                            appViewModel.refreshUserPlaylists(account)
+                        }
+                        is com.yunyin.music.core.NetResult.Err -> {
+                            toast(result.message)
+                            pendingDeletePlaylist = null
+                        }
+                    }
+                } catch (t: Throwable) {
+                    toast("删除失败：${(t.message ?: t.javaClass.simpleName).take(120)}")
+                    pendingDeletePlaylist = null
+                } finally {
+                    playlistWriteBusy = false
+                }
+            }
+        }
+
+        fun removeTrackNow() {
+            val track = pendingRemoveTrack ?: return
+            val playlistId = collectionState?.id ?: return
+            if (playlistWriteBusy) return
+            playlistWriteBusy = true
+            scope.launch {
+                try {
+                    when (val result = container.music.removeTracksFromPlaylist(playlistId, listOf(track.id))) {
+                        is com.yunyin.music.core.NetResult.Ok -> {
+                            toast("已移除")
+                            pendingRemoveTrack = null
+                            appViewModel.refreshCollection()
+                        }
+                        is com.yunyin.music.core.NetResult.Err -> {
+                            toast(result.message)
+                            pendingRemoveTrack = null
+                        }
+                    }
+                } catch (t: Throwable) {
+                    toast("移除失败：${(t.message ?: t.javaClass.simpleName).take(120)}")
+                    pendingRemoveTrack = null
+                } finally {
+                    playlistWriteBusy = false
+                }
+            }
+        }
+
+        fun pickSleepTimer(option: Int?) {
+            container.player.setSleepTimer(option)
+            showSleepTimer = false
+            Toast.makeText(
+                context,
+                when (option) {
+                    null, com.yunyin.music.playback.PlaybackSleepTimerRules.OFF -> "已关闭定时关闭"
+                    com.yunyin.music.playback.PlaybackSleepTimerRules.END_OF_TRACK -> "播完当前歌后暂停"
+                    else -> "将在 $option 分钟后暂停播放"
+                },
+                Toast.LENGTH_SHORT,
+            ).show()
+        }
 
         // ------------------------------------------------------------ profile
         var showProfileEdit by remember { mutableStateOf(false) }
@@ -529,7 +735,8 @@ class MainActivity : ComponentActivity() {
                             onSignIn = { showLogin = true },
                             onSettings = { showSettings = true },
                             onEditProfile = { showProfileEdit = true },
-                            onPlaylistClick = { appViewModel.openPlaylist(it) },
+                            onPlaylistClick = { appViewModel.openPlaylist(it, account?.userId ?: 0L) },
+                            onCreatePlaylist = { openPlaylistCreate() },
                             onLikedSongsClick = {
                                 appViewModel.openLikedSongs(
                                     uid = account?.userId ?: 0L,
@@ -674,6 +881,41 @@ class MainActivity : ComponentActivity() {
                             },
                             nowPlayingId = nowPlaying.first,
                             isPlaying = nowPlaying.second,
+                            onEditPlaylist = if (state.owned) {
+                                {
+                                    openPlaylistEdit(
+                                        com.yunyin.music.core.Playlist(
+                                            id = state.id,
+                                            name = state.title,
+                                            coverUrl = state.coverUrl,
+                                            trackCount = state.tracks.size,
+                                            description = state.description,
+                                            creatorUserId = account?.userId ?: 0L,
+                                        ),
+                                    )
+                                }
+                            } else {
+                                null
+                            },
+                            onDeletePlaylist = if (state.owned) {
+                                {
+                                    pendingDeletePlaylist = com.yunyin.music.core.Playlist(
+                                        id = state.id,
+                                        name = state.title,
+                                        coverUrl = state.coverUrl,
+                                        trackCount = state.tracks.size,
+                                        description = state.description,
+                                        creatorUserId = account?.userId ?: 0L,
+                                    )
+                                }
+                            } else {
+                                null
+                            },
+                            onRemoveTrack = if (state.owned) {
+                                { track -> pendingRemoveTrack = track }
+                            } else {
+                                null
+                            },
                         )
                     }
                 }
@@ -714,6 +956,16 @@ class MainActivity : ComponentActivity() {
                         if (!enabled) container.tickerLyrics.clear()
                     },
                     seamlessTransition = seamlessTransition,
+                    sleepTimerLabel = when {
+                        sleepTimerEndOfTrack -> "播完当前歌"
+                        sleepTimerEnd != null -> {
+                            val left = com.yunyin.music.playback.PlaybackSleepTimerRules
+                                .remainingMinutes(System.currentTimeMillis(), sleepTimerEnd)
+                            if (left != null) "还有约 $left 分钟" else "已开启"
+                        }
+                        else -> "关闭"
+                    },
+                    onShowSleepTimer = { showSleepTimer = true },
                     onSeamlessTransitionChange = { enabled ->
                         seamlessTransition = enabled
                         // Writing the preference is the whole action: the service watches this key and
@@ -828,6 +1080,55 @@ class MainActivity : ComponentActivity() {
 
             // 从链接导入 dialog. A failure keeps it open with the URL and the specific reason; a success closes it
             // and the section underneath shows the usual "已导入「…」" line.
+            if (showPlaylistEditor) {
+                PlaylistEditorSheet(
+                    title = if (playlistEditorTarget == null) "新建歌单" else "编辑歌单",
+                    initialName = playlistEditorTarget?.name ?: "",
+                    initialDescription = playlistEditorTarget?.description.orEmpty(),
+                    busy = playlistEditorBusy,
+                    message = playlistEditorMessage,
+                    onSubmit = { name, description -> submitPlaylist(name, description) },
+                    onDismiss = { if (!playlistEditorBusy) showPlaylistEditor = false },
+                )
+            }
+            if (showPlaylistPicker) {
+                PlaylistPickerSheet(
+                    loading = playlistPickerLoading,
+                    error = playlistPickerError,
+                    playlists = playlistPickerPlaylists,
+                    onPick = { target -> addTrackToPlaylist(target) },
+                    onDismiss = { showPlaylistPicker = false },
+                )
+            }
+            pendingDeletePlaylist?.let { target ->
+                PlaylistConfirmSheet(
+                    title = "删除歌单",
+                    message = "确定删除「${target.name}」吗？",
+                    confirmLabel = "删除",
+                    busy = playlistWriteBusy,
+                    onConfirm = { deletePlaylistNow() },
+                    onDismiss = { if (!playlistWriteBusy) pendingDeletePlaylist = null },
+                )
+            }
+            pendingRemoveTrack?.let { track ->
+                PlaylistConfirmSheet(
+                    title = "移除歌曲",
+                    message = "从歌单中移除「${track.name}」？",
+                    confirmLabel = "移除",
+                    busy = playlistWriteBusy,
+                    onConfirm = { removeTrackNow() },
+                    onDismiss = { if (!playlistWriteBusy) pendingRemoveTrack = null },
+                )
+            }
+            if (showSleepTimer) {
+                SleepTimerSheet(
+                    activeMinutesLeft = com.yunyin.music.playback.PlaybackSleepTimerRules
+                        .remainingMinutes(System.currentTimeMillis(), sleepTimerEnd),
+                    endOfTrackArmed = sleepTimerEndOfTrack,
+                    onPick = { option -> pickSleepTimer(option) },
+                    onDismiss = { showSleepTimer = false },
+                )
+            }
             if (showLxUrlSheet) {
                 LxSourceUrlSheet(
                     url = lxUrlDraft,
@@ -946,6 +1247,10 @@ class MainActivity : ComponentActivity() {
                         onDownload = { track -> container.downloads.download(track) },
                         onCancel = { trackId -> container.downloads.cancel(trackId) },
                     ),
+                    com.yunyin.music.ui.playlist.LocalPlaylistActions provides
+                        com.yunyin.music.ui.playlist.PlaylistActions(
+                            onAddToPlaylist = { track -> openPlaylistPicker(track) },
+                        ),
                 ) {
                     PlayerScreen(
                     state = playback,

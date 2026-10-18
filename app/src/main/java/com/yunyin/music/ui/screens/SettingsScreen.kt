@@ -102,6 +102,9 @@ fun SettingsScreen(
     /** Whether tracks run into each other without the dead air that makes them sound like files. */
     seamlessTransition: Boolean = true,
     onSeamlessTransitionChange: (Boolean) -> Unit = {},
+    /** Remaining sleep-timer label ("关闭" / "还有约 12 分钟" / "播完当前歌"). */
+    sleepTimerLabel: String = "关闭",
+    onShowSleepTimer: () -> Unit = {},
     /**
      * Whether a crash has been recorded since the last one was cleared.
      *
@@ -202,6 +205,11 @@ fun SettingsScreen(
                 subtitle = "柔化每首歌的开头，切歌不会突然出声",
                 enabled = seamlessTransition,
                 onChange = onSeamlessTransitionChange,
+            )
+            LinkRow(
+                text = "定时关闭",
+                value = sleepTimerLabel,
+                onClick = onShowSleepTimer,
             )
             // The player's centrepiece: a rounded cover, or a rotating record. A row that opens a picker
             // rather than an inline switch, because there are two choices and each needs a line saying what

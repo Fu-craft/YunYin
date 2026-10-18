@@ -1,4 +1,4 @@
-package com.yunyin.music.data.net
+﻿package com.yunyin.music.data.net
 
 import com.yunyin.music.core.Account
 import com.yunyin.music.core.ArtistInfo
@@ -9,6 +9,7 @@ import com.yunyin.music.core.Playlist
 import com.yunyin.music.core.Track
 import com.yunyin.music.core.map
 import com.yunyin.music.data.SettingsStore
+import com.yunyin.music.data.playlist.PlaylistWrites
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -407,6 +408,7 @@ class NeteaseClient(private val settings: SettingsStore) {
             trackCount = p.optInt("trackCount"),
             playCount = p.optLong("playCount"),
             description = p.optString("description").ifBlank { null },
+            creatorUserId = p.optJSONObject("creator")?.optLong("userId") ?: 0L,
         )
     }
 
@@ -414,6 +416,74 @@ class NeteaseClient(private val settings: SettingsStore) {
         "/playlist/track/all",
         query = mapOf("id" to "$id", "limit" to "$limit", "offset" to "$offset"),
     ).map { json -> json.optJSONArray("songs")?.mapDetailTracks().orEmpty() }
+
+    // ---------------------------------------------------------------- playlist writes
+    //
+    // These are the NeteaseCloudMusicApi mutation endpoints. They take form fields and require the logged-in
+    // MUSIC_U cookie (the app stores it in [SettingsStore.cookie]); without a real session the server answers 301
+    // ("need login"), which is surfaced as a specific message instead of being collapsed into a generic error.
+
+    private fun loginRequiredMessage(): String? =
+        if (settings.cookie.isBlank()) "未登录，请先登录" else null
+
+    /** Maps NetEase's need-login responses to the two user-facing cases the UI distinguishes. */
+    private fun loginAware(result: NetResult<JSONObject>): NetResult<JSONObject> = when (result) {
+        is NetResult.Ok -> result
+        is NetResult.Err ->
+            if (result.message.contains("登录") || result.message.contains("301") || result.message.contains("401")) {
+                NetResult.Err("登录已过期，请重新登录")
+            } else {
+                result
+            }
+    }
+
+    suspend fun createPlaylist(
+        name: String,
+        description: String = "",
+        isPrivate: Boolean = false,
+    ): NetResult<Long> {
+        loginRequiredMessage()?.let { return NetResult.Err(it) }
+        val invalid = PlaylistWrites.validateName(name) ?: PlaylistWrites.validateDescription(description)
+        if (invalid != null) return NetResult.Err(invalid)
+        return loginAware(
+            request("/playlist/create", form = PlaylistWrites.createForm(name, description, isPrivate)),
+        ).map { json ->
+            json.optJSONObject("playlist")?.optLong("id")?.takeIf { it > 0L }
+                ?: json.optLong("id").takeIf { it > 0L }
+                ?: 0L
+        }
+    }
+
+    suspend fun updatePlaylist(playlistId: Long, name: String, description: String): NetResult<Unit> {
+        loginRequiredMessage()?.let { return NetResult.Err(it) }
+        val invalid = PlaylistWrites.validateName(name) ?: PlaylistWrites.validateDescription(description)
+        if (invalid != null) return NetResult.Err(invalid)
+        return loginAware(
+            request("/playlist/update", form = PlaylistWrites.updateForm(playlistId, name, description)),
+        ).map { }
+    }
+
+    suspend fun deletePlaylist(playlistId: Long): NetResult<Unit> {
+        loginRequiredMessage()?.let { return NetResult.Err(it) }
+        return loginAware(request("/playlist/delete", form = PlaylistWrites.deleteForm(playlistId))).map { }
+    }
+
+    /** Adds tracks; the API dedupes by itself, so a second add is not an error to the user. */
+    suspend fun addTracksToPlaylist(playlistId: Long, trackIds: List<Long>): NetResult<Unit> {
+        loginRequiredMessage()?.let { return NetResult.Err(it) }
+        if (trackIds.isEmpty()) return NetResult.Err("没有可添加的歌曲")
+        return loginAware(
+            request("/playlist/tracks", form = PlaylistWrites.tracksForm(playlistId, "add", trackIds)),
+        ).map { }
+    }
+
+    suspend fun removeTracksFromPlaylist(playlistId: Long, trackIds: List<Long>): NetResult<Unit> {
+        loginRequiredMessage()?.let { return NetResult.Err(it) }
+        if (trackIds.isEmpty()) return NetResult.Err("没有可移除的歌曲")
+        return loginAware(
+            request("/playlist/tracks", form = PlaylistWrites.tracksForm(playlistId, "del", trackIds)),
+        ).map { }
+    }
 
     suspend fun toplists(): NetResult<List<ChartInfo>> = request("/toplist").map { json ->
         val list = json.optJSONArray("list") ?: return@map emptyList()
@@ -527,6 +597,7 @@ class NeteaseClient(private val settings: SettingsStore) {
                 playCount = o.optLong("playCount"),
                 description = o.text("description"),
                 isLikedSongs = o.optInt("specialType") == SPECIAL_TYPE_LIKED,
+                creatorUserId = o.optJSONObject("creator")?.optLong("userId") ?: 0L,
             )
         }
     }

@@ -137,6 +137,8 @@ fun LibraryScreen(
     onPlaylistClick: (Playlist) -> Unit,
     onLikedSongsClick: () -> Unit,
     onTrackClick: (Track) -> Unit,
+    /** Opens the create-playlist sheet; shown only for a signed-in account. */
+    onCreatePlaylist: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val signedIn = account != null && !account.isAnonymous
@@ -175,6 +177,7 @@ fun LibraryScreen(
         onPlaylistClick = onPlaylistClick,
         onLikedSongsClick = onLikedSongsClick,
         onTrackClick = onTrackClick,
+        onCreatePlaylist = onCreatePlaylist,
         onOpenPage = { openPage = it },
     )
 
@@ -198,6 +201,7 @@ fun LibraryScreen(
             loader = loader,
             onBack = { openPage = null },
             onPlaylistClick = onPlaylistClick,
+            onCreatePlaylist = onCreatePlaylist,
         )
     }
 
@@ -248,6 +252,7 @@ private fun LibraryContent(
     onPlaylistClick: (Playlist) -> Unit,
     onLikedSongsClick: () -> Unit,
     onTrackClick: (Track) -> Unit,
+    onCreatePlaylist: () -> Unit = {},
     onOpenPage: (LibraryPage) -> Unit,
 ) {
     val signedIn = account != null && !account.isAnonymous
@@ -787,41 +792,56 @@ private fun PlaylistsPage(
     loader: ArtworkLoader,
     onBack: () -> Unit,
     onPlaylistClick: (Playlist) -> Unit,
+    onCreatePlaylist: () -> Unit = {},
 ) {
     LibrarySubpage(title = "我的歌单", onBack = onBack) { topInset ->
-        when {
-            playlists.isNotEmpty() -> LazyColumn(
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                contentPadding = PaddingValues(
-                    top = topInset,
-                    bottom = chromeContentBottomPadding(),
-                ),
-            ) {
-                itemsIndexed(playlists, key = { _, p -> p.id }) { index, playlist ->
-                    PlaylistRow(
-                        playlist = playlist,
-                        loader = loader,
-                        onClick = { onPlaylistClick(playlist) },
-                    )
-                    if (index != playlists.lastIndex) {
-                        RowDivider()
-                    }
-                }
-            }
-
-            loading -> Box(
-                Modifier.weight(1f).fillMaxWidth().padding(top = topInset),
-                contentAlignment = Alignment.TopCenter,
-            ) {
-                CircularProgressIndicator(
+        Column(Modifier.fillMaxSize()) {
+            if (signedIn) {
+                Text(
+                    text = "＋ 新建歌单",
+                    fontFamily = SFPro,
+                    fontSize = 16.sp,
                     color = AppTheme.palette.accent,
-                    strokeWidth = 2.5.dp,
-                    modifier = Modifier.padding(top = 40.dp).size(24.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = onCreatePlaylist)
+                        .padding(start = 20.dp, end = 20.dp, top = topInset + 12.dp, bottom = 12.dp),
                 )
             }
+            when {
+                playlists.isNotEmpty() -> LazyColumn(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    contentPadding = PaddingValues(
+                        top = if (signedIn) 0.dp else topInset,
+                        bottom = chromeContentBottomPadding(),
+                    ),
+                ) {
+                    itemsIndexed(playlists, key = { _, p -> p.id }) { index, playlist ->
+                        PlaylistRow(
+                            playlist = playlist,
+                            loader = loader,
+                            onClick = { onPlaylistClick(playlist) },
+                        )
+                        if (index != playlists.lastIndex) {
+                            RowDivider()
+                        }
+                    }
+                }
 
-            else -> Column(Modifier.fillMaxWidth().padding(top = topInset)) {
-                EmptyHint(if (signedIn) "还没有歌单" else "登录后可同步你的歌单")
+                loading -> Box(
+                    Modifier.weight(1f).fillMaxWidth().padding(top = topInset),
+                    contentAlignment = Alignment.TopCenter,
+                ) {
+                    CircularProgressIndicator(
+                        color = AppTheme.palette.accent,
+                        strokeWidth = 2.5.dp,
+                        modifier = Modifier.padding(top = 40.dp).size(24.dp),
+                    )
+                }
+
+                else -> Column(Modifier.fillMaxWidth().padding(top = topInset)) {
+                    EmptyHint(if (signedIn) "还没有歌单" else "登录后可同步你的歌单")
+                }
             }
         }
     }

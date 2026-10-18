@@ -32,6 +32,13 @@ data class Playlist(
     val description: String? = null,
     /** True for NetEase's built-in "我喜欢的音乐" list. */
     val isLikedSongs: Boolean = false,
+    /**
+     * `creator.userId` from NetEase, or 0 when the endpoint does not include the creator (e.g. home shelves).
+     *
+     * Ownership is decided by comparing this to the logged-in uid; only the owner may rename, edit or delete the
+     * playlist. Zero means "unknown", and unknown is never treated as owned.
+     */
+    val creatorUserId: Long = 0L,
 )
 
 /** A chart / toplist entry. */
