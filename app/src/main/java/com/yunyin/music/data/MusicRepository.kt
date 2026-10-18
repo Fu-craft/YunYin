@@ -432,6 +432,16 @@ class MusicRepository(
 
     suspend fun artistTopSongs(artistId: Long): List<Track> = client.artistTopSongs(artistId).listOrEmpty()
 
+    suspend fun artistDetail(artistId: Long): ArtistInfo? = client.artistDetail(artistId).valueOrNull()
+
+    suspend fun artistSongsPage(artistId: Long, offset: Int, limit: Int, order: String = "time") =
+        client.artistSongsPage(artistId, offset, limit, order).valueOrNull()
+
+    suspend fun artistAlbumsPage(artistId: Long, offset: Int, limit: Int) =
+        client.artistAlbumsPage(artistId, offset, limit).valueOrNull()
+
+    suspend fun albumTracks(albumId: Long): List<Track> = client.albumTracks(albumId).listOrEmpty()
+
     /** The artist's name and cover, for the artist page's header. */
     suspend fun artistInfo(artistId: Long): ArtistInfo? =
         client.artistDetail(artistId).valueOrNull()

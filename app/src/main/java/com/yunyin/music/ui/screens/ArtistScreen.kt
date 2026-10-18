@@ -1,17 +1,13 @@
 package com.yunyin.music.ui.screens
 
-import android.graphics.Bitmap
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -19,76 +15,49 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
+import com.yunyin.music.core.AlbumInfo
 import com.yunyin.music.core.Track
 import com.yunyin.music.data.ArtworkLoader
 import com.yunyin.music.ui.ArtistUiState
+import com.yunyin.music.ui.components.Artwork
 import com.yunyin.music.ui.components.EmptyState
-import com.yunyin.music.ui.components.rememberGlassTopBarBackdrop
+import com.yunyin.music.ui.components.rememberControlRipple
 import com.yunyin.music.ui.icons.SfIcons
 import com.yunyin.music.ui.theme.AppTheme
+import com.yunyin.music.ui.theme.AppleShapes
 import com.yunyin.music.ui.theme.SFPro
-import com.kyant.backdrop.backdrops.layerBackdrop
+
 
 /**
- * An artist's page: identity on top, top songs below — the playlist screen's layout with an artist's
- * data.
+ * 歌手详情：header + 热门歌曲 / 全部歌曲（分页）/ 专辑（横向）。
  *
- * Sharing the *layout* rather than being the same composable is deliberate. The playlist screen is
- * shaped by a [com.yunyin.music.ui.CollectionUiState] (playlist id for sharing, play counts, a
- * description); an artist has none of those and does have things a playlist does not (an identity
- * fetched separately from the song list). Reusing the composable would have meant threading "which
- * kind am I" through every layer, which costs more than the duplicated scaffold and reads worse.
- *
- * What *is* shared is the parts that would visibly drift if they were copied:
- *
- *  - [CoverField] — the blurred artwork, tone guard and eased fade into the page. The page's whole
- *    character lives there, and the artist header was previously a hand-rolled gradient that turned a
- *    pale portrait into a wash.
- *  - [HeaderAction] — the two headline pills. The artist page has one fewer (no shuffle on a
- *    playlist's terms), so it reuses the pill and drops the second action rather than inventing a
- *    different button.
- *  - [CollectionTrackRow] — the song rows, so an artist's list reads exactly like a playlist's.
- *  - [TopBar] — the same pinned surface, for consistency: a page reached *from* a playlist should not
- *    invent a different way of leaving.
- *
- * Two behaviours are worth stating:
- *
- *  - **The page is never blank.** The name arrives seeded from the tapped row, so the first frame
- *    already has a title; the identity call replaces the portrait and confirms the name when it lands.
- *  - **The ink is measured, not assumed.** A light portrait gets dark ink. The previous version fixed
- *    white ink and a black scrim, which is why the name was hard to read on pale artwork.
+ * One vertical LazyColumn owns the whole page (the album rail is a horizontal LazyRow inside one item), so there is
+ * no vertical-nested-scroller. Each section carries its own loading/error/empty state: an album failure leaves the
+ * header and songs untouched. The previous page only had `/artist/top/song`, which is exactly the "只能显示热门歌曲"
+ * report.
  */
 @Composable
 fun ArtistScreen(
@@ -98,293 +67,317 @@ fun ArtistScreen(
     onTrackClick: (Track, Int) -> Unit,
     onPlayAll: () -> Unit,
     modifier: Modifier = Modifier,
-    /** Starts the list in a random order; the playlist's second action, restated. */
     onShufflePlay: () -> Unit = {},
+    onAllTrackClick: (Track, Int) -> Unit = { _, _ -> },
+    onLoadMoreSongs: () -> Unit = {},
+    onLoadMoreAlbums: () -> Unit = {},
+    onAlbumClick: (AlbumInfo) -> Unit = {},
     nowPlayingId: Long? = null,
     isPlaying: Boolean = false,
 ) {
-    // As with the playlist: a small decode is plenty for a heavily blurred field.
-    var backdrop by remember(state.coverUrl) { mutableStateOf<ImageBitmap?>(null) }
-    // Defaults to "dark" so the first frame (before the image lands) already has white ink over the
-    // placeholder field, exactly as the playlist does.
-    var coverLuma by remember(state.coverUrl) { mutableFloatStateOf(0f) }
-    LaunchedEffect(state.coverUrl) {
-        val bitmap: Bitmap? = state.coverUrl?.let { loader.load(it, 200) }
-        backdrop = bitmap?.asImageBitmap()
-        coverLuma = bitmap?.let(::meanLuma) ?: 0f
-    }
-
     val palette = AppTheme.palette
-    // Measured, not assumed: a mid-grey portrait is the ambiguous case, and white ink has the better
-    // worst case there.
-    val coverIsDark = coverLuma < 0.55f
-    val onCover = if (coverIsDark) Color.White else Color(0xFF141416)
-    val inverseOnCover = if (coverIsDark) Color(0xFF141416) else Color.White
+    var bioExpanded by remember(state.briefDesc) { mutableStateOf(false) }
 
-    val listState = rememberLazyListState()
-    val density = LocalDensity.current
-    var headerHeightPx by remember(state.id) { mutableIntStateOf(0) }
-
-    // The frosted top bar's pixel source (same arrangement as the playlist page): page content
-    // recorded with the page background painted in first, with the bar composed outside it.
-    val topBarBackdrop = rememberGlassTopBarBackdrop()
-
-    // Derived exactly as the playlist derives it: the bar goes opaque on the frame the fade's band
-    // reaches it, which is when the colour under the bar stops being artwork.
-    val fadePx = with(density) { PageFade.toPx() }
-    val barBottomPx = WindowInsets.systemBars.getTop(density) + with(density) { TopBarHeight.toPx() }
-    val barSolidThreshold = (headerHeightPx - fadePx - barBottomPx).coerceAtLeast(0f)
-
-    Box(modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxSize().layerBackdrop(topBarBackdrop)) {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 32.dp),
+    Column(modifier.fillMaxSize()) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(palette.secondaryBackground)
+                    .clickable(indication = rememberControlRipple(bounded = false), interactionSource = null, onClick = onBack),
+                contentAlignment = Alignment.Center,
             ) {
+                Icon(SfIcons.ChevronDown, contentDescription = "返回", tint = palette.label, modifier = Modifier.size(20.dp))
+            }
+            Spacer(Modifier.width(12.dp))
+            Text(
+                text = state.name.ifBlank { "歌手" },
+                fontFamily = SFPro,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 18.sp,
+                color = palette.label,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(bottom = 32.dp),
+        ) {
             item("header") {
-                ArtistHeader(
+                ArtistHeaderBlock(
                     state = state,
                     loader = loader,
-                    backdrop = backdrop,
-                    coverIsDark = coverIsDark,
-                    onCover = onCover,
-                    inverseOnCover = inverseOnCover,
+                    bioExpanded = bioExpanded,
+                    onToggleBio = { bioExpanded = !bioExpanded },
                     onPlayAll = onPlayAll,
                     onShufflePlay = onShufflePlay,
-                    onHeightChanged = { headerHeightPx = it },
                 )
             }
 
-            when {
-                state.loading && state.tracks.isEmpty() -> item("loading") {
-                    Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(
-                            color = palette.accent,
-                            strokeWidth = 2.5.dp,
-                            modifier = Modifier.size(26.dp),
-                        )
+            item("hot-title") { SectionTitle("热门歌曲") }
+            if (state.hotSongs.isEmpty()) {
+                item("hot-state") {
+                    Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                        if (state.loading) {
+                            CircularProgressIndicator(color = palette.accent, strokeWidth = 2.5.dp, modifier = Modifier.size(24.dp))
+                        } else {
+                            Text("暂无热门歌曲", fontFamily = SFPro, fontSize = 13.sp, color = palette.secondaryLabel)
+                        }
                     }
                 }
-
-                state.tracks.isEmpty() -> item("empty") { EmptyState("暂无热门歌曲") }
-
-                else -> item("count") {
-                    Text(
-                        text = "热门歌曲",
-                        fontFamily = SFPro,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 16.sp,
-                        color = palette.label,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = PageInset, end = PageInset, top = 14.dp, bottom = 2.dp),
+            } else {
+                itemsIndexed(state.hotSongs, key = { index, track -> "hot-${track.id}#$index" }) { index, track ->
+                    CollectionTrackRow(
+                        index = index,
+                        track = track,
+                        loader = loader,
+                        isCurrent = track.id == nowPlayingId,
+                        isPlaying = isPlaying && track.id == nowPlayingId,
+                        onClick = { onTrackClick(track, index) },
                     )
                 }
             }
 
-            // Index-based so duplicate songs still resolve to the row that was tapped.
-            itemsIndexed(state.tracks, key = { index, track -> "${track.id}#$index" }) { index, track ->
-                CollectionTrackRow(
-                    index = index,
-                    track = track,
-                    loader = loader,
-                    isCurrent = track.id == nowPlayingId,
-                    isPlaying = isPlaying && track.id == nowPlayingId,
-                    onClick = { onTrackClick(track, index) },
-                )
+            item("all-title") { SectionTitle("全部歌曲") }
+            if (state.songsError != null) {
+                item("all-error") { SectionMessage(state.songsError, isError = true) }
+            } else if (state.allSongs.isEmpty()) {
+                item("all-empty") {
+                    Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                        if (state.loading) {
+                            CircularProgressIndicator(color = palette.accent, strokeWidth = 2.5.dp, modifier = Modifier.size(22.dp))
+                        } else {
+                            Text("暂无歌曲", fontFamily = SFPro, fontSize = 13.sp, color = palette.secondaryLabel)
+                        }
+                    }
+                }
+            } else {
+                itemsIndexed(state.allSongs, key = { index, track -> "all-${track.id}#$index" }) { index, track ->
+                    CollectionTrackRow(
+                        index = index,
+                        track = track,
+                        loader = loader,
+                        isCurrent = track.id == nowPlayingId,
+                        isPlaying = isPlaying && track.id == nowPlayingId,
+                        onClick = { onAllTrackClick(track, index) },
+                    )
+                }
+                item("all-footer") {
+                    when {
+                        state.loadingSongs -> Box(Modifier.fillMaxWidth().padding(20.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(color = palette.accent, strokeWidth = 2.5.dp, modifier = Modifier.size(20.dp))
+                        }
+                        state.allMore -> LoadMoreRow("加载更多歌曲", onLoadMoreSongs)
+                        else -> EndRow("已显示全部歌曲")
+                    }
+                }
+            }
+
+            item("albums-title") { SectionTitle("专辑") }
+            if (state.albumsError != null) {
+                item("albums-error") { SectionMessage(state.albumsError, isError = true) }
+            } else if (state.albums.isEmpty()) {
+                item("albums-empty") {
+                    Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                        if (state.loading) {
+                            CircularProgressIndicator(color = palette.accent, strokeWidth = 2.5.dp, modifier = Modifier.size(22.dp))
+                        } else {
+                            Text("暂无专辑", fontFamily = SFPro, fontSize = 13.sp, color = palette.secondaryLabel)
+                        }
+                    }
+                }
+            } else {
+                item("albums-rail") {
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 20.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        items(state.albums, key = { it.id }) { album -> AlbumCard(album, loader, onClick = { onAlbumClick(album) }) }
+                    }
+                }
+                item("albums-footer") {
+                    when {
+                        state.loadingAlbums -> Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(color = palette.accent, strokeWidth = 2.5.dp, modifier = Modifier.size(20.dp))
+                        }
+                        state.albumsMore -> LoadMoreRow("加载更多专辑", onLoadMoreAlbums)
+                        else -> Spacer(Modifier.height(8.dp))
+                    }
+                }
             }
 
             item("bottom") { Spacer(Modifier.navigationBarsPadding().height(12.dp)) }
-            }
         }
-
-        // Pinned last, outside the recorded layer, so it draws over the scrolling artwork and
-        // samples it instead of sampling itself.
-        TopBar(
-            backdrop = topBarBackdrop,
-            onCover = onCover,
-            // The opposite of the ink, so the scrim always separates the controls from whatever
-            // scrolls under them regardless of which ink the artwork chose.
-            scrimTint = if (coverIsDark) Color.Black else Color.White,
-            listState = listState,
-            solidThresholdPx = barSolidThreshold,
-            onBack = onBack,
-            // An artist page has nothing worth sharing that a playlist does not: leaving the row out is
-            // more honest than a button that shares a half-built link.
-            onShare = null,
-        )
     }
 }
 
-/**
- * The artist hero: the playlist's colour field, a round portrait, the name, and the play action.
- *
- * The portrait is round while the playlist's cover is square — the one deliberate departure, because
- * an artist is a person and the round image is how every music app says so. Everything else, including
- * the spacer rhythm and the pill, is the playlist's.
- */
 @Composable
-private fun ArtistHeader(
+private fun ArtistHeaderBlock(
     state: ArtistUiState,
     loader: ArtworkLoader,
-    backdrop: ImageBitmap?,
-    coverIsDark: Boolean,
-    onCover: Color,
-    inverseOnCover: Color,
+    bioExpanded: Boolean,
+    onToggleBio: () -> Unit,
     onPlayAll: () -> Unit,
     onShufflePlay: () -> Unit,
-    /** Reports the measured height so the pinned bar can time its surface to the ramp. */
-    onHeightChanged: (Int) -> Unit,
-) {
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .onSizeChanged { onHeightChanged(it.height) },
-    ) {
-        CoverField(
-            backdrop = backdrop,
-            coverIsDark = coverIsDark,
-            pageBackground = AppTheme.palette.background,
-            modifier = Modifier.matchParentSize(),
-        )
-
-        // Centred, because the portrait is: a centred image with a left-ranged name reads as two
-        // unrelated columns rather than one stacked identity.
-        Column(
-            Modifier.fillMaxWidth().padding(horizontal = PageInset),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            // Reserve exactly what the pinned bar occupies, from the same constants the bar uses.
-            Spacer(Modifier.statusBarsPadding())
-            Spacer(Modifier.height(TopBarHeight + BarClearance))
-            Spacer(Modifier.height(8.dp))
-
-            ArtistPortrait(state = state, loader = loader, onCover = onCover)
-
-            Spacer(Modifier.height(20.dp))
-
-            // The name is seeded from the tapped row and confirmed by the detail call, so it is present
-            // from the first frame. The `@`-less artist handle some rows carry (`*Luna`) is kept as-is:
-            // it is the printed name, and the search that resolves it uses exactly this string.
-            Text(
-                text = state.name.ifBlank { "未知歌手" },
-                fontFamily = SFPro,
-                fontWeight = FontWeight.Bold,
-                fontSize = 27.sp,
-                lineHeight = 33.sp,
-                color = onCover,
-                textAlign = TextAlign.Center,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            val count = state.tracks.size
-            if (count > 0) {
-                Spacer(Modifier.height(8.dp))
-                // Just the tally: the section header below already names the list, so repeating
-                // "热门歌曲" here would say the same word twice on one screen.
-                Text(
-                    text = "$count 首热门歌曲",
-                    fontFamily = SFPro,
-                    fontSize = 14.sp,
-                    color = onCover.copy(alpha = 0.72f),
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-
-            Spacer(Modifier.height(18.dp))
-
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                // Play leads and takes the solid fill, shuffle takes the glass one — the playlist's
-                // ordering and the playlist's pills.
-                HeaderAction(
-                    icon = SfIcons.Play,
-                    label = "播放热门",
-                    fill = onCover,
-                    content = inverseOnCover,
-                    onClick = onPlayAll,
-                    modifier = Modifier.weight(1f),
-                )
-                HeaderAction(
-                    icon = SfIcons.Shuffle,
-                    label = "随机播放",
-                    fill = onCover.copy(alpha = 0.16f),
-                    content = onCover,
-                    border = onCover.copy(alpha = 0.22f),
-                    onClick = onShufflePlay,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-
-            // The band the fade completes in, text-free by construction.
-            Spacer(Modifier.height(PageFadeMargin))
-            Spacer(Modifier.height(PageFade))
-        }
-    }
-}
-
-/**
- * The round portrait.
- *
- * Deliberately *not* the playlist's square `Artwork`: a person's image is a circle, and the white
- * hairline ring is what keeps a dark portrait from dissolving into a dark field. A missing portrait
- * falls back to the person glyph on the theme's plate rather than an empty circle.
- */
-@Composable
-private fun ArtistPortrait(
-    state: ArtistUiState,
-    loader: ArtworkLoader,
-    onCover: Color,
 ) {
     val palette = AppTheme.palette
-    Box(
-        Modifier
-            .fillMaxWidth(ARTIST_PORTRAIT_FRACTION)
-            .aspectRatio(1f)
-            .shadow(
-                elevation = 24.dp,
-                shape = CircleShape,
-                clip = false,
-                ambientColor = Color.Black.copy(alpha = 0.5f),
-                spotColor = Color.Black.copy(alpha = 0.5f),
-            )
-            .clip(CircleShape)
-            .background(palette.secondaryBackground)
-            // The ring tracks the ink, so it is a light edge on dark artwork and a dark one on light.
-            .border(2.dp, onCover.copy(alpha = 0.22f), CircleShape),
-        contentAlignment = Alignment.Center,
-    ) {
-        val url = state.coverUrl
-        var bitmap by remember(url) { mutableStateOf<ImageBitmap?>(null) }
-        LaunchedEffect(url) {
-            bitmap = url?.let { loader.load(it, 800) }?.asImageBitmap()
+    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Spacer(Modifier.height(8.dp))
+        Artwork(
+            url = state.coverUrl,
+            loader = loader,
+            corner = 64.dp,
+            requestSize = 320,
+            modifier = Modifier.size(128.dp).clip(CircleShape),
+        )
+        Spacer(Modifier.height(12.dp))
+        Text(
+            text = state.name.ifBlank { "歌手" },
+            fontFamily = SFPro,
+            fontWeight = FontWeight.Bold,
+            fontSize = 26.sp,
+            color = palette.label,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        )
+        val counts = buildList {
+            state.musicSize.takeIf { it > 0 }?.let { add("单曲 $it") }
+            state.albumSize.takeIf { it > 0 }?.let { add("专辑 $it") }
+        }.joinToString("  ·  ")
+        if (counts.isNotBlank()) {
+            Spacer(Modifier.height(4.dp))
+            Text(counts, fontFamily = SFPro, fontSize = 12.sp, color = palette.secondaryLabel)
         }
-        val decoded = bitmap
-        if (decoded != null) {
-            Image(
-                bitmap = decoded,
-                contentDescription = "歌手头像",
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-            )
-        } else {
-            Icon(
-                SfIcons.Person,
-                contentDescription = null,
-                tint = palette.secondaryLabel,
-                modifier = Modifier.fillMaxSize(0.36f),
+        if (state.briefDesc.isNotBlank()) {
+            Spacer(Modifier.height(10.dp))
+            Text(
+                text = if (bioExpanded) state.briefDesc else ArtistUiRules.clampBio(state.briefDesc, 160),
+                fontFamily = SFPro,
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
+                color = palette.secondaryLabel,
+                maxLines = if (bioExpanded) Int.MAX_VALUE else 3,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(ContinuousRoundedRectangle(AppleShapes.control))
+                    .clickable(onClick = onToggleBio)
+                    .padding(10.dp),
             )
         }
+        if (state.error != null) {
+            Spacer(Modifier.height(6.dp))
+            Text(state.error, fontFamily = SFPro, fontSize = 12.sp, color = palette.accent)
+        }
+        Spacer(Modifier.height(14.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            PillAction("播放全部", SfIcons.Play, primary = true, onClick = onPlayAll, modifier = Modifier.weight(1f))
+            PillAction("随机播放", SfIcons.Shuffle, primary = false, onClick = onShufflePlay, modifier = Modifier.weight(1f))
+        }
+        Spacer(Modifier.height(8.dp))
     }
 }
 
-/** Portrait width as a fraction of the page, so the round image scales with the screen. */
-private const val ARTIST_PORTRAIT_FRACTION = 0.46f
+@Composable
+private fun PillAction(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    primary: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val palette = AppTheme.palette
+    Row(
+        modifier
+            .height(44.dp)
+            .clip(ContinuousRoundedRectangle(AppleShapes.pill))
+            .background(if (primary) palette.accent else palette.secondaryBackground)
+            .clickable(onClick = onClick),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        Icon(icon, contentDescription = null, tint = if (primary) Color.White else palette.label, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(label, fontFamily = SFPro, fontWeight = FontWeight.Medium, fontSize = 15.sp, color = if (primary) Color.White else palette.label)
+    }
+}
+
+@Composable
+private fun SectionTitle(text: String) {
+    Text(
+        text = text,
+        fontFamily = SFPro,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 17.sp,
+        color = AppTheme.palette.label,
+        modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 6.dp),
+    )
+}
+
+@Composable
+private fun SectionMessage(text: String, isError: Boolean) {
+    Text(
+        text = if (isError) "$text（下拉重试）" else text,
+        fontFamily = SFPro,
+        fontSize = 13.sp,
+        color = if (isError) AppTheme.palette.accent else AppTheme.palette.secondaryLabel,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
+    )
+}
+
+@Composable
+private fun LoadMoreRow(label: String, onClick: () -> Unit) {
+    Box(
+        Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)
+            .clip(ContinuousRoundedRectangle(AppleShapes.control))
+            .background(AppTheme.palette.secondaryBackground)
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, fontFamily = SFPro, fontSize = 14.sp, color = AppTheme.palette.accent)
+    }
+}
+
+@Composable
+private fun EndRow(text: String) {
+    Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+        Text(text, fontFamily = SFPro, fontSize = 12.sp, color = AppTheme.palette.tertiaryLabel)
+    }
+}
+
+@Composable
+private fun AlbumCard(album: AlbumInfo, loader: ArtworkLoader, onClick: () -> Unit) {
+    Column(Modifier.width(124.dp).clickable(onClick = onClick)) {
+        Artwork(
+            url = album.coverUrl,
+            loader = loader,
+            corner = 10.dp,
+            requestSize = 300,
+            modifier = Modifier.size(124.dp),
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = album.name,
+            fontFamily = SFPro,
+            fontSize = 13.sp,
+            color = AppTheme.palette.label,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        val year = ArtistUiRules.yearOf(album.publishTime)
+        if (year != null) {
+            Text(year, fontFamily = SFPro, fontSize = 11.sp, color = AppTheme.palette.secondaryLabel)
+        }
+    }
+}

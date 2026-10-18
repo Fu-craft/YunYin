@@ -564,23 +564,19 @@ class NeteaseClient(
 
     suspend fun artistTopSongs(artistId: Long): NetResult<List<Track>> = request(
         "/artist/top/song",
-        query = mapOf("id" to "$artistId"),
+        query = RequestCacheBust.withCacheBust(mapOf("id" to "$artistId"), System.currentTimeMillis()),
     ).map { json -> json.optJSONArray("songs")?.mapDetailTracks().orEmpty() }
 
     /**
-     * Resolves an artist **name** to an id, by searching artists only.
-     *
-     * Needed because a [Track] carries artist names but not their ids — and the tap target is the name
-     * printed on the row. The first hit is the answer: the artist search ranks exact names first, and a
-     * miss (null) lets the caller quietly not navigate rather than open a page for the wrong artist.
+     * Resolves an artist name to an id (artist search). Cache-busted like every result endpoint.
      */
     suspend fun artistIdByName(name: String): Long? {
-        // Unwrapped with the `as?` form rather than the repository layer's `valueOrNull` extension:
-        // this is the low-level client, and reaching up into a UI-facing helper would invert the
-        // layering for one line.
         val result = request(
             "/search",
-            query = mapOf("keywords" to name, "type" to "100"),
+            query = RequestCacheBust.withCacheBust(
+                mapOf("keywords" to name, "type" to "100"),
+                System.currentTimeMillis(),
+            ),
         ).map { json ->
             json.optJSONObject("result")?.optJSONArray("artists")?.optJSONObject(0)?.optLong("id")
                 ?.takeIf { it != 0L }
@@ -588,53 +584,50 @@ class NeteaseClient(
         return (result as? NetResult.Ok)?.value
     }
 
-    /**
-     * An artist's identity: name and cover.
-     *
-     * Called against music.163.com directly rather than the deployed API, as the user supplied. Both
-     * shapes are accepted because the two documented artist endpoints differ in envelope: `v1/artist`
-     * nests the profile under `data.artist`, the older `/artist` puts it at the top level.
-     */
-    suspend fun artistDetail(artistId: Long): NetResult<ArtistInfo> {
-        val direct = requestDirectArtist(artistId, path = "v1/artist", nested = true)
-        if (direct is NetResult.Ok) return direct
-        // The v1 endpoint is what the app tries first; the legacy one is the fallback, so a deployment
-        // that only exposes the older shape still resolves.
-        return requestDirectArtist(artistId, path = "artist", nested = false)
+    /** Artist profile from the deployed instance (`/artist/detail`), replacing the hot-songs-only direct call. */
+    suspend fun artistDetail(artistId: Long): NetResult<ArtistInfo> = request(
+        "/artist/detail",
+        query = RequestCacheBust.withCacheBust(mapOf("id" to "$artistId"), System.currentTimeMillis()),
+    ).map { json -> ArtistPayloads.parseArtist(json, artistId) }
+
+    /** All songs, paged (`/artist/songs`); [more]/[total] drive lazy paging on the artist screen. */
+    suspend fun artistSongsPage(
+        artistId: Long,
+        offset: Int,
+        limit: Int,
+        order: String = "time",
+    ): NetResult<com.yunyin.music.core.ArtistSongsPage> = request(
+        "/artist/songs",
+        query = RequestCacheBust.withCacheBust(
+            mapOf("id" to "$artistId", "offset" to "$offset", "limit" to "$limit", "order" to order),
+            System.currentTimeMillis(),
+        ),
+    ).map { json ->
+        com.yunyin.music.core.ArtistSongsPage(
+            tracks = json.optJSONArray("songs")?.mapDetailTracks().orEmpty(),
+            more = json.optBoolean("more"),
+            total = json.optInt("total"),
+        )
     }
 
-    private suspend fun requestDirectArtist(
+    /** Albums, paged (`/artist/album`); accepts both `hotAlbums` and `albums` shapes. */
+    suspend fun artistAlbumsPage(
         artistId: Long,
-        path: String,
-        nested: Boolean,
-    ): NetResult<ArtistInfo> = withContext(Dispatchers.IO) {
-        val url = "https://music.163.com/api/$path/$artistId"
-        try {
-            val builder = Request.Builder().url(url).header("User-Agent", UA)
-            settings.cookie.takeIf { it.isNotBlank() }?.let { builder.header("Cookie", it) }
-            http.newCall(builder.build()).execute().use { response ->
-                val json = runCatching { JSONObject(response.body?.string().orEmpty()) }.getOrNull()
-                    ?: return@use NetResult.Err("响应无法解析")
-                val profile = (if (nested) json.optJSONObject("data")?.optJSONObject("artist")
-                else json.optJSONObject("artist"))
-                    ?: return@use NetResult.Err("响应中没有歌手信息")
-                NetResult.Ok(
-                    ArtistInfo(
-                        id = profile.optLong("id", artistId),
-                        name = profile.text("name").orEmpty(),
-                        // `img1v1Url` is the square identity image; `picUrl` is its larger variant.
-                        coverUrl = profile.text("img1v1Url") ?: profile.text("picUrl"),
-                    ),
-                )
-            }
-        } catch (e: IOException) {
-            NetResult.Err(e.message ?: "网络错误")
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            NetResult.Err(e.message ?: "解析错误")
-        }
-    }
+        offset: Int,
+        limit: Int,
+    ): NetResult<com.yunyin.music.core.ArtistAlbumsPage> = request(
+        "/artist/album",
+        query = RequestCacheBust.withCacheBust(
+            mapOf("id" to "$artistId", "offset" to "$offset", "limit" to "$limit"),
+            System.currentTimeMillis(),
+        ),
+    ).map { json -> ArtistPayloads.parseAlbumsPage(json) }
+
+    /** Songs of one album, so an album tap can open the existing collection page. */
+    suspend fun albumTracks(albumId: Long): NetResult<List<Track>> = request(
+        "/album",
+        query = RequestCacheBust.withCacheBust(mapOf("id" to "$albumId"), System.currentTimeMillis()),
+    ).map { json -> json.optJSONArray("songs")?.mapDetailTracks().orEmpty() }
 
     // ---------------------------------------------------------------- user library
 

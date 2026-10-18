@@ -63,6 +63,19 @@ data class ArtistInfo(
 )
 
 /** An artist's album entry (artist-page 专辑 section). */
+/** One page of an artist's songs (`/artist/songs`); [more] drives lazy paging. */
+data class ArtistSongsPage(
+    val tracks: List<Track>,
+    val more: Boolean,
+    val total: Int,
+)
+
+/** One page of an artist's albums (`/artist/album`). */
+data class ArtistAlbumsPage(
+    val albums: List<AlbumInfo>,
+    val more: Boolean,
+)
+
 data class AlbumInfo(
     val id: Long,
     val name: String,

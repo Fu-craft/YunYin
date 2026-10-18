@@ -69,9 +69,27 @@ data class ArtistUiState(
     val id: Long = 0L,
     val name: String = "",
     val coverUrl: String? = null,
-    val tracks: List<Track> = emptyList(),
+    val briefDesc: String = "",
+    val albumSize: Int = 0,
+    val musicSize: Int = 0,
+    val hotSongs: List<Track> = emptyList(),
+    val allSongs: List<Track> = emptyList(),
+    val allOffset: Int = 0,
+    val allMore: Boolean = true,
+    val loadingSongs: Boolean = false,
+    val songsError: String? = null,
+    val albums: List<com.yunyin.music.core.AlbumInfo> = emptyList(),
+    val albumsOffset: Int = 0,
+    val albumsMore: Boolean = true,
+    val loadingAlbums: Boolean = false,
+    val albumsError: String? = null,
     val loading: Boolean = true,
-)
+    /** Header/profile failure; sections still render independently. */
+    val error: String? = null,
+) {
+    /** Kept for the existing play-all/queue call sites: the hot list is the page's headline list. */
+    val tracks: List<Track> get() = hotSongs
+}
 
 /**
  * Owns catalog state for the browsing tabs.
@@ -469,30 +487,136 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
         artistJob?.cancel()
         if (artistId == 0L) return
         val requestId = ++artistRequestId
-        _artist.value = ArtistUiState(id = artistId, name = seedName)
+        _artist.value = ArtistUiState(id = artistId, name = seedName, loading = true)
         artistJob = viewModelScope.launch {
-            // Fire both together: the identity and the songs are independent, and the page renders what
-            // has arrived rather than waiting for the slower of the two.
+            // Header and each section are requested together but applied independently: an album failure must not
+            // blank the header or the song lists.
             coroutineScope {
-                val info = async { container.music.artistInfo(artistId) }
-                val top = async { container.music.artistTopSongs(artistId) }
+                val detail = async { runCatching { container.music.artistDetail(artistId) } }
+                val hot = async { runCatching { container.music.artistTopSongs(artistId) } }
+                val all = async { runCatching { container.music.artistSongsPage(artistId, 0, ALL_PAGE, "time") } }
+                val albums = async { runCatching { container.music.artistAlbumsPage(artistId, 0, ALBUM_PAGE) } }
 
-                info.await()?.let { artist ->
+                detail.await().getOrNull()?.let { info ->
                     if (artistRequestId == requestId && _artist.value?.id == artistId) {
                         _artist.value = _artist.value?.copy(
-                            name = artist.name.ifBlank { seedName },
-                            coverUrl = artist.coverUrl,
+                            name = info.name.ifBlank { seedName },
+                            coverUrl = info.coverUrl,
+                            briefDesc = info.briefDesc,
+                            albumSize = info.albumSize,
+                            musicSize = info.musicSize,
+                            loading = false,
                         )
                     }
                 }
-                val songs = top.await()
+                val hotResult = hot.await()
                 if (artistRequestId == requestId && _artist.value?.id == artistId) {
-                    _artist.value = _artist.value?.copy(tracks = songs, loading = false)
+                    _artist.value = _artist.value?.copy(
+                        hotSongs = hotResult.getOrNull().orEmpty(),
+                        loading = false,
+                        error = if (detail.await().isFailure && hotResult.isFailure) "歌手信息加载失败" else _artist.value?.error,
+                    )
+                }
+                all.await().getOrNull()?.let { page ->
+                    if (artistRequestId == requestId && _artist.value?.id == artistId) {
+                        _artist.value = _artist.value?.copy(
+                            allSongs = page.tracks,
+                            allOffset = page.tracks.size,
+                            allMore = page.more,
+                            songsError = null,
+                        )
+                    }
+                } ?: run {
+                    if (artistRequestId == requestId && _artist.value?.id == artistId) {
+                        _artist.value = _artist.value?.copy(songsError = "全部歌曲加载失败")
+                    }
+                }
+                albums.await().getOrNull()?.let { page ->
+                    if (artistRequestId == requestId && _artist.value?.id == artistId) {
+                        _artist.value = _artist.value?.copy(
+                            albums = page.albums,
+                            albumsOffset = page.albums.size,
+                            albumsMore = page.more,
+                            albumsError = null,
+                        )
+                    }
+                } ?: run {
+                    if (artistRequestId == requestId && _artist.value?.id == artistId) {
+                        _artist.value = _artist.value?.copy(albumsError = "专辑加载失败")
+                    }
                 }
             }
         }
     }
 
+    /** Loads the next page of 全部歌曲, appending without duplicates. */
+    fun loadMoreArtistSongs() {
+        val current = _artist.value ?: return
+        if (current.loadingSongs || !current.allMore) return
+        val requestId = artistRequestId
+        _artist.value = current.copy(loadingSongs = true, songsError = null)
+        viewModelScope.launch {
+            val page = runCatching {
+                container.music.artistSongsPage(current.id, current.allOffset, ALL_PAGE, "time")
+            }.getOrNull()
+            val now = _artist.value ?: return@launch
+            if (artistRequestId != requestId || now.id != current.id) return@launch
+            _artist.value = if (page == null) {
+                now.copy(loadingSongs = false, songsError = "加载更多歌曲失败")
+            } else {
+                now.copy(
+                    allSongs = com.yunyin.music.ui.screens.ArtistUiRules.appendUnique(now.allSongs, page.tracks),
+                    allOffset = now.allOffset + page.tracks.size,
+                    allMore = page.more,
+                    loadingSongs = false,
+                )
+            }
+        }
+    }
+
+    /** Loads the next page of 专辑. */
+    fun loadMoreArtistAlbums() {
+        val current = _artist.value ?: return
+        if (current.loadingAlbums || !current.albumsMore) return
+        val requestId = artistRequestId
+        _artist.value = current.copy(loadingAlbums = true, albumsError = null)
+        viewModelScope.launch {
+            val page = runCatching {
+                container.music.artistAlbumsPage(current.id, current.albumsOffset, ALBUM_PAGE)
+            }.getOrNull()
+            val now = _artist.value ?: return@launch
+            if (artistRequestId != requestId || now.id != current.id) return@launch
+            _artist.value = if (page == null) {
+                now.copy(loadingAlbums = false, albumsError = "加载更多专辑失败")
+            } else {
+                val seen = now.albums.mapTo(HashSet()) { it.id }
+                now.copy(
+                    albums = now.albums + page.albums.filter { seen.add(it.id) },
+                    albumsOffset = now.albumsOffset + page.albums.size,
+                    albumsMore = page.more,
+                    loadingAlbums = false,
+                )
+            }
+        }
+    }
+
+    /** Opens an album in the existing collection page (`/album?id=` sources its track list). */
+    fun openAlbum(albumId: Long, title: String, coverUrl: String?) {
+        collectionJob?.cancel()
+        if (albumId <= 0L) return
+        val requestId = ++collectionRequestId
+        _collection.value = CollectionUiState(id = albumId, title = title, coverUrl = coverUrl, loading = true)
+        collectionJob = viewModelScope.launch {
+            val tracks = runCatching { container.music.albumTracks(albumId) }.getOrElse { emptyList() }
+            if (requestId == collectionRequestId) {
+                _collection.value = _collection.value?.copy(
+                    tracks = tracks,
+                    loading = false,
+                    subtitle = "${tracks.size} 首",
+                )
+            }
+        }
+    }
     fun closeArtist() {
         artistJob?.cancel()
         artistJob = null
@@ -501,6 +625,9 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     companion object {
+        private const val ALL_PAGE = 30
+        private const val ALBUM_PAGE = 20
+
         /**
          * Whether an async collection result may still be applied.
          *

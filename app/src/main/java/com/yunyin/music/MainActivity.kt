@@ -1362,16 +1362,20 @@ class MainActivity : ComponentActivity() {
                             state = artist,
                             loader = container.artwork,
                             onBack = appViewModel::closeArtist,
-                            onTrackClick = { track, index -> play(track, artist.tracks) },
+                            onTrackClick = { track, index -> play(track, artist.hotSongs.ifEmpty { artist.allSongs }) },
+                            onAllTrackClick = { track, index -> play(track, artist.allSongs) },
                             onPlayAll = {
-                                artist.tracks.firstOrNull()?.let { play(it, artist.tracks) }
+                                val list = artist.hotSongs.ifEmpty { artist.allSongs }
+                                list.firstOrNull()?.let { play(it, list) }
                             },
                             onShufflePlay = {
-                                // A player mode rather than a one-off ordering, exactly as on the
-                                // playlist: enabling it and starting anywhere keeps "next" random.
+                                val list = artist.hotSongs.ifEmpty { artist.allSongs }
                                 container.player.toggleShuffle()
-                                artist.tracks.randomOrNull()?.let { play(it, artist.tracks) }
+                                list.randomOrNull()?.let { play(it, list) }
                             },
+                            onLoadMoreSongs = { appViewModel.loadMoreArtistSongs() },
+                            onLoadMoreAlbums = { appViewModel.loadMoreArtistAlbums() },
+                            onAlbumClick = { album -> appViewModel.openAlbum(album.id, album.name, album.coverUrl) },
                             nowPlayingId = nowPlaying.first,
                             isPlaying = nowPlaying.second,
                         )
