@@ -41,16 +41,16 @@ class PlayerArtworkLayoutRulesTest {
     }
 
     @Test
-    fun `top inset and cover-title gap scale with height inside their clamps`() {
-        // Short viewport: floors keep the rhythm from collapsing.
-        assertEquals(14f, PlayerArtworkLayoutRules.topInset(480.dp).value, 0.01f)
-        assertEquals(18f, PlayerArtworkLayoutRules.coverTitleGap(480.dp).value, 0.01f)
-        // Typical tall phone: the proportional part is in effect.
-        assertEquals(20.6f, PlayerArtworkLayoutRules.topInset(825.dp).value, 0.05f)
-        assertEquals(24.75f, PlayerArtworkLayoutRules.coverTitleGap(825.dp).value, 0.05f)
-        // Very tall: ceilings stop the gaps from becoming the dead band again.
-        assertEquals(24f, PlayerArtworkLayoutRules.topInset(1400.dp).value, 0.01f)
-        assertEquals(26f, PlayerArtworkLayoutRules.coverTitleGap(1400.dp).value, 0.01f)
+    fun `top inset and cover-title gap stay tight inside their clamps`() {
+        // Short viewport: floors keep the rhythm attached without collapsing to zero.
+        assertEquals(8f, PlayerArtworkLayoutRules.topInset(480.dp).value, 0.01f)
+        assertEquals(10f, PlayerArtworkLayoutRules.coverTitleGap(480.dp).value, 0.01f)
+        // Typical tall phone: the proportional part is in effect and stays visually attached to the cover.
+        assertEquals(9.9f, PlayerArtworkLayoutRules.topInset(825.dp).value, 0.05f)
+        assertEquals(11.55f, PlayerArtworkLayoutRules.coverTitleGap(825.dp).value, 0.05f)
+        // Very tall: ceilings stop the gaps from becoming a dead band again (was 24/26 before v3.39.x).
+        assertEquals(14f, PlayerArtworkLayoutRules.topInset(1400.dp).value, 0.01f)
+        assertEquals(14f, PlayerArtworkLayoutRules.coverTitleGap(1400.dp).value, 0.01f)
     }
 
     @Test

@@ -73,6 +73,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -283,21 +284,34 @@ internal val FloatingChromeGap = 8.dp
 internal val FloatingChromeBottomGap = 10.dp
 
 /**
+ * Whether the chrome's now-playing row is currently composed (a track is loaded).
+ *
+ * The chrome no longer shows the "未在播放" placeholder: with nothing playing only the tab row is
+ * present. Screens read this through [chromeContentBottomPadding] so their last rows clear the one
+ * row that is actually there; MainActivity provides it from `hasTrack`.
+ */
+internal val LocalChromeTopRowVisible = staticCompositionLocalOf { true }
+
+/**
  * Bottom content padding for a scrolling screen that must stay clear of the floating chrome.
  *
- * The chrome is **two** [FloatingChromeHeight] rows plus the [FloatingChromeGap] between them, the
- * [FloatingChromeBottomGap] underneath and the live navigation-bar inset; the screens add [extra] of
- * breathing room above the top capsule. Computing it from the chrome's own values means the padding
- * followed the one-row experiment and then the restore without a single literal to re-type, and it
- * works on gesture-nav and 3-button devices alike.
+ * The chrome is one or **two** [FloatingChromeHeight] rows (the tab row is always there; the
+ * now-playing row only while a track is loaded — see [LocalChromeTopRowVisible]), plus the
+ * [FloatingChromeGap] between them when both are present, the [FloatingChromeBottomGap] underneath and
+ * the live navigation-bar inset; the screens add [extra] of breathing room above the top row.
+ * Computing it from the chrome's own values means the padding followed the one-row experiment, the
+ * two-row restore and the placeholder's removal without a single literal to re-type, and it works on
+ * gesture-nav and 3-button devices alike.
  */
 @Composable
-internal fun chromeContentBottomPadding(extra: Dp = 12.dp): Dp =
-    FloatingChromeHeight * 2 +
-        FloatingChromeGap +
+internal fun chromeContentBottomPadding(extra: Dp = 12.dp): Dp {
+    val rows = if (LocalChromeTopRowVisible.current) 2f else 1f
+    return FloatingChromeHeight * rows +
+        FloatingChromeGap * (rows - 1f) +
         FloatingChromeBottomGap +
         WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() +
         extra
+}
 
 /**
  * Diameter of the artwork inside the now-playing capsule.
@@ -316,20 +330,14 @@ private val MiniArtworkSize = 42.dp
 val MiniArtworkCorner = 8.dp
 
 /**
- * Width of one tab slot.
+ * Fallback bar width for a parent that does not constrain width (a preview; the app always does).
  *
- * The bar used to divide the screen's *measured* width between its tabs (`BoxWithConstraints` +
- * `fillMaxWidth()`), which was right while it was the only panel on its row. In the one-row chrome the
- * bar wraps its content and the mini player takes what is left, so the slot width has to be a real
- * number **before** layout: the drag physics and the travelling pill both read it synchronously, and a
- * value derived from the row's width would be the row's width, not the bar's.
- *
- * The value: a 28 dp glyph over a 12 sp label needs ~48 dp of slot; 56 dp keeps that comfortable and
- * still wraps to a compact capsule (3 slots × 56 dp + the 8 dp of 4 dp gutters = 176 dp — the width the
- * two-row restore asks for). It also makes the travelling selection — 56 dp wide by the 56 dp inner
- * height — a **circle**, which is the circular highlight the reference's selected tab has.
+ * The bar now **fills the chrome row** — the same width as the now-playing capsule above it — and the
+ * three slots divide its measured width equally (see `LiquidBottomTabs`). This value is only the
+ * shape of the old constant capsule: 3 × 56 dp slots plus the reference's 8 dp of gutters. Each slot's
+ * touch height stays the row's inner height (56 dp), so the derived width never shrinks the target.
  */
-private val TabSlotWidth = 56.dp
+private val TabBarFallbackWidth = 176.dp
 
 /**
  * A true capsule. The reference uses `com.kyant.shapes.Capsule()`; a 50 % rounded rectangle is the
@@ -582,8 +590,8 @@ private fun glassPressScale(widthPx: Float, expansionPx: Float, progress: Float)
  * The wrapper knows about the app's [BarSlot]s: the reference's component speaks in tab indices
  * (`selectedTabIndex: () -> Int`, `onTabSelected: (Int) -> Unit`), and the app speaks in [PlayerTab]
  * plus the 心动模式 action. The chrome's column in `MainActivity` applies the screen inset
- * ([TabBarInset]), so this wrapper adds no padding of its own and wraps exactly its three slots
- * (3 × [TabSlotWidth] + the 8 dp gutters = 176 dp).
+ * ([TabBarInset]); the bar then fills that row — the same width as the now-playing capsule above it —
+ * and its three slots divide the measured width equally, instead of wrapping a fixed 176 dp capsule.
  *
  * The bar presents [BarSlots]: 主页, 资料库 and 心动模式. [PlayerTab.Search] keeps its enum entry because
  * it still routes the screen, but it has no slot — see [BarSlots] and [PlayerTab]. The 心动模式 slot is
@@ -735,15 +743,23 @@ private fun LiquidBottomTabs(
     val offsetAnimation = remember { Animatable(0f) }
     val squeeze = with(density) { 4f.dp.toPx() }
 
-    // The bar's width is its own content now, so the slot width is a constant known before layout:
-    // one slot per tab (each a 12 sp label under a 28 dp glyph), plus the reference's 4 dp gutter on
-    // each end. `tabWidth` is the drag/pill unit; `panelWidth` is the measured size of the material.
-    val tabWidth = with(density) { TabSlotWidth.toPx() }
-    val panelWidth = TabSlotWidth * tabsCount + 8.dp
+    // The bar spans the same width as the now-playing row above it (`BoxWithConstraints` here rather
+    // than a constant): the three slots divide the measured width equally, so the tab row no longer
+    // looks short next to the full-width capsule. The reference's 4 dp gutters are kept — the slots
+    // share `width - 8 dp` — and `tabWidth` is the drag/pill unit in pixels.
+    //
+    // `BoxWithConstraints` subcomposes against the measured constraints, so the very first composed
+    // frame already has the real width; there is no zero-width frame to guard against in the app. The
+    // fallback only covers an unbounded parent (a preview), where no width can be measured.
+    BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
+    val measuredWidth = if (maxWidth.value.isFinite() && maxWidth > 0.dp) maxWidth else TabBarFallbackWidth
+    val panelWidth = measuredWidth
     val panelWidthPx = with(density) { panelWidth.toPx() }
+    val innerWidthPx = (panelWidthPx - with(density) { 8.dp.toPx() }).coerceAtLeast(tabsCount.toFloat())
+    val tabWidth = innerWidthPx / tabsCount
 
     Box(
-        modifier = modifier.width(panelWidth),
+        modifier = Modifier.width(panelWidth),
         contentAlignment = Alignment.CenterStart,
     ) {
         // The squeeze: the whole panel leans into a horizontal swipe and springs back. Read only
@@ -902,6 +918,7 @@ private fun LiquidBottomTabs(
                 .height(panelHeight - 8.dp)
                 .fillMaxWidth(1f / tabsCount),
         )
+    }
     }
 }
 
@@ -1355,12 +1372,10 @@ private suspend inline fun AwaitPointerEventScope.awaitDragOrUp(
 // ---------------------------------------------------------------------------- mini player
 
 /**
- * The material both now-playing panels wear.
+ * The material the now-playing capsule wears.
  *
- * [FloatingMiniPlayer] and [FloatingChromePlaceholder] alternate in the chrome's **top row**, so they
- * have to be one surface: the same `drawBackdrop` pass, the same cached [VibrantBlur] prefix, the same
- * constant edge refraction and the same tint. Extracted rather than copied so a change to the material
- * cannot leave the two panels looking like two kinds of glass on the same line.
+ * One `drawBackdrop` pass, the cached [VibrantBlur] prefix, the constant edge refraction and the same
+ * tint as the tab bar, so the two panels read as one material rather than two kinds of glass.
  */
 private fun chromePanelMaterial(
     backdrop: Backdrop,
@@ -1383,9 +1398,6 @@ private fun chromePanelMaterial(
  * the same constant edge refraction — so the two capsules cannot drift apart, and its content is
  * drawn on top of the material exactly as the bar draws its tabs. Behaviour is unchanged: the whole
  * capsule expands the player, the play button toggles it, and it is [FloatingChromeHeight] tall.
- *
- * It shares its builder with [FloatingChromePlaceholder], the panel that fills this full-width row
- * while nothing is loaded; see [chromePanelMaterial].
  */
 @Composable
 fun FloatingMiniPlayer(
@@ -1518,91 +1530,6 @@ fun FloatingMiniPlayer(
                     )
                 }
             }
-        }
-    }
-}
-
-/**
- * Alpha for the placeholder's *content* while the mini player takes the slot.
- *
- * A lambda, not a value: the swap is driven by an animation in `MainActivity` and is read in the layer
- * phase, so neither the placeholder's panel nor its label recomposes per frame (the same reason
- * [LocalLiquidBottomTabScale] is a lambda). 1 = fully shown. The material is deliberately not faded:
- * both panels paint the same backdrop, so fading the whole panel would let the sharp page through the
- * glass for the length of the swap; only the content crosses.
- */
-internal val LocalChromePlaceholderContentAlpha = staticCompositionLocalOf<() -> Float> { { 1f } }
-
-/**
- * Floating chrome placeholder — the mini player's slot when nothing is loaded.
- *
- * In the two-row chrome the **top row** is always occupied: the full-width now-playing capsule holds
- * either [FloatingMiniPlayer] or this placeholder. While nothing is loaded the row must not be a hole —
- * in the user's words, "为什么没有音乐播放的时候直接空白" — so this is the same glass at the same
- * [FloatingChromeHeight], filling the same full-width row; starting a track cross-fades the two contents
- * inside one constant panel instead of pushing a panel into being.
- *
- * The material is [chromePanelMaterial] — the very builder [FloatingMiniPlayer] uses — not a second
- * variant of it, so the two panels cannot drift to different blur, tint or refraction.
- *
- * Deliberately not interactive: while nothing is playing there is no destination to open, and inventing
- * one here would be navigation the chrome does not own. The label is a static state read-out.
- */
-@Composable
-fun FloatingChromePlaceholder(
-    backdrop: Backdrop,
-    modifier: Modifier = Modifier,
-) {
-    val isLightTheme = !isSystemInDarkTheme()
-    val containerColor =
-        if (isLightTheme) Color(0xFFFAFAFA).copy(GlassSurfaceAlpha)
-        else Color(0xFF121212).copy(GlassSurfaceAlpha)
-    val density = LocalDensity.current
-    val radiusPx = with(density) { GlassBlurRadius.toPx() }
-    val material = remember(radiusPx) { VibrantBlur(radiusPx) }
-    val panelMaterial = remember(backdrop, containerColor, material) {
-        chromePanelMaterial(backdrop, containerColor, material)
-    }
-
-    // Read in the label's `graphicsLayer`, so the swap is a layer update, not a recomposition.
-    val placeholderContentAlpha = LocalChromePlaceholderContentAlpha.current
-
-    Box(
-        // The same box the mini player occupies: the full width of the chrome's top row at its height.
-        modifier = modifier
-            .fillMaxWidth()
-            .height(FloatingChromeHeight),
-    ) {
-        // The material: one fill only, like the card — a second translucent fill would compose to an
-        // opaque slab and no longer match the panel next to it.
-        Box(Modifier.matchParentSize().then(panelMaterial))
-
-        // A muted note and a short state label, centred in the capsule. Nothing else: this slot is a
-        // read-out, not a control. Its alpha is driven by the swap so it cannot ghost through the card.
-        Row(
-            Modifier
-                .matchParentSize()
-                .padding(horizontal = 16.dp)
-                .graphicsLayer { alpha = placeholderContentAlpha() },
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                imageVector = SfIcons.MusicNote,
-                // Decorative: the text beside it is what a screen reader needs to hear.
-                contentDescription = null,
-                tint = AppTheme.palette.tertiaryLabel,
-                modifier = Modifier.size(20.dp),
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                text = "未在播放",
-                fontFamily = SFPro,
-                fontSize = 13.sp,
-                color = AppTheme.palette.secondaryLabel,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
         }
     }
 }

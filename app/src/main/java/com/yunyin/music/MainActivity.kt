@@ -13,13 +13,14 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -64,10 +65,9 @@ import com.yunyin.music.ui.PlayerViewModel
 import com.yunyin.music.ui.components.CrossfadeContent
 import com.yunyin.music.ui.components.FloatingChromeBottomGap
 import com.yunyin.music.ui.components.FloatingChromeGap
-import com.yunyin.music.ui.components.FloatingChromePlaceholder
 import com.yunyin.music.ui.components.FloatingMiniPlayer
 import com.yunyin.music.ui.components.FloatingTabBar
-import com.yunyin.music.ui.components.LocalChromePlaceholderContentAlpha
+import com.yunyin.music.ui.components.LocalChromeTopRowVisible
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.yunyin.music.ui.components.PlayerTab
@@ -175,6 +175,13 @@ class MainActivity : ComponentActivity() {
         val miniPlayerState by remember {
             playerState.map { it.copy(positionMs = 0L, durationMs = 0L) }.distinctUntilChanged()
         }.collectAsState(initial = PlaybackUiState())
+
+        // The mini player's last non-empty state, kept for the duration of its exit animation. The
+        // now-playing row is hidden when nothing is playing; without this, clearing the queue would
+        // null `current` and the panel would unmount instantly, leaving the row to collapse as an
+        // empty strip. Same pattern as the collection overlay's `lastCollection` below.
+        var lastMiniPlayerState by remember { mutableStateOf(miniPlayerState) }
+        SideEffect { if (hasTrack) lastMiniPlayerState = miniPlayerState }
 
         val playbackError by remember {
             playerState.map { it.error }.distinctUntilChanged()
@@ -820,6 +827,11 @@ class MainActivity : ComponentActivity() {
         Box(Modifier.fillMaxSize().background(AppTheme.palette.background)) {
             // ------------------------------------------------ primary content
             Box(Modifier.fillMaxSize().layerBackdrop(bottomBackdrop)) {
+                // The chrome's now-playing row exists only while a track is loaded (see the chrome block
+                // below); the screens read that through `chromeContentBottomPadding()`, which then reserves
+                // one row instead of two. Provided here, around the tab screens, because that is where the
+                // padding is read.
+                CompositionLocalProvider(LocalChromeTopRowVisible provides hasTrack) {
                 Box(Modifier.fillMaxSize()) {
                     // Cross-fade between screens. Kept — an instant swap read as a flicker — but
                     // short: switching is a tens-of-times-a-day action, so it must not read as a
@@ -880,74 +892,59 @@ class MainActivity : ComponentActivity() {
                     }
                     }
                 }
+                }
             }
 
             /**
              * Floating chrome: liquid-glass panels that float above the content.
              *
-             * **Two rows**, the arrangement the user asked to restore: a full-width now-playing capsule on
-             * top — the mini player, or the same-glass placeholder while nothing is loaded — and the tab
-             * capsule beneath it. Both rows are [FloatingChromeHeight] tall and separated by
-             * [FloatingChromeGap], so the stack reads as one piece of chrome. Overlaid rather than laid out
-             * in the page, which is what makes it float — the lists scroll underneath and their colour
-             * comes through the material. The bottom padding of each screen keeps its last rows clear of
-             * the chrome. `backdrop` captures the window underneath them, and every panel draws that same
-             * capture through the reference's material, so what shows through is a blurred field rather
-             * than readable rows.
+             * The tab row is always present. The now-playing capsule above it is composed **only while a
+             * track is loaded** — no "未在播放" placeholder holds an empty row — and both rows are
+             * [FloatingChromeHeight] tall, separated by [FloatingChromeGap] when both exist. Overlaid rather
+             * than laid out in the page, which is what makes it float — the lists scroll underneath and
+             * their colour comes through the material. `backdrop` captures the window underneath, and every
+             * panel draws that same capture through the reference's material, so what shows through is a
+             * blurred field rather than readable rows.
              */
             Column(
                 Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
                     .navigationBarsPadding()
-                    // Inset once, here, rather than on each panel: the now-playing row is full-width and
-                    // the tab capsule is centred inside this same margin.
+                    // Inset once, here, rather than on each panel: both rows — the now-playing capsule and
+                    // the tab bar — fill this same margin, so the two panels line up edge to edge.
                     .padding(horizontal = TabBarInset)
                     .padding(bottom = FloatingChromeBottomGap),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(FloatingChromeGap),
             ) {
-                // Top row: the now-playing capsule. The row itself is unconditional — its contents
-                // cross-fade between the placeholder and the card — so the chrome never collapses to just
-                // the tab bar and never leaves a gap waiting for a card (the empty row the user circled).
+                // Top row: the now-playing capsule, present only while a track is loaded. With nothing
+                // playing the row is not composed at all and the chrome is just the tab bar — the user
+                // does not want the "未在播放" placeholder. The chrome column is bottom-anchored, so the
+                // tab bar's screen position does not change when the row appears or goes away.
                 //
-                // 0 while only the placeholder is showing, 1 while the mini player is fully in. The two
-                // contents cross-fade against each other — the placeholder's content alpha is the exact
-                // complement of the card's — so no label ghosts through the card, while the glass
-                // (the same material on both panels) never changes density.
-                val chromeSwap by animateFloatAsState(
-                    targetValue = if (hasTrack) 1f else 0f,
-                    animationSpec = tween(durationMillis = if (hasTrack) 200 else 160),
-                    label = "chrome-swap",
-                )
-                Box(Modifier.fillMaxWidth()) {
-                    // Under the card, always: the same glass, the same full width and the same height,
-                    // so the row reads as one panel before the first track and the card's exit fades down
-                    // onto a panel instead of revealing a hole. Its material stays opaque through the
-                    // swap; only the label/icon fade (see `chromeSwap`).
-                    CompositionLocalProvider(
-                        LocalChromePlaceholderContentAlpha provides { 1f - chromeSwap },
-                    ) {
-                        FloatingChromePlaceholder(backdrop = bottomBackdrop)
-                    }
-
-                    // Kept composed for the duration of its exit animation: the placeholder is the
-                    // reference for the player's entrance, and an exit running on nothing would read as
-                    // a jump. Both children are exactly the row's height, so the transition can never
-                    // resize the row in either state.
-                    // Fully qualified because this call sits inside the Box's scope, where the bare
-                    // name also resolves to the ColumnScope overload the outer Column makes implicit —
-                    // and that overload cannot take an implicit receiver through the Box. The unscoped
-                    // overload is the one whose entrance grows from nothing without claiming a slot.
-                    // The slide shares the fade's clock — one surface, one duration — and `it / 2` is
-                    // half the row's height, so the card rises into the row rather than across it.
-                    androidx.compose.animation.AnimatedVisibility(
-                        visible = hasTrack,
-                        enter = fadeIn(tween(200)) + slideInVertically(tween(200)) { it / 2 },
-                        exit = fadeOut(tween(160)) + slideOutVertically(tween(160)) { it / 2 },
-                    ) {
+                // Entrance/exit is the theme's small-motion budget: fade + a short rise/drop, with the
+                // row's own height expanding/shrinking under it so the space above the tab row does not
+                // pop. The chrome's *total* height is not animated against the content padding — the
+                // padding follows the row count, not this animation.
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = hasTrack,
+                    enter = fadeIn(tween(Motion.SmallDuration, easing = Motion.EaseOut)) +
+                        slideInVertically(tween(Motion.SmallDuration, easing = Motion.EaseOut)) { it } +
+                        expandVertically(
+                            tween(Motion.SmallDuration, easing = Motion.EaseOut),
+                            expandFrom = Alignment.Bottom,
+                        ),
+                    exit = fadeOut(tween(Motion.SmallDuration, easing = Motion.EaseOut)) +
+                        slideOutVertically(tween(Motion.SmallDuration, easing = Motion.EaseOut)) { it } +
+                        shrinkVertically(
+                            tween(Motion.SmallDuration, easing = Motion.EaseOut),
+                            shrinkTowards = Alignment.Bottom,
+                        ),
+                ) {
+                    Box(Modifier.fillMaxWidth()) {
                         FloatingMiniPlayer(
-                            state = miniPlayerState,
+                            state = if (hasTrack) miniPlayerState else lastMiniPlayerState,
                             loader = container.artwork,
                             backdrop = bottomBackdrop,
                             onExpand = { showPlayer = true },
@@ -956,8 +953,8 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                // Bottom row: the tab capsule wraps its three slots (主页 / 资料库 / 心动模式) and takes
-                // only the width those slots need; the column centres it under the full-width row above.
+                // Bottom row: the tab bar fills the same width as the capsule above it (the column applies
+                // the screen inset) and its three slots (主页 / 资料库 / 心动模式) divide that width equally.
                 FloatingTabBar(
                     selected = tab,
                     onSelect = { tab = if (showSettings) tab else it; showSettings = false },

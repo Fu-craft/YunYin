@@ -21,8 +21,10 @@ import androidx.compose.ui.unit.dp
  *    controls*, never between the cover and its title;
  *  - the cover is the width fraction or that remaining height, whichever is smaller, so a short
  *    screen shrinks the cover instead of clipping the controls;
- *  - the two spacing values scale with the available height and are clamped, so a small phone stays
- *    compact without the gaps collapsing and a tall phone gets a little more air rather than a lot.
+ *  - the two spacing values scale with the available height and are clamped **tight** (8–14 dp
+ *    above the cover, 10–14 dp cover→title): the title row should read as attached to the cover, as
+ *    in Apple Music. A small phone stays compact without the gaps collapsing; a tall phone gets a
+ *    point or two more air rather than the dead band this layout used to have.
  *
  * Pure and unit-tested ([PlayerArtworkLayoutRulesTest]) because "balanced across screen sizes" is
  * exactly the kind of rule that silently drifts when it lives as three magic numbers in a layout.
@@ -32,13 +34,13 @@ internal object PlayerArtworkLayoutRules {
     /** Share of the available width the square artwork occupies (Apple Music sits near 0.9). */
     const val ARTWORK_WIDTH_FRACTION = 0.90f
 
-    /** Breathing room above the cover: a share of the available height, clamped to a sane band. */
+    /** Breathing room above the cover: a share of the available height, clamped to a tight band. */
     fun topInset(availableHeight: Dp): Dp =
-        (availableHeight * 0.025f).coerceIn(14.dp, 24.dp)
+        (availableHeight * 0.012f).coerceIn(8.dp, 14.dp)
 
-    /** Gap between the cover and the title row: a share of the available height, clamped. */
+    /** Gap between the cover and the title row: a share of the available height, clamped tight. */
     fun coverTitleGap(availableHeight: Dp): Dp =
-        (availableHeight * 0.03f).coerceIn(18.dp, 26.dp)
+        (availableHeight * 0.014f).coerceIn(10.dp, 14.dp)
 
     /**
      * Edge length of the square cover: the width fraction, or the height left over after the title
