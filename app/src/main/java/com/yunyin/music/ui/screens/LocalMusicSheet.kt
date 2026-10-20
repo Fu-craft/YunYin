@@ -29,10 +29,12 @@ import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
 import com.yunyin.music.core.Track
 import com.yunyin.music.data.ArtworkLoader
 import com.yunyin.music.ui.components.AnimatedSheet
+import com.yunyin.music.ui.components.CrossfadeContent
 import com.yunyin.music.ui.components.SheetPlacement
 import com.yunyin.music.ui.icons.SfIcons
 import com.yunyin.music.ui.theme.AppTheme
 import com.yunyin.music.ui.theme.AppleShapes
+import com.yunyin.music.ui.theme.Motion
 import com.yunyin.music.ui.theme.SFPro
 
 /**
@@ -88,37 +90,51 @@ fun LocalMusicSheet(
                 )
             }
         }
-        when {
-            loading -> Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = AppTheme.palette.accent, strokeWidth = 2.5.dp, modifier = Modifier.size(24.dp))
-            }
-            error != null -> Column(Modifier.fillMaxWidth().padding(20.dp)) {
-                Text(error, fontFamily = SFPro, fontSize = 13.sp, lineHeight = 18.sp, color = AppTheme.palette.secondaryLabel)
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    "打开系统设置授予音频读取权限",
-                    fontFamily = SFPro,
-                    fontSize = 14.sp,
-                    color = AppTheme.palette.accent,
-                    modifier = Modifier
-                        .clip(ContinuousRoundedRectangle(AppleShapes.control))
-                        .clickable { close { onOpenSettings() } }
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                )
-            }
-            tracks.isEmpty() -> Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
-                Text("设备上还没有本地音乐", fontFamily = SFPro, fontSize = 13.sp, color = AppTheme.palette.secondaryLabel)
-            }
-            else -> LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
-                itemsIndexed(tracks) { index, track ->
-                    CollectionTrackRow(
-                        index = index,
-                        track = track,
-                        loader = loader,
-                        isCurrent = false,
-                        isPlaying = false,
-                        onClick = { close { onPlayTrack(index) } },
+        // Spinner → permission error / empty / list, cross-faded in place; the sheet keeps its size.
+        val phase = when {
+            loading -> "loading"
+            error != null -> "error"
+            tracks.isEmpty() -> "empty"
+            else -> "list"
+        }
+        CrossfadeContent(
+            targetState = phase,
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            durationMillis = Motion.SmallDuration,
+            label = "local-music-phase",
+        ) { current ->
+            when (current) {
+                "loading" -> Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = AppTheme.palette.accent, strokeWidth = 2.5.dp, modifier = Modifier.size(24.dp))
+                }
+                "error" -> Column(Modifier.fillMaxWidth().padding(20.dp)) {
+                    Text(error ?: "", fontFamily = SFPro, fontSize = 13.sp, lineHeight = 18.sp, color = AppTheme.palette.secondaryLabel)
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        "打开系统设置授予音频读取权限",
+                        fontFamily = SFPro,
+                        fontSize = 14.sp,
+                        color = AppTheme.palette.accent,
+                        modifier = Modifier
+                            .clip(ContinuousRoundedRectangle(AppleShapes.control))
+                            .clickable { close { onOpenSettings() } }
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
                     )
+                }
+                "empty" -> Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
+                    Text("设备上还没有本地音乐", fontFamily = SFPro, fontSize = 13.sp, color = AppTheme.palette.secondaryLabel)
+                }
+                else -> LazyColumn(Modifier.fillMaxSize()) {
+                    itemsIndexed(tracks) { index, track ->
+                        CollectionTrackRow(
+                            index = index,
+                            track = track,
+                            loader = loader,
+                            isCurrent = false,
+                            isPlaying = false,
+                            onClick = { close { onPlayTrack(index) } },
+                        )
+                    }
                 }
             }
         }

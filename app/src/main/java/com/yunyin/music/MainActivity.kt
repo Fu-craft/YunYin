@@ -1012,16 +1012,18 @@ class MainActivity : ComponentActivity() {
                 // padding follows the row count, not this animation.
                 androidx.compose.animation.AnimatedVisibility(
                     visible = hasTrack,
+                    // One kind of travel only: the row's own height expands under the fade. The slide
+                    // added a second, second-order movement that lived inside the expanding clip (so
+                    // it was largely invisible) and the exit was as slow as the entrance, unlike every
+                    // other chrome overlay here (320/260, 200/160).
                     enter = fadeIn(tween(Motion.SmallDuration, easing = Motion.EaseOut)) +
-                        slideInVertically(tween(Motion.SmallDuration, easing = Motion.EaseOut)) { it } +
                         expandVertically(
                             tween(Motion.SmallDuration, easing = Motion.EaseOut),
                             expandFrom = Alignment.Bottom,
                         ),
-                    exit = fadeOut(tween(Motion.SmallDuration, easing = Motion.EaseOut)) +
-                        slideOutVertically(tween(Motion.SmallDuration, easing = Motion.EaseOut)) { it } +
+                    exit = fadeOut(tween(Motion.PressDuration, easing = Motion.EaseOut)) +
                         shrinkVertically(
-                            tween(Motion.SmallDuration, easing = Motion.EaseOut),
+                            tween(Motion.PressDuration, easing = Motion.EaseOut),
                             shrinkTowards = Alignment.Bottom,
                         ),
                 ) {

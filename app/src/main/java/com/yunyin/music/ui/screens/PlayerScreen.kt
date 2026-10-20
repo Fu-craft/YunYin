@@ -1143,6 +1143,11 @@ private fun ArtworkWithGestures(
                             Modifier.sharedElement(
                                 rememberSharedContentState(key = COVER_SHARED_KEY),
                                 animatedVisibilityScope = visibilityScope,
+                                // Both ends of the shared element pass the same curve, so the travel is
+                                // tuned here instead of inheriting the framework default.
+                                boundsTransform = { _, _ ->
+                                    tween(PRESENTATION_FADE_MS, easing = Motion.EaseOut)
+                                },
                             )
                         },
                     )
@@ -1205,10 +1210,18 @@ private fun DownloadOverlay(
         label = "download-scrim",
     )
     // The badge stays up while `badgeVisible`, and the whole overlay unmounts once it has faded.
+    // Opacity is a plain fade; the *scale* is a separate spring so the documented "slight overshoot"
+    // actually lands — a monotonic tween only ever grows to 1.0. The spring starts at the same 0.86
+    // the old `pop` formula used, so the arrival reads the same until the overshoot.
     val badge by animateFloatAsState(
         targetValue = if (badgeVisible) 1f else 0f,
         animationSpec = tween(BADGE_FADE_MS, easing = Motion.EaseOut),
         label = "download-badge",
+    )
+    val badgeScale by animateFloatAsState(
+        targetValue = if (badgeVisible) 1f else 0.86f,
+        animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.5f, stiffness = 700f),
+        label = "download-badge-scale",
     )
 
     if (!visible && badge == 0f) return
@@ -1221,9 +1234,9 @@ private fun DownloadOverlay(
             .pointerInput(Unit) { },
         contentAlignment = Alignment.Center,
     ) {
-        if (scrim > 0.01f) {
-            Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = scrim)))
-        }
+        // Always composed, alpha in the layer phase: the 320 ms scrim fade must not recompose this
+        // overlay per frame (the rest of this file follows the same rule).
+        Box(Modifier.matchParentSize().graphicsLayer { alpha = scrim }.background(Color.Black))
 
         if (state is DownloadState.Downloading) {
             CircularProgressIndicator(
@@ -1233,19 +1246,18 @@ private fun DownloadOverlay(
             )
         }
 
-        if (badge > 0.01f) {
-            val saved = state is DownloadState.Saved
-            // A small overshoot on arrival, settling at 1: the confirmation "lands".
-            val pop = 0.86f + 0.14f * badge
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier
-                    .graphicsLayer {
-                        alpha = badge
-                        scaleX = pop * (1f + (1f - badge) * 0.06f)
-                        scaleY = pop * (1f + (1f - badge) * 0.06f)
-                    },
-            ) {
+        // Always composed too; only the layer reads `badge`/`badgeScale`, so the fade and the spring
+        // are draw-phase work. `saved`/`caption` read the current state, which is stable for one run.
+        val saved = state is DownloadState.Saved
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier
+                .graphicsLayer {
+                    alpha = badge
+                    scaleX = badgeScale
+                    scaleY = badgeScale
+                },
+        ) {
                 Box(
                     Modifier
                         .size(72.dp)
@@ -1289,7 +1301,6 @@ private fun DownloadOverlay(
                     )
                 }
             }
-        }
     }
 }
 
@@ -1555,6 +1566,11 @@ private fun LyricsHeader(
                     .sharedElement(
                         rememberSharedContentState(key = COVER_SHARED_KEY),
                         animatedVisibilityScope = visibilityScope,
+                        // Must match the full artwork's boundsTransform exactly (same key): the two ends
+                        // are one element, so a different curve would fight itself mid-flight.
+                        boundsTransform = { _, _ ->
+                            tween(PRESENTATION_FADE_MS, easing = Motion.EaseOut)
+                        },
                     )
                     // The same paused scale as the full artwork. This is the other end of the shared
                     // element, so it must render at the same size: when only the artwork shrank, the
@@ -1904,11 +1920,13 @@ private fun TitleBlock(
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             // Cross-faded on track id, matching the mini player: skipping a track should read as
-            // the identity changing, not as text being overwritten in place.
+            // the identity changing, not as text being overwritten in place. 140 ms in / 80 ms out —
+            // same reasoning as the mini player (a skip is frequent; two titles must not both be
+            // legible mid-fade).
             CrossfadeContent(
                 targetState = track?.id,
                 modifier = Modifier.fillMaxWidth(),
-                durationMillis = 260,
+                durationMillis = 140,
                 label = "title-block",
             ) {
                 Column {
@@ -2304,10 +2322,15 @@ private fun BottomIcon(
         // cannot separate the accent from white.
         val tint by animateColorAsState(
             targetValue = if (active) accent else Color.White.copy(alpha = 0.72f),
+            // Named token, not Compose's unnamed 300 ms default: the glyph swaps at 200 ms, so a
+            // slower badge would lag behind its own icon; 200 ms is also the app's small-motion budget.
+            animationSpec = tween(Motion.SmallDuration, easing = Motion.EaseOut),
             label = "bottom-icon-tint",
         )
         val container by animateColorAsState(
             targetValue = if (active) accent.copy(alpha = 0.16f) else Color.Transparent,
+            // Same spec as the tint, so the container and glyph cannot separate.
+            animationSpec = tween(Motion.SmallDuration, easing = Motion.EaseOut),
             label = "bottom-icon-container",
         )
         Box(
@@ -2361,8 +2384,10 @@ private const val CHROME_ENTER_MS = 340
 /**
  * Duration of the cross-fade between the artwork and lyrics presentations.
  *
- * The *cover* does not use this: it is a shared element and gets its own curve below, so the two
- * can be tuned independently rather than the whole screen moving at one rate.
+ * The *cover* does not use this fade: both ends of the shared element pass the same explicit
+ * `boundsTransform` — `tween(PRESENTATION_FADE_MS, easing = Motion.EaseOut)` — so the travel can be
+ * tuned independently of the screen cross-fade rather than the whole screen moving at one rate. (It
+ * previously said "gets its own curve below" while nothing set one: the framework default was in use.)
  */
 private const val PRESENTATION_FADE_MS = 260
 

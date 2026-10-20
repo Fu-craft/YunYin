@@ -830,10 +830,12 @@ internal fun CollectionTrackRow(
     onClick: () -> Unit,
     /** Owner-only "移除" affordance; null everywhere else. */
     onRemove: (() -> Unit)? = null,
+    /** Item-level modifier (e.g. `animateItem` in a lazy list); default keeps every existing call site unchanged. */
+    modifier: Modifier = Modifier,
 ) {
     val palette = AppTheme.palette
     Row(
-        Modifier
+        modifier
             .fillMaxWidth()
             .clickable(
                 indication = rememberControlRipple(bounded = true),

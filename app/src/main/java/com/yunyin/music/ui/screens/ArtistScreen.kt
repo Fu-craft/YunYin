@@ -1,5 +1,8 @@
 package com.yunyin.music.ui.screens
 
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -16,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -34,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -50,6 +55,7 @@ import com.yunyin.music.core.Track
 import com.yunyin.music.data.ArtworkLoader
 import com.yunyin.music.ui.ArtistUiState
 import com.yunyin.music.ui.components.Artwork
+import com.yunyin.music.ui.components.CrossfadeContent
 import com.yunyin.music.ui.components.DefaultTopBarTintIntensity
 import com.yunyin.music.ui.components.EmptyState
 import com.yunyin.music.ui.components.GlassTopBar
@@ -60,6 +66,7 @@ import com.yunyin.music.ui.components.rememberGlassTopBarBackdrop
 import com.yunyin.music.ui.icons.SfIcons
 import com.yunyin.music.ui.theme.AppTheme
 import com.yunyin.music.ui.theme.AppleShapes
+import com.yunyin.music.ui.theme.Motion
 import com.yunyin.music.ui.theme.SFPro
 
 
@@ -119,11 +126,19 @@ fun ArtistScreen(
             item("hot-title") { SectionTitle("热门歌曲") }
             if (state.hotSongs.isEmpty()) {
                 item("hot-state") {
-                    Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-                        if (state.loading) {
-                            CircularProgressIndicator(color = palette.accent, strokeWidth = 2.5.dp, modifier = Modifier.size(24.dp))
-                        } else {
-                            Text("暂无热门歌曲", fontFamily = SFPro, fontSize = 13.sp, color = palette.secondaryLabel)
+                    // Spinner → empty is a content-state change: cross-fade it instead of swapping a
+                    // frame. (The loaded list stays lazy — rows fade in via `appendedRowAppear`.)
+                    CrossfadeContent(
+                        targetState = if (state.loading) "loading" else "empty",
+                        durationMillis = Motion.CrossfadeDuration,
+                        label = "hot-state",
+                    ) { current ->
+                        Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                            if (current == "loading") {
+                                CircularProgressIndicator(color = palette.accent, strokeWidth = 2.5.dp, modifier = Modifier.size(24.dp))
+                            } else {
+                                Text("暂无热门歌曲", fontFamily = SFPro, fontSize = 13.sp, color = palette.secondaryLabel)
+                            }
                         }
                     }
                 }
@@ -136,20 +151,30 @@ fun ArtistScreen(
                         isCurrent = track.id == nowPlayingId,
                         isPlaying = isPlaying && track.id == nowPlayingId,
                         onClick = { onTrackClick(track, index) },
+                        modifier = appendedRowAppear(),
                     )
                 }
             }
 
             item("all-title") { SectionTitle("全部歌曲") }
-            if (state.songsError != null) {
-                item("all-error") { SectionMessage(state.songsError, isError = true) }
-            } else if (state.allSongs.isEmpty()) {
-                item("all-empty") {
-                    Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-                        if (state.loading) {
-                            CircularProgressIndicator(color = palette.accent, strokeWidth = 2.5.dp, modifier = Modifier.size(22.dp))
-                        } else {
-                            Text("暂无歌曲", fontFamily = SFPro, fontSize = 13.sp, color = palette.secondaryLabel)
+            if (state.songsError != null || state.allSongs.isEmpty()) {
+                item("all-state") {
+                    // Data-carrying target: an error message is distinct from "loading"/"empty", so
+                    // the cross-fade is real rather than both branches rendering the same snapshot.
+                    val phase: Any = state.songsError ?: if (state.loading) "loading" else "empty"
+                    CrossfadeContent(
+                        targetState = phase,
+                        durationMillis = Motion.CrossfadeDuration,
+                        label = "all-state",
+                    ) { current ->
+                        when (current) {
+                            "loading" -> Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(color = palette.accent, strokeWidth = 2.5.dp, modifier = Modifier.size(22.dp))
+                            }
+                            "empty" -> Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                                Text("暂无歌曲", fontFamily = SFPro, fontSize = 13.sp, color = palette.secondaryLabel)
+                            }
+                            else -> SectionMessage(current as String, isError = true)
                         }
                     }
                 }
@@ -162,29 +187,48 @@ fun ArtistScreen(
                         isCurrent = track.id == nowPlayingId,
                         isPlaying = isPlaying && track.id == nowPlayingId,
                         onClick = { onAllTrackClick(track, index) },
+                        modifier = appendedRowAppear(),
                     )
                 }
                 item("all-footer") {
-                    when {
-                        state.loadingSongs -> Box(Modifier.fillMaxWidth().padding(20.dp), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator(color = palette.accent, strokeWidth = 2.5.dp, modifier = Modifier.size(20.dp))
+                    // The footer swaps kind (spinner / 加载更多 / end) as pages arrive; cross-fade it so
+                    // the row under the thumb never changes in one frame.
+                    val footerPhase: Any = when {
+                        state.loadingSongs -> "loading"
+                        state.allMore -> "more"
+                        else -> "end"
+                    }
+                    CrossfadeContent(
+                        targetState = footerPhase,
+                        durationMillis = Motion.SmallDuration,
+                        label = "all-footer",
+                    ) { current ->
+                        when (current) {
+                            "loading" -> Box(Modifier.fillMaxWidth().padding(20.dp), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(color = palette.accent, strokeWidth = 2.5.dp, modifier = Modifier.size(20.dp))
+                            }
+                            "more" -> LoadMoreRow("加载更多歌曲", onLoadMoreSongs)
+                            else -> EndRow("已显示全部歌曲")
                         }
-                        state.allMore -> LoadMoreRow("加载更多歌曲", onLoadMoreSongs)
-                        else -> EndRow("已显示全部歌曲")
                     }
                 }
             }
 
             item("albums-title") { SectionTitle("专辑") }
-            if (state.albumsError != null) {
-                item("albums-error") { SectionMessage(state.albumsError, isError = true) }
-            } else if (state.albums.isEmpty()) {
-                item("albums-empty") {
-                    Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-                        if (state.loading) {
-                            CircularProgressIndicator(color = palette.accent, strokeWidth = 2.5.dp, modifier = Modifier.size(22.dp))
-                        } else {
-                            Text("暂无专辑", fontFamily = SFPro, fontSize = 13.sp, color = palette.secondaryLabel)
+            if (state.albumsError != null || state.albums.isEmpty()) {
+                item("albums-state") {
+                    val phase: Any = state.albumsError ?: if (state.loading) "loading" else "empty"
+                    CrossfadeContent(
+                        targetState = phase,
+                        durationMillis = Motion.CrossfadeDuration,
+                        label = "albums-state",
+                    ) { current ->
+                        Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                            when (current) {
+                                "loading" -> CircularProgressIndicator(color = palette.accent, strokeWidth = 2.5.dp, modifier = Modifier.size(22.dp))
+                                "empty" -> Text("暂无专辑", fontFamily = SFPro, fontSize = 13.sp, color = palette.secondaryLabel)
+                                else -> SectionMessage(current as String, isError = true)
+                            }
                         }
                     }
                 }
@@ -194,16 +238,34 @@ fun ArtistScreen(
                         contentPadding = PaddingValues(horizontal = 20.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        items(state.albums, key = { it.id }) { album -> AlbumCard(album, loader, onClick = { onAlbumClick(album) }) }
+                        items(state.albums, key = { it.id }) { album ->
+                            AlbumCard(
+                                album,
+                                loader,
+                                onClick = { onAlbumClick(album) },
+                                modifier = appendedRowAppear(),
+                            )
+                        }
                     }
                 }
                 item("albums-footer") {
-                    when {
-                        state.loadingAlbums -> Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator(color = palette.accent, strokeWidth = 2.5.dp, modifier = Modifier.size(20.dp))
+                    val footerPhase: Any = when {
+                        state.loadingAlbums -> "loading"
+                        state.albumsMore -> "more"
+                        else -> "end"
+                    }
+                    CrossfadeContent(
+                        targetState = footerPhase,
+                        durationMillis = Motion.SmallDuration,
+                        label = "albums-footer",
+                    ) { current ->
+                        when (current) {
+                            "loading" -> Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(color = palette.accent, strokeWidth = 2.5.dp, modifier = Modifier.size(20.dp))
+                            }
+                            "more" -> LoadMoreRow("加载更多专辑", onLoadMoreAlbums)
+                            else -> Spacer(Modifier.height(8.dp))
                         }
-                        state.albumsMore -> LoadMoreRow("加载更多专辑", onLoadMoreAlbums)
-                        else -> Spacer(Modifier.height(8.dp))
                     }
                 }
             }
@@ -227,6 +289,16 @@ fun ArtistScreen(
 
 /** The offset of the header's big name from the content's top: 8dp gap + 128dp artwork + 12dp gap. */
 private val HeaderNameTop = 148.dp
+
+/**
+ * Rows appended by 加载更多 fade in like Home's shelves (`HomeScreen.shelfAppear`). Placement is off on
+ * purpose: content arriving must not slide around under the user's finger.
+ */
+private fun LazyItemScope.appendedRowAppear(): Modifier = Modifier.animateItem(
+    fadeInSpec = tween(260),
+    fadeOutSpec = null,
+    placementSpec = null,
+)
 
 /** Distance over which the bar's title fades in once the header name starts sliding under the bar. */
 private val TitleFadeRamp = 44.dp
@@ -380,19 +452,46 @@ private fun ArtistHeaderBlock(
         }
         if (state.briefDesc.isNotBlank()) {
             Spacer(Modifier.height(10.dp))
-            Text(
-                text = if (bioExpanded) state.briefDesc else ArtistUiRules.clampBio(state.briefDesc, 160),
-                fontFamily = SFPro,
-                fontSize = 13.sp,
-                lineHeight = 18.sp,
-                color = palette.secondaryLabel,
-                maxLines = if (bioExpanded) Int.MAX_VALUE else 3,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier
+            // The box animates its own height and clips: expanding flips `maxLines` 3 → MAX in one
+            // frame, and without this every section below jumps instantly. Clipping makes the
+            // deferred-overdraw trade-off safe — lines reveal as the box grows.
+            Box(
+                Modifier
                     .fillMaxWidth()
-                    .clip(ContinuousRoundedRectangle(AppleShapes.control))
+                    .animateContentSize(tween(220, easing = Motion.EaseOut))
+                    .clipToBounds(),
+            ) {
+                Text(
+                    text = if (bioExpanded) state.briefDesc else ArtistUiRules.clampBio(state.briefDesc, 160),
+                    fontFamily = SFPro,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp,
+                    color = palette.secondaryLabel,
+                    maxLines = if (bioExpanded) Int.MAX_VALUE else 3,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(ContinuousRoundedRectangle(AppleShapes.control))
+                        .clickable(onClick = onToggleBio)
+                        .padding(10.dp),
+                )
+            }
+            Spacer(Modifier.height(4.dp))
+            // Visible affordance for a tappable bio: the platform's own chevron, rotated 220 ms like
+            // LibraryScreen's expandable rows. Read only in the layer phase.
+            val chevron by animateFloatAsState(
+                targetValue = if (bioExpanded) 1f else 0f,
+                animationSpec = tween(220, easing = Motion.EaseOut),
+                label = "bio-chevron",
+            )
+            Icon(
+                imageVector = SfIcons.ChevronDown,
+                contentDescription = if (bioExpanded) "收起简介" else "展开简介",
+                tint = palette.secondaryLabel,
+                modifier = Modifier
+                    .size(14.dp)
                     .clickable(onClick = onToggleBio)
-                    .padding(10.dp),
+                    .graphicsLayer { rotationZ = chevron * 180f },
             )
         }
         if (state.error != null) {
@@ -483,8 +582,13 @@ private fun EndRow(text: String) {
 }
 
 @Composable
-private fun AlbumCard(album: AlbumInfo, loader: ArtworkLoader, onClick: () -> Unit) {
-    Column(Modifier.width(124.dp).clickable(onClick = onClick)) {
+private fun AlbumCard(
+    album: AlbumInfo,
+    loader: ArtworkLoader,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier.width(124.dp).clickable(onClick = onClick)) {
         Artwork(
             url = album.coverUrl,
             loader = loader,

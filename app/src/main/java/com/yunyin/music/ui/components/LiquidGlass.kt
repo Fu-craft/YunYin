@@ -1474,10 +1474,13 @@ fun FloatingMiniPlayer(
                 // Cross-faded on track id: the capsule stays put and only its text changes, so
                 // without this the previous song's title is replaced mid-frame while the new cover
                 // is still loading, which reads as a glitch rather than as a track change.
+                // 140 ms in / 80 ms out: a track change is a tens-of-times-a-day event, and on a
+                // 64 dp capsule a 260 ms fade left both titles legible at the midpoint (the tab
+                // cross-fade is 120 ms for the same reason).
                 CrossfadeContent(
                     targetState = track.id,
                     modifier = Modifier.fillMaxWidth(),
-                    durationMillis = 260,
+                    durationMillis = 140,
                     label = "mini-track",
                 ) {
                     Column {
@@ -1548,11 +1551,18 @@ private class CardPress(private val animationScope: CoroutineScope) {
     private val scaleXAnimation = Animatable(1f, 0.001f)
     private val scaleYAnimation = Animatable(1f, 0.001f)
 
+    /** The scheduled release of a [tap]; cancelled by any newer press/tap so it cannot unpaint it. */
+    private var tapJob: Job? = null
+
     val pressProgress: Float get() = progressAnimation.value
     val scaleX: Float get() = scaleXAnimation.value
     val scaleY: Float get() = scaleYAnimation.value
 
     private fun press() {
+        // A stale tap release must not un-press a newer press: same race the bar's DampedDragAnimation
+        // already guards against.
+        tapJob?.cancel()
+        tapJob = null
         animationScope.launch {
             launch { progressAnimation.animateTo(1f, pressSpec) }
             launch { scaleXAnimation.animateTo(PressedScale, scaleSpec) }
@@ -1561,6 +1571,8 @@ private class CardPress(private val animationScope: CoroutineScope) {
     }
 
     private fun release() {
+        tapJob?.cancel()
+        tapJob = null
         animationScope.launch {
             launch { progressAnimation.animateTo(0f, pressSpec) }
             launch { scaleXAnimation.animateTo(1f, scaleSpec) }
@@ -1571,8 +1583,10 @@ private class CardPress(private val animationScope: CoroutineScope) {
     /** A tap is a complete press/release in one go, so the card is not left in its held state. */
     fun tap() {
         press()
-        animationScope.launch {
+        tapJob = animationScope.launch {
             delay(TapPressMs)
+            // Cleared before `release()` so the release does not cancel the coroutine it runs in.
+            tapJob = null
             release()
         }
     }

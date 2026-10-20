@@ -1,7 +1,11 @@
 package com.yunyin.music.ui.components
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,9 +25,16 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -34,8 +45,10 @@ import com.yunyin.music.data.ArtworkLoader
 import com.yunyin.music.ui.icons.SfIcons
 import com.yunyin.music.ui.theme.AppleShapes
 import com.yunyin.music.ui.theme.AppTheme
+import com.yunyin.music.ui.theme.Motion
 import com.yunyin.music.ui.theme.SFPro
 import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
+import kotlinx.coroutines.launch
 
 /**
  * "Up next" queue presented as an iOS sheet.
@@ -43,6 +56,10 @@ import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
  * Shows the whole queue with the playing row highlighted in the accent color; tapping a
  * row jumps to it. Sized to leave the player visible above, which is the standard iOS
  * sheet proportion.
+ *
+ * The grabber is a real handle: the header follows the finger 1:1 and dismisses on the player's own
+ * rule (> 120 dp of travel, or a fling faster than 0.11 px/ms), otherwise it springs back. This is
+ * what the drawn grabber implied all along; it used to be decoration.
  */
 @Composable
 fun QueueSheet(
@@ -52,12 +69,18 @@ fun QueueSheet(
     onSelect: (Int) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    // Read only from `graphicsLayer` below, so following the finger never recomposes the sheet.
+    var dragOffset by remember { mutableFloatStateOf(0f) }
+    val dragScope = rememberCoroutineScope()
+    val density = LocalDensity.current
+
     AnimatedSheet(
         onDismissed = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
         sheetModifier = Modifier
             .fillMaxWidth()
             .fillMaxHeight(0.72f)
+            .graphicsLayer { translationY = dragOffset }
             .clip(ContinuousRoundedRectangle(AppleShapes.sheet))
             .background(AppTheme.palette.background)
             .clickable(
@@ -66,23 +89,57 @@ fun QueueSheet(
                 interactionSource = null,
             ) { },
     ) { close ->
-        // Grabber, as on a native sheet.
-        Box(Modifier.fillMaxWidth().padding(top = 8.dp), contentAlignment = Alignment.Center) {
-            Box(
-                Modifier
-                    .size(width = 36.dp, height = 5.dp)
-                    .clip(ContinuousRoundedRectangle(AppleShapes.pill))
-                    .background(AppTheme.palette.tertiaryLabel),
+        // The grabber + title are the handle: large enough to grab (≈60 dp) and away from the rows, so
+        // a vertical drag there can never be confused with scrolling the queue.
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .draggable(
+                    orientation = Orientation.Vertical,
+                    state = rememberDraggableState { delta ->
+                        dragOffset = (dragOffset + delta).coerceAtLeast(0f)
+                    },
+                    onDragStopped = { velocity ->
+                        val distancePx = with(density) {
+                            QueueSheetDismissRules.DistanceDp.dp.toPx()
+                        }
+                        if (QueueSheetDismissRules.shouldDismiss(
+                                offsetPx = dragOffset,
+                                distancePx = distancePx,
+                                velocityPxPerMs = velocity / 1000f,
+                            )
+                        ) {
+                            // Left at its dragged offset: the sheet's exit animation then starts from
+                            // where the finger let go instead of jumping back first.
+                            close()
+                        } else {
+                            dragScope.launch {
+                                Animatable(dragOffset).animateTo(0f, Motion.SpringSettle) {
+                                    dragOffset = value
+                                }
+                            }
+                        }
+                    },
+                ),
+        ) {
+            // Grabber, as on a native sheet — now the handle it looks like.
+            Box(Modifier.fillMaxWidth().padding(top = 8.dp), contentAlignment = Alignment.Center) {
+                Box(
+                    Modifier
+                        .size(width = 36.dp, height = 5.dp)
+                        .clip(ContinuousRoundedRectangle(AppleShapes.pill))
+                        .background(AppTheme.palette.tertiaryLabel),
+                )
+            }
+            Text(
+                text = "播放队列",
+                fontFamily = SFPro,
+                fontWeight = FontWeight.Bold,
+                fontSize = 20.sp,
+                color = AppTheme.palette.label,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp),
             )
         }
-        Text(
-            text = "播放队列",
-            fontFamily = SFPro,
-            fontWeight = FontWeight.Bold,
-            fontSize = 20.sp,
-            color = AppTheme.palette.label,
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp),
-        )
 
         LazyColumn(
             contentPadding = PaddingValues(bottom = 24.dp),
@@ -136,4 +193,21 @@ fun QueueSheet(
             }
         }
     }
+}
+
+/**
+ * Dismiss rule for the queue sheet's drag handle.
+ *
+ * The same rule the player's drag-to-dismiss uses (plan 001): > 120 dp of travel **or** a release
+ * faster than 0.11 px/ms. Pure and unit-tested so the threshold cannot drift from the player's.
+ */
+internal object QueueSheetDismissRules {
+    /** Travel past which a release dismisses instead of springing back. */
+    const val DistanceDp = 120f
+
+    /** Release speed (px/ms) past which a flick dismisses even below [DistanceDp]. */
+    const val VelocityPxPerMs = 0.11f
+
+    fun shouldDismiss(offsetPx: Float, distancePx: Float, velocityPxPerMs: Float): Boolean =
+        offsetPx > distancePx || velocityPxPerMs > VelocityPxPerMs
 }

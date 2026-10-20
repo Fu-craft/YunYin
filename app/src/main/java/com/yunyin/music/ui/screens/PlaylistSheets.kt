@@ -35,9 +35,11 @@ import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
 import com.yunyin.music.core.Playlist
 import com.yunyin.music.playback.PlaybackSleepTimerRules
 import com.yunyin.music.ui.components.AnimatedSheet
+import com.yunyin.music.ui.components.CrossfadeContent
 import com.yunyin.music.ui.components.SheetPlacement
 import com.yunyin.music.ui.theme.AppTheme
 import com.yunyin.music.ui.theme.AppleShapes
+import com.yunyin.music.ui.theme.Motion
 import com.yunyin.music.ui.theme.SFPro
 
 /**
@@ -190,34 +192,48 @@ fun PlaylistPickerSheet(
     ) { close ->
         Text("添加到歌单", fontFamily = SFPro, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = AppTheme.palette.label)
         Spacer(Modifier.height(14.dp))
-        when {
-            loading -> Row(Modifier.fillMaxWidth().padding(vertical = 24.dp), horizontalArrangement = Arrangement.Center) {
-                CircularProgressIndicator(color = AppTheme.palette.accent, strokeWidth = 2.5.dp, modifier = Modifier.size(24.dp))
-            }
-            error != null -> Text(error, fontFamily = SFPro, fontSize = 13.sp, color = AppTheme.palette.secondaryLabel)
-            playlists.isEmpty() -> Text(
-                "还没有自己的歌单。先在资料库新建一个歌单再回来添加。",
-                fontFamily = SFPro,
-                fontSize = 13.sp,
-                color = AppTheme.palette.secondaryLabel,
-            )
-            else -> playlists.forEach { playlist ->
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(ContinuousRoundedRectangle(AppleShapes.control))
-                        .clickable { close { onPick(playlist) } }
-                        .padding(horizontal = 12.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(playlist.name, fontFamily = SFPro, fontSize = 16.sp, color = AppTheme.palette.label)
-                        Text(
-                            "${playlist.trackCount} 首",
-                            fontFamily = SFPro,
-                            fontSize = 12.sp,
-                            color = AppTheme.palette.secondaryLabel,
-                        )
+        // Spinner → error/empty/list is a content-state change, not a jump: cross-fade it inside the
+        // modal. `CrossfadeContent` is opacity-only and disables the size transform.
+        val phase = when {
+            loading -> "loading"
+            error != null -> "error"
+            playlists.isEmpty() -> "empty"
+            else -> "list"
+        }
+        CrossfadeContent(
+            targetState = phase,
+            durationMillis = Motion.SmallDuration,
+            label = "playlist-picker-phase",
+        ) { current ->
+            when (current) {
+                "loading" -> Row(Modifier.fillMaxWidth().padding(vertical = 24.dp), horizontalArrangement = Arrangement.Center) {
+                    CircularProgressIndicator(color = AppTheme.palette.accent, strokeWidth = 2.5.dp, modifier = Modifier.size(24.dp))
+                }
+                "error" -> Text(error ?: "", fontFamily = SFPro, fontSize = 13.sp, color = AppTheme.palette.secondaryLabel)
+                "empty" -> Text(
+                    "还没有自己的歌单。先在资料库新建一个歌单再回来添加。",
+                    fontFamily = SFPro,
+                    fontSize = 13.sp,
+                    color = AppTheme.palette.secondaryLabel,
+                )
+                else -> playlists.forEach { playlist ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(ContinuousRoundedRectangle(AppleShapes.control))
+                            .clickable { close { onPick(playlist) } }
+                            .padding(horizontal = 12.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(playlist.name, fontFamily = SFPro, fontSize = 16.sp, color = AppTheme.palette.label)
+                            Text(
+                                "${playlist.trackCount} 首",
+                                fontFamily = SFPro,
+                                fontSize = 12.sp,
+                                color = AppTheme.palette.secondaryLabel,
+                            )
+                        }
                     }
                 }
             }
