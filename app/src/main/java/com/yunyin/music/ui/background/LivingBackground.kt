@@ -85,7 +85,7 @@ internal fun LivingCoverBackground(
     cover: ImageBitmap?,
     /** Whether this presentation shows the stack at all (the artwork presentation only). */
     visible: Boolean,
-    /** False while the player is paused or the two presentations are cross-fading. */
+    /** False while the player is paused, in battery saver, or the two presentations cross-fade. */
     active: Boolean,
     /** The player's background dim, 0..1; the stack follows it so it cannot brighten the page. */
     dim: Float,

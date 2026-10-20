@@ -566,9 +566,10 @@ fun PlayerScreen(
             LivingCoverBackground(
                 cover = cover,
                 visible = !showLyrics,
-                // Frozen while paused, animations off, or mid-presentation: one clock, no work
-                // nobody can see. The last pose is kept, so nothing snaps when it resumes.
-                active = !transitioning && state.isPlaying,
+                // Frozen while paused, animations off, in battery saver, or mid-presentation:
+                // one clock, no work nobody can see. The last pose is kept, so nothing snaps when
+                // it resumes.
+                active = !transitioning && state.isPlaying && !powerSaveMode,
                 dim = backgroundDim,
                 modifier = Modifier.fillMaxSize(),
             )
