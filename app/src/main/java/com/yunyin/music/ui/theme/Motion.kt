@@ -34,6 +34,24 @@ object Motion {
      */
     val SpringSettle: FiniteAnimationSpec<Float> = spring(dampingRatio = 0.8f, stiffness = 400f)
 
+    /**
+     * The cover settling back while playback pauses.
+     *
+     * Critically damped, not [SpringSettle]'s 0.8: on an element this large an overshoot reads as a
+     * flick at the end of the move, and the paused cover must not cross its rest value (the shared
+     * element's monotonicity rule — see `sharedCoverPausedScale`). Stiffness 240 is deliberate
+     * weight: the cover recedes under its own mass instead of twitching to 92 %.
+     */
+    val CoverPauseSettle: FiniteAnimationSpec<Float> = spring(dampingRatio = 1f, stiffness = 240f)
+
+    /**
+     * The cover coming back when playback resumes: the same critically damped shape, but crisper.
+     *
+     * Pause is the user's considered action, so it may take its time; resume is the system answering
+     * the user, and the music has already started — the cover catching up should not be the slow part.
+     */
+    val CoverResumeSettle: FiniteAnimationSpec<Float> = spring(dampingRatio = 1f, stiffness = 480f)
+
     /** Button / press feedback: 100-160ms. */
     const val PressDuration = 160
 

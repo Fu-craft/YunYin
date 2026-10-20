@@ -242,20 +242,32 @@ fun PlayerScreen(
     // shows. The progress bar itself samples `positionProvider` per frame instead.
     val displayedPosition = state.positionMs
 
-    // The cover settles down by 8% while the transport is paused and springs back on resume.
+    // The cover recedes while the transport is paused: it settles to 92 % **and** dims by 6 %,
+    // both driven from one progress value so they cannot separate.
     //
     // Driven by `playWhenReady` — the transport's *intent* — rather than `isPlaying`, which is the
-    // audio *output*: the two disagree for the whole buffering window, so an output-driven scale
-    // would dip the cover on every seek and every track load and pop straight back up. The value is
-    // only read inside a `graphicsLayer` (see [ArtworkWithGestures]), so the spring costs a redraw.
-    val pausedArtworkScale by animateFloatAsState(
-        targetValue = if (state.playWhenReady) 1f else PAUSED_ARTWORK_SCALE,
-        animationSpec = Motion.SpringSettle,
-        label = "paused-artwork-scale",
+    // audio *output*: the two disagree for the whole buffering window, so an output-driven recede
+    // would dip the cover on every seek and every track load and pop straight back up.
+    //
+    // The specs are deliberately asymmetric. Pausing is the user's considered action, so it settles
+    // slowly ([Motion.CoverPauseSettle]); resuming is the system answering the user — the music is
+    // already back — so the cover catches up crisper ([Motion.CoverResumeSettle]). Both are
+    // critically damped (no overshoot) because the shared cover must only ever move one way; see
+    // [sharedCoverPausedScale].
+    //
+    // Not delegated, and never read during composition: `pausedCoverProgress.value` is read only
+    // inside the `graphicsLayer` lambdas (the scale and the dim derived from it), so the settle costs
+    // a layer update instead of recomposing the player once per frame.
+    val pausedCoverProgress = animateFloatAsState(
+        targetValue = if (state.playWhenReady) 0f else 1f,
+        animationSpec = if (state.playWhenReady) Motion.CoverResumeSettle else Motion.CoverPauseSettle,
+        label = "paused-artwork-progress",
     )
 
     // **One** scale, applied to both renderings of the shared cover: the full artwork in the artwork
-    // presentation and the 56 dp header thumbnail in the lyrics presentation.
+    // presentation and the 56 dp header thumbnail in the lyrics presentation. The dim in the same
+    // graphicsLayer is derived from it by [sharedCoverPausedAlpha], so the two properties — and both
+    // ends of the shared element — can never disagree.
     //
     // During a presentation change the two are the two ends of one shared element: [AnimatedContent]
     // composes both presentations for the length of the cross-fade, and the shared element animates
@@ -266,7 +278,10 @@ fun PlayerScreen(
     // move, so the shared element's bounds are the only animated quantity; because a constant times a
     // monotone sequence is monotone, the cover can only travel one way. See
     // [sharedCoverPausedScale] and its unit test.
-    val sharedCoverScale: () -> Float = { sharedCoverPausedScale(pausedArtworkScale) }
+    val sharedCoverScale: () -> Float = {
+        // Read in the layer phase: `pausedCoverProgress.value`, not a captured Float.
+        sharedCoverPausedScale(1f - pausedCoverProgress.value * (1f - PAUSED_ARTWORK_SCALE))
+    }
 
     // 1 = chrome fully present, 0 = immersed. Everything that belongs to the chrome — the header,
     // the transport, the frosted split and the lyric fade zones — is derived from this one value,
@@ -1075,7 +1090,8 @@ private fun ArtworkWithGestures(
     isPlaying: Boolean,
     /**
      * The paused settle, as a **lambda**: read inside a `graphicsLayer`, so the spring animates in
-     * the layer phase instead of recomposing the player once per frame.
+     * the layer phase instead of recomposing the player once per frame. The layer also derives its
+     * opacity dim from this same value ([sharedCoverPausedAlpha]) — there is no second animation.
      */
     artworkScale: () -> Float,
     // Receiver scopes are passed in rather than captured: this is a separate composable, so the
@@ -1121,6 +1137,9 @@ private fun ArtworkWithGestures(
                         val scale = artworkScale()
                         scaleX = scale
                         scaleY = scale
+                        // The paused dim is derived from the very same scale, so the record recedes
+                        // with the cover instead of only shrinking.
+                        alpha = sharedCoverPausedAlpha(scale)
                     }
                     .shadow(14.dp, CircleShape),
             )
@@ -1157,6 +1176,7 @@ private fun ArtworkWithGestures(
                         val scale = artworkScale()
                         scaleX = scale
                         scaleY = scale
+                        alpha = sharedCoverPausedAlpha(scale)
                     }
                     .shadow(14.dp, ContinuousRoundedRectangle(ARTWORK_CORNER)),
             )
@@ -1572,15 +1592,16 @@ private fun LyricsHeader(
                             tween(PRESENTATION_FADE_MS, easing = Motion.EaseOut)
                         },
                     )
-                    // The same paused scale as the full artwork. This is the other end of the shared
-                    // element, so it must render at the same size: when only the artwork shrank, the
+                    // The same paused scale and dim as the full artwork. This is the other end of the
+                    // shared element, so it must render identically: when only the artwork shrank, the
                     // unscaled thumbnail faded in over it and the cover appeared to enlarge from
                     // 0.92 back to 1.0 before shrinking into the header. See
-                    // [sharedCoverPausedScale].
+                    // [sharedCoverPausedScale] / [sharedCoverPausedAlpha].
                     .graphicsLayer {
                         val scale = artworkScale()
                         scaleX = scale
                         scaleY = scale
+                        alpha = sharedCoverPausedAlpha(scale)
                     },
             )
         }
@@ -2407,12 +2428,22 @@ private val HEADER_COVER_CORNER = 10.dp
  * How far the cover settles down while the transport is paused.
  *
  * Small on purpose: the cover is the player's anchor, and the change should read as "the music
- * stopped", not as a different layout. Applied as a layer scale on the artwork only, so nothing
+ * stopped", not as a different layout. Applied as a layer transform on the artwork only, so nothing
  * around it reflows — the drag-to-dismiss translation is a layer on the player body and the cover
  * transition's shared element keeps full-size bounds, so the three transform systems compose
- * without fighting (see [ArtworkWithGestures]).
+ * without fighting (see [ArtworkWithGestures]). The paired dim is [PAUSED_ARTWORK_DIM].
  */
 private const val PAUSED_ARTWORK_SCALE = 0.92f
+
+/**
+ * How much the cover dims at the paused rest value, as a fraction of full opacity.
+ *
+ * 6 % sits in the band where the artwork reads as *receded* — the surface steps back rather than
+ * only changing size — without the player looking dimmed or broken. The chrome is untouched, so the
+ * cover looks like it moved behind the controls. It is derived from the same single scale
+ * ([sharedCoverPausedAlpha]), never animated separately.
+ */
+private const val PAUSED_ARTWORK_DIM = 0.06f
 
 /**
  * The paused-cover scale as seen by **both** renderings of the shared album cover — the full artwork
@@ -2431,6 +2462,24 @@ private const val PAUSED_ARTWORK_SCALE = 0.92f
  */
 internal fun sharedCoverPausedScale(pausedCoverScale: Float): Float =
     pausedCoverScale.coerceIn(0f, 1f)
+
+/**
+ * The artwork dim that accompanies the paused scale, derived from the **same** single value.
+ *
+ * Keeping it a function of the scale (rather than a second animation) is what preserves the shared
+ * cover's invariant: both renderings of the shared element compute the same alpha from the same
+ * scale, so they cannot drift, and because the mapping is monotone the paired scale/alpha path only
+ * moves one way. At the paused rest value (0.92) this is 1 - [PAUSED_ARTWORK_DIM] = 0.94; at full
+ * size it is 1. Values outside the paused range clamp, so a stray scale can never make the cover
+ * darker than the paused rest state.
+ *
+ * Kept as a pure function so the mapping can be unit-tested (see `SharedCoverScaleTest`).
+ */
+internal fun sharedCoverPausedAlpha(pausedCoverScale: Float): Float {
+    val pausedFraction =
+        ((1f - pausedCoverScale) / (1f - PAUSED_ARTWORK_SCALE)).coerceIn(0f, 1f)
+    return 1f - pausedFraction * PAUSED_ARTWORK_DIM
+}
 
 /**
  * The full-size cover's corner radius, exposed for the cover transition.

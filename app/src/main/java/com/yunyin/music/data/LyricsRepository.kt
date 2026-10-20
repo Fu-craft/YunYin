@@ -8,6 +8,9 @@ import com.yunyin.music.data.net.NeteaseClient
 import com.yunyin.music.data.providers.ProviderLyricDocument
 import com.yunyin.music.data.providers.ProviderLyrics
 import com.yunyin.music.data.providers.ProviderMatcher
+import com.yunyin.music.data.providers.extra.ExtraLyricDocument
+import com.yunyin.music.data.providers.extra.ExtraLyricPayload
+import com.yunyin.music.data.providers.extra.ExtraLyricsProvider
 import com.yunyin.music.data.providers.tx.TxLyric
 import com.mocharealm.accompanist.lyrics.core.model.SyncedLyrics
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeLine
@@ -59,6 +62,8 @@ class LyricsRepository(
      * the existing path is unchanged for every NetEase track and for tests.
      */
     private val providerLyrics: ProviderLyrics? = null,
+    /** Kuwo/Kugou fallback for tracks whose NetEase/QQ/AMLL sources have no lyrics; null disables it. */
+    private val extraLyrics: ExtraLyricsProvider? = null,
 ) {
 
     private val cacheDir = File(context.cacheDir, "lyrics").apply { mkdirs() }
@@ -116,6 +121,8 @@ class LyricsRepository(
      */
     suspend fun lyricsFor(
         trackId: Long,
+        /** The playing track; needed to search Kuwo/Kugou by title+artist when the main sources come up empty. */
+        track: Track? = null,
         onFirstDoc: ((SyncedLyrics) -> Unit)? = null,
         onUpgraded: ((SyncedLyrics) -> Unit)? = null,
     ): SyncedLyrics? {
@@ -148,6 +155,7 @@ class LyricsRepository(
             // `afterLineLevel = true`: something is already on screen, so the late delivery should
             // only improve on it, never replace it with the same thing.
             deliverLateDocument(trackId, amllDeferred, neteaseDeferred, onUpgraded, afterLineLevel = true)
+            launchExtraUpgrade(trackId, track, onUpgraded)
             return cached
         }
 
@@ -164,6 +172,11 @@ class LyricsRepository(
             // later".
             //
             // `afterLineLevel = false`: nothing was shown, so a late line-level document is welcome.
+            extraFallback(track)?.let { document ->
+                store(trackId, document)
+                onFirstDoc?.invoke(document)
+                return document
+            }
             deliverLateDocument(trackId, amllDeferred, neteaseDeferred, onUpgraded, afterLineLevel = false)
             return null
         }
@@ -177,6 +190,11 @@ class LyricsRepository(
         // because the other source may still produce a usable one.
         val resolved = resolve(first, netease)
         if (resolved == null) {
+            extraFallback(track)?.let { document ->
+                store(trackId, document)
+                onFirstDoc?.invoke(document)
+                return document
+            }
             deliverLateDocument(trackId, amllDeferred, neteaseDeferred, onUpgraded, afterLineLevel = false)
             return null
         }
@@ -198,6 +216,7 @@ class LyricsRepository(
         // let it finish and hand the better document over. Without this the user would have to
         // replay the song to get karaoke — which is exactly the reported symptom.
         deliverLateDocument(trackId, amllDeferred, neteaseDeferred, onUpgraded, afterLineLevel = true)
+        launchExtraUpgrade(trackId, track, onUpgraded)
         return resolved.lyrics
     }
 
@@ -434,6 +453,51 @@ class LyricsRepository(
 
     /** Empty-state text for the current track: lyricless is a fact, "not found" is not. */
     fun lyricEmptyMessage(): String = com.yunyin.music.data.net.LyricEndpointRules.emptyMessage(lastFetchWasNolyric)
+
+    /**
+     * Kuwo/Kugou fallback: only consulted when the main sources produced nothing usable.
+     *
+     * The match is title+artist based (the app has no Kuwo/Kugou ids for a NetEase track), bounded by the provider's
+     * own 6s/source and 10s/total budget. Returns null when there is no playing track to search for, no related
+     * candidate, or no decodable document — the existing empty state then remains the honest answer.
+     */
+    private suspend fun extraFallback(track: Track?): SyncedLyrics? {
+        val provider = extraLyrics ?: return null
+        val target = track ?: return null
+        val payload = withTimeoutOrNull(EXTRA_LYRIC_WAIT_MS) { provider.fetch(target) } ?: return null
+        return extraPayloadToDocument(payload)
+    }
+
+    /** A late word-by-word answer from Kuwo/Kugou upgrades a line-level document without making the caller wait. */
+    private fun launchExtraUpgrade(
+        trackId: Long,
+        track: Track?,
+        onUpgraded: ((SyncedLyrics) -> Unit)?,
+    ) {
+        val provider = extraLyrics ?: return
+        val target = track ?: return
+        if (onUpgraded == null) return
+        scope.launch {
+            val payload = runCatching {
+                withTimeoutOrNull(EXTRA_LYRIC_WAIT_MS) { provider.fetch(target, requireWords = true) }
+            }.getOrNull() ?: return@launch
+            val document = runCatching { extraPayloadToDocument(payload) }.getOrNull() ?: return@launch
+            if (!isWordByWord(document)) return@launch
+            store(trackId, document)
+            runCatching { onUpgraded(document) }
+        }
+    }
+
+    private fun extraPayloadToDocument(payload: ExtraLyricPayload): SyncedLyrics? {
+        val base = ExtraLyricDocument.build(payload)
+            ?: payload.plain?.takeIf { it.isNotBlank() }
+                ?.let { raw -> runCatching { autoParser.parse(raw) }.getOrNull() }
+                ?.takeIf { it.lines.isNotEmpty() }
+            ?: return null
+        val stripped = stripMetadata(base)
+        val merged = LyricTranslation.merge(stripped, payload.translation)
+        return merged.takeIf { it.lines.isNotEmpty() }
+    }
 
     /**
      * Lyrics for a provider track: ask its platform first, then fall back to the NetEase pipeline by matching the
@@ -729,6 +793,9 @@ class LyricsRepository(
          * this before the screen shows "no lyrics".
          */
         const val PROVIDER_LYRIC_WAIT_MS = 8000L
+
+        /** Kuwo/Kugou fallback budget (provider itself caps each source at 6s, total 10s). */
+        const val EXTRA_LYRIC_WAIT_MS = 10_000L
 
         /**
          * AMLL DB mirrors. `%d` is the NetEase song id. jsDelivr is fastest when

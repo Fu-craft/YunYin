@@ -60,7 +60,13 @@ class AppContainer(val appContext: Context) {
 
     val music: MusicRepository by lazy { MusicRepository(client, lxPlayback, providers, lxLog, localMusic, playlistTrackCache) }
 
-    val lyrics: LyricsRepository by lazy { LyricsRepository(appContext, client, providerLyrics) }
+    val extraLyrics: com.yunyin.music.data.providers.extra.ExtraLyricsProvider by lazy {
+        com.yunyin.music.data.providers.extra.ExtraLyricsProvider(log = lxLog)
+    }
+
+    val lyrics: LyricsRepository by lazy {
+        LyricsRepository(appContext, client, providerLyrics, extraLyrics)
+    }
 
     val artwork: ArtworkLoader by lazy { ArtworkLoader(appContext) }
 

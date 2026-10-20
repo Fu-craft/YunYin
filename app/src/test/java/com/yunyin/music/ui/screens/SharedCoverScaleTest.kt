@@ -50,6 +50,23 @@ class SharedCoverScaleTest {
         )
     }
 
+    @Test
+    fun `the paused dim is derived from the shared scale and stays monotone`() {
+        // Full size is undimmed; the paused rest value dims by exactly the documented 6 %.
+        assertEquals(1f, sharedCoverPausedAlpha(1f), 0f)
+        assertEquals(1f - 0.06f, sharedCoverPausedAlpha(0.92f), 1e-6f)
+        // Below the rest value the mapping clamps — a stray scale can never dim past the paused look.
+        assertEquals(1f - 0.06f, sharedCoverPausedAlpha(0.5f), 1e-6f)
+        // Monotone in the scale: as the cover grows back the dim can only lift.
+        var previous = sharedCoverPausedAlpha(0.92f)
+        for (step in 1..20) {
+            val scale = 0.92f + (1f - 0.92f) * step / 20f
+            val alpha = sharedCoverPausedAlpha(scale)
+            assertTrue("alpha must not fall while the cover grows", alpha >= previous - 1e-6f)
+            previous = alpha
+        }
+    }
+
     /**
      * What the eye sees while the outgoing rendering fades under the incoming one: a blend of the two
      * scales weighted by how far the incoming content has faded in.

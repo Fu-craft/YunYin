@@ -361,6 +361,7 @@ class PlayerViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     private fun loadLyrics(trackId: Long) {
+        val track = container.player.state.value.current?.takeIf { it.id == trackId }
         lyricsJob?.cancel()
         lyrics = null
         lyricsLoading = true
@@ -370,6 +371,7 @@ class PlayerViewModel(private val container: AppContainer) : ViewModel() {
             // showing anything is what made loading feel slow (measured median 2.4s -> 0.4s).
             suspend fun attempt(): SyncedLyrics? = container.lyrics.lyricsFor(
                 trackId = trackId,
+                track = track,
                 onFirstDoc = { provisional -> applyIfCurrent(trackId, provisional) },
                 // Delivered from the repository's IO scope, so hop to the main dispatcher before
                 // touching composition state.
