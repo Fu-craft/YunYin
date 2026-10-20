@@ -94,6 +94,9 @@ import com.yunyin.music.ui.LYRIC_OFFSET_LIMIT_MS
 import com.yunyin.music.ui.PlayerStyle
 import com.yunyin.music.ui.background.DynamicBackgroundPalette
 import com.yunyin.music.ui.background.HyperBackground
+import com.yunyin.music.ui.background.LivingCoverBackground
+import com.yunyin.music.ui.background.backdropMaterial
+import com.yunyin.music.ui.background.rememberBackdropMaterialEffect
 import com.yunyin.music.ui.components.AnimatedSheet
 import com.yunyin.music.ui.components.Artwork
 import com.yunyin.music.ui.components.CrossfadeContent
@@ -528,26 +531,48 @@ fun PlayerScreen(
         // shader draw every frame. Measured, this window is where "Slow issue draw commands" spiked.
         val transitioning = transitionActive
 
-        // Bottom layer: the same field, blurred. Only visible inside the panel, because the
-        // sharp layer above masks itself off there.
-        HyperBackground(
-            palette = palette,
-            isDark = true,
-            dim = backgroundDim,
-            paused = transitioning,
-            modifier = Modifier.fillMaxSize().blur(CONTROL_BAR_BLUR),
-        )
-        // Top layer: the field, sharp, masked to finish at the panel's leading edge. The mask is a
-        // rounded rectangle, so the frosted region reads as an inset panel.
-        HyperBackground(
-            palette = palette,
-            isDark = true,
-            dim = backgroundDim,
-            paused = transitioning,
-            modifier = Modifier
-                .fillMaxSize()
-                .sharpAbove(frostFraction, frostEdge),
-        )
+        // Post-composite over the finished backdrop: saturation lift, black-floor remap, a light
+        // detail-weighted scrim and the dither that removes contour stripes from the dark ramp.
+        // `null` on engines that cannot run the shader, in which case no layer is added at all —
+        // the fallback is exactly the rendering above, not an approximation of it.
+        val backdropMaterial = rememberBackdropMaterialEffect()
+
+        Box(Modifier.fillMaxSize().backdropMaterial(backdropMaterial)) {
+            // Bottom layer: the same field, blurred. Only visible inside the panel, because the
+            // sharp layer above masks itself off there.
+            HyperBackground(
+                palette = palette,
+                isDark = true,
+                dim = backgroundDim,
+                paused = transitioning,
+                modifier = Modifier.fillMaxSize().blur(CONTROL_BAR_BLUR),
+            )
+            // Top layer: the field, sharp, masked to finish at the panel's leading edge. The mask is
+            // a rounded rectangle, so the frosted region reads as an inset panel.
+            HyperBackground(
+                palette = palette,
+                isDark = true,
+                dim = backgroundDim,
+                paused = transitioning,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .sharpAbove(frostFraction, frostEdge),
+            )
+            // Living cover layer: the artwork's own colours drifting behind the content, ON TOP of
+            // the audio-reactive field (the field keeps providing the base palette; the covers add
+            // the album's pigment). Drawn only in the artwork presentation — under the lyrics the
+            // field must stay clean for legibility — and inside the material pass so it shares the
+            // same saturation/floor/dither.
+            LivingCoverBackground(
+                cover = cover,
+                visible = !showLyrics,
+                // Frozen while paused, animations off, or mid-presentation: one clock, no work
+                // nobody can see. The last pose is kept, so nothing snaps when it resumes.
+                active = !transitioning && state.isPlaying,
+                dim = backgroundDim,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
 
         // The two presentations cross-fade instead of swapping in a single frame, and the cover is
         // a **shared element**: it animates between the full-size artwork and the header thumbnail,
