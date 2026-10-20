@@ -37,8 +37,8 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 /**
- * The player's "living background": two or three heavily blurred copies of the current cover
- * drifting and turning behind the content, plus an optional slow breathing pulse.
+ * The player's "living background": three heavily blurred copies of the current cover drifting and
+ * turning behind the content.
  *
  * Why this reads better than a static blurred cover:
  *
@@ -48,14 +48,16 @@ import kotlin.math.sin
  *  - The motion is deliberately below the threshold where it competes with the artwork: a few
  *    percent of scale over a minute, a rotation measured in degrees per second, and opacity low
  *    enough that the field's colour is felt rather than seen.
- *  - On top of that, [BreathingRules] adds an occasional gentle expansion (≤10 %) so the field
- *    "breathes" with the music instead of drifting only.
  *
  * ## Cost control
  *
- * - **One frame clock for both ② and ③.** A single `withFrameNanos` loop samples a timestamp at
- *   **≤30 fps** and writes one `MutableLongState`; every value is read inside `graphicsLayer`
- *   blocks, so a tick invalidates layers and never recomposes this composable.
+ * - **One frame clock, 15 fps.** A single `withFrameNanos` loop samples a timestamp at
+ *   **≤15 fps** and writes one `MutableLongState`; every value is read inside `graphicsLayer`
+ *   blocks, so a tick invalidates layers and never recomposes this composable. 15 fps is enough
+ *   because the fastest copy turns at 360°/74 s ≈ 4.9°/s, i.e. 0.33° per update, through a heavily
+ *   blurred, 1/3-resolution layer — roughly a sixth of a pixel of edge travel per update on a
+ *   phone screen, far below the point where the eye could see the sampling. Halving the rate from
+ *   30 fps halves the layer work with no visible change.
  * - **One blur pass**, not one per copy: the copies are stacked first and the whole stack is
  *   blurred once (`[LIVING_BLUR]`). The copies are drawn oversized (1.6–1.8×) so their own detail
  *   is already enlarged before the blur runs, which is what lets a moderate radius read as heavy
@@ -65,8 +67,8 @@ import kotlin.math.sin
  * - **Frozen means free**: the clock only runs while the layer is visible, playing, and the player
  *   is not mid-presentation; a frozen clock invalidates nothing, so the stack costs no frames and
  *   no blur work while paused. The last sampled pose is kept, so nothing snaps.
- * - Measured budget is stated in the player integration: one full-screen blurred layer redrawn at
- *   ≤30 fps while playing, zero while paused or on the lyrics presentation.
+ * - Measured budget is stated in the player integration: one 1/3-resolution blurred layer redrawn
+ *   at ≤15 fps while playing, zero while paused or on the lyrics presentation.
  *
  * ## Integration with [HyperBackground]
  *
@@ -139,12 +141,9 @@ private fun LivingCoverStack(
             Modifier
                 .fillMaxSize(1f / LIVING_DOWNSCALE)
                 .graphicsLayer {
-                    // Breathing and dim are layer values: a tick invalidates the layer, never
-                    // composition. `LIVING_DOWNSCALE` is folded into the same scale so the upscale
-                    // and the pulse are one transform.
-                    val breath = BreathingRules.scale(clock.value)
-                    scaleX = LIVING_DOWNSCALE * breath
-                    scaleY = LIVING_DOWNSCALE * breath
+                    // Dim is a layer value: a tick invalidates the layer, never composition.
+                    scaleX = LIVING_DOWNSCALE
+                    scaleY = LIVING_DOWNSCALE
                     alpha = 1f - dim.coerceIn(0f, 1f) * DIM_INFLUENCE
                 }
                 .clipToBounds()
@@ -315,63 +314,17 @@ internal object CoverCrossfadeRules {
     }
 }
 
-/**
- * The "breathing" pulse: two rectified sines raised to high powers, so the field is still for most
- * of the cycle and swells briefly twice per period.
- *
- * The shape matters more than the exact frequency. Raising a sine to the 12th power keeps the
- * value under 10 % of its peak for most of the cycle, which is why the effect reads as an
- * occasional breath rather than a throb; the second, half-rate term (weight 0.14) is what stops
- * the two swells from looking metronomic.
- */
-internal object BreathingRules {
-
-    /** Peak scale increase: ≤10 % keeps the field's edge off the screen edges and reads as air. */
-    const val AMPLITUDE = 0.10f
-
-    /** Primary pulse rate. 1.15 Hz ≈ one swell every 0.87 s — a slow musical breath. */
-    const val PRIMARY_HZ = 1.15f
-
-    /** Secondary pulse at exactly half the primary rate, for the four-bar feel. */
-    const val SECONDARY_HZ = 0.575f
-
-    private const val PRIMARY_WEIGHT = 0.86f
-    private const val SECONDARY_WEIGHT = 1f - PRIMARY_WEIGHT
-    private const val SECONDARY_PHASE = 0.70f
-    private const val PRIMARY_EXPONENT = 12
-    private const val SECONDARY_EXPONENT = 8
-
-    private fun pulse(value: Float, exponent: Int): Float {
-        if (value <= 0f) return 0f
-        var out = 1f
-        repeat(exponent) { out *= value }
-        return out
-    }
-
-    /** Waveform in `[0,1]`: near zero most of the time, peaking at 1 on the primary swell. */
-    fun wave(timeMs: Long): Float {
-        val seconds = timeMs / 1000.0
-        val primary = pulse(sin(TWO_PI * PRIMARY_HZ * seconds).toFloat(), PRIMARY_EXPONENT)
-        val secondary = pulse(
-            sin(TWO_PI * SECONDARY_HZ * seconds + SECONDARY_PHASE).toFloat(),
-            SECONDARY_EXPONENT,
-        )
-        return (PRIMARY_WEIGHT * primary + SECONDARY_WEIGHT * secondary).coerceIn(0f, 1f)
-    }
-
-    /** Scale applied to the cover stack: `1 .. 1 + AMPLITUDE`. */
-    fun scale(timeMs: Long): Float = 1f + AMPLITUDE * wave(timeMs)
-}
-
-/** Shared 2π as a Double, used by both rule sets without recomputing it per frame. */
+/** Shared 2π as a Double, used by the orbit rules without recomputing it per frame. */
 private const val TWO_PI = 2.0 * PI
 
 /**
- * The one frame clock for the living background, capped at 30 fps.
+ * The one frame clock for the living background, capped at 15 fps.
  *
  * Returns a [State] rather than a `Long` so the caller can read it *inside* `graphicsLayer`: the
- * tick then invalidates layers only. Reading it in composition would recompose this subtree 30
- * times a second.
+ * tick then invalidates layers only. Reading it in composition would recompose this subtree 15
+ * times a second. 15 fps is a deliberate floor: the orbit's fastest motion is 0.33° per update,
+ * which through the 1/3-resolution blur is far below a pixel of visible change, so sampling faster
+ * would only cost layer work (see the file header).
  */
 @Composable
 private fun rememberBackgroundClock(active: Boolean): State<Long> {
@@ -399,8 +352,8 @@ private fun rememberBackgroundClock(active: Boolean): State<Long> {
     return clock
 }
 
-/** 30 fps: a backdrop this slow needs nothing faster, and the blur pass is the frame's cost. */
-private const val CLOCK_INTERVAL_NS = 1_000_000_000L / 30L
+/** 15 fps: the orbit's fastest copy moves 0.33° per tick — invisible through the blurred layer. */
+private const val CLOCK_INTERVAL_NS = 1_000_000_000L / 15L
 
 /**
  * Resolution the cover stack is recorded at: 1/3 of the screen in each axis.

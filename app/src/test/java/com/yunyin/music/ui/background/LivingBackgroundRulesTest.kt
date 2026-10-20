@@ -9,8 +9,7 @@ import org.junit.Test
  *
  * The composable cannot be unit-tested (it needs a Compose host and a GPU), but everything that
  * decides *where the copies are* is a pure function here. These tests pin the properties that make
- * the motion safe: bounded, periodic, deterministic, never covering less than the screen, and — for
- * the breathing pulse — quiet most of the time and bounded at the peak.
+ * the motion safe: bounded, deterministic, and never covering less than the screen.
  */
 class LivingBackgroundRulesTest {
 
@@ -133,36 +132,6 @@ class LivingBackgroundRulesTest {
         }
     }
 
-    @Test
-    fun `breathing never leaves its amplitude band`() {
-        assertEquals(1f, BreathingRules.scale(0L) - BreathingRules.AMPLITUDE * BreathingRules.wave(0L), 1e-5f)
-        for (step in 0..1_000) {
-            val time = step * 7L
-            val wave = BreathingRules.wave(time)
-            assertTrue("wave at $time was $wave", wave in 0f..1f)
-            val scale = BreathingRules.scale(time)
-            assertTrue("scale at $time was $scale", scale >= 1f && scale <= 1f + BreathingRules.AMPLITUDE + 1e-5f)
-        }
-    }
-
-    @Test
-    fun `breathing is quiet most of the cycle and peaks briefly`() {
-        val samples = 300
-        var loud = 0
-        var quiet = 0
-        var peak = 0f
-        for (step in 0 until samples) {
-            // One primary period (1 / 1.15 s) in milliseconds.
-            val time = (step * (1_000L / 1.15f / samples)).toLong()
-            val wave = BreathingRules.wave(time)
-            peak = maxOf(peak, wave)
-            if (wave > 0.5f) loud++
-            if (wave < 0.1f) quiet++
-        }
-        assertTrue("the pulse must peak above 0.8, was $peak", peak > 0.8f)
-        assertTrue("the pulse must be quiet for most of the cycle", quiet > samples / 2)
-        assertTrue("the pulse must not be loud for a large share of the cycle", loud < samples / 4)
-    }
 
     @Test
     fun `rules are deterministic`() {
@@ -177,7 +146,6 @@ class LivingBackgroundRulesTest {
                 assertEquals(CoverOrbitRules.scale(index, time), CoverOrbitRules.scale(index, time), 0f)
             }
         }
-        assertEquals(BreathingRules.wave(12_345L), BreathingRules.wave(12_345L), 0f)
     }
 
     private fun abs(value: Float): Float = if (value < 0f) -value else value
