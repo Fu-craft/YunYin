@@ -44,6 +44,7 @@ import kotlinx.coroutines.delay
 import com.yunyin.music.data.LyricClipboard
 import com.yunyin.music.ui.components.CrossfadeContent
 import com.yunyin.music.ui.icons.SfIcons
+import com.yunyin.music.ui.theme.Motion
 import com.yunyin.music.ui.theme.SFPro
 import com.yunyin.music.lyrics.composable.lyrics.KaraokeLyricsView
 import com.yunyin.music.lyrics.composable.lyrics.LyricTimeSmoothing
@@ -223,6 +224,14 @@ fun LyricsView(
                 // Captured locally because branching on a String loses the smart cast that the
                 // original `when { lyrics == null -> ... }` gave us.
                 val doc = lyrics ?: return@CrossfadeContent
+                // A same-source word-by-word upgrade replaces the document while the panel is
+                // already showing lyrics (the pin rule only lets that one kind through), so fade
+                // the body rather than swapping the text in a single frame.
+                CrossfadeContent(
+                    targetState = doc,
+                    durationMillis = Motion.CrossfadeDuration,
+                    label = "lyrics-document",
+                ) { activeDoc ->
                 val listState = rememberLazyListState()
 
                 // `KaraokeLyricsView` places the focused line from the list's symmetric content
@@ -244,7 +253,7 @@ fun LyricsView(
 
                     KaraokeLyricsView(
                         listState = listState,
-                        lyrics = doc,
+                        lyrics = activeDoc,
                         // Line selection and scrolling use the raw playback time, so switching
                         // lines is never delayed by the smoothing below.
                         currentPosition = { framePositionMs.toInt() },
@@ -282,6 +291,7 @@ fun LyricsView(
                         centerPadding = centerPadding,
                         layoutCache = layoutCache,
                     )
+                }
                 }
             }
         }

@@ -5,6 +5,7 @@ import com.yunyin.music.core.LyricBundle
 import com.yunyin.music.core.NetResult
 import com.yunyin.music.core.Track
 import com.yunyin.music.data.net.NeteaseClient
+import com.yunyin.music.data.lxsource.LxSourceLog
 import com.yunyin.music.data.providers.ProviderLyricDocument
 import com.yunyin.music.data.providers.ProviderLyrics
 import com.yunyin.music.data.providers.ProviderMatcher
@@ -64,10 +65,22 @@ class LyricsRepository(
     private val providerLyrics: ProviderLyrics? = null,
     /** Kuwo/Kugou fallback for tracks whose NetEase/QQ/AMLL sources have no lyrics; null disables it. */
     private val extraLyrics: ExtraLyricsProvider? = null,
+    /** Shared diagnostics sink for the pin decisions (`stage=lyric pinned=… reason=…`). */
+    private val log: LxSourceLog? = null,
 ) {
 
     private val cacheDir = File(context.cacheDir, "lyrics").apply { mkdirs() }
     private val memory = LinkedHashMap<Long, SyncedLyrics>(MEMORY_CACHE)
+
+    /**
+     * What is currently pinned for a track, and which source produced the cached document.
+     *
+     * `pins` is reset at the start of every load for that track (a retry is a fresh decision), while
+     * `cachedSources` remembers provenance so the cached-document path reports the same pin
+     * decisions as a network load.
+     */
+    private val pins = LinkedHashMap<Long, PinnedLyric>()
+    private val cachedSources = LinkedHashMap<Long, LyricSource>()
 
     /** Whether the last NetEase lyric payload said the track genuinely has no lyrics. */
     @Volatile
@@ -126,6 +139,9 @@ class LyricsRepository(
         onFirstDoc: ((SyncedLyrics) -> Unit)? = null,
         onUpgraded: ((SyncedLyrics) -> Unit)? = null,
     ): SyncedLyrics? {
+        // A new load is a fresh pin decision for this track (a retry must not inherit a stale pin).
+        resetPin(trackId)
+
         // A track from another platform has no NetEase id, so the NetEase/AMLL race below cannot serve it: its own
         // provider is asked first (and the NetEase route is only a fallback, by matching the track there).
         providerLyrics?.let { provider ->
@@ -134,7 +150,7 @@ class LyricsRepository(
             }
         }
 
-        val cached = cachedLyrics(trackId)
+        val cached = cachedLyrics(trackId)?.takeIf { LyricPinRules.isPaintable(it.lines.size) }
 
         // Only a word-by-word document is final, so only it may short-circuit the load. A cached
         // *line-level* document must not: a song that showed plain lyrics once — because the
@@ -151,7 +167,7 @@ class LyricsRepository(
         // Plain lyrics already on hand: hand them over now and upgrade in the background rather
         // than making the caller wait on fetches that may fail.
         if (cached != null) {
-            onFirstDoc?.invoke(cached)
+            deliver(trackId, cached, sourceOf(trackId), onFirstDoc)
             // `afterLineLevel = true`: something is already on screen, so the late delivery should
             // only improve on it, never replace it with the same thing.
             deliverLateDocument(trackId, amllDeferred, neteaseDeferred, onUpgraded, afterLineLevel = true)
@@ -172,10 +188,11 @@ class LyricsRepository(
             // later".
             //
             // `afterLineLevel = false`: nothing was shown, so a late line-level document is welcome.
-            extraFallback(track)?.let { document ->
-                store(trackId, document)
-                onFirstDoc?.invoke(document)
-                return document
+            extraFallback(track)?.let { extra ->
+                if (deliver(trackId, extra.document, extra.source, onFirstDoc)) {
+                    store(trackId, extra.document, extra.source)
+                    return extra.document
+                }
             }
             deliverLateDocument(trackId, amllDeferred, neteaseDeferred, onUpgraded, afterLineLevel = false)
             return null
@@ -190,34 +207,47 @@ class LyricsRepository(
         // because the other source may still produce a usable one.
         val resolved = resolve(first, netease)
         if (resolved == null) {
-            extraFallback(track)?.let { document ->
-                store(trackId, document)
-                onFirstDoc?.invoke(document)
-                return document
+            extraFallback(track)?.let { extra ->
+                if (deliver(trackId, extra.document, extra.source, onFirstDoc)) {
+                    store(trackId, extra.document, extra.source)
+                    return extra.document
+                }
             }
             deliverLateDocument(trackId, amllDeferred, neteaseDeferred, onUpgraded, afterLineLevel = false)
             return null
         }
-        storeIfTrustworthy(trackId, resolved)
 
-        if (isWordByWord(resolved.lyrics)) return resolved.lyrics
+        // Grace window: if the first usable document is line-level, give the richer (word-by-word)
+        // source a short, bounded chance to arrive **before** painting. This is what makes the
+        // common case paint the best document once, instead of painting the fast line-level one and
+        // then upgrading — the mid-song source swap the pin rule now forbids.
+        val graceDoc = if (!isWordByWord(resolved.lyrics)) {
+            withTimeoutOrNull(LyricPinRules.graceWindowMs(false)) { amllDeferred.await() }
+        } else {
+            null
+        }
+        val firstPaint = graceDoc?.let { upgradeFrom(it, netease) } ?: resolved
+        storeIfTrustworthy(trackId, firstPaint)
+        deliver(trackId, firstPaint.lyrics, firstPaint.source, onFirstDoc)
 
-        // Line-level for now: show it, then try to upgrade. Awaiting the upgrade costs the caller
-        // nothing visible, because [onFirstDoc] has already delivered something to display.
-        onFirstDoc?.invoke(resolved.lyrics)
+        if (isWordByWord(firstPaint.lyrics)) return firstPaint.lyrics
 
+        // Line-level for now: show it, then try a **same-source** word-by-word upgrade. A different
+        // source's document is refused here by the pin rule (logged), which is the fix for the
+        // mid-song provider swap.
         val amll = withTimeoutOrNull(UPGRADE_WAIT_MS) { amllDeferred.await() }
-        upgradeFrom(amll, netease)?.let { upgraded ->
+        val upgraded = upgradeFrom(amll, netease)
+        if (upgraded != null && deliver(trackId, upgraded.lyrics, upgraded.source, onUpgraded)) {
             storeIfTrustworthy(trackId, upgraded)
             return upgraded.lyrics
         }
 
-        // The window expired without a karaoke document. The fetch is still running on [scope], so
+        // The window expired without a usable karaoke document. The fetch is still running on [scope], so
         // let it finish and hand the better document over. Without this the user would have to
         // replay the song to get karaoke — which is exactly the reported symptom.
         deliverLateDocument(trackId, amllDeferred, neteaseDeferred, onUpgraded, afterLineLevel = true)
         launchExtraUpgrade(trackId, track, onUpgraded)
-        return resolved.lyrics
+        return firstPaint.lyrics
     }
 
     /**
@@ -259,19 +289,21 @@ class LyricsRepository(
             // The better document, if there is one.
             val upgraded = upgradeFrom(amll, netease)
             if (upgraded != null) {
+                // Cache before painting (the pin rule below only decides whether the paint happens).
                 storeIfTrustworthy(trackId, upgraded)
-                onDelivered(upgraded.lyrics)
+                if (deliver(trackId, upgraded.lyrics, upgraded.source, null)) {
+                    onDelivered(upgraded.lyrics)
+                }
                 return@launch
             }
 
             // No karaoke document. Only fall back to the line-level one if the caller showed nothing —
             // otherwise this would replace what the user is reading with the same thing.
             if (afterLineLevel) return@launch
-            val fallback = netease.doc?.takeIf { it.lines.isNotEmpty() }
-                ?.let { resolve(Candidate(it, fromAmll = false), netease) }
-            if (fallback != null) {
+            val fallback = netease.doc?.takeIf { LyricPinRules.isPaintable(it.lines.size) }
+                ?.let { resolve(Candidate(it, LyricSource.Netease), netease) }
+            if (fallback != null && deliver(trackId, fallback.lyrics, fallback.source, onDelivered)) {
                 storeIfTrustworthy(trackId, fallback)
-                onDelivered(fallback.lyrics)
             }
         }
     }
@@ -289,11 +321,14 @@ class LyricsRepository(
      */
     private fun upgradeFrom(amllDoc: SyncedLyrics?, netease: NeteaseSide): Resolved? {
         if (amllDoc == null || !isWordByWord(amllDoc)) return null
-        return resolve(Candidate(amllDoc, fromAmll = true), netease)
+        return resolve(Candidate(amllDoc, LyricSource.Amll), netease)
     }
 
     /** A lyric document plus which source it came from. */
-    private class Candidate(val lyrics: SyncedLyrics, val fromAmll: Boolean)
+    private class Candidate(val lyrics: SyncedLyrics, val source: LyricSource) {
+        /** True when the document came from the AMLL TTML DB. */
+        val fromAmll: Boolean get() = source == LyricSource.Amll
+    }
 
     /** The NetEase side of the load: its raw payload, plus the pieces derived from it. */
     private inner class NeteaseSide(val bundle: LyricBundle?) {
@@ -313,8 +348,15 @@ class LyricsRepository(
         val translation: String? get() = bundle?.wordTranslation ?: bundle?.translation
     }
 
-    /** A resolved document, plus whether its timing was trustworthy enough to cache. */
-    private class Resolved(val lyrics: SyncedLyrics, val trustworthy: Boolean)
+    /** A resolved document, whether its timing was trustworthy, and which source produced it. */
+    private class Resolved(
+        val lyrics: SyncedLyrics,
+        val trustworthy: Boolean,
+        val source: LyricSource,
+    )
+
+    /** A document from the Kuwo/Kugou fallback, with which of the two supplied it. */
+    private class ExtraDoc(val document: SyncedLyrics, val source: LyricSource)
 
     /**
      * Takes whichever of the two sources produces a usable document first.
@@ -331,8 +373,10 @@ class LyricsRepository(
         netease: Deferred<NeteaseSide>,
         amll: Deferred<SyncedLyrics?>,
     ): Candidate? = raceFirstOf(
-        first = { netease.await().doc?.takeIf { it.lines.isNotEmpty() }?.let { Candidate(it, fromAmll = false) } },
-        second = { amll.await()?.takeIf { it.lines.isNotEmpty() }?.let { Candidate(it, fromAmll = true) } },
+        first = { netease.await().doc?.takeIf { LyricPinRules.isPaintable(it.lines.size) }
+            ?.let { Candidate(it, LyricSource.Netease) } },
+        second = { amll.await()?.takeIf { LyricPinRules.isPaintable(it.lines.size) }
+            ?.let { Candidate(it, LyricSource.Amll) } },
     )
 
     /**
@@ -407,7 +451,7 @@ class LyricsRepository(
             fromAmll = candidate.fromAmll,
             referenceResolved = netease.bundle != null,
         )
-        return Resolved(merged, trustworthy)
+        return Resolved(merged, trustworthy, candidate.source)
     }
 
     /**
@@ -430,7 +474,51 @@ class LyricsRepository(
      * session.
      */
     private fun storeIfTrustworthy(trackId: Long, resolved: Resolved) {
-        if (resolved.trustworthy) store(trackId, resolved.lyrics)
+        if (resolved.trustworthy) store(trackId, resolved.lyrics, resolved.source)
+    }
+
+    /** Drops the pin for [trackId] at the start of a fresh load (a retry is a new decision). */
+    private fun resetPin(trackId: Long) {
+        synchronized(pins) { pins.remove(trackId) }
+    }
+
+    /** The source that produced the cached document, or NetEase when it is unknown. */
+    private fun sourceOf(trackId: Long): LyricSource =
+        synchronized(cachedSources) { cachedSources[trackId] } ?: LyricSource.Netease
+
+    /**
+     * Applies the pin rule and, when it allows the document, hands it to [callback].
+     *
+     * Every path that can put lyric text on screen goes through here: the first document, the
+     * same-source word-by-word upgrade, and the late deliveries. A cross-source document after
+     * first paint is dropped (and logged), which is what stops the mid-song source swap; a fragment
+     * (`< 2` lines) is dropped before it can ever become the visible document.
+     *
+     * @return true when the document was accepted (and painted when a callback was supplied).
+     */
+    private fun deliver(
+        trackId: Long,
+        lyrics: SyncedLyrics?,
+        source: LyricSource,
+        callback: ((SyncedLyrics) -> Unit)?,
+    ): Boolean {
+        if (lyrics == null || !LyricPinRules.isPaintable(lyrics.lines.size)) return false
+        val wordByWord = isWordByWord(lyrics)
+        val decision = synchronized(pins) {
+            val decision = LyricPinRules.decide(pins[trackId], source, wordByWord)
+            if (decision != LyricPinDecision.DifferentProviderBlocked) {
+                pins[trackId] = PinnedLyric(source, wordByWord)
+            }
+            decision
+        }
+        runCatching {
+            log?.recordDiagnostic(
+                "stage=lyric pinned=${source.tag} reason=${decision.tag} trackId=$trackId",
+            )
+        }
+        if (decision == LyricPinDecision.DifferentProviderBlocked) return false
+        runCatching { callback?.invoke(lyrics) }
+        return true
     }
 
     /**
@@ -461,12 +549,17 @@ class LyricsRepository(
      * own 6s/source and 10s/total budget. Returns null when there is no playing track to search for, no related
      * candidate, or no decodable document — the existing empty state then remains the honest answer.
      */
-    private suspend fun extraFallback(track: Track?): SyncedLyrics? {
+    private suspend fun extraFallback(track: Track?): ExtraDoc? {
         val provider = extraLyrics ?: return null
         val target = track ?: return null
         val payload = withTimeoutOrNull(EXTRA_LYRIC_WAIT_MS) { provider.fetch(target) } ?: return null
-        return extraPayloadToDocument(payload)
+        val document = extraPayloadToDocument(payload) ?: return null
+        return ExtraDoc(document, extraSource(payload.provider))
     }
+
+    /** Maps a Kuwo/Kugou payload tag to its [LyricSource] for the pin rule and the log. */
+    private fun extraSource(provider: String): LyricSource =
+        if (provider == ExtraLyricsProvider.KG) LyricSource.Kugou else LyricSource.Kuwo
 
     /** A late word-by-word answer from Kuwo/Kugou upgrades a line-level document without making the caller wait. */
     private fun launchExtraUpgrade(
@@ -483,8 +576,10 @@ class LyricsRepository(
             }.getOrNull() ?: return@launch
             val document = runCatching { extraPayloadToDocument(payload) }.getOrNull() ?: return@launch
             if (!isWordByWord(document)) return@launch
-            store(trackId, document)
-            runCatching { onUpgraded(document) }
+            val source = extraSource(payload.provider)
+            if (deliver(trackId, document, source, onUpgraded)) {
+                store(trackId, document, source)
+            }
         }
     }
 
@@ -516,15 +611,16 @@ class LyricsRepository(
         provider: ProviderLyrics,
         onFirstDoc: ((SyncedLyrics) -> Unit)?,
     ): SyncedLyrics? {
-        val cached = cachedLyrics(trackId)
+        val cached = cachedLyrics(trackId)?.takeIf { LyricPinRules.isPaintable(it.lines.size) }
         if (cached != null && isWordByWord(cached)) return cached
 
         val payload = withTimeoutOrNull(PROVIDER_LYRIC_WAIT_MS) { provider.fetch(trackId) }
         val document = payload?.let { toProviderDocument(it) }
         if (document != null) {
-            store(trackId, document)
-            onFirstDoc?.invoke(document)
-            return document
+            if (deliver(trackId, document, LyricSource.Tx, onFirstDoc)) {
+                store(trackId, document, LyricSource.Tx)
+                return document
+            }
         }
 
         // Provider lyric failed or absent: try the existing NetEase lyric path with the *matched* NetEase song. The
@@ -534,11 +630,12 @@ class LyricsRepository(
             val netease = NeteaseSide(fetchBundle(neteaseId))
             val candidate = netease.doc?.takeIf { it.lines.isNotEmpty() }
             if (candidate != null) {
-                val resolved = resolve(Candidate(candidate, fromAmll = false), netease)
+                val resolved = resolve(Candidate(candidate, LyricSource.Netease), netease)
                 if (resolved != null) {
-                    store(trackId, resolved.lyrics)
-                    onFirstDoc?.invoke(resolved.lyrics)
-                    return resolved.lyrics
+                    if (deliver(trackId, resolved.lyrics, resolved.source, onFirstDoc)) {
+                        store(trackId, resolved.lyrics, resolved.source)
+                        return resolved.lyrics
+                    }
                 }
             }
         }
@@ -621,7 +718,10 @@ class LyricsRepository(
 
     private fun cachedLyrics(trackId: Long): SyncedLyrics? = synchronized(memory) { memory[trackId] }
 
-    private fun store(trackId: Long, lyrics: SyncedLyrics) {
+    private fun store(trackId: Long, lyrics: SyncedLyrics, source: LyricSource) {
+        // A fragment is never worth caching: caching it would make the next load paint it, and the
+        // pin rule exists precisely to stop fragments from becoming the visible document.
+        if (!LyricPinRules.isPaintable(lyrics.lines.size)) return
         synchronized(memory) {
             memory[trackId] = lyrics
             while (memory.size > MEMORY_CACHE) {
@@ -629,6 +729,7 @@ class LyricsRepository(
                 memory.remove(oldest)
             }
         }
+        synchronized(cachedSources) { cachedSources[trackId] = source }
     }
 
     /** True when the lyrics carry syllable-level timing (i.e. render as karaoke). */

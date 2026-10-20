@@ -1939,9 +1939,13 @@ private fun LyricOffsetSheet(
  *
  * `basicMarquee` measures the text against its incoming constraint and **does nothing when the text
  * fits**, which is the whole requirement: a short title stays the old static line, a long one
- * scrolls. The parameters are a reading pace, not a ticker: a 1.2 s initial delay (the identity
- * cross-fade is 140 ms, so the new title has settled before it starts moving), 40 dp/s (slow enough
- * to read a 26 sp line), a 2 s pause and 32 dp of blank before each repeat, forever.
+ * scrolls. One pass flows straight into the next (no repeat delay — only the 32 dp spacing between
+ * the tail and the head), at 40 dp/s, slow enough to read a 26 sp line. A first 1.2 s pause lets the
+ * 140 ms identity cross-fade settle before the title moves.
+ *
+ * While it scrolls, a 20 dp `DstIn` edge mask dissolves the text into the background instead of
+ * clipping it; the mask is only composed when the measured line actually overflows, so a short title
+ * has no fade and no offscreen layer.
  *
  * With system animations off `basicMarquee` rests at offset 0, and the `Clip` overflow it needs would
  * cut a word mid-letter — so the fallback is the previous presentation, `Ellipsis`. The check is the
@@ -1953,6 +1957,9 @@ private fun LyricOffsetSheet(
  * The caller keys this by track id, so a new title starts its marquee from the beginning instead of
  * inheriting the previous title's offset.
  */
+/** Short, soft dissolve at each end of a scrolling title; only used when the title overflows. */
+private val MARQUEE_EDGE_FADE = 20.dp
+
 @Composable
 private fun MarqueeTrackTitle(
     text: String,
@@ -1961,33 +1968,76 @@ private fun MarqueeTrackTitle(
     modifier: Modifier = Modifier,
 ) {
     val animatorsOn = remember { ValueAnimator.areAnimatorsEnabled() }
-    Text(
-        text = text,
-        fontFamily = SFPro,
-        fontWeight = fontWeight,
-        fontSize = fontSize,
-        color = Color.White,
-        maxLines = 1,
-        // The marquee needs a single unwrapped line so it can measure the text wider than the box.
-        softWrap = false,
-        // `Clip` is what lets the measured line go past the edge; an ellipsis would truncate the text
-        // that is about to scroll. When animations are off we fall back to `Ellipsis` instead of
-        // leaving a hard cut at the edge.
-        overflow = if (animatorsOn) TextOverflow.Clip else TextOverflow.Ellipsis,
-        modifier = modifier.then(
-            if (animatorsOn) {
-                Modifier.basicMarquee(
-                    iterations = Int.MAX_VALUE,
-                    repeatDelayMillis = 2_000,
-                    initialDelayMillis = 1_200,
-                    spacing = MarqueeSpacing(32.dp),
-                    velocity = 40.dp,
-                )
-            } else {
-                Modifier
-            },
-        ),
-    )
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val measurer = rememberTextMeasurer()
+    val style = remember(fontWeight, fontSize) {
+        TextStyle(fontFamily = SFPro, fontWeight = fontWeight, fontSize = fontSize)
+    }
+    // Overflow is measured once per (text, style, container width), never per frame — and with the
+    // same comparison the marquee modifier itself makes (unbounded intrinsic width vs the container),
+    // so the edge mask and the scroll can only switch on together.
+    BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
+        val containerPx = with(density) { maxWidth.toPx() }
+        val overflows = remember(text, style, containerPx) {
+            measurer.measure(
+                text = text,
+                style = style,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Clip,
+            ).size.width.toFloat() > containerPx
+        }
+        val scrolling = animatorsOn && overflows
+        val edgePx = with(density) { MARQUEE_EDGE_FADE.toPx() }
+        Text(
+            text = text,
+            fontFamily = SFPro,
+            fontWeight = fontWeight,
+            fontSize = fontSize,
+            color = Color.White,
+            maxLines = 1,
+            // The marquee needs a single unwrapped line so it can measure the text wider than the box.
+            softWrap = false,
+            // `Clip` is what lets the measured line go past the edge; an ellipsis would truncate the
+            // text that is about to scroll. When it fits (or animations are off) we use `Ellipsis`,
+            // so a static title is byte-for-byte the old presentation, fade-free.
+            overflow = if (scrolling) TextOverflow.Clip else TextOverflow.Ellipsis,
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(
+                    if (scrolling) {
+                        Modifier
+                            // Offscreen, so the DstIn edge mask cannot erase anything drawn behind
+                            // the title; the layer is only allocated for an actually scrolling title.
+                            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                            .drawWithContent {
+                                drawContent()
+                                val edge = (edgePx / size.width).coerceIn(0f, 0.5f)
+                                drawRect(
+                                    brush = Brush.horizontalGradient(
+                                        0f to Color.Transparent,
+                                        edge to Color.White,
+                                        1f - edge to Color.White,
+                                        1f to Color.Transparent,
+                                    ),
+                                    blendMode = BlendMode.DstIn,
+                                )
+                            }
+                            .basicMarquee(
+                                iterations = Int.MAX_VALUE,
+                                // No gap between passes: the next pass flows straight out of the
+                                // previous one, with only `spacing` between the tail and the head.
+                                repeatDelayMillis = 0,
+                                initialDelayMillis = 1_200,
+                                spacing = MarqueeSpacing(32.dp),
+                                velocity = 40.dp,
+                            )
+                    } else {
+                        Modifier
+                    },
+                ),
+        )
+    }
 }
 
 @Composable

@@ -65,7 +65,7 @@ class AppContainer(val appContext: Context) {
     }
 
     val lyrics: LyricsRepository by lazy {
-        LyricsRepository(appContext, client, providerLyrics, extraLyrics)
+        LyricsRepository(appContext, client, providerLyrics, extraLyrics, lxLog)
     }
 
     val artwork: ArtworkLoader by lazy { ArtworkLoader(appContext) }
