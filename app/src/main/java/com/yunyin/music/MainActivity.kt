@@ -23,11 +23,11 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.Row
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -63,6 +63,7 @@ import com.yunyin.music.ui.CollectionUiState
 import com.yunyin.music.ui.PlayerViewModel
 import com.yunyin.music.ui.components.CrossfadeContent
 import com.yunyin.music.ui.components.FloatingChromeBottomGap
+import com.yunyin.music.ui.components.FloatingChromeGap
 import com.yunyin.music.ui.components.FloatingChromePlaceholder
 import com.yunyin.music.ui.components.FloatingMiniPlayer
 import com.yunyin.music.ui.components.FloatingTabBar
@@ -109,11 +110,12 @@ import kotlinx.coroutines.launch
 /**
  * Single-activity host.
  *
- * Navigation is a small explicit state machine rather than a nav graph: there are two tabs in the
- * bottom bar (home and library), a search screen reached from the home screen's search box, two
- * full-screen presentations (player, settings/login) and an optional collection page, so a graph would
- * add indirection without removing a decision. Overlays are animated in and out while the tab content
- * stays mounted, which is what makes the player feel like it rises over the app instead of replacing it.
+ * Navigation is a small explicit state machine rather than a nav graph: there are two screen tabs in the
+ * bottom bar (home and library) plus the 心动模式 bar action, a search screen reached from the home
+ * screen's search box, two full-screen presentations (player, settings/login) and an optional collection
+ * page, so a graph would add indirection without removing a decision. Overlays are animated in and out
+ * while the tab content stays mounted, which is what makes the player feel like it rises over the app
+ * instead of replacing it.
  */
 class MainActivity : ComponentActivity() {
 
@@ -200,6 +202,9 @@ class MainActivity : ComponentActivity() {
         var lastPlaylistId by remember { mutableStateOf<Long?>(null) }
         var showLyrics by remember { mutableStateOf(false) }
         var showQueue by remember { mutableStateOf(false) }
+        // True while the playback queue is a 心动模式 queue. The bar's 心动模式 slot uses it to show the
+        // queue that already exists instead of spending another request; any normal play clears it.
+        var beatModeActive by remember { mutableStateOf(false) }
         var showSettings by remember { mutableStateOf(false) }
         var showLogin by remember { mutableStateOf(false) }
         var account by remember { mutableStateOf(container.settings.account) }
@@ -657,6 +662,9 @@ class MainActivity : ComponentActivity() {
                     started = true
                     showPlayer = true
                     lastPlaylistId = playlistId
+                    // A normal queue replacement leaves beat mode; 心动模式's own path sets this back on
+                    // after this returns, so the bar slot shows the queue that exits.
+                    beatModeActive = false
                     // Record locally so the library's "最近播放" reflects real plays.
                     container.playHistory.record(track)
                     appViewModel.refreshRecentTracks()
@@ -680,8 +688,11 @@ class MainActivity : ComponentActivity() {
          * request, an expired cookie gets its own message, and any other API answer is reported verbatim.
          * Replacing the queue through [play] keeps the existing guarantees (history, downloads, lyrics, the
          * sleep timer applies to the new queue) because it is the same path every other play uses.
+         *
+         * [onStarted] runs only after the new queue has actually started, so an entry point that also wants
+         * to *show* the queue (the bar's 心动模式 slot) opens it on success and stays put on failure.
          */
-        fun startBeatMode(explicitPlaylistId: Long?) {
+        fun startBeatMode(explicitPlaylistId: Long?, onStarted: () -> Unit = {}) {
             val seed = container.player.state.value.current
             if (seed == null) {
                 toast(BeatModeRules.NO_TRACK_MESSAGE)
@@ -727,7 +738,11 @@ class MainActivity : ComponentActivity() {
                                 toast(BeatModeRules.HYDRATION_MESSAGE)
                             } else {
                                 val started = play(seed, queue)
-                                if (started) toast("已开启心动模式")
+                                if (started) {
+                                    beatModeActive = true
+                                    toast("已开启心动模式")
+                                    onStarted()
+                                }
                             }
                         }
                         is NetResult.Err -> toast(result.message)
@@ -737,6 +752,27 @@ class MainActivity : ComponentActivity() {
                     toast("心动模式启动失败：${error.message ?: "未知错误"}")
                 }
             }
+        }
+
+        /**
+         * The bar's 心动模式 slot.
+         *
+         * The resulting queue is the point of the entry: with no beat-mode queue installed the host starts
+         * it through the same [startBeatMode] the player and playlist sheets use (no second fetch path),
+         * and opens the playback queue once the replacement has actually started. When a beat-mode queue
+         * is already live the slot opens **that** queue instead of fetching again — the tap is a view of
+         * the mode, not a refresh button. A guest is answered with 请先登录 here, before any request.
+         */
+        fun openBeatMode() {
+            if (container.settings.cookie.isBlank()) {
+                toast(BeatModeRules.GUEST_MESSAGE)
+                return
+            }
+            if (beatModeActive) {
+                showQueue = true
+                return
+            }
+            startBeatMode(explicitPlaylistId = null, onStarted = { showQueue = true })
         }
 
         // 心动模式 entry points: the player's action sheet passes null (the host falls back to the queue's
@@ -849,38 +885,31 @@ class MainActivity : ComponentActivity() {
             /**
              * Floating chrome: liquid-glass panels that float above the content.
              *
-             * **One horizontal row**, as the reference's chrome is: the tab capsule wraps its two tabs on
-             * the left and the right-hand weighted slot holds the mini player — or, while nothing is
-             * loaded, the placeholder capsule of the same glass and height — so the row reads as one
-             * line in either state. Overlaid rather than laid out in a column, which is what makes it
-             * float — the lists scroll underneath and their colour comes through the material. The
-             * bottom padding of each screen keeps its last rows clear of the chrome. `backdrop` captures
-             * the window underneath them, and both panels draw that same capture through the reference's
-             * material, so what shows through is a blurred field rather than readable rows.
+             * **Two rows**, the arrangement the user asked to restore: a full-width now-playing capsule on
+             * top — the mini player, or the same-glass placeholder while nothing is loaded — and the tab
+             * capsule beneath it. Both rows are [FloatingChromeHeight] tall and separated by
+             * [FloatingChromeGap], so the stack reads as one piece of chrome. Overlaid rather than laid out
+             * in the page, which is what makes it float — the lists scroll underneath and their colour
+             * comes through the material. The bottom padding of each screen keeps its last rows clear of
+             * the chrome. `backdrop` captures the window underneath them, and every panel draws that same
+             * capture through the reference's material, so what shows through is a blurred field rather
+             * than readable rows.
              */
-            Row(
+            Column(
                 Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
                     .navigationBarsPadding()
-                    // Inset once, here, rather than on each panel: the bar and the mini player share
-                    // the same left/right margin now that they share the row.
+                    // Inset once, here, rather than on each panel: the now-playing row is full-width and
+                    // the tab capsule is centred inside this same margin.
                     .padding(horizontal = TabBarInset)
                     .padding(bottom = FloatingChromeBottomGap),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(FloatingChromeGap),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(FloatingChromeGap),
             ) {
-                // The bar wraps its two tabs, so it takes only the width its slots need.
-                FloatingTabBar(
-                    selected = tab,
-                    onSelect = { tab = if (showSettings) tab else it; showSettings = false },
-                    backdrop = bottomBackdrop,
-                )
-
-                // The right half of the row: the mini player when a track is loaded, and the placeholder
-                // capsule when it is not. The weighted slot itself is unconditional — it is always
-                // occupied, so the row never collapses to just the bar and never leaves a gap waiting
-                // for a card (the empty right-hand side the user circled).
+                // Top row: the now-playing capsule. The row itself is unconditional — its contents
+                // cross-fade between the placeholder and the card — so the chrome never collapses to just
+                // the tab bar and never leaves a gap waiting for a card (the empty row the user circled).
                 //
                 // 0 while only the placeholder is showing, 1 while the mini player is fully in. The two
                 // contents cross-fade against each other — the placeholder's content alpha is the exact
@@ -891,11 +920,11 @@ class MainActivity : ComponentActivity() {
                     animationSpec = tween(durationMillis = if (hasTrack) 200 else 160),
                     label = "chrome-swap",
                 )
-                Box(Modifier.weight(1f)) {
-                    // Under the card, always: the same glass, the same weighted width and the same
-                    // height, so the slot reads as one line before the first track and the card's exit
-                    // fades down onto a panel instead of revealing a hole. Its material stays opaque
-                    // through the swap; only the label/icon fade (see `chromeSwap`).
+                Box(Modifier.fillMaxWidth()) {
+                    // Under the card, always: the same glass, the same full width and the same height,
+                    // so the row reads as one panel before the first track and the card's exit fades down
+                    // onto a panel instead of revealing a hole. Its material stays opaque through the
+                    // swap; only the label/icon fade (see `chromeSwap`).
                     CompositionLocalProvider(
                         LocalChromePlaceholderContentAlpha provides { 1f - chromeSwap },
                     ) {
@@ -907,11 +936,11 @@ class MainActivity : ComponentActivity() {
                     // a jump. Both children are exactly the row's height, so the transition can never
                     // resize the row in either state.
                     // Fully qualified because this call sits inside the Box's scope, where the bare
-                    // name also resolves to the RowScope overload the outer `Row` makes implicit — and
-                    // that overload cannot take an implicit receiver through the Box. The unscoped
+                    // name also resolves to the ColumnScope overload the outer Column makes implicit —
+                    // and that overload cannot take an implicit receiver through the Box. The unscoped
                     // overload is the one whose entrance grows from nothing without claiming a slot.
                     // The slide shares the fade's clock — one surface, one duration — and `it / 2` is
-                    // half the row's height, so the card rises out of the slot rather than across it.
+                    // half the row's height, so the card rises into the row rather than across it.
                     androidx.compose.animation.AnimatedVisibility(
                         visible = hasTrack,
                         enter = fadeIn(tween(200)) + slideInVertically(tween(200)) { it / 2 },
@@ -926,6 +955,16 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                 }
+
+                // Bottom row: the tab capsule wraps its three slots (主页 / 资料库 / 心动模式) and takes
+                // only the width those slots need; the column centres it under the full-width row above.
+                FloatingTabBar(
+                    selected = tab,
+                    onSelect = { tab = if (showSettings) tab else it; showSettings = false },
+                    onBeatMode = { openBeatMode() },
+                    beatModeSignedIn = beatModeActions.signedIn,
+                    backdrop = bottomBackdrop,
+                )
             }
 
             // ------------------------------------------------ overlays
@@ -1668,15 +1707,6 @@ class MainActivity : ComponentActivity() {
 private const val SPLASH_MIN_MS = 1100L
 private const val SPLASH_MAX_MS = 6000L
 private const val SPLASH_EXIT_MS = 480
-
-/**
- * Gap between the two panels of the chrome's one row (the tab capsule and the now-playing slot).
- *
- * The chrome's height and its bottom gap live with the chrome itself, in `ui/components/LiquidGlass.kt`
- * (`FloatingChromeHeight` and `FloatingChromeBottomGap`), because scrolling content reads them through
- * `chromeContentBottomPadding()`. The screen-edge inset is [TabBarInset], applied once to the row.
- */
-private val FloatingChromeGap = 8.dp
 
 /**
  * Minimal `ViewModelProvider.Factory` for the two view models, both container-backed.

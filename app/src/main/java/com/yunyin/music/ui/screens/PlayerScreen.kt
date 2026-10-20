@@ -8,13 +8,14 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -324,7 +325,7 @@ fun PlayerScreen(
                         targetValue = 0f,
                         // Apple's 0.5s / bounce 0.2 spring: dampingRatio 0.8 is a subtle
                         // overshoot, stiffness 400 settles in about half a second.
-                        animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f),
+                        animationSpec = Motion.SpringSettle,
                     ) { value, _ ->
                         dragDistance = value
                     }
@@ -360,6 +361,10 @@ fun PlayerScreen(
             WindowInsets.systemBars.getTop(this).toDp() +
                 WindowInsets.systemBars.getBottom(this).toDp()
         }
+        // The portrait artwork stack measures its spacing against the same available height. Captured
+        // here because this is the scope where the constraints are readable; the stack itself is
+        // composed further down, where `maxHeight` is not in scope.
+        val artworkAvailableHeight = (maxHeight - systemBarInset).coerceAtLeast(0.dp)
         // The lyrics area is the whole viewport in portrait, and the viewport minus the system
         // bars in landscape, where the row holding it is inset for them. Kept as a dp magnitude for
         // `lyricTypeScale`.
@@ -903,17 +908,32 @@ fun PlayerScreen(
                             .statusBarsPadding()
                             .navigationBarsPadding(),
                     ) {
-                        Spacer(Modifier.height(56.dp))
+                        // Vertical rhythm: one measured rule for the whole portrait artwork stack
+                        // (see [PlayerArtworkLayoutRules]). The old fixed 56dp spacer plus a
+                        // `weight(1f)` artwork region whose size was width-capped is what put a dead
+                        // band above the cover and a second one between the cover and the title.
+                        // Both spacing values and the cover size come from the measured rule; the
+                        // available height was captured at the top of the player for this stack.
+                        Spacer(
+                            Modifier.height(
+                                PlayerArtworkLayoutRules.topInset(artworkAvailableHeight),
+                            ),
+                        )
 
                         BoxWithConstraints(
                             Modifier
-                                .weight(1f)
+                                .weight(1f, fill = false)
                                 .fillMaxWidth(),
                             contentAlignment = Alignment.TopCenter,
                         ) {
-                            val artSize = minOf(maxWidth * 0.87f, maxHeight)
+                            // `fill = false`: the region is measured against the height left after
+                            // the title row and the transport block, and the cover is the smaller of
+                            // the width fraction and that height — a short screen shrinks the cover
+                            // and can never clip the controls. On a tall screen the leftover height
+                            // sits below the controls, never between the cover and its title.
+                            val artSize = PlayerArtworkLayoutRules.artworkSize(maxWidth, maxHeight)
                             ArtworkWithGestures(
-                                artSize = minOf(maxWidth * 0.87f, maxHeight),
+                                artSize = artSize,
                                 track = track,
                                 cover = cover,
                                 loader = loader,
@@ -931,6 +951,12 @@ fun PlayerScreen(
                             )
 
                         }
+
+                        Spacer(
+                            Modifier.height(
+                                PlayerArtworkLayoutRules.coverTitleGap(artworkAvailableHeight),
+                            ),
+                        )
 
                         TitleBlock(
                             track = track,
@@ -2161,6 +2187,28 @@ private fun QualityRow(
     }
 }
 
+/**
+ * Press feedback for the transport controls: the control scales to [pressedScale] while held and back
+ * on release, [Motion.PressDuration] each way with the app's ease-out.
+ *
+ * The ripple alone is a paint-level acknowledgement on a dark panel; a small scale is what makes the
+ * press feel physical on the control users hit most often. 0.94 is subtle enough not to read as the
+ * button sinking into the screen, and it composes on top of the ripple rather than replacing it.
+ */
+@Composable
+private fun rememberPressScale(
+    interaction: MutableInteractionSource,
+    pressedScale: Float = 0.94f,
+): Float {
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) pressedScale else 1f,
+        animationSpec = tween(Motion.PressDuration, easing = Motion.EaseOut),
+        label = "transport-press-scale",
+    )
+    return scale
+}
+
 @Composable
 private fun TransportButton(
     icon: ImageVector,
@@ -2171,8 +2219,13 @@ private fun TransportButton(
     // A white, unbounded ripple: the default indication is a dark bounded one, which showed as a
     // black rectangle under the glyph on the dark control bar.
     val ripple = rememberControlRipple()
+    val interaction = remember { MutableInteractionSource() }
+    val scale = rememberPressScale(interaction)
     Box(
-        Modifier.size(64.dp).clickable(indication = ripple, interactionSource = null, onClick = onClick),
+        Modifier
+            .size(64.dp)
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .clickable(interactionSource = interaction, indication = ripple, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Icon(icon, contentDescription = description, tint = Color.White, modifier = Modifier.size(size))
@@ -2182,8 +2235,13 @@ private fun TransportButton(
 @Composable
 private fun PlayPauseButton(isPlaying: Boolean, isBuffering: Boolean, onClick: () -> Unit) {
     val ripple = rememberControlRipple()
+    val interaction = remember { MutableInteractionSource() }
+    val scale = rememberPressScale(interaction)
     Box(
-        Modifier.size(72.dp).clickable(indication = ripple, interactionSource = null, onClick = onClick),
+        Modifier
+            .size(72.dp)
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .clickable(interactionSource = interaction, indication = ripple, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         // Cross-faded so pressing it reads as the control changing state rather than the glyph

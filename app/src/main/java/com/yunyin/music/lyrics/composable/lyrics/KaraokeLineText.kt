@@ -57,6 +57,7 @@ import com.yunyin.music.lyrics.utils.easing.DipAndRise
 import com.yunyin.music.lyrics.utils.easing.Swell
 import com.yunyin.music.lyrics.utils.isPunctuation
 import com.yunyin.music.lyrics.utils.isRtl
+import com.yunyin.music.ui.theme.Motion
 import kotlin.math.roundToInt
 
 private const val FixedSimpleAnimationDurationMs = 700f
@@ -478,26 +479,37 @@ fun KaraokeLineText(
                 }
             }
 
+            // Accompaniment (duet / backing-vocal) lines enter and leave while the line is sung, so
+            // this is UI motion on a fast, repeated surface: 220ms with the app's ease-out, not the
+            // upstream 600ms bare tween (default easing > 300ms is the audit's "sluggish" pattern).
+            // `expandVertically`/`shrinkVertically` are kept because they are what stop the lines
+            // below from jumping when a line appears; shortening them shortens that layout churn too.
             AnimatedVisibility(
                 visible = isAccompanimentVisible,
                 enter = scaleIn(
-                    tween(600),
+                    tween(Motion.CrossfadeDuration, easing = Motion.EaseOut),
                     initialScale = 0.92f,
                     transformOrigin = TransformOrigin(
                         if (isRightAligned) 1f else 0f, if (isBefore) 1f else 0f
                     )
-                ) + fadeIn(tween(600)) + slideInVertically(
-                    tween(600)
-                ) + expandVertically(tween(600), if (isBefore) Alignment.Top else Alignment.Bottom),
+                ) + fadeIn(tween(Motion.CrossfadeDuration, easing = Motion.EaseOut)) + slideInVertically(
+                    tween(Motion.CrossfadeDuration, easing = Motion.EaseOut)
+                ) + expandVertically(
+                    tween(Motion.CrossfadeDuration, easing = Motion.EaseOut),
+                    if (isBefore) Alignment.Top else Alignment.Bottom,
+                ),
                 exit = scaleOut(
-                    tween(600),
+                    tween(Motion.CrossfadeDuration, easing = Motion.EaseOut),
                     targetScale = 0.92f,
                     transformOrigin = TransformOrigin(
                         if (isRightAligned) 1f else 0f, if (isBefore) 1f else 0f
                     )
-                ) + fadeOut(tween(600)) + slideOutVertically(
-                    tween(600)
-                ) + shrinkVertically(tween(600), if (isBefore) Alignment.Top else Alignment.Bottom),
+                ) + fadeOut(tween(Motion.CrossfadeDuration, easing = Motion.EaseOut)) + slideOutVertically(
+                    tween(Motion.CrossfadeDuration, easing = Motion.EaseOut)
+                ) + shrinkVertically(
+                    tween(Motion.CrossfadeDuration, easing = Motion.EaseOut),
+                    if (isBefore) Alignment.Top else Alignment.Bottom,
+                ),
             ) {
                 LyricsLineItem(
                     isFocused = true,

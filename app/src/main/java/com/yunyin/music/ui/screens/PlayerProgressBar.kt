@@ -1,6 +1,5 @@
 package com.yunyin.music.ui.screens
 
-import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -28,6 +27,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.yunyin.music.ui.theme.Motion
 
 /**
  * Thin, draggable playback progress bar.
@@ -79,11 +79,10 @@ fun PlayerProgressBar(
     // keeps the growth off the layout: only the drawn height changes, never the measured one.
     val thick by animateFloatAsState(
         targetValue = if (dragging) 1f else 0f,
-        animationSpec = tween(
-            durationMillis = 160,
-            // cubic-bezier(0.23, 1, 0.32, 1): strong ease-out, per the audit's press-feedback rule.
-            easing = CubicBezierEasing(0.23f, 1f, 0.32f, 1f),
-        ),
+        // Motion.PressDuration / Motion.EaseOut are the exact values this used to hand-type; the
+        // shared tokens keep every press response on the audit's press-feedback rule (160ms,
+        // cubic-bezier(0.23, 1, 0.32, 1)).
+        animationSpec = tween(Motion.PressDuration, easing = Motion.EaseOut),
         label = "progress-thickness",
     )
 
