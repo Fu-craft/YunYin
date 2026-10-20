@@ -47,6 +47,9 @@ object BeatModeRules {
     /** Shown when no seed exists at all: no current track, no liked songs, no daily recommendations. */
     const val NO_SOURCE_MESSAGE = "没有可用的歌曲，无法开启心动模式"
 
+    /** Immediate acknowledgement when 心动模式 starts: the seed step can need network reads first. */
+    const val STARTING_MESSAGE = "正在开启心动模式…"
+
     /** Array keys that have carried the recommendation across module versions, most specific first. */
     private val LIST_KEYS = listOf("recommend", "songs", "songList", "list", "tracks", "data")
 

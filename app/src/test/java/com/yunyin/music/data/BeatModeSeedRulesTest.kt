@@ -1,6 +1,7 @@
 package com.yunyin.music.data
 
 import com.yunyin.music.core.Track
+import com.yunyin.music.data.net.BeatModeRules
 import com.yunyin.music.data.net.BeatModeSeedRules
 import com.yunyin.music.data.net.BeatSeedPath
 import org.junit.Assert.assertEquals
@@ -55,6 +56,9 @@ class BeatModeSeedRulesTest {
     @Test
     fun `no current, no likes and no recommendations is an error rather than a silent no-op`() {
         assertNull(BeatModeSeedRules.choose(null, emptyList(), emptyList()))
+        // The host must report this specific message: the bug report's "no reaction at all" must never
+        // be reproducible as silence when there is genuinely no seed.
+        assertEquals("没有可用的歌曲，无法开启心动模式", BeatModeRules.NO_SOURCE_MESSAGE)
     }
 
     @Test

@@ -715,6 +715,10 @@ class MainActivity : ComponentActivity() {
                 toast(BeatModeRules.GUEST_MESSAGE)
                 return
             }
+            // Immediate acknowledgement. Everything below is network-bound, and the old version
+            // showed nothing until the whole chain finished, so an idle tap was indistinguishable
+            // from a dead control even though the seed logic did run.
+            toast(BeatModeRules.STARTING_MESSAGE)
             val current = container.player.state.value.current
             val likedPlaylistId = appViewModel.userPlaylists.firstOrNull { it.isLikedSongs }?.id
             val knownPlaylistId = BeatModeRules.resolvePlaylistId(
@@ -724,6 +728,9 @@ class MainActivity : ComponentActivity() {
             )
             scope.launch {
                 runCatching {
+                    container.lxLog.recordDiagnostic(
+                        "stage=beat-mode start current=${current?.id ?: "-"}",
+                    )
                     // The liked playlist is the documented `pid` fallback, and the library may not have
                     // loaded the user's playlists yet, so fetch them once when the id is still unknown.
                     var resolvedLikedPlaylistId = likedPlaylistId
@@ -743,10 +750,31 @@ class MainActivity : ComponentActivity() {
                     // when the previous one has no usable track, so a playing song costs no extra request.
                     var chosen: BeatSeed? = BeatModeSeedRules.choose(current, emptyList(), emptyList())
                     if (chosen == null) {
-                        // The merged (local + cloud) liked list the library already keeps.
-                        val likedTracks = runCatching { container.liked.tracks(currentUid()) }
+                        // Local additions first (already in memory), then the cloud half by **ids
+                        // only**, hydrating just the first id. Hydrating the whole liked library
+                        // (liked ids + one detail batch per 100 songs) here is what made an idle tap
+                        // sit silently for many seconds before the beat request could even start.
+                        val localLiked = runCatching { container.liked.tracks(0) }
                             .getOrDefault(emptyList())
-                        chosen = BeatModeSeedRules.choose(null, likedTracks, emptyList())
+                        chosen = BeatModeSeedRules.choose(null, localLiked, emptyList())
+                        if (chosen == null && currentUid() > 0L) {
+                            val firstCloudLiked = runCatching {
+                                val ids = when (val result = container.client.likedSongIds(currentUid())) {
+                                    is NetResult.Ok -> result.value
+                                    is NetResult.Err -> emptyList()
+                                }
+                                val firstId = ids.firstOrNull { it > 0L } ?: return@runCatching null
+                                when (val result = container.client.songsByIds(listOf(firstId))) {
+                                    is NetResult.Ok -> result.value.firstOrNull()
+                                    is NetResult.Err -> null
+                                }
+                            }.getOrNull()
+                            chosen = BeatModeSeedRules.choose(
+                                current = null,
+                                liked = listOfNotNull(firstCloudLiked),
+                                recommended = emptyList(),
+                            )
+                        }
                     }
                     if (chosen == null) {
                         // `/recommend/songs`: verified live on the deployed instance (HTTP 200 anonymous).
@@ -825,7 +853,12 @@ class MainActivity : ComponentActivity() {
                 toast(BeatModeRules.GUEST_MESSAGE)
                 return
             }
-            if (beatModeActive) {
+            // Only a *live* beat-mode queue is a view to show: with nothing loaded there is no queue
+            // to display, so a stale flag must fall through and start a fresh 心动模式 instead of
+            // opening an empty sheet — that empty sheet, with no other feedback, is exactly the
+            // "no reaction at all" the user reported.
+            if (beatModeActive && container.player.state.value.hasTrack) {
+                toast("已开启心动模式")
                 showQueue = true
                 return
             }
