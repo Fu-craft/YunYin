@@ -43,6 +43,8 @@ data class CollectionUiState(
     val loading: Boolean = true,
     /** True when the signed-in user created this playlist; gates edit/delete/remove affordances. */
     val owned: Boolean = false,
+    /** True only for a real playlist (track + playlist ids exist), so 心动模式 has the ids it needs. */
+    val canBeatMode: Boolean = false,
 )
 
 /** Search tab content. */
@@ -301,6 +303,7 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
             description = playlist.description,
             playCount = playlist.playCount,
             owned = com.yunyin.music.data.playlist.PlaylistOwnership.canEdit(playlist, uid),
+            canBeatMode = true,
         )
         collectionJob = viewModelScope.launch {
             // Progressive: the first batch renders immediately, later batches append in order. A 566/1267-track

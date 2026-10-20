@@ -87,6 +87,7 @@ import com.yunyin.music.ui.components.liquidGlassControl
 import com.yunyin.music.ui.components.rememberControlRipple
 import com.yunyin.music.ui.components.rememberGlassTopBarBackdrop
 import com.yunyin.music.ui.icons.SfIcons
+import com.yunyin.music.ui.beat.LocalBeatModeActions
 import com.yunyin.music.ui.theme.AppleShapes
 import com.yunyin.music.ui.theme.AppTheme
 import com.yunyin.music.ui.theme.SFPro
@@ -301,6 +302,16 @@ fun CollectionScreen(
                     .padding(vertical = 6.dp),
             ) { close ->
                 CollectionMenuRow(icon = SfIcons.Shuffle, label = "随机播放") { close { onShufflePlay() } }
+                // 心动模式 needs a real playlist id. The host provides the action; a guest sees 请先登录
+                // here immediately (the cookie is known without a round trip) and the row is inert.
+                val beatModeActions = LocalBeatModeActions.current
+                if (beatModeActions != null && state.canBeatMode) {
+                    CollectionMenuRow(
+                        icon = SfIcons.HeartFill,
+                        label = if (beatModeActions.signedIn) "心动模式" else "心动模式（请先登录）",
+                        enabled = beatModeActions.signedIn,
+                    ) { close { beatModeActions.start(state.id) } }
+                }
                 CollectionMenuRow(SfIcons.SquareAndArrowUp, "分享歌单") { close { onShare() } }
                 if (onEditPlaylist != null) {
                     CollectionMenuRow(SfIcons.Pencil, "编辑歌单") { close { onEditPlaylist() } }
@@ -321,19 +332,21 @@ private fun CollectionMenuRow(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
     destructive: Boolean = false,
+    enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
     val tint = if (destructive) AppTheme.palette.accent else AppTheme.palette.label
+    val alpha = if (enabled) 1f else 0.35f
     Row(
         Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 18.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(18.dp))
+        Icon(icon, contentDescription = null, tint = tint.copy(alpha = alpha), modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(12.dp))
-        Text(label, fontFamily = SFPro, fontSize = 16.sp, color = tint)
+        Text(label, fontFamily = SFPro, fontSize = 16.sp, color = tint.copy(alpha = alpha))
     }
 }
 

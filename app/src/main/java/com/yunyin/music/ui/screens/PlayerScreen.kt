@@ -105,6 +105,7 @@ import com.yunyin.music.ui.theme.SFPro
 import com.yunyin.music.data.download.DownloadPhase
 import com.yunyin.music.data.download.TrackDownloadState
 import com.yunyin.music.ui.download.LocalDownloadController
+import com.yunyin.music.ui.beat.LocalBeatModeActions
 import com.yunyin.music.ui.playlist.LocalPlaylistActions
 import com.yunyin.music.ui.DownloadState
 import com.mocharealm.accompanist.lyrics.core.model.SyncedLyrics
@@ -1623,6 +1624,18 @@ private fun TrackActionsSheet(
         )
         ActionRow(SfIcons.SquareAndArrowUp, "保存封面", true) {
             close { onSaveCover() }
+        }
+        val beatModeActions = LocalBeatModeActions.current
+        if (beatModeActions != null) {
+            // A guest is known without a round trip: the row says 请先登录 and is inert. The host owns the
+            // request, the queue replacement and the messages.
+            ActionRow(
+                SfIcons.HeartFill,
+                if (beatModeActions.signedIn) "心动模式" else "心动模式（请先登录）",
+                enabled = track != null && beatModeActions.signedIn,
+            ) {
+                close { beatModeActions.start(null) }
+            }
         }
         val playlistActions = LocalPlaylistActions.current
         if (playlistActions != null && track != null) {

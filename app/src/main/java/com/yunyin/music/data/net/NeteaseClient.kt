@@ -528,6 +528,37 @@ class NeteaseClient(
         }
     }
 
+    /**
+     * 心动模式: the personalised "heartbeat" queue for [songId], inside [playlistId] when one is known.
+     *
+     * The deployed instance's route is login-gated (the raw probe and the accepted payload shapes live in
+     * [BeatModeRules]): a guest is rejected locally without a round trip, and a 301/401 from the server is
+     * reported as the two specific login messages rather than a generic error. `pid` is omitted when no
+     * playlist id is known — the server's own answer is then what the user sees. Cache-busted because this
+     * deployment caches module results.
+     */
+    suspend fun beatMode(songId: Long, startSongId: Long, playlistId: Long?): NetResult<List<Track>> {
+        if (settings.cookie.isBlank()) return NetResult.Err(BeatModeRules.GUEST_MESSAGE)
+        val query = buildMap {
+            put("id", "$songId")
+            put("sid", "$startSongId")
+            playlistId?.takeIf { it > 0L }?.let { put("pid", "$it") }
+        }
+        return when (
+            val result = request(
+                "/playmode/intelligence/list",
+                query = RequestCacheBust.withCacheBust(query, System.currentTimeMillis()),
+            )
+        ) {
+            is NetResult.Ok -> {
+                val tracks = JSONArray(BeatModeRules.songObjects(result.value)).mapDetailTracks()
+                if (tracks.isEmpty()) NetResult.Err(BeatModeRules.EMPTY_MESSAGE) else NetResult.Ok(tracks)
+            }
+            is NetResult.Err ->
+                NetResult.Err(BeatModeRules.loginFailureMessage(result.message) ?: result.message)
+        }
+    }
+
     // ---------------------------------------------------------------- playlist writes
     //
     // These are the NeteaseCloudMusicApi mutation endpoints. They take form fields and require the logged-in

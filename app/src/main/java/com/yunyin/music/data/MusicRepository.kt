@@ -562,6 +562,10 @@ class MusicRepository(
 
     suspend fun artistTopSongs(artistId: Long): List<Track> = client.artistTopSongs(artistId).listOrEmpty()
 
+    /** 心动模式 queue for a song inside a playlist (requires a logged-in session on the instance). */
+    suspend fun beatMode(songId: Long, startSongId: Long, playlistId: Long?): NetResult<List<Track>> =
+        client.beatMode(songId, startSongId, playlistId)
+
     suspend fun artistDetail(artistId: Long): ArtistInfo? = client.artistDetail(artistId).valueOrNull()
 
     suspend fun artistSongsPage(artistId: Long, offset: Int, limit: Int, order: String = "time") =

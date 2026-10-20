@@ -53,6 +53,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.yunyin.music.core.NetResult
 import com.yunyin.music.data.SettingsStore
 import com.yunyin.music.data.ShareText
+import com.yunyin.music.data.net.BeatModeRules
 import com.yunyin.music.playback.LocalPlayerController
 import com.yunyin.music.playback.PlaybackUiState
 import com.yunyin.music.ui.AppViewModel
@@ -94,6 +95,8 @@ import com.yunyin.music.ui.screens.SettingsScreen
 import com.yunyin.music.ui.screens.SplashScreen
 import com.yunyin.music.ui.screens.PlayerStyleSheet
 import com.yunyin.music.ui.PlayerStyle
+import com.yunyin.music.ui.beat.BeatModeActions
+import com.yunyin.music.ui.beat.LocalBeatModeActions
 import com.yunyin.music.ui.screens.UpdateSheet
 import com.yunyin.music.ui.theme.AmllTheme
 import com.yunyin.music.ui.theme.AppTheme
@@ -191,6 +194,10 @@ class MainActivity : ComponentActivity() {
 
         var tab by remember { mutableStateOf(PlayerTab.Home) }
         var showPlayer by remember { mutableStateOf(false) }
+        // The playlist the current playback queue was started from, when it was started from one. It is
+        // what 心动模式 uses for `pid` when the player is the entry point; null means "not a playlist"
+        // and the fallback is the liked-songs playlist (or no pid at all).
+        var lastPlaylistId by remember { mutableStateOf<Long?>(null) }
         var showLyrics by remember { mutableStateOf(false) }
         var showQueue by remember { mutableStateOf(false) }
         var showSettings by remember { mutableStateOf(false) }
@@ -636,12 +643,20 @@ class MainActivity : ComponentActivity() {
          * building the queue (e.g. the player service is not yet connected) must surface
          * as a message, not take the app down.
          */
-        fun play(track: com.yunyin.music.core.Track, queue: List<com.yunyin.music.core.Track>) {
+        fun play(
+            track: com.yunyin.music.core.Track,
+            queue: List<com.yunyin.music.core.Track>,
+            /** The playlist this queue came from, for 心动模式's `pid`; null when it did not come from one. */
+            playlistId: Long? = null,
+        ): Boolean {
             val safeQueue = queue.ifEmpty { listOf(track) }
             val index = safeQueue.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
+            var started = false
             runCatching { container.player.playQueue(safeQueue, index) }
                 .onSuccess {
+                    started = true
                     showPlayer = true
+                    lastPlaylistId = playlistId
                     // Record locally so the library's "最近播放" reflects real plays.
                     container.playHistory.record(track)
                     appViewModel.refreshRecentTracks()
@@ -653,7 +668,76 @@ class MainActivity : ComponentActivity() {
 
             // Member-only/无版权 的提示由 PlayerController 统一处理（它会同时调整循环模式
             // 以免 45 秒试听片段无限循环），这里不再重复提示。
+            return started
         }
+
+        /**
+         * Starts 心动模式 for the currently playing song.
+         *
+         * On success the playback queue is **replaced** with the recommended list and playback starts on
+         * the current song (which [BeatModeRules.queueFor] guarantees is in the queue). On any failure the
+         * current queue is untouched and the specific reason is toasted: a guest gets 请先登录 without a
+         * request, an expired cookie gets its own message, and any other API answer is reported verbatim.
+         * Replacing the queue through [play] keeps the existing guarantees (history, downloads, lyrics, the
+         * sleep timer applies to the new queue) because it is the same path every other play uses.
+         */
+        fun startBeatMode(explicitPlaylistId: Long?) {
+            val seed = container.player.state.value.current
+            if (seed == null) {
+                toast(BeatModeRules.NO_TRACK_MESSAGE)
+                return
+            }
+            if (container.settings.cookie.isBlank()) {
+                toast(BeatModeRules.GUEST_MESSAGE)
+                return
+            }
+            val likedPlaylistId = appViewModel.userPlaylists.firstOrNull { it.isLikedSongs }?.id
+            val knownPlaylistId = BeatModeRules.resolvePlaylistId(
+                explicitPlaylistId = explicitPlaylistId,
+                lastPlaylistId = lastPlaylistId,
+                likedPlaylistId = likedPlaylistId,
+            )
+            scope.launch {
+                runCatching {
+                    // The liked playlist is the documented fallback for `pid`, but the library may not have
+                    // loaded the user's playlists yet; fetch them once when the id is still unknown.
+                    var playlistId = knownPlaylistId
+                    if (playlistId == null) {
+                        val uid = currentUid()
+                        if (uid > 0L) {
+                            when (val lists = container.music.userPlaylists(uid)) {
+                                is NetResult.Ok ->
+                                    playlistId = lists.value.firstOrNull { it.isLikedSongs }?.id
+                                is NetResult.Err -> Unit
+                            }
+                        }
+                    }
+                    when (val result = container.music.beatMode(seed.id, seed.id, playlistId)) {
+                        is NetResult.Ok -> {
+                            val queue = BeatModeRules.queueFor(result.value, seed, seed.id)
+                            if (queue.isEmpty()) {
+                                toast(BeatModeRules.EMPTY_MESSAGE)
+                            } else {
+                                val started = play(seed, queue)
+                                if (started) toast("已开启心动模式")
+                            }
+                        }
+                        is NetResult.Err -> toast(result.message)
+                    }
+                }.onFailure { error ->
+                    android.util.Log.e("YunYin", "beat mode failed for ${seed.id}", error)
+                    toast("心动模式启动失败：${error.message ?: "未知错误"}")
+                }
+            }
+        }
+
+        // 心动模式 entry points: the player's action sheet passes null (the host falls back to the queue's
+        // origin / liked playlist), the playlist page passes its own id. Rebuilt when the session changes
+        // so a guest row flips to the real action as soon as a cookie exists.
+        val beatModeActions = BeatModeActions(
+            signedIn = container.settings.cookie.isNotBlank(),
+            start = { playlistId -> startBeatMode(playlistId) },
+        )
 
         /** Signs out of the real account and drops back to a guest session. */
         fun signOut() {
@@ -864,20 +948,27 @@ class MainActivity : ComponentActivity() {
                     }.collectAsState(initial = null to false)
 
                     Surface(Modifier.fillMaxSize(), color = AppTheme.palette.background) {
+                        CompositionLocalProvider(LocalBeatModeActions provides beatModeActions) {
                         CollectionScreen(
                             state = state,
                             loader = container.artwork,
                             onBack = appViewModel::closeCollection,
-                            onTrackClick = { track, index -> play(track, state.tracks) },
+                            onTrackClick = { track, index ->
+                                play(track, state.tracks, state.id.takeIf { state.canBeatMode })
+                            },
                             onPlayAll = {
-                                state.tracks.firstOrNull()?.let { play(it, state.tracks) }
+                                state.tracks.firstOrNull()?.let {
+                                    play(it, state.tracks, state.id.takeIf { state.canBeatMode })
+                                }
                             },
                             onShufflePlay = {
                                 // Shuffle is a player mode, not a one-off ordering: enabling it and
                                 // then starting anywhere is what makes "next" stay random, whereas
                                 // playing a shuffled copy would drift back to the list order.
                                 container.player.toggleShuffle()
-                                state.tracks.randomOrNull()?.let { play(it, state.tracks) }
+                                state.tracks.randomOrNull()?.let {
+                                    play(it, state.tracks, state.id.takeIf { state.canBeatMode })
+                                }
                             },
                             onShare = {
                                 shareText(ShareText.playlist(state.title, state.id), "分享歌单")
@@ -920,6 +1011,7 @@ class MainActivity : ComponentActivity() {
                                 null
                             },
                         )
+                        }
                     }
                 }
             }
@@ -1245,6 +1337,7 @@ class MainActivity : ComponentActivity() {
                 // container, so a download survives navigating away from the player (and the sheet reflects it).
                 val downloadStates by container.downloads.states.collectAsState()
                 CompositionLocalProvider(
+                    LocalBeatModeActions provides beatModeActions,
                     LocalDownloadController provides DownloadController(
                         states = downloadStates,
                         onDownload = { track -> container.downloads.download(track) },
