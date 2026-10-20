@@ -30,6 +30,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -48,6 +50,7 @@ import com.yunyin.music.ui.components.TrackRow
 import com.yunyin.music.ui.components.chromeContentBottomPadding
 import com.yunyin.music.ui.components.glassTopBarTopPadding
 import com.yunyin.music.ui.components.liquidGlassControl
+import com.yunyin.music.ui.components.rememberControlRipple
 import com.yunyin.music.ui.components.rememberGlassTopBarBackdrop
 import com.yunyin.music.ui.icons.SfIcons
 import com.yunyin.music.ui.theme.AppTheme
@@ -74,12 +77,16 @@ fun SearchScreen(
     // their own label (reading the live field state would search the wrong thing).
     onSubmit: (String) -> Unit,
     onClear: () -> Unit,
+    /** Called when 取消 is pressed with an empty query: dismiss search back to Home. */
+    onCancel: () -> Unit = {},
     onRemoveHistory: (String) -> Unit,
     onTrackClick: (Track) -> Unit,
     onLoadMore: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val topBarBackdrop = rememberGlassTopBarBackdrop()
+    val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
 
     Box(modifier = modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().layerBackdrop(topBarBackdrop)) {
@@ -330,12 +337,28 @@ fun SearchScreen(
                     }
                 }
                 Spacer(Modifier.width(12.dp))
+                // Plain text button: no filled chip. The only feedback is the app's unbounded
+                // control ripple (the old default indicator drew a bounded rectangular block).
                 Text(
                     text = "取消",
                     fontFamily = SFPro,
                     fontSize = 16.sp,
                     color = AppTheme.palette.accent,
-                    modifier = Modifier.clickable { onClear() },
+                    modifier = Modifier
+                        .clickable(
+                            indication = rememberControlRipple(bounded = false),
+                            interactionSource = null,
+                        ) {
+                            when (SearchCancelRules.actionFor(state.keyword)) {
+                                SearchCancelAction.ClearKeyword -> onClear()
+                                SearchCancelAction.ReturnHome -> {
+                                    keyboard?.hide()
+                                    focusManager.clearFocus()
+                                    onCancel()
+                                }
+                            }
+                        }
+                        .padding(horizontal = 8.dp, vertical = 10.dp),
                 )
             }
         }

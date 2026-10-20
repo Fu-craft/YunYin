@@ -29,6 +29,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
 import com.yunyin.music.ui.PlayerStyle
 import com.yunyin.music.ui.components.AnimatedSheet
+import com.yunyin.music.ui.components.rememberControlRipple
 import com.yunyin.music.ui.icons.SfIcons
 import com.yunyin.music.ui.theme.AppleShapes
 import com.yunyin.music.ui.theme.AppTheme
@@ -94,8 +95,11 @@ fun PlayerStyleSheet(
             color = secondary,
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(ContinuousRoundedRectangle(12.dp))
-                .clickable(onClick = { close() })
+                .clickable(
+                    indication = rememberControlRipple(bounded = false),
+                    interactionSource = null,
+                    onClick = { close() },
+                )
                 .padding(horizontal = 16.dp, vertical = 14.dp),
         )
     }

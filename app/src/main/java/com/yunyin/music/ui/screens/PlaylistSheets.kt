@@ -35,6 +35,7 @@ import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
 import com.yunyin.music.core.Playlist
 import com.yunyin.music.playback.PlaybackSleepTimerRules
 import com.yunyin.music.ui.components.AnimatedSheet
+import com.yunyin.music.ui.components.rememberControlRipple
 import com.yunyin.music.ui.components.CrossfadeContent
 import com.yunyin.music.ui.components.SheetPlacement
 import com.yunyin.music.ui.theme.AppTheme
@@ -105,7 +106,11 @@ fun PlaylistEditorSheet(
                 color = AppTheme.palette.secondaryLabel,
                 modifier = Modifier
                     .clip(ContinuousRoundedRectangle(AppleShapes.control))
-                    .clickable(enabled = !busy) { if (!busy) close() }
+                    .clickable(
+                        enabled = !busy,
+                        indication = rememberControlRipple(bounded = false),
+                        interactionSource = null,
+                    ) { if (!busy) close() }
                     .padding(horizontal = 16.dp, vertical = 10.dp),
             )
             Spacer(Modifier.width(8.dp))
@@ -247,7 +252,10 @@ fun PlaylistPickerSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(ContinuousRoundedRectangle(AppleShapes.control))
-                .clickable { close() }
+                .clickable(
+                    indication = rememberControlRipple(bounded = false),
+                    interactionSource = null,
+                ) { close() }
                 .padding(vertical = 12.dp),
         )
     }
@@ -288,7 +296,11 @@ fun PlaylistConfirmSheet(
                 color = AppTheme.palette.secondaryLabel,
                 modifier = Modifier
                     .clip(ContinuousRoundedRectangle(AppleShapes.control))
-                    .clickable(enabled = !busy) { if (!busy) close() }
+                    .clickable(
+                        enabled = !busy,
+                        indication = rememberControlRipple(bounded = false),
+                        interactionSource = null,
+                    ) { if (!busy) close() }
                     .padding(horizontal = 16.dp, vertical = 10.dp),
             )
             Spacer(Modifier.width(8.dp))
@@ -373,7 +385,10 @@ fun SleepTimerSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(ContinuousRoundedRectangle(AppleShapes.control))
-                .clickable { close() }
+                .clickable(
+                    indication = rememberControlRipple(bounded = false),
+                    interactionSource = null,
+                ) { close() }
                 .padding(vertical = 12.dp),
         )
     }

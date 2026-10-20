@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
 import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
 import com.yunyin.music.ui.components.AnimatedSheet
+import com.yunyin.music.ui.components.rememberControlRipple
 import com.yunyin.music.ui.components.SheetPlacement
 import com.yunyin.music.ui.icons.SfIcons
 import com.yunyin.music.ui.theme.AppTheme
@@ -95,7 +96,11 @@ fun LxSourceUrlSheet(
                 Modifier
                     .size(40.dp)
                     .clip(ContinuousRoundedRectangle(AppleShapes.control))
-                    .clickable(enabled = !importing) { if (!importing) close() },
+                    .clickable(
+                        enabled = !importing,
+                        indication = rememberControlRipple(bounded = false),
+                        interactionSource = null,
+                    ) { if (!importing) close() },
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(

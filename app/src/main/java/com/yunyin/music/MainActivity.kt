@@ -940,6 +940,9 @@ class MainActivity : ComponentActivity() {
                             onKeywordChange = appViewModel::onKeywordChange,
                             onSubmit = { appViewModel.submitSearch(it) },
                             onClear = { appViewModel.clearSearch() },
+                            // Empty-query 取消 dismisses the search child back to Home through the
+                            // existing tab state (no new navigation mechanism).
+                            onCancel = { appViewModel.clearSearch(); tab = PlayerTab.Home },
                             onRemoveHistory = appViewModel::removeHistory,
                             onTrackClick = { play(it, searchState.results) },
                             onLoadMore = appViewModel::loadMoreSearch,

@@ -1757,9 +1757,8 @@ private fun TrackActionsSheet(
             textAlign = TextAlign.Center,
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(ContinuousRoundedRectangle(AppleShapes.control))
                 .clickable(
-                    indication = rememberControlRipple(bounded = true),
+                    indication = rememberControlRipple(bounded = false),
                     interactionSource = null,
                     onClick = { close() },
                 )
@@ -2291,9 +2290,8 @@ private fun QualitySheet(
             textAlign = TextAlign.Center,
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(ContinuousRoundedRectangle(AppleShapes.control))
                 .clickable(
-                    indication = rememberControlRipple(bounded = true),
+                    indication = rememberControlRipple(bounded = false),
                     interactionSource = null,
                     onClick = { close() },
                 )
