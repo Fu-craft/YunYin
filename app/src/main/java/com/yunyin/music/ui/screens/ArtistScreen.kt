@@ -30,7 +30,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -42,7 +41,6 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -60,7 +58,6 @@ import com.yunyin.music.ui.components.DefaultTopBarTintIntensity
 import com.yunyin.music.ui.components.EmptyState
 import com.yunyin.music.ui.components.GlassTopBar
 import com.yunyin.music.ui.components.glassTopBarTopPadding
-import com.yunyin.music.ui.components.scrollLinkedTitleAlpha
 import com.yunyin.music.ui.components.liquidGlassControl
 import com.yunyin.music.ui.components.rememberControlRipple
 import com.yunyin.music.ui.components.rememberGlassTopBarBackdrop
@@ -279,17 +276,12 @@ fun ArtistScreen(
         // it instead of sampling itself — the collection page's arrangement, reused verbatim.
         ArtistTopBar(
             backdrop = topBarBackdrop,
-            name = state.name.ifBlank { "歌手" },
-            listState = listState,
             onBack = onBack,
             onShuffle = onShufflePlay,
             modifier = Modifier.align(Alignment.TopCenter),
         )
     }
 }
-
-/** The offset of the header's big name from the content's top: 8dp gap + 128dp artwork + 12dp gap. */
-private val HeaderNameTop = 148.dp
 
 /**
  * Rows appended by 加载更多 fade in like Home's shelves (`HomeScreen.shelfAppear`). Placement is off on
@@ -301,57 +293,31 @@ private fun LazyItemScope.appendedRowAppear(): Modifier = Modifier.animateItem(
     placementSpec = null,
 )
 
-/** Distance over which the bar's title fades in once the header name starts sliding under the bar. */
-private val TitleFadeRamp = 44.dp
-
 /**
  * The artist page's pinned bar: the app's progressive-blur strip with the page's controls as liquid
  * glass, matching the collection page.
  *
- * Scroll state is read **here**, scoped to the bar, exactly like [CollectionScreen]'s `TopBar`: a
- * per-frame scroll value read in the page body would recompose the whole 500-row list every frame.
- * Only the bar's title alpha is scroll-driven; the strip's tint is constant because the artist header
- * is a centred circular cover on the page background, so from the first frame everything behind the
- * bar is the page background (the same situation as the settings/search strips), not cover artwork.
+ * Deliberately **icon-only**: the artist's name is already the page's large header, and a second copy
+ * on the blur strip had to fight the background for legibility (the user objected to it twice). Back
+ * disc on the leading edge, shuffle disc on the trailing edge, nothing in between.
  *
- * The title swaps over as the header's own 26sp name slides under the strip: it is invisible while
- * that name is on screen and fully present once it has passed behind the bar, so exactly one name is
- * legible at any scroll position and it never appears as a second copy of a visible title.
+ * No scroll state is read here any more: it existed only for the removed bar title.
  */
 @Composable
 private fun ArtistTopBar(
     backdrop: Backdrop,
-    name: String,
-    listState: LazyListState,
     onBack: () -> Unit,
     onShuffle: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val palette = AppTheme.palette
-    val density = LocalDensity.current
-    val fadeStartPx = with(density) { HeaderNameTop.toPx() }
-    val fadeRampPx = with(density) { TitleFadeRamp.toPx() }
-
-    val titleAlpha by remember(listState, fadeStartPx, fadeRampPx) {
-        derivedStateOf {
-            scrollLinkedTitleAlpha(
-                firstVisibleItemIndex = listState.firstVisibleItemIndex,
-                firstVisibleItemScrollOffset = listState.firstVisibleItemScrollOffset,
-                fadeStartPx = fadeStartPx,
-                fadeRampPx = fadeRampPx,
-            )
-        }
-    }
-
     GlassTopBar(
         backdrop = backdrop,
         tintIntensity = DefaultTopBarTintIntensity,
         modifier = modifier,
     ) {
-        // Back on the leading edge, shuffle on the trailing edge, name **centred** between them:
-        // at rest the bar is icon-only (the header already shows the name); once the header name
-        // scrolls under the strip this bar name fades in as a standard centred navigation title.
-        // The horizontal padding keeps it clear of both 44dp discs.
+        // Two symmetric controls and nothing between them. The full-width strip puts them at the
+        // leading/trailing edges, so the bar reads as back + shuffle rather than as a title with
+        // buttons crowded around it.
         Box(Modifier.fillMaxSize().padding(horizontal = 8.dp)) {
             ArtistBarButton(
                 icon = SfIcons.ChevronDown,
@@ -359,21 +325,6 @@ private fun ArtistTopBar(
                 backdrop = backdrop,
                 onClick = onBack,
                 modifier = Modifier.align(Alignment.CenterStart),
-            )
-            Text(
-                text = name,
-                fontFamily = SFPro,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 17.sp,
-                color = palette.label,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .padding(horizontal = 56.dp)
-                    // Read in the layer phase, so the per-frame fade never recomposes the page.
-                    .graphicsLayer { alpha = titleAlpha },
             )
             ArtistBarButton(
                 icon = SfIcons.Shuffle,
