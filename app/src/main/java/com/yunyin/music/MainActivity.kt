@@ -3,7 +3,6 @@ package com.yunyin.music
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import android.os.SystemClock
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -17,7 +16,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.expandVertically
-import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.shrinkVertically
@@ -96,7 +94,6 @@ import com.yunyin.music.ui.screens.SearchScreen
 import com.yunyin.music.data.lxsource.LxImportResult
 import com.yunyin.music.data.lxsource.LxToggleResult
 import com.yunyin.music.ui.screens.SettingsScreen
-import com.yunyin.music.ui.screens.SplashScreen
 import com.yunyin.music.ui.screens.PlayerStyleSheet
 import com.yunyin.music.ui.PlayerStyle
 import com.yunyin.music.ui.beat.BeatModeActions
@@ -572,10 +569,6 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        // Set once the first-launch session work below finishes. The splash waits on it (and on the
-        // home feed) so the app is never revealed in a half-initialised state.
-        var sessionReady by remember { mutableStateOf(false) }
-
         // Establish a session on first launch: anonymous, so basic playback works before
         // the user signs in. The library tab is always the way in to a real account.
         LaunchedEffect(Unit) {
@@ -611,44 +604,19 @@ class MainActivity : ComponentActivity() {
             }
             // Pull the user's playlists once the real account is known (no-op for guests).
             appViewModel.loadUserPlaylists(account)
-            sessionReady = true
         }
 
-        // ------------------------------------------------------------ launch screen
-        //
-        // Held until the two things a cold start genuinely waits on are done: the session, and the
-        // landing tab's feed. The splash is a *cover* for that work, so it is not a fixed delay —
-        // but a minimum keeps it from flashing past on a warm start (which reads as a glitch), and a
-        // fail-safe cap guarantees a stuck network can never trap the user on it.
-        var splashVisible by remember { mutableStateOf(true) }
-        val splashStartMs = remember { SystemClock.uptimeMillis() }
-        val startupReady = sessionReady && !homeState.loading
-
-        LaunchedEffect(startupReady) {
-            if (!startupReady) return@LaunchedEffect
-            val elapsed = SystemClock.uptimeMillis() - splashStartMs
-            val remaining = (SPLASH_MIN_MS - elapsed).coerceAtLeast(0L)
-            if (remaining > 0L) delay(remaining)
-            splashVisible = false
-        }
-        LaunchedEffect(Unit) {
-            delay(SPLASH_MAX_MS)
-            splashVisible = false
-        }
-
-        // The launch ground is the icon's blue while the app itself follows the system theme, so the
-        // status bar icons have to flip: light icons on the blue splash, then whatever the theme
-        // wants. Without this, a light-mode device shows dark icons on a mid-blue bar — legible, but
-        // not what a first-party app would do, and inconsistent with the dark-mode case.
+        // No in-app launch surface: the platform splash (white + the launcher mark) stays until the
+        // first Compose frame, which is already the real UI. The status bar therefore has to match
+        // the theme from that first frame; `isAppearanceLightStatusBars = true` means DARK icons (a
+        // light bar appearance), which is the right choice for the white window background.
         val darkTheme = androidx.compose.foundation.isSystemInDarkTheme()
-        DisposableEffect(splashVisible, darkTheme) {
+        DisposableEffect(darkTheme) {
             val window = (context as? android.app.Activity)?.window
             val controller = window?.let {
                 androidx.core.view.WindowCompat.getInsetsController(it, it.decorView)
             }
-            // `isAppearanceLightStatusBars = true` means DARK icons (a light bar appearance), so
-            // the splash wants it false and the app wants it to match the theme.
-            controller?.isAppearanceLightStatusBars = !splashVisible && !darkTheme
+            controller?.isAppearanceLightStatusBars = !darkTheme
             onDispose { }
         }
 
@@ -1694,21 +1662,6 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            // ------------------------------------------------ launch screen (topmost)
-            //
-            // The last child, so it starts above every overlay. It fades and scales away rather
-            // than cutting: the app content underneath is already composed and laid out, so the
-            // reveal is a cross-dissolve onto a finished screen, which is the point of the splash.
-            AnimatedVisibility(
-                visible = splashVisible,
-                enter = fadeIn(tween(1)),
-                exit = fadeOut(tween(SPLASH_EXIT_MS, easing = Motion.EaseOut)) + scaleOut(
-                    tween(SPLASH_EXIT_MS, easing = Motion.EaseOut),
-                    targetScale = 1.06f,
-                ),
-            ) {
-                SplashScreen(Modifier.fillMaxSize())
-            }
         }
 
         // Android back gesture / button.
@@ -1789,18 +1742,6 @@ class MainActivity : ComponentActivity() {
             }
     }
 }
-
-/**
- * Launch-screen timing.
- *
- * [SPLASH_MIN_MS] keeps the splash from flashing past on a warm start — a screen that appears for
- * one frame reads as a glitch, not as a launch. [SPLASH_MAX_MS] is a fail-safe, so a slow or stuck
- * network cannot trap the user on the splash; the app becomes usable regardless. [SPLASH_EXIT_MS] is
- * the reveal's cross-dissolve onto the already-composed app content.
- */
-private const val SPLASH_MIN_MS = 1100L
-private const val SPLASH_MAX_MS = 6000L
-private const val SPLASH_EXIT_MS = 480
 
 /**
  * Minimal `ViewModelProvider.Factory` for the two view models, both container-backed.

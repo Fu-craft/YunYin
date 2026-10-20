@@ -3,19 +3,19 @@
     <!--
       Host theme.
 
-      The window background is the brand white rather than black: on API 31+ the platform draws its
-      own splash (the app icon on `windowSplashScreenBackground`) before the first Compose frame, and
-      the Compose splash then continues from there. Giving both the same white makes the launch one
-      continuous brand screen instead of flashing black.
+      There is no in-app launch screen: the platform splash (Android 12+ always draws one) shows the
+      white background and the launcher mark, and stays up only until the first Compose frame — which
+      is already the real UI. The window background is the same white as the platform splash, so the
+      handover cannot flash black or white-then-theme.
 
-      The status bar text is dark, since the launch ground is now light.
+      The status bar text is dark, since the platform launch ground is white.
     -->
     <style name="Theme.YunYin" parent="android:Theme.Material.NoActionBar">
         <item name="android:windowBackground">@color/brand_background</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
-        <!-- Light status-bar icons: the launch ground is the icon's blue. -->
-        <item name="android:windowLightStatusBar">false</item>
+        <!-- Dark status-bar icons on the white launch ground; Compose updates them per theme. -->
+        <item name="android:windowLightStatusBar">true</item>
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
 
