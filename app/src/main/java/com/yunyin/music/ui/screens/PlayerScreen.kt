@@ -161,6 +161,8 @@ fun PlayerScreen(
     onToggleShuffle: () -> Unit,
     onShowQueue: () -> Unit,
     onShowSettings: () -> Unit,
+    /** Whether the lyrics page may auto-hide the chrome after the idle delay. */
+    autoImmersiveLyrics: Boolean = false,
     /** Current per-track lyric offset, and its setter, for the manual timing control. */
     lyricOffsetMs: Long = 0L,
     onLyricOffsetChange: (Long) -> Unit = {},
@@ -226,14 +228,27 @@ fun PlayerScreen(
     var interaction by remember { mutableIntStateOf(0) }
     var immersive by remember { mutableStateOf(false) }
 
-    LaunchedEffect(showLyrics, interaction, state.isPlaying) {
+    LaunchedEffect(showLyrics, interaction, state.isPlaying, autoImmersiveLyrics) {
         if (!showLyrics) {
             immersive = false
+            return@LaunchedEffect
+        }
+        if (!autoImmersiveLyrics) {
+            // Auto-entry is off: never start the idle timer. An immersion that is already on is left
+            // alone — turning the setting off must not yank the chrome away mid-read; the next tap
+            // on the lyrics wakes it as usual.
             return@LaunchedEffect
         }
         immersive = false
         delay(IMMERSIVE_IDLE_MS)
         if (state.isPlaying) immersive = true
+    }
+
+    // Manual wake: any interaction leaves immersive mode — including when auto-entry is disabled,
+    // which only stops the idle timer from re-entering and must never trap the user in a state they
+    // were already in.
+    LaunchedEffect(interaction) {
+        if (interaction > 0) immersive = false
     }
 
     // Only analyse audio while the player is actually visible, so the tee costs nothing
@@ -2517,14 +2532,24 @@ private const val CHROME_EXIT_MS = 320
 private const val CHROME_ENTER_MS = 340
 
 /**
- * Duration of the cross-fade between the artwork and lyrics presentations.
+ * Duration of the cross-fade between the artwork and lyrics presentations, and of the shared
+ * cover's travel.
  *
- * The *cover* does not use this fade: both ends of the shared element pass the same explicit
- * `boundsTransform` — `tween(PRESENTATION_FADE_MS, easing = Motion.EaseOut)` — so the travel can be
- * tuned independently of the screen cross-fade rather than the whole screen moving at one rate. (It
- * previously said "gets its own curve below" while nothing set one: the framework default was in use.)
+ * Raised from 260 ms to 400 ms: at 260 the cover's flight read as too quick for the size of the
+ * move (the user: 动效太快), and the geometry finished almost before the eye had registered that
+ * the cover had left. 400 ms sits in the requested 380–420 band and inside the sheet transitions'
+ * own 320/260 ms vocabulary, so the player does not feel slower than the rest of the app — only less
+ * abrupt for its largest moving object. [Motion.EaseOut] starts decisively (the cover commits to the
+ * move immediately) and settles gently, which is the right shape for a spatial hand-off;
+ * `EaseInOut` would hesitate first and read as hesitation on a gesture the user just made.
+ *
+ * Both ends of the shared element use this one duration as their `boundsTransform`, and the
+ * presentation content cross-fade uses the same number, so the two ends' opacity and the geometry
+ * finish together instead of the travel outliving the fade. `AnimatedContent`/the shared element
+ * retarget from the current position when `showLyrics` is toggled again mid-flight, so it remains
+ * interruptible; the paused-cover scale is still a single shared value, so monotonicity is unchanged.
  */
-private const val PRESENTATION_FADE_MS = 260
+private const val PRESENTATION_FADE_MS = 400
 
 /**
  * Key identifying the shared album cover across the two presentations.

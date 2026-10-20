@@ -73,13 +73,11 @@ class LyricsRepository(
     private val memory = LinkedHashMap<Long, SyncedLyrics>(MEMORY_CACHE)
 
     /**
-     * What is currently pinned for a track, and which source produced the cached document.
+     * Which source produced each cached document.
      *
-     * `pins` is reset at the start of every load for that track (a retry is a fresh decision), while
-     * `cachedSources` remembers provenance so the cached-document path reports the same pin
-     * decisions as a network load.
+     * Used as the tie-break when a line-level cached document is carried into a probe: its source
+     * decides whether it outranks another line-level candidate.
      */
-    private val pins = LinkedHashMap<Long, PinnedLyric>()
     private val cachedSources = LinkedHashMap<Long, LyricSource>()
 
     /** Whether the last NetEase lyric payload said the track genuinely has no lyrics. */
@@ -117,211 +115,187 @@ class LyricsRepository(
     private var preferredMirror: Int = -1
 
     /**
-     * Resolves the lyrics for [trackId].
+     * Resolves the lyrics for [trackId] by probing the applicable sources and painting the winner
+     * **once**.
      *
-     * Delivery is deliberately **two-phase**. The first usable document is handed to [onFirstDoc]
-     * the moment it exists (NetEase measured ~0.4s), and only then is a word-by-word upgrade
-     * awaited. Waiting for that upgrade *before* showing anything is what made loading feel slow:
-     * measured over real tracks (`tools/measure_lyrics_wait.py`), the median time-to-lyrics was
-     * 2.40s because the load blocked on the upgrade window even when lyrics were already in hand —
-     * and most songs only have line-level lyrics on NetEase, so most songs paid it.
-     *
-     * @param onFirstDoc invoked once with a provisional document, before the upgrade is awaited, so
-     *   the caller can paint immediately. Pass null when only the final result matters (prefetch).
-     * @param onUpgraded invoked later from a background thread if a word-by-word document lands
-     *   after [onFirstDoc] already delivered a line-level one. Callers must marshal to their own
-     *   thread. This exists so karaoke appears without the user having to replay the song.
+     * The panel stays in its loading state until this returns, so the user never sees a weak
+     * document replaced by a better one mid-song. A word-by-word document short-circuits the probe;
+     * otherwise the best line-level document is painted at the [LyricProbeRules.PROBE_CAP_MS] cap.
+     * See [probeAndPaint] for the decision loop and [LyricProbeRules] for the pure winner rule.
      */
     suspend fun lyricsFor(
         trackId: Long,
-        /** The playing track; needed to search Kuwo/Kugou by title+artist when the main sources come up empty. */
+        /** The playing track; needed for the Kuwo/Kugou title+artist search and provider fallback. */
         track: Track? = null,
-        onFirstDoc: ((SyncedLyrics) -> Unit)? = null,
-        onUpgraded: ((SyncedLyrics) -> Unit)? = null,
     ): SyncedLyrics? {
-        // A new load is a fresh pin decision for this track (a retry must not inherit a stale pin).
-        resetPin(trackId)
-
-        // A track from another platform has no NetEase id, so the NetEase/AMLL race below cannot serve it: its own
-        // provider is asked first (and the NetEase route is only a fallback, by matching the track there).
-        providerLyrics?.let { provider ->
-            if (provider.supports(trackId)) {
-                return providerLyricsFor(trackId, provider, onFirstDoc)
-            }
-        }
-
-        val cached = cachedLyrics(trackId)?.takeIf { LyricPinRules.isPaintable(it.lines.size) }
-
-        // Only a word-by-word document is final, so only it may short-circuit the load. A cached
-        // *line-level* document must not: a song that showed plain lyrics once — because the
-        // karaoke source was slow that time — would otherwise show plain lyrics forever, since
-        // nothing would ever look for the better document again.
+        // A word-by-word document from an earlier probe is already the best a new probe could pick;
+        // returning it immediately is the one case where waiting buys nothing.
+        val cached = cachedLyrics(trackId)?.takeIf { LyricProbeRules.isPaintable(it.lines.size) }
         if (cached != null && isWordByWord(cached)) return cached
 
-        // Both sources start at once and run in [scope], so an early return does not cancel them.
-        // That matters for caching, not just tidiness: cancelling a still-running AMLL fetch meant
-        // a slow-but-successful mirror was re-raced on *every* play (measured settle up to 9.9s).
+        // A track from another platform has no NetEase id, so the NetEase/AMLL lanes cannot serve it:
+        // its own platform and the title+artist fallbacks are the applicable sources.
+        providerLyrics?.let { provider ->
+            if (provider.supports(trackId)) {
+                return providerProbe(trackId, provider, cached)
+            }
+        }
+
+        // "Probe, then paint once": all applicable sources start in parallel, a word-by-word document
+        // short-circuits the wait, and nothing is shown until the winner is decided. The deferreds
+        // live on [scope] so a probe that stops waiting leaves the fetch alive to fill its cache.
         val neteaseDeferred = scope.async { NeteaseSide(fetchBundle(trackId)) }
         val amllDeferred = scope.async { fetchAmllTtml(trackId) }
-
-        // Plain lyrics already on hand: hand them over now and upgrade in the background rather
-        // than making the caller wait on fetches that may fail.
-        if (cached != null) {
-            deliver(trackId, cached, sourceOf(trackId), onFirstDoc)
-            // `afterLineLevel = true`: something is already on screen, so the late delivery should
-            // only improve on it, never replace it with the same thing.
-            deliverLateDocument(trackId, amllDeferred, neteaseDeferred, onUpgraded, afterLineLevel = true)
-            launchExtraUpgrade(trackId, track, onUpgraded)
-            return cached
-        }
-
-        val first = withTimeoutOrNull(FIRST_DOCUMENT_WAIT_MS) {
-            awaitFirstDocument(neteaseDeferred, amllDeferred)
-        }
-        if (first == null) {
-            // Nothing usable arrived within the window. Crucially, this must **not** simply return:
-            // the fetch is still running on [scope], and abandoning it here is what made some songs
-            // load lyrics "never" — the caller was told there were none, nothing was cached, and
-            // nothing retried the track (the view model only starts a load when the *track id*
-            // changes, and its manual retry is not wired to any UI). Handing the in-flight fetch to
-            // the background upgrader turns "shows nothing, forever" into "shows lyrics a moment
-            // later".
-            //
-            // `afterLineLevel = false`: nothing was shown, so a late line-level document is welcome.
-            extraFallback(track)?.let { extra ->
-                if (deliver(trackId, extra.document, extra.source, onFirstDoc)) {
-                    store(trackId, extra.document, extra.source)
-                    return extra.document
-                }
-            }
-            deliverLateDocument(trackId, amllDeferred, neteaseDeferred, onUpgraded, afterLineLevel = false)
-            return null
-        }
-
-        // The NetEase payload supplies both the alignment reference and the translation, so it is
-        // part of the result rather than an optimisation — and it is the fast source (0.4s).
-        val netease = withTimeoutOrNull(BUNDLE_WAIT_MS) { neteaseDeferred.await() }
-            ?: NeteaseSide(null)
-
-        // Same reasoning as above: a document that cannot be resolved is not the end of the story,
-        // because the other source may still produce a usable one.
-        val resolved = resolve(first, netease)
-        if (resolved == null) {
-            extraFallback(track)?.let { extra ->
-                if (deliver(trackId, extra.document, extra.source, onFirstDoc)) {
-                    store(trackId, extra.document, extra.source)
-                    return extra.document
-                }
-            }
-            deliverLateDocument(trackId, amllDeferred, neteaseDeferred, onUpgraded, afterLineLevel = false)
-            return null
-        }
-
-        // Grace window: if the first usable document is line-level, give the richer (word-by-word)
-        // source a short, bounded chance to arrive **before** painting. This is what makes the
-        // common case paint the best document once, instead of painting the fast line-level one and
-        // then upgrading — the mid-song source swap the pin rule now forbids.
-        val graceDoc = if (!isWordByWord(resolved.lyrics)) {
-            withTimeoutOrNull(LyricPinRules.graceWindowMs(false)) { amllDeferred.await() }
-        } else {
-            null
-        }
-        val firstPaint = graceDoc?.let { upgradeFrom(it, netease) } ?: resolved
-        storeIfTrustworthy(trackId, firstPaint)
-        deliver(trackId, firstPaint.lyrics, firstPaint.source, onFirstDoc)
-
-        if (isWordByWord(firstPaint.lyrics)) return firstPaint.lyrics
-
-        // Line-level for now: show it, then try a **same-source** word-by-word upgrade. A different
-        // source's document is refused here by the pin rule (logged), which is the fix for the
-        // mid-song provider swap.
-        val amll = withTimeoutOrNull(UPGRADE_WAIT_MS) { amllDeferred.await() }
-        val upgraded = upgradeFrom(amll, netease)
-        if (upgraded != null && deliver(trackId, upgraded.lyrics, upgraded.source, onUpgraded)) {
-            storeIfTrustworthy(trackId, upgraded)
-            return upgraded.lyrics
-        }
-
-        // The window expired without a usable karaoke document. The fetch is still running on [scope], so
-        // let it finish and hand the better document over. Without this the user would have to
-        // replay the song to get karaoke — which is exactly the reported symptom.
-        deliverLateDocument(trackId, amllDeferred, neteaseDeferred, onUpgraded, afterLineLevel = true)
-        launchExtraUpgrade(trackId, track, onUpgraded)
-        return firstPaint.lyrics
+        return probeAndPaint(
+            trackId = trackId,
+            cachedLineLevel = cached,
+            lanes = listOf(
+                { laneNetease(neteaseDeferred) },
+                { laneAmll(neteaseDeferred, amllDeferred) },
+                { laneExtras(track) },
+            ),
+        )
     }
 
+
     /**
-     * Delivers a lyric document that arrived **after** the caller was told to stop waiting.
+     * Runs every lane in parallel, waits at most [LyricProbeRules.PROBE_CAP_MS] for a winner, and
+     * paints it once.
      *
-     * Runs on [scope] (IO) and is the safety net for every early return above: the fetches are
-     * started on this scope precisely so they outlive the caller's patience, and this is what turns
-     * that into something the user sees. Without it, a slow source meant the track was reported as
-     * having no lyrics at all — and since the view model only starts a load when the *track id*
-     * changes, the failure lasted until the user skipped away and back.
+     * The loop breaks early the moment a **word-by-word** document arrives: it is the best a probe
+     * can produce, so waiting longer only delays the first paint. If no word-by-word document
+     * arrives, the probe keeps collecting line-level documents until the cap, then paints the one
+     * with the most lines — the longest readable result, not whichever answered first.
      *
-     * **It awaits the AMLL document specifically, not a race between the two sources.** An earlier
-     * version re-ran [awaitFirstDocument] here, which was a mistake with a very visible result: when
-     * the NetEase fetch had already completed, racing returned that *line-level* document immediately,
-     * so this delivered plain lyrics and returned — while the in-flight karaoke document, the whole
-     * reason for waiting, was never delivered. Songs that should have word-by-word lyrics showed none.
-     * Awaiting the one source that can still improve the result is the point of this call.
-     *
-     * Unlike the word-by-word-only upgrade it replaced, a line-level document is still delivered when
-     * no karaoke exists: when the screen is otherwise empty, plain lyrics are the difference between a
-     * readable song and nothing.
-     *
-     * @param onDelivered invoked off the main thread; callers marshal to their own dispatcher.
-     * @param afterLineLevel true when the caller has already shown line-level lyrics for this track, so
-     *        only a word-by-word document is worth delivering. False when nothing was shown.
+     * A lane that throws or returns null is simply a lane with no document; the other lanes and the
+     * cap are unaffected. This is the only strategy: there is no later upgrade, no callback that
+     * can replace what was painted, and no pin to block a second source.
      */
-    private fun deliverLateDocument(
+    private suspend fun probeAndPaint(
         trackId: Long,
-        amllDeferred: Deferred<SyncedLyrics?>,
-        neteaseDeferred: Deferred<NeteaseSide>,
-        onDelivered: ((SyncedLyrics) -> Unit)?,
-        afterLineLevel: Boolean,
-    ) {
-        if (onDelivered == null) return
-        scope.launch {
-            val amll = runCatching { amllDeferred.await() }.getOrNull()
-            val netease = runCatching { neteaseDeferred.await() }.getOrNull() ?: NeteaseSide(null)
-
-            // The better document, if there is one.
-            val upgraded = upgradeFrom(amll, netease)
-            if (upgraded != null) {
-                // Cache before painting (the pin rule below only decides whether the paint happens).
-                storeIfTrustworthy(trackId, upgraded)
-                if (deliver(trackId, upgraded.lyrics, upgraded.source, null)) {
-                    onDelivered(upgraded.lyrics)
-                }
-                return@launch
+        cachedLineLevel: SyncedLyrics?,
+        lanes: List<suspend () -> Resolved?>,
+    ): SyncedLyrics? {
+        val startedNs = System.nanoTime()
+        val arriving = Channel<Resolved>(Channel.UNLIMITED)
+        val collected = mutableListOf<Resolved>()
+        cachedLineLevel?.takeIf { LyricProbeRules.isPaintable(it.lines.size) }?.let {
+            collected += Resolved(it, trustworthy = true, sourceOf(trackId))
+        }
+        // Lanes run on [scope], not as children of this call: when the probe decides, cancelling a
+        // lane must cancel the *waiting* — never make the panel wait for a lane whose blocking HTTP
+        // call happens to be un-cancellable. That is what keeps the 2.5 s cap real rather than a
+        // best-effort.
+        val jobs = lanes.map { lane ->
+            scope.launch {
+                runCatching { lane() }.getOrNull()?.let { arriving.send(it) }
             }
-
-            // No karaoke document. Only fall back to the line-level one if the caller showed nothing —
-            // otherwise this would replace what the user is reading with the same thing.
-            if (afterLineLevel) return@launch
-            val fallback = netease.doc?.takeIf { LyricPinRules.isPaintable(it.lines.size) }
-                ?.let { resolve(Candidate(it, LyricSource.Netease), netease) }
-            if (fallback != null && deliver(trackId, fallback.lyrics, fallback.source, onDelivered)) {
-                storeIfTrustworthy(trackId, fallback)
+        }
+        try {
+            val deadlineNs = startedNs + LyricProbeRules.PROBE_CAP_MS * 1_000_000L
+            while (true) {
+                val remainingMs = (deadlineNs - System.nanoTime()) / 1_000_000L
+                if (remainingMs <= 0L) break
+                val candidate = withTimeoutOrNull(remainingMs) { arriving.receiveCatching().getOrNull() }
+                    ?: break
+                collected += candidate
+                // A word-by-word document is the best a probe can produce: paint it now and stop
+                // waiting, which is what keeps the common case well under a second.
+                if (isWordByWord(candidate.lyrics)) break
             }
+        } finally {
+            jobs.forEach { it.cancel() }
+        }
+        val elapsedMs = (System.nanoTime() - startedNs) / 1_000_000L
+        val winner = LyricProbeRules.winner(collected.map { it.probeCandidate() })
+            ?.let { best -> collected.firstOrNull { it.probeCandidate() == best } }
+        traceProbe(trackId, winner, collected, elapsedMs)
+        if (winner == null) return null
+        if (winner.trustworthy) store(trackId, winner.lyrics, winner.source)
+        return winner.lyrics
+    }
+
+    /** One lane's probe metadata, in the shape the pure winner rule consumes. */
+    private fun Resolved.probeCandidate(): LyricProbeCandidate {
+        val karaoke = lyrics.lines.filterIsInstance<KaraokeLine>()
+        return LyricProbeCandidate(
+            source = source,
+            wordCount = karaoke.sumOf { it.syllables.size },
+            lineCount = lyrics.lines.size,
+        )
+    }
+
+    /** Records the probe outcome: winner, counts, elapsed, and each lane's verdict. */
+    private fun traceProbe(trackId: Long, winner: Resolved?, candidates: List<Resolved>, elapsedMs: Long) {
+        runCatching {
+            val sources = candidates.joinToString(",") { candidate ->
+                "${candidate.source.tag}:${if (isWordByWord(candidate.lyrics)) "word" else "line"}"
+            }
+            val counts = winner?.probeCandidate()
+            log?.recordDiagnostic(
+                "stage=lyric probe winner=${winner?.source?.tag ?: "none"} " +
+                    "words=${counts?.wordCount ?: 0} lines=${counts?.lineCount ?: 0} " +
+                    "elapsedMs=$elapsedMs sources=[$sources] trackId=$trackId",
+            )
         }
     }
 
-    /**
-     * The word-by-word version of [amllDoc], if it is one and it resolves.
-     *
-     * Deliberately has **no line-count guard**. An earlier version rejected the upgrade when the
-     * two documents differed in line count by more than 20%, which threw away the karaoke document
-     * for any song where the sources disagree on structure — measured on a real track with 107
-     * NetEase lines against 75 AMLL lines. That was also inconsistent: the *first-document* path
-     * accepted the very same document unchecked, so whether karaoke appeared depended on network
-     * timing. Showing plain lyrics when karaoke exists is strictly worse than a re-layout, and the
-     * view re-anchors its reading position from the clock, so a structure change is harmless.
-     */
-    private fun upgradeFrom(amllDoc: SyncedLyrics?, netease: NeteaseSide): Resolved? {
-        if (amllDoc == null || !isWordByWord(amllDoc)) return null
-        return resolve(Candidate(amllDoc, LyricSource.Amll), netease)
+    /** NetEase's own payload: `yrc` renders as karaoke, `lrc` as line-level. */
+    private suspend fun laneNetease(netease: Deferred<NeteaseSide>): Resolved? {
+        val side = runCatching { netease.await() }.getOrNull() ?: return null
+        val document = side.doc?.takeIf { LyricProbeRules.isPaintable(it.lines.size) } ?: return null
+        return resolve(Candidate(document, LyricSource.Netease), side)
+    }
+
+    /** AMLL TTML, aligned/translated against the NetEase side (the app's timeline reference). */
+    private suspend fun laneAmll(
+        netease: Deferred<NeteaseSide>,
+        amll: Deferred<SyncedLyrics?>,
+    ): Resolved? {
+        val side = runCatching { netease.await() }.getOrNull() ?: NeteaseSide(null)
+        val document = runCatching { amll.await() }.getOrNull()
+            ?.takeIf { LyricProbeRules.isPaintable(it.lines.size) } ?: return null
+        return resolve(Candidate(document, LyricSource.Amll), side)
+    }
+
+    /** Kuwo then Kugou — the slow lanes; they carry their own matching and time budgets. */
+    private suspend fun laneExtras(track: Track?): Resolved? {
+        val extra = extraFallback(track) ?: return null
+        return Resolved(extra.document, trustworthy = true, extra.source)
+    }
+
+    /** Provider-track probe: the platform's own QRC lyrics, the NetEase match, and Kuwo/Kugou. */
+    private suspend fun providerProbe(
+        trackId: Long,
+        provider: ProviderLyrics,
+        cachedLineLevel: SyncedLyrics?,
+    ): SyncedLyrics? {
+        val track = provider.trackFor(trackId)
+        return probeAndPaint(
+            trackId = trackId,
+            cachedLineLevel = cachedLineLevel,
+            lanes = listOf(
+                { laneProviderPlatform(trackId, provider) },
+                { laneProviderNetease(track) },
+                { laneExtras(track) },
+            ),
+        )
+    }
+
+    /** The provider platform's QRC document (word-timed when the platform has it). */
+    private suspend fun laneProviderPlatform(trackId: Long, provider: ProviderLyrics): Resolved? {
+        val payload = withTimeoutOrNull(PROVIDER_LYRIC_WAIT_MS) { provider.fetch(trackId) } ?: return null
+        val document = toProviderDocument(payload)?.takeIf { LyricProbeRules.isPaintable(it.lines.size) }
+            ?: return null
+        return Resolved(document, trustworthy = true, LyricSource.Tx)
+    }
+
+    /** NetEase's document for the same recording, matched by title/artist/duration. */
+    private suspend fun laneProviderNetease(track: Track?): Resolved? {
+        val neteaseId = withTimeoutOrNull(PROVIDER_LYRIC_WAIT_MS) { neteaseIdFor(track) } ?: return null
+        val side = NeteaseSide(fetchBundle(neteaseId))
+        val document = side.doc?.takeIf { LyricProbeRules.isPaintable(it.lines.size) } ?: return null
+        return resolve(Candidate(document, LyricSource.Netease), side)
     }
 
     /** A lyric document plus which source it came from. */
@@ -357,27 +331,6 @@ class LyricsRepository(
 
     /** A document from the Kuwo/Kugou fallback, with which of the two supplied it. */
     private class ExtraDoc(val document: SyncedLyrics, val source: LyricSource)
-
-    /**
-     * Takes whichever of the two sources produces a usable document first.
-     *
-     * Only the *first* document is awaited here. Holding out for a better one is [lyricsFor]'s
-     * upgrade phase, which runs after the first document has already been handed to the caller —
-     * that separation is the whole point of the two-phase design.
-     *
-     * The race is in [raceFirstOf], which returns as soon as one side answers. The obvious
-     * `coroutineScope { launch { … }; launch { … }; receive() }` form looks equivalent but waits for
-     * both producers, which made the load as slow as the slowest source — see that function's note.
-     */
-    private suspend fun awaitFirstDocument(
-        netease: Deferred<NeteaseSide>,
-        amll: Deferred<SyncedLyrics?>,
-    ): Candidate? = raceFirstOf(
-        first = { netease.await().doc?.takeIf { LyricPinRules.isPaintable(it.lines.size) }
-            ?.let { Candidate(it, LyricSource.Netease) } },
-        second = { amll.await()?.takeIf { LyricPinRules.isPaintable(it.lines.size) }
-            ?.let { Candidate(it, LyricSource.Amll) } },
-    )
 
     /**
      * Aligns and enriches [candidate] against the NetEase side.
@@ -466,60 +419,9 @@ class LyricsRepository(
         return lyrics.copy(lines = kept)
     }
 
-    /**
-     * Caches a resolved document, unless its timing is suspect.
-     *
-     * An AMLL document with no reference is left unshifted, which can be seconds off; returning it
-     * is still better than showing nothing, but caching it would pin the wrong timing for the whole
-     * session.
-     */
-    private fun storeIfTrustworthy(trackId: Long, resolved: Resolved) {
-        if (resolved.trustworthy) store(trackId, resolved.lyrics, resolved.source)
-    }
-
-    /** Drops the pin for [trackId] at the start of a fresh load (a retry is a new decision). */
-    private fun resetPin(trackId: Long) {
-        synchronized(pins) { pins.remove(trackId) }
-    }
-
     /** The source that produced the cached document, or NetEase when it is unknown. */
     private fun sourceOf(trackId: Long): LyricSource =
         synchronized(cachedSources) { cachedSources[trackId] } ?: LyricSource.Netease
-
-    /**
-     * Applies the pin rule and, when it allows the document, hands it to [callback].
-     *
-     * Every path that can put lyric text on screen goes through here: the first document, the
-     * same-source word-by-word upgrade, and the late deliveries. A cross-source document after
-     * first paint is dropped (and logged), which is what stops the mid-song source swap; a fragment
-     * (`< 2` lines) is dropped before it can ever become the visible document.
-     *
-     * @return true when the document was accepted (and painted when a callback was supplied).
-     */
-    private fun deliver(
-        trackId: Long,
-        lyrics: SyncedLyrics?,
-        source: LyricSource,
-        callback: ((SyncedLyrics) -> Unit)?,
-    ): Boolean {
-        if (lyrics == null || !LyricPinRules.isPaintable(lyrics.lines.size)) return false
-        val wordByWord = isWordByWord(lyrics)
-        val decision = synchronized(pins) {
-            val decision = LyricPinRules.decide(pins[trackId], source, wordByWord)
-            if (decision != LyricPinDecision.DifferentProviderBlocked) {
-                pins[trackId] = PinnedLyric(source, wordByWord)
-            }
-            decision
-        }
-        runCatching {
-            log?.recordDiagnostic(
-                "stage=lyric pinned=${source.tag} reason=${decision.tag} trackId=$trackId",
-            )
-        }
-        if (decision == LyricPinDecision.DifferentProviderBlocked) return false
-        runCatching { callback?.invoke(lyrics) }
-        return true
-    }
 
     /**
      * Reads or fetches the NetEase payload.
@@ -561,28 +463,6 @@ class LyricsRepository(
     private fun extraSource(provider: String): LyricSource =
         if (provider == ExtraLyricsProvider.KG) LyricSource.Kugou else LyricSource.Kuwo
 
-    /** A late word-by-word answer from Kuwo/Kugou upgrades a line-level document without making the caller wait. */
-    private fun launchExtraUpgrade(
-        trackId: Long,
-        track: Track?,
-        onUpgraded: ((SyncedLyrics) -> Unit)?,
-    ) {
-        val provider = extraLyrics ?: return
-        val target = track ?: return
-        if (onUpgraded == null) return
-        scope.launch {
-            val payload = runCatching {
-                withTimeoutOrNull(EXTRA_LYRIC_WAIT_MS) { provider.fetch(target, requireWords = true) }
-            }.getOrNull() ?: return@launch
-            val document = runCatching { extraPayloadToDocument(payload) }.getOrNull() ?: return@launch
-            if (!isWordByWord(document)) return@launch
-            val source = extraSource(payload.provider)
-            if (deliver(trackId, document, source, onUpgraded)) {
-                store(trackId, document, source)
-            }
-        }
-    }
-
     private fun extraPayloadToDocument(payload: ExtraLyricPayload): SyncedLyrics? {
         val base = ExtraLyricDocument.build(payload)
             ?: payload.plain?.takeIf { it.isNotBlank() }
@@ -592,54 +472,6 @@ class LyricsRepository(
         val stripped = stripMetadata(base)
         val merged = LyricTranslation.merge(stripped, payload.translation)
         return merged.takeIf { it.lines.isNotEmpty() }
-    }
-
-    /**
-     * Lyrics for a provider track: ask its platform first, then fall back to the NetEase pipeline by matching the
-     * track there, then to "no lyrics".
-     *
-     * The provider half returns QRC-decoded text: a word-by-word track (`<startMs,duration>` tags, YRC-shaped) when
-     * the platform had QRC word timing, otherwise line-level LRC. Both are fed through the app's existing parsers —
-     * [NeteaseYrcParser] for the word track and [autoParser] for plain text — so karaoke rendering is identical to
-     * NetEase tracks, including the credit-line stripping and translation merge.
-     *
-     * Romanisation is carried by the provider but not displayed: the app's lyric model has no romanisation lane, and
-     * inventing one here would be a UI change outside this task.
-     */
-    private suspend fun providerLyricsFor(
-        trackId: Long,
-        provider: ProviderLyrics,
-        onFirstDoc: ((SyncedLyrics) -> Unit)?,
-    ): SyncedLyrics? {
-        val cached = cachedLyrics(trackId)?.takeIf { LyricPinRules.isPaintable(it.lines.size) }
-        if (cached != null && isWordByWord(cached)) return cached
-
-        val payload = withTimeoutOrNull(PROVIDER_LYRIC_WAIT_MS) { provider.fetch(trackId) }
-        val document = payload?.let { toProviderDocument(it) }
-        if (document != null) {
-            if (deliver(trackId, document, LyricSource.Tx, onFirstDoc)) {
-                store(trackId, document, LyricSource.Tx)
-                return document
-            }
-        }
-
-        // Provider lyric failed or absent: try the existing NetEase lyric path with the *matched* NetEase song. The
-        // provider track is persisted with title/artist/duration, which is what the cross-platform matcher needs.
-        val neteaseId = withTimeoutOrNull(PROVIDER_LYRIC_WAIT_MS) { neteaseIdFor(provider.trackFor(trackId)) }
-        if (neteaseId != null) {
-            val netease = NeteaseSide(fetchBundle(neteaseId))
-            val candidate = netease.doc?.takeIf { it.lines.isNotEmpty() }
-            if (candidate != null) {
-                val resolved = resolve(Candidate(candidate, LyricSource.Netease), netease)
-                if (resolved != null) {
-                    if (deliver(trackId, resolved.lyrics, resolved.source, onFirstDoc)) {
-                        store(trackId, resolved.lyrics, resolved.source)
-                        return resolved.lyrics
-                    }
-                }
-            }
-        }
-        return cached
     }
 
     /** Parses a provider lyric payload into the app's lyric model. Null when nothing usable came back. */
@@ -719,9 +551,10 @@ class LyricsRepository(
     private fun cachedLyrics(trackId: Long): SyncedLyrics? = synchronized(memory) { memory[trackId] }
 
     private fun store(trackId: Long, lyrics: SyncedLyrics, source: LyricSource) {
-        // A fragment is never worth caching: caching it would make the next load paint it, and the
-        // pin rule exists precisely to stop fragments from becoming the visible document.
-        if (!LyricPinRules.isPaintable(lyrics.lines.size)) return
+        // A fragment is never worth caching: caching it would make the next load enter the probe
+        // with nothing to gain, and the paint-once rule exists precisely so fragments never become
+        // the visible document.
+        if (!LyricProbeRules.isPaintable(lyrics.lines.size)) return
         synchronized(memory) {
             memory[trackId] = lyrics
             while (memory.size > MEMORY_CACHE) {
@@ -853,35 +686,6 @@ class LyricsRepository(
     private companion object {
         const val MEMORY_CACHE = 24
         const val TTML_MARKER = "http://www.w3.org/ns/ttml"
-
-        /**
-         * How long to wait for ANY usable lyric document before giving up.
-         *
-         * Measured: NetEase answers in ~0.4s on every track tested, so this is only reached when
-         * that fails and a mirror is being waited out.
-         */
-        const val FIRST_DOCUMENT_WAIT_MS = 6000L
-
-        /**
-         * How long to wait for a **word-by-word upgrade** after a line-level document is already
-         * being displayed.
-         *
-         * This is off the critical path by construction: the caller has already been handed the
-         * line-level lyrics, so the only cost of this window is that a page-swap happens late. It
-         * is sized generously because a healthy AMLL mirror answered in 0.6–2.2s when measured.
-         */
-        const val UPGRADE_WAIT_MS = 3000L
-
-        /**
-         * How long to wait for the NetEase payload that supplies alignment and translation.
-         *
-         * This is not merely an optimisation bound: the payload carries the time reference that
-         * an AMLL document must be shifted by, so returning without it is what produced "lyrics
-         * start before the intro". NetEase measured 0.4s across every track tested, so this limit
-         * is only a guard against an unreachable API — it is deliberately far above the observed
-         * latency rather than near it.
-         */
-        const val BUNDLE_WAIT_MS = 6000L
 
         /** Ceiling for a single AMLL mirror request. */
         const val MIRROR_CALL_TIMEOUT_MS = 4500L

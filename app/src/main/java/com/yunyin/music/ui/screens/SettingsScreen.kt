@@ -102,6 +102,9 @@ fun SettingsScreen(
     /** Whether tracks run into each other without the dead air that makes them sound like files. */
     seamlessTransition: Boolean = true,
     onSeamlessTransitionChange: (Boolean) -> Unit = {},
+    /** Whether the lyrics page auto-hides the chrome after the idle delay (default off). */
+    autoImmersiveLyrics: Boolean = false,
+    onAutoImmersiveLyricsChange: (Boolean) -> Unit = {},
     /** Remaining sleep-timer label ("关闭" / "还有约 12 分钟" / "播完当前歌"). */
     sleepTimerLabel: String = "关闭",
     onShowSleepTimer: () -> Unit = {},
@@ -205,6 +208,12 @@ fun SettingsScreen(
                 subtitle = "柔化每首歌的开头，切歌不会突然出声",
                 enabled = seamlessTransition,
                 onChange = onSeamlessTransitionChange,
+            )
+            ToggleRow(
+                title = "自动进入沉浸歌词",
+                subtitle = "歌词页闲置几秒后自动隐藏播放控件；默认关闭",
+                enabled = autoImmersiveLyrics,
+                onChange = onAutoImmersiveLyricsChange,
             )
             LinkRow(
                 text = "定时关闭",

@@ -232,6 +232,7 @@ class MainActivity : ComponentActivity() {
         // publishing, and it mirrors the stored value, so the switch cannot disagree with what is running.
         var lyriconEnabled by remember { mutableStateOf(container.lyricon.enabled) }
         var seamlessTransition by remember { mutableStateOf(container.settings.seamlessTransition) }
+        var autoImmersiveLyrics by remember { mutableStateOf(container.settings.autoImmersiveLyrics) }
         // The player's centrepiece. Held as Compose state as well as persisted, for the same reason as the
         // settings above: a SharedPreferences write does not invalidate composition, so a value read
         // straight from the store would change only on the next launch.
@@ -1180,6 +1181,13 @@ class MainActivity : ComponentActivity() {
                         if (!enabled) container.tickerLyrics.clear()
                     },
                     seamlessTransition = seamlessTransition,
+                    autoImmersiveLyrics = autoImmersiveLyrics,
+                    onAutoImmersiveLyricsChange = { enabled ->
+                        // Compose state + the store: the player reads the Compose state, so a toggle
+                        // takes effect without a restart, and the store makes it survive one.
+                        autoImmersiveLyrics = enabled
+                        container.settings.autoImmersiveLyrics = enabled
+                    },
                     sleepTimerLabel = when {
                         sleepTimerEndOfTrack -> "播完当前歌"
                         sleepTimerEnd != null -> {
@@ -1513,6 +1521,7 @@ class MainActivity : ComponentActivity() {
                     },
                     lyricOffsetMs = playerViewModel.lyricOffsetMs,
                     onLyricOffsetChange = playerViewModel::setLyricOffset,
+                    autoImmersiveLyrics = autoImmersiveLyrics,
                     download = playerViewModel.download,
                     onSaveCover = playerViewModel::saveCover,
                     onDownloadDismissed = playerViewModel::clearDownloadState,

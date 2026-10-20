@@ -69,6 +69,17 @@ class SettingsStore(context: Context) {
         set(value) = prefs.edit().putBoolean(KEY_SEAMLESS_TRANSITION, value).apply()
 
     /**
+     * Whether the lyrics page auto-enters immersive mode after [IMMERSIVE_IDLE_MS] of inactivity.
+     *
+     * Defaults **off**: hiding the transport is only desirable when the user deliberately sits down
+     * to read lyrics, and an uninvited disappearing control is worse than one more tap. The manual
+     * way into the lyrics page is unaffected; this gates only the idle timer (see `PlayerScreen`).
+     */
+    var autoImmersiveLyrics: Boolean
+        get() = prefs.getBoolean(KEY_AUTO_IMMERSIVE_LYRICS, DEFAULT_AUTO_IMMERSIVE_LYRICS)
+        set(value) = prefs.edit().putBoolean(KEY_AUTO_IMMERSIVE_LYRICS, value).apply()
+
+    /**
      * Which player presentation to draw: the classic rounded cover, or the rotating vinyl record.
      *
      * Stored as the `PlayerStyle.level` string rather than an ordinal, so reordering or renaming the enum
@@ -248,6 +259,7 @@ class SettingsStore(context: Context) {
         private const val KEY_STATUS_BAR_LYRICS = "status_bar_lyrics"
         private const val KEY_LYRICON_ENABLED = "lyricon_enabled"
         private const val KEY_SEAMLESS_TRANSITION = "seamless_transition"
+        private const val KEY_AUTO_IMMERSIVE_LYRICS = "auto_immersive_lyrics"
         private const val KEY_PLAYER_STYLE = "player_style"
         private const val KEY_PROFILE_SIGNATURE = "profile_signature"
         private const val KEY_CUSTOM_NICKNAME = "custom_nickname"
@@ -259,3 +271,6 @@ class SettingsStore(context: Context) {
         private const val KEY_UPDATE_SKIPPED = "update_skipped_version"
     }
 }
+
+/** Default for [SettingsStore.autoImmersiveLyrics]; a plain constant so a unit test can pin it. */
+internal const val DEFAULT_AUTO_IMMERSIVE_LYRICS = false

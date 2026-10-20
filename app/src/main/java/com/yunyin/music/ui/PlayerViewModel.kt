@@ -366,16 +366,12 @@ class PlayerViewModel(private val container: AppContainer) : ViewModel() {
         lyrics = null
         lyricsLoading = true
         lyricsJob = viewModelScope.launch {
-            // Two-phase: paint the first usable document as soon as it exists, then let a
-            // word-by-word upgrade replace it if one arrives. Waiting for the upgrade *before*
-            // showing anything is what made loading feel slow (measured median 2.4s -> 0.4s).
+            // Probe, then paint once: the repository waits for the best document (word-by-word
+            // preferred) inside a short bounded window, so there is no provisional paint to replace
+            // and therefore no mid-song source swap.
             suspend fun attempt(): SyncedLyrics? = container.lyrics.lyricsFor(
                 trackId = trackId,
                 track = track,
-                onFirstDoc = { provisional -> applyIfCurrent(trackId, provisional) },
-                // Delivered from the repository's IO scope, so hop to the main dispatcher before
-                // touching composition state.
-                onUpgraded = { better -> viewModelScope.launch { applyIfCurrent(trackId, better) } },
             )
 
             var loaded = attempt()
