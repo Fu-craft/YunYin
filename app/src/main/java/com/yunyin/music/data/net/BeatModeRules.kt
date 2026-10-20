@@ -44,8 +44,8 @@ object BeatModeRules {
     /** The id list existed but `/song/detail` produced no displayable track. */
     const val HYDRATION_MESSAGE = "心动模式歌曲信息获取失败"
 
-    /** The player's own failed-start message when nothing is playing. */
-    const val NO_TRACK_MESSAGE = "请先播放一首歌曲"
+    /** Shown when no seed exists at all: no current track, no liked songs, no daily recommendations. */
+    const val NO_SOURCE_MESSAGE = "没有可用的歌曲，无法开启心动模式"
 
     /** Array keys that have carried the recommendation across module versions, most specific first. */
     private val LIST_KEYS = listOf("recommend", "songs", "songList", "list", "tracks", "data")

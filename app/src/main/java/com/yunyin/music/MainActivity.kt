@@ -55,6 +55,9 @@ import com.yunyin.music.core.NetResult
 import com.yunyin.music.data.SettingsStore
 import com.yunyin.music.data.ShareText
 import com.yunyin.music.data.net.BeatModeRules
+import com.yunyin.music.data.net.BeatModeSeedRules
+import com.yunyin.music.data.net.BeatSeed
+import com.yunyin.music.data.net.BeatSeedPath
 import com.yunyin.music.playback.LocalPlayerController
 import com.yunyin.music.playback.PlaybackUiState
 import com.yunyin.music.ui.AppViewModel
@@ -687,28 +690,32 @@ class MainActivity : ComponentActivity() {
         }
 
         /**
-         * Starts 心动模式 for the currently playing song.
+         * Starts 心动模式.
          *
-         * On success the playback queue is **replaced** with the recommended list and playback starts on
-         * the current song (which [BeatModeRules.queueFor] guarantees is in the queue). On any failure the
-         * current queue is untouched and the specific reason is toasted: a guest gets 请先登录 without a
-         * request, an expired cookie gets its own message, and any other API answer is reported verbatim.
-         * Replacing the queue through [play] keeps the existing guarantees (history, downloads, lyrics, the
-         * sleep timer applies to the new queue) because it is the same path every other play uses.
+         * The seed is chosen so the mode also works with **nothing playing**: the current track first
+         * (more of this song), then the merged liked list, then `/recommend/songs`. With a seed in hand
+         * the flow is exactly the existing one: `/playmode/intelligence/list` ids -> `/song/detail`
+         * hydration -> queue replacement -> playback starts on the seed.
          *
-         * [onStarted] runs only after the new queue has actually started, so an entry point that also wants
-         * to *show* the queue (the bar's 心动模式 slot) opens it on success and stays put on failure.
+         * A guest (no cookie) is refused before any request. If no seed exists at all the user gets the
+         * specific [BeatModeRules.NO_SOURCE_MESSAGE] instead of a silent no-op; the chosen path and id are
+         * recorded under the existing `stage=beat-mode` diagnostics so a report can be diagnosed.
+         *
+         * On success the playback queue is **replaced** and playback starts on the seed. On any failure
+         * the current queue is untouched and the specific reason is toasted (guest / expired / server
+         * message / hydration failure). Replacing through [play] keeps the existing guarantees — history,
+         * downloads, lyrics, and the sleep timer applying to the new queue.
+         *
+         * [onStarted] runs only after the new queue has actually started, so an entry point that also
+         * wants to *show* the queue (the bar's 心动模式 slot) opens it on success and stays put on failure.
          */
         fun startBeatMode(explicitPlaylistId: Long?, onStarted: () -> Unit = {}) {
-            val seed = container.player.state.value.current
-            if (seed == null) {
-                toast(BeatModeRules.NO_TRACK_MESSAGE)
-                return
-            }
+            // Guest first: no cookie means no request at all (the bar is already dimmed for them).
             if (container.settings.cookie.isBlank()) {
                 toast(BeatModeRules.GUEST_MESSAGE)
                 return
             }
+            val current = container.player.state.value.current
             val likedPlaylistId = appViewModel.userPlaylists.firstOrNull { it.isLikedSongs }?.id
             val knownPlaylistId = BeatModeRules.resolvePlaylistId(
                 explicitPlaylistId = explicitPlaylistId,
@@ -717,22 +724,65 @@ class MainActivity : ComponentActivity() {
             )
             scope.launch {
                 runCatching {
-                    // The liked playlist is the documented fallback for `pid`, but the library may not have
-                    // loaded the user's playlists yet; fetch them once when the id is still unknown.
-                    var playlistId = knownPlaylistId
-                    if (playlistId == null) {
+                    // The liked playlist is the documented `pid` fallback, and the library may not have
+                    // loaded the user's playlists yet, so fetch them once when the id is still unknown.
+                    var resolvedLikedPlaylistId = likedPlaylistId
+                    if (resolvedLikedPlaylistId == null) {
                         val uid = currentUid()
                         if (uid > 0L) {
                             when (val lists = container.music.userPlaylists(uid)) {
                                 is NetResult.Ok ->
-                                    playlistId = lists.value.firstOrNull { it.isLikedSongs }?.id
+                                    resolvedLikedPlaylistId =
+                                        lists.value.firstOrNull { it.isLikedSongs }?.id
                                 is NetResult.Err -> Unit
                             }
                         }
                     }
-                    when (val result = container.music.beatMode(seed.id, seed.id, playlistId)) {
+
+                    // Seed priority: current > liked > daily recommendations. Each step is only fetched
+                    // when the previous one has no usable track, so a playing song costs no extra request.
+                    var chosen: BeatSeed? = BeatModeSeedRules.choose(current, emptyList(), emptyList())
+                    if (chosen == null) {
+                        // The merged (local + cloud) liked list the library already keeps.
+                        val likedTracks = runCatching { container.liked.tracks(currentUid()) }
+                            .getOrDefault(emptyList())
+                        chosen = BeatModeSeedRules.choose(null, likedTracks, emptyList())
+                    }
+                    if (chosen == null) {
+                        // `/recommend/songs`: verified live on the deployed instance (HTTP 200 anonymous).
+                        val daily = when (val result = container.client.dailySongs()) {
+                            is NetResult.Ok -> result.value
+                            is NetResult.Err -> {
+                                android.util.Log.i(
+                                    "YunYin/BeatMode",
+                                    "daily seed fetch failed: ${result.message}",
+                                )
+                                emptyList()
+                            }
+                        }
+                        chosen = BeatModeSeedRules.choose(null, emptyList(), daily)
+                    }
+                    val seed = chosen
+                    if (seed == null) {
+                        container.lxLog.recordDiagnostic("stage=beat-mode seed=none")
+                        toast(BeatModeRules.NO_SOURCE_MESSAGE)
+                        return@runCatching
+                    }
+                    // `pid`: the caller's playlist / queue origin for a current-track seed; the liked
+                    // playlist for a liked/daily seed, omitted when unknown (the server's answer is then
+                    // reported verbatim).
+                    val playlistId = when (seed.path) {
+                        BeatSeedPath.Current -> knownPlaylistId
+                        BeatSeedPath.Liked, BeatSeedPath.Recommend -> resolvedLikedPlaylistId
+                    }
+                    container.lxLog.recordDiagnostic(
+                        "stage=beat-mode seed=${seed.path.label} id=${seed.track.id} " +
+                            "pid=${playlistId ?: "-"}",
+                    )
+
+                    when (val result = container.music.beatMode(seed.track.id, seed.track.id, playlistId)) {
                         is NetResult.Ok -> {
-                            val queue = BeatModeRules.queueFor(result.value, seed, seed.id)
+                            val queue = BeatModeRules.queueFor(result.value, seed.track, seed.track.id)
                             // A queue row must never be id-only: refuse to install a queue that fails the
                             // display invariant instead of showing blank rows (the v3.38.0 bug).
                             val installable = queue.isNotEmpty() && queue.all(BeatModeRules::isDisplayable)
@@ -744,7 +794,7 @@ class MainActivity : ComponentActivity() {
                                 )
                                 toast(BeatModeRules.HYDRATION_MESSAGE)
                             } else {
-                                val started = play(seed, queue)
+                                val started = play(seed.track, queue)
                                 if (started) {
                                     beatModeActive = true
                                     toast("已开启心动模式")
@@ -755,7 +805,7 @@ class MainActivity : ComponentActivity() {
                         is NetResult.Err -> toast(result.message)
                     }
                 }.onFailure { error ->
-                    android.util.Log.e("YunYin", "beat mode failed for ${seed.id}", error)
+                    android.util.Log.e("YunYin", "beat mode failed", error)
                     toast("心动模式启动失败：${error.message ?: "未知错误"}")
                 }
             }
