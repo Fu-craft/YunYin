@@ -236,8 +236,8 @@ internal object CoverOrbitRules {
      */
     private val BASE_SCALE = floatArrayOf(1.62f, 1.80f, 1.56f)
 
-    /** Faint per-copy scale wobble (0.8–1.6 %), independent of the shared breathing pulse. */
-    private val SCALE_BREATH = floatArrayOf(0.012f, 0.008f, 0.016f)
+    /** Faint per-copy scale wobble (0.8–1.6 %), so the copies never look locked to each other. */
+    private val SCALE_WOBBLE = floatArrayOf(0.012f, 0.008f, 0.016f)
 
     /**
      * Opacity per copy. Low enough that the copies tint the field rather than being read as
@@ -281,7 +281,7 @@ internal object CoverOrbitRules {
     fun scale(index: Int, timeMs: Long): Float {
         val i = copyIndex(index)
         val phase = fraction(timeMs, PERIOD_MS[i]) + ORBIT_PHASE[i]
-        return BASE_SCALE[i] * (1f + SCALE_BREATH[i] * sin(TWO_PI * phase).toFloat())
+        return BASE_SCALE[i] * (1f + SCALE_WOBBLE[i] * sin(TWO_PI * phase).toFloat())
     }
 
     /** Constant opacity of one copy; the cross-fade multiplies it. */
