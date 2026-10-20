@@ -1,5 +1,6 @@
 package com.yunyin.music.ui.screens
 
+import android.animation.ValueAnimator
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.SharedTransitionLayout
@@ -13,7 +14,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.MarqueeSpacing
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -44,6 +47,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
@@ -74,6 +78,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextMotion
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.Player
@@ -1607,15 +1612,16 @@ private fun LyricsHeader(
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(
-                text = track?.name ?: "未在播放",
-                fontFamily = SFPro,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 18.sp,
-                color = Color.White,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            // The lyrics-header title can overflow for the same reason as the artwork title, and the
+            // fix is the same shared marquee: keyed so a new track restarts it, static when it fits.
+            key(track?.id) {
+                MarqueeTrackTitle(
+                    text = track?.name ?: "未在播放",
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 18.sp,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
             Spacer(Modifier.height(1.dp))
             // The artist line is the way into the artist page, and *each* name on it is its own tap
             // target, so a collaboration does not hide its second artist behind the first.
@@ -1928,6 +1934,62 @@ private fun LyricOffsetSheet(
 }
 
 /** Title + artist block shown under the artwork. */
+/**
+ * The player's track title: one line that only moves when it has to.
+ *
+ * `basicMarquee` measures the text against its incoming constraint and **does nothing when the text
+ * fits**, which is the whole requirement: a short title stays the old static line, a long one
+ * scrolls. The parameters are a reading pace, not a ticker: a 1.2 s initial delay (the identity
+ * cross-fade is 140 ms, so the new title has settled before it starts moving), 40 dp/s (slow enough
+ * to read a 26 sp line), a 2 s pause and 32 dp of blank before each repeat, forever.
+ *
+ * With system animations off `basicMarquee` rests at offset 0, and the `Clip` overflow it needs would
+ * cut a word mid-letter — so the fallback is the previous presentation, `Ellipsis`. The check is the
+ * app's existing `ValueAnimator.areAnimatorsEnabled()` (SplashScreen / VinylDisc / HyperBackground);
+ * Compose 1.12's foundation exposes no `LocalMotionDurationScale` composition local (verified against
+ * the resolved artifacts: only the `MotionDurationScale` interface and its platform impl exist), and
+ * that impl observes the same system flag.
+ *
+ * The caller keys this by track id, so a new title starts its marquee from the beginning instead of
+ * inheriting the previous title's offset.
+ */
+@Composable
+private fun MarqueeTrackTitle(
+    text: String,
+    fontWeight: FontWeight,
+    fontSize: TextUnit,
+    modifier: Modifier = Modifier,
+) {
+    val animatorsOn = remember { ValueAnimator.areAnimatorsEnabled() }
+    Text(
+        text = text,
+        fontFamily = SFPro,
+        fontWeight = fontWeight,
+        fontSize = fontSize,
+        color = Color.White,
+        maxLines = 1,
+        // The marquee needs a single unwrapped line so it can measure the text wider than the box.
+        softWrap = false,
+        // `Clip` is what lets the measured line go past the edge; an ellipsis would truncate the text
+        // that is about to scroll. When animations are off we fall back to `Ellipsis` instead of
+        // leaving a hard cut at the edge.
+        overflow = if (animatorsOn) TextOverflow.Clip else TextOverflow.Ellipsis,
+        modifier = modifier.then(
+            if (animatorsOn) {
+                Modifier.basicMarquee(
+                    iterations = Int.MAX_VALUE,
+                    repeatDelayMillis = 2_000,
+                    initialDelayMillis = 1_200,
+                    spacing = MarqueeSpacing(32.dp),
+                    velocity = 40.dp,
+                )
+            } else {
+                Modifier
+            },
+        ),
+    )
+}
+
 @Composable
 private fun TitleBlock(
     track: Track?,
@@ -1951,15 +2013,17 @@ private fun TitleBlock(
                 label = "title-block",
             ) {
                 Column {
-                    Text(
-                        text = track?.name ?: "未在播放",
-                        fontFamily = SFPro,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 26.sp,
-                        color = Color.White,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    // Keyed by track id: a new title starts its marquee at offset 0 after the initial
+                    // delay, not from the old title's position. `basicMarquee` is a no-op when the
+                    // text fits, so short titles stay perfectly still.
+                    key(track?.id) {
+                        MarqueeTrackTitle(
+                            text = track?.name ?: "未在播放",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 26.sp,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                     Spacer(Modifier.height(2.dp))
                     // The artist line is the way into the artist page, and *each* name on it is its own
                     // tap target, so a collaboration does not hide its second artist behind the first.
