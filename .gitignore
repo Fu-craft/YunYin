@@ -57,6 +57,7 @@ docs/HANDOFF.md
 *.jpg
 *.jpeg
 !app/src/main/res/drawable*/**/*.png
+!app/src/main/res/mipmap*/**/*.png
 !docs/screenshots/*.png
 !site/assets/*.png
 !site/favicon.png
