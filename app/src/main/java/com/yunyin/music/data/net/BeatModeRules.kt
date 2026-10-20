@@ -5,21 +5,30 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * 心动模式 (`/playmode/intelligence/list`) payload parsing and the queue/`pid` rules around it.
+ * 心动模式 (`/playmode/intelligence/list`) id extraction and hydration rules.
  *
- * The route is verified to exist on the deployed instance and to be login-gated: a raw probe answered
- * `HTTP 301 {"code":301,"message":null,"msg":"需要登录"}` with no `Location` header — NetEase's
- * "need login" code surfaced as the HTTP status, not a redirect — and missing `pid` is an HTTP 500.
- * A success payload could not be probed without a real account, so the documented response shapes are
- * accepted rather than assumed:
+ * ## Why the payload is only an id source
  *
- *  - the recommended list may sit under `data.recommend` (the module's documented shape), under
- *    `data.songs` / `data.list` (other builds), or at the top level;
- *  - each element may be a song object itself or a wrapper `{ "song": {...} }` / `{ "track": {...} }`;
- *  - entries without a positive id are dropped, like [ArtistPayloads] does for artists/albums.
+ * The endpoint's song objects turned out **not** to use the `/song/detail` field names (`ar`/`al`/`dt`/`name`):
+ * playback and lyrics worked because only the id is needed, but every row showed no cover, no title and no
+ * artist. The success payload cannot be probed here (the deployed instance needs a logged-in cookie), so rather
+ * than guessing another shape the queue is built in two shape-independent steps:
  *
- * Everything here is pure and unit-tested ([BeatModeRulesTest]) so a wrong guess fails in a test
- * instead of silently producing an empty or wrong queue in the UI.
+ *  1. extract the **ordered ids** from the payload (any of the documented array locations, deduplicated,
+ *     non-positive dropped);
+ *  2. resolve those ids through the authoritative batched `/song/detail?ids=` endpoint the playlist loader
+ *     already uses, then rebuild the list in id order.
+ *
+ * That makes the display fields correct by construction, and it means the only thing this file has to know
+ * about the beat-mode payload is where its ids are.
+ *
+ * ## Invariant
+ *
+ * A queue row must never be id-only: [isDisplayable] requires a non-blank title and at least one non-blank
+ * artist name, and [queueFor]/[hydrate] refuse rows that do not satisfy it. The host never installs a queue
+ * that fails that check.
+ *
+ * Everything here is pure and unit-tested ([BeatModeRulesTest]).
  */
 object BeatModeRules {
 
@@ -29,8 +38,11 @@ object BeatModeRules {
     /** Shown when the stored cookie no longer authenticates (code 301/401 on this instance). */
     const val EXPIRED_MESSAGE = "登录已过期，请重新登录"
 
-    /** Success payload had no usable songs. Kept distinct from a network/API failure. */
+    /** The beat-mode payload had no usable ids. */
     const val EMPTY_MESSAGE = "没有获取到心动模式歌曲，请稍后重试"
+
+    /** The id list existed but `/song/detail` produced no displayable track. */
+    const val HYDRATION_MESSAGE = "心动模式歌曲信息获取失败"
 
     /** The player's own failed-start message when nothing is playing. */
     const val NO_TRACK_MESSAGE = "请先播放一首歌曲"
@@ -39,10 +51,10 @@ object BeatModeRules {
     private val LIST_KEYS = listOf("recommend", "songs", "songList", "list", "tracks", "data")
 
     /**
-     * The recommended songs in the payload, de-duplicated by id and preserving order.
+     * The song objects in the payload, de-duplicated by id and preserving order.
      *
-     * Returns an empty list when no shape matches; callers treat that as "server returned nothing
-     * usable", never as success with an empty queue.
+     * Only their ids are used downstream (see the class note); this stays available so the shape handling can
+     * be unit-tested directly.
      */
     fun songObjects(json: JSONObject): List<JSONObject> {
         val arrays = ArrayList<JSONArray>()
@@ -66,18 +78,73 @@ object BeatModeRules {
     }
 
     /**
-     * The queue to install: the recommendation, with [startTrack] prepended when the server did not
+     * The ordered, de-duplicated, positive ids of the beat-mode payload.
+     *
+     * This is the **only** thing taken from that response; display metadata comes from `/song/detail` by id.
+     */
+    fun songIds(json: JSONObject): List<Long> =
+        songObjects(json).mapNotNull { song -> song.optLong("id").takeIf { it > 0L } }
+
+    /** A row is installable only with a title and at least one artist name — never an id-only row. */
+    fun isDisplayable(track: Track): Boolean =
+        track.name.isNotBlank() && track.artists.any { it.isNotBlank() }
+
+    /** Outcome of hydrating the id list: either an ordered queue, or a specific failure. */
+    sealed interface Hydration {
+        /** [tracks] preserves [songIds] order; [droppedIds] are the ids the detail endpoint could not describe. */
+        data class Ready(val tracks: List<Track>, val droppedIds: List<Long>) : Hydration
+
+        /** Nothing displayable could be resolved — the host reports [HYDRATION_MESSAGE]. */
+        data object Failed : Hydration
+    }
+
+    /**
+     * Rebuilds the queue in the **original id order** from the detail endpoint's results.
+     *
+     * - ids the detail endpoint did not return (deleted/unavailable) are dropped, without shifting the rest;
+     * - ids whose returned track has no title/artist are dropped too ([isDisplayable]) — the id-only-row guard;
+     * - a duplicate id is only installed once;
+     * - no displayable track at all → [Hydration.Failed], so the host can fail with a specific message instead
+     *   of installing an empty or blank queue.
+     */
+    fun hydrate(ids: List<Long>, tracksById: Map<Long, Track>): Hydration {
+        val dropped = ArrayList<Long>()
+        val out = ArrayList<Track>(ids.size)
+        val seen = HashSet<Long>(ids.size)
+        ids.forEach { id ->
+            if (!seen.add(id)) return@forEach
+            val track = tracksById[id]
+            if (track == null || !isDisplayable(track)) {
+                dropped += id
+            } else {
+                out += track
+            }
+        }
+        return if (out.isEmpty()) Hydration.Failed else Hydration.Ready(out, dropped)
+    }
+
+    /**
+     * The queue to install: the hydrated recommendation, with [startTrack] prepended when the server did not
      * include it, so playback can always start on the song the user invoked 心动模式 from.
      *
-     * Empty recommendation → empty queue (the host reports [EMPTY_MESSAGE] and leaves the current
-     * queue untouched).
+     * Rows that fail [isDisplayable] are never installed; an empty result means the host must leave the
+     * current queue untouched and show [HYDRATION_MESSAGE].
      */
     fun queueFor(recommended: List<Track>, startTrack: Track?, startSongId: Long): List<Track> {
+        // No hydrated recommendation means hydration failed; the host must not install a seed-only queue
+        // under the name 心动模式 (it would silently not be the recommended list).
         if (recommended.isEmpty()) return emptyList()
         val seen = HashSet<Long>(recommended.size + 1)
         val out = ArrayList<Track>(recommended.size + 1)
-        recommended.forEach { track -> if (seen.add(track.id)) out += track }
-        if (startTrack != null && out.none { it.id == startSongId }) {
+        recommended.forEach { track ->
+            if (isDisplayable(track) && seen.add(track.id)) out += track
+        }
+        if (
+            out.none { it.id == startSongId } &&
+            startTrack != null &&
+            startSongId > 0L &&
+            isDisplayable(startTrack)
+        ) {
             out.add(0, startTrack)
         }
         return out

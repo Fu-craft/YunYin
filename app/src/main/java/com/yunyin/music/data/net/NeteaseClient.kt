@@ -531,11 +531,16 @@ class NeteaseClient(
     /**
      * 心动模式: the personalised "heartbeat" queue for [songId], inside [playlistId] when one is known.
      *
-     * The deployed instance's route is login-gated (the raw probe and the accepted payload shapes live in
-     * [BeatModeRules]): a guest is rejected locally without a round trip, and a 301/401 from the server is
-     * reported as the two specific login messages rather than a generic error. `pid` is omitted when no
-     * playlist id is known — the server's own answer is then what the user sees. Cache-busted because this
-     * deployment caches module results.
+     * The deployed instance's route is login-gated (the raw probe lives in [BeatModeRules]): a guest is rejected
+     * locally without a round trip, and a 301/401 from the server is reported as the two specific login messages
+     * rather than a generic error. `pid` is omitted when no playlist id is known — the server's own answer is
+     * then what the user sees. Cache-busted because this deployment caches module results.
+     *
+     * The recommendation payload is used **only as an ordered id source**: its song objects do not use
+     * `/song/detail`'s field names, so mapping them directly produced id-only rows (playable, with lyrics, but
+     * no title/artist/cover). The ids are therefore hydrated through the authoritative batched
+     * `/song/detail?ids=` path and rebuilt in the original order; rows the detail endpoint cannot describe are
+     * dropped, and a queue is never installed from blank rows.
      */
     suspend fun beatMode(songId: Long, startSongId: Long, playlistId: Long?): NetResult<List<Track>> {
         if (settings.cookie.isBlank()) return NetResult.Err(BeatModeRules.GUEST_MESSAGE)
@@ -544,19 +549,77 @@ class NeteaseClient(
             put("sid", "$startSongId")
             playlistId?.takeIf { it > 0L }?.let { put("pid", "$it") }
         }
-        return when (
+        val payload = when (
             val result = request(
                 "/playmode/intelligence/list",
                 query = RequestCacheBust.withCacheBust(query, System.currentTimeMillis()),
             )
         ) {
-            is NetResult.Ok -> {
-                val tracks = JSONArray(BeatModeRules.songObjects(result.value)).mapDetailTracks()
-                if (tracks.isEmpty()) NetResult.Err(BeatModeRules.EMPTY_MESSAGE) else NetResult.Ok(tracks)
-            }
+            is NetResult.Ok -> result.value
             is NetResult.Err ->
-                NetResult.Err(BeatModeRules.loginFailureMessage(result.message) ?: result.message)
+                return NetResult.Err(BeatModeRules.loginFailureMessage(result.message) ?: result.message)
         }
+
+        // Step 1: ordered ids only (see the doc above for why the payload's own objects are not trusted).
+        val ids = BeatModeRules.songIds(payload)
+        android.util.Log.i("YunYin/BeatMode", "beat payload ids=${ids.size} first=${ids.take(5)}")
+        if (ids.isEmpty()) return NetResult.Err(BeatModeRules.EMPTY_MESSAGE)
+
+        // Step 2: authoritative metadata by id, in batches; a failed batch fails the hydration instead of
+        // silently dropping a whole page of songs.
+        val hydrated = when (val detail = songDetailsBatched(ids)) {
+            is NetResult.Ok -> detail.value
+            is NetResult.Err -> {
+                android.util.Log.i(
+                    "YunYin/BeatMode",
+                    "hydration request failed for ${ids.size} ids: ${detail.message}",
+                )
+                return NetResult.Err(BeatModeRules.HYDRATION_MESSAGE)
+            }
+        }
+        return when (val hydration = BeatModeRules.hydrate(ids, hydrated.associateBy { it.id })) {
+            is BeatModeRules.Hydration.Failed -> {
+                android.util.Log.i(
+                    "YunYin/BeatMode",
+                    "hydration produced no displayable rows for ${ids.size} ids: ${ids.take(5)}",
+                )
+                NetResult.Err(BeatModeRules.HYDRATION_MESSAGE)
+            }
+            is BeatModeRules.Hydration.Ready -> {
+                if (hydration.droppedIds.isNotEmpty()) {
+                    android.util.Log.i(
+                        "YunYin/BeatMode",
+                        "dropped ${hydration.droppedIds.size} ids (missing or id-only): " +
+                            hydration.droppedIds.take(8),
+                    )
+                }
+                NetResult.Ok(hydration.tracks)
+            }
+        }
+    }
+
+    /**
+     * Resolves [ids] to full tracks through `/song/detail?ids=` in [PlaylistPagingRules.TRACK_BATCH] batches.
+     *
+     * Cache-busted for the same reason as every other read on this deployment. The detail response order is not
+     * trusted: callers rebuild by id order from the returned tracks.
+     */
+    private suspend fun songDetailsBatched(ids: List<Long>): NetResult<List<Track>> {
+        val out = ArrayList<Track>(ids.size)
+        PlaylistPagingRules.chunks(ids).forEach { chunk ->
+            val result = request(
+                "/song/detail",
+                query = RequestCacheBust.withCacheBust(
+                    mapOf("ids" to chunk.joinToString(",")),
+                    System.currentTimeMillis(),
+                ),
+            )
+            when (result) {
+                is NetResult.Ok -> out += result.value.optJSONArray("songs")?.mapDetailTracks().orEmpty()
+                is NetResult.Err -> return result
+            }
+        }
+        return NetResult.Ok(out)
     }
 
     // ---------------------------------------------------------------- playlist writes

@@ -715,8 +715,16 @@ class MainActivity : ComponentActivity() {
                     when (val result = container.music.beatMode(seed.id, seed.id, playlistId)) {
                         is NetResult.Ok -> {
                             val queue = BeatModeRules.queueFor(result.value, seed, seed.id)
-                            if (queue.isEmpty()) {
-                                toast(BeatModeRules.EMPTY_MESSAGE)
+                            // A queue row must never be id-only: refuse to install a queue that fails the
+                            // display invariant instead of showing blank rows (the v3.38.0 bug).
+                            val installable = queue.isNotEmpty() && queue.all(BeatModeRules::isDisplayable)
+                            if (!installable) {
+                                android.util.Log.i(
+                                    "YunYin/BeatMode",
+                                    "refusing queue: rows=${queue.size} displayable=" +
+                                        queue.count(BeatModeRules::isDisplayable),
+                                )
+                                toast(BeatModeRules.HYDRATION_MESSAGE)
                             } else {
                                 val started = play(seed, queue)
                                 if (started) toast("已开启心动模式")

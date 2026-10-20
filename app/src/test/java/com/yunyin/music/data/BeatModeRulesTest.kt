@@ -132,4 +132,86 @@ class BeatModeRulesTest {
         assertNull(BeatModeRules.loginFailureMessage("接口不存在"))
         assertNull(BeatModeRules.loginFailureMessage(null))
     }
+
+    // ---------------------------------------------------------------- id extraction + hydration
+    //
+    // The beat-mode payload's song objects do not use /song/detail's field names, so the payload is only an
+    // id source and the rows are hydrated by id. These are the tests that make the reported "plays but shows no
+    // cover/title/artist" failure impossible to reintroduce silently.
+
+    @Test
+    fun `ids are extracted in order, de-duplicated and non-positive values dropped`() {
+        val payload = JSONObject().put(
+            "data",
+            JSONObject().put(
+                "recommend",
+                JSONArray(
+                    listOf(
+                        JSONObject().put("id", 3L),
+                        JSONObject().put("id", 1L),
+                        JSONObject().put("id", 3L),
+                        JSONObject().put("id", 0L),
+                        JSONObject().put("id", -2L),
+                    ),
+                ),
+            ),
+        )
+        assertEquals(listOf(3L, 1L), BeatModeRules.songIds(payload))
+    }
+
+    @Test
+    fun `hydration rebuilds the queue in the original id order with full metadata`() {
+        val ids = listOf(3L, 1L, 2L)
+        val byId = mapOf(1L to track(1), 2L to track(2), 3L to track(3))
+        val ready = BeatModeRules.hydrate(ids, byId) as BeatModeRules.Hydration.Ready
+        assertEquals(listOf(3L, 1L, 2L), ready.tracks.map { it.id })
+        // Given ids [a,b,c] and a fake detail response, the queue is [a,b,c] with real display fields.
+        ready.tracks.forEach { row ->
+            assertTrue(row.name.isNotBlank())
+            assertTrue(row.artists.any { it.isNotBlank() })
+        }
+    }
+
+    @Test
+    fun `hydration drops ids the detail endpoint did not return, without reordering`() {
+        val ready = BeatModeRules.hydrate(listOf(1L, 2L, 3L), mapOf(3L to track(3), 1L to track(1)))
+            as BeatModeRules.Hydration.Ready
+        assertEquals(listOf(1L, 3L), ready.tracks.map { it.id })
+        assertEquals(listOf(2L), ready.droppedIds)
+    }
+
+    @Test
+    fun `hydration drops an id-only row instead of queueing it`() {
+        val blank = Track(
+            id = 2L, name = "", artists = emptyList(), albumName = "", albumId = 0L,
+            coverUrl = null, durationMs = 0L,
+        )
+        val ready = BeatModeRules.hydrate(listOf(1L, 2L), mapOf(1L to track(1), 2L to blank))
+            as BeatModeRules.Hydration.Ready
+        assertEquals(listOf(1L), ready.tracks.map { it.id })
+        assertEquals(listOf(2L), ready.droppedIds)
+        assertTrue(ready.tracks.all(BeatModeRules::isDisplayable))
+    }
+
+    @Test
+    fun `hydration fails when every id is missing or id-only`() {
+        assertEquals(BeatModeRules.Hydration.Failed, BeatModeRules.hydrate(listOf(1L, 2L), emptyMap()))
+        val blank = Track(
+            id = 1L, name = "", artists = listOf(""), albumName = "", albumId = 0L,
+            coverUrl = null, durationMs = 0L,
+        )
+        assertEquals(BeatModeRules.Hydration.Failed, BeatModeRules.hydrate(listOf(1L), mapOf(1L to blank)))
+        assertEquals(BeatModeRules.Hydration.Failed, BeatModeRules.hydrate(emptyList(), mapOf(1L to track(1))))
+    }
+
+    @Test
+    fun `a queue never contains an id-only row`() {
+        val blank = Track(
+            id = 2L, name = " ", artists = listOf(" "), albumName = "", albumId = 0L,
+            coverUrl = null, durationMs = 0L,
+        )
+        val queue = BeatModeRules.queueFor(listOf(blank, track(1)), startTrack = blank, startSongId = blank.id)
+        assertEquals(listOf(1L), queue.map { it.id })
+        assertTrue(queue.all(BeatModeRules::isDisplayable))
+    }
 }
