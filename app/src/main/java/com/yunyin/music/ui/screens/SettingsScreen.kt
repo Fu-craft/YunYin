@@ -24,7 +24,9 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -32,6 +34,8 @@ import com.yunyin.music.ui.AppViewModel
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -40,6 +44,7 @@ import com.yunyin.music.data.lxsource.LxSourceKey
 import com.yunyin.music.data.update.UpdateUiState
 import com.yunyin.music.ui.PlayerStyle
 import com.yunyin.music.ui.components.GlassTopBar
+import com.yunyin.music.ui.components.scrollLinkedTitleAlpha
 import com.yunyin.music.ui.components.glassTopBarTopPadding
 import com.yunyin.music.ui.components.rememberGlassTopBarBackdrop
 import com.yunyin.music.ui.icons.SfIcons
@@ -161,6 +166,20 @@ fun SettingsScreen(
     // The frosted navigation strip: the recorded page layer the bar samples, with the bar itself
     // composed outside it (after the scroll column closes, below).
     val topBarBackdrop = rememberGlassTopBarBackdrop()
+    val scrollState = rememberScrollState()
+    // Measured from the page's own header title, not a magic number: the bar title fades in over
+    // exactly the distance that title takes to slide under the strip.
+    var headerTitleHeightPx by remember { mutableIntStateOf(0) }
+    val barTitleAlpha by remember(scrollState, headerTitleHeightPx) {
+        derivedStateOf {
+            scrollLinkedTitleAlpha(
+                firstVisibleItemIndex = 0,
+                firstVisibleItemScrollOffset = scrollState.value,
+                fadeStartPx = 0f,
+                fadeRampPx = headerTitleHeightPx.toFloat(),
+            )
+        }
+    }
 
     Box(
         modifier = modifier
@@ -174,11 +193,25 @@ fun SettingsScreen(
             Column(
                 Modifier
                     .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
+                    .verticalScroll(scrollState)
                     .navigationBarsPadding()
                     .padding(top = glassTopBarTopPadding())
                     .padding(horizontal = 20.dp, vertical = 8.dp),
             ) {
+            // The page's own large title. The bar title is invisible while this is on screen and
+            // fades in as it scrolls under the strip (one shared rule with the artist page). The
+            // measured block includes the spacer under it: that whole distance is what the title
+            // travels before the strip has fully taken over, so it is the fade's ramp.
+            Column(Modifier.onSizeChanged { headerTitleHeightPx = it.height }) {
+                Text(
+                    text = "设置",
+                    fontFamily = SFPro,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 34.sp,
+                    color = AppTheme.palette.label,
+                )
+                Spacer(Modifier.height(14.dp))
+            }
             SectionLabel("状态栏歌词")
             // The enable switch leads, because it decides whether the two rows below have anything to
             // say: with 词幕 publishing off there is no connection to report and no status to retry.
@@ -306,6 +339,8 @@ fun SettingsScreen(
                     fontWeight = FontWeight.Bold,
                     fontSize = 28.sp,
                     color = AppTheme.palette.label,
+                    // Layer phase only: scrolling never recomposes the settings list.
+                    modifier = Modifier.graphicsLayer { alpha = barTitleAlpha },
                 )
             }
         }

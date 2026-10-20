@@ -60,6 +60,7 @@ import com.yunyin.music.ui.components.DefaultTopBarTintIntensity
 import com.yunyin.music.ui.components.EmptyState
 import com.yunyin.music.ui.components.GlassTopBar
 import com.yunyin.music.ui.components.glassTopBarTopPadding
+import com.yunyin.music.ui.components.scrollLinkedTitleAlpha
 import com.yunyin.music.ui.components.liquidGlassControl
 import com.yunyin.music.ui.components.rememberControlRipple
 import com.yunyin.music.ui.components.rememberGlassTopBarBackdrop
@@ -333,11 +334,12 @@ private fun ArtistTopBar(
 
     val titleAlpha by remember(listState, fadeStartPx, fadeRampPx) {
         derivedStateOf {
-            if (listState.firstVisibleItemIndex > 0) {
-                1f
-            } else {
-                ((listState.firstVisibleItemScrollOffset - fadeStartPx) / fadeRampPx).coerceIn(0f, 1f)
-            }
+            scrollLinkedTitleAlpha(
+                firstVisibleItemIndex = listState.firstVisibleItemIndex,
+                firstVisibleItemScrollOffset = listState.firstVisibleItemScrollOffset,
+                fadeStartPx = fadeStartPx,
+                fadeRampPx = fadeRampPx,
+            )
         }
     }
 
@@ -346,15 +348,17 @@ private fun ArtistTopBar(
         tintIntensity = DefaultTopBarTintIntensity,
         modifier = modifier,
     ) {
-        Row(
-            Modifier.fillMaxSize().padding(horizontal = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+        // Back on the leading edge, shuffle on the trailing edge, name **centred** between them:
+        // at rest the bar is icon-only (the header already shows the name); once the header name
+        // scrolls under the strip this bar name fades in as a standard centred navigation title.
+        // The horizontal padding keeps it clear of both 44dp discs.
+        Box(Modifier.fillMaxSize().padding(horizontal = 8.dp)) {
             ArtistBarButton(
                 icon = SfIcons.ChevronDown,
                 description = "返回",
                 backdrop = backdrop,
                 onClick = onBack,
+                modifier = Modifier.align(Alignment.CenterStart),
             )
             Text(
                 text = name,
@@ -364,9 +368,10 @@ private fun ArtistTopBar(
                 color = palette.label,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 8.dp)
+                    .align(Alignment.Center)
+                    .padding(horizontal = 56.dp)
                     // Read in the layer phase, so the per-frame fade never recomposes the page.
                     .graphicsLayer { alpha = titleAlpha },
             )
@@ -375,6 +380,7 @@ private fun ArtistTopBar(
                 description = "随机播放",
                 backdrop = backdrop,
                 onClick = onShuffle,
+                modifier = Modifier.align(Alignment.CenterEnd),
             )
         }
     }
@@ -392,9 +398,10 @@ private fun ArtistBarButton(
     description: String,
     backdrop: Backdrop,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Box(
-        Modifier
+        modifier
             .size(44.dp)
             .liquidGlassControl(backdrop, CircleShape)
             .clickable(
