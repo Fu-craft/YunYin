@@ -50,6 +50,7 @@ import com.yunyin.music.ui.components.liquidGlassControl
 import com.yunyin.music.ui.components.rememberGlassTopBarBackdrop
 import com.yunyin.music.ui.icons.SfIcons
 import com.yunyin.music.ui.theme.AppTheme
+import com.yunyin.music.ui.theme.Motion
 import com.yunyin.music.ui.theme.SFPro
 import com.kyant.backdrop.backdrops.layerBackdrop
 
@@ -72,7 +73,7 @@ import com.kyant.backdrop.backdrops.layerBackdrop
  * around under the user's finger.
  */
 private fun LazyItemScope.shelfAppear(): Modifier = Modifier.animateItem(
-    fadeInSpec = tween(260),
+    fadeInSpec = tween(Motion.ItemAppearDuration),
     fadeOutSpec = null,
     placementSpec = null,
 )

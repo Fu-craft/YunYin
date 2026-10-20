@@ -71,9 +71,10 @@ class SettingsStore(context: Context) {
     /**
      * Whether the lyrics page auto-enters immersive mode after [IMMERSIVE_IDLE_MS] of inactivity.
      *
-     * Defaults **off**: hiding the transport is only desirable when the user deliberately sits down
-     * to read lyrics, and an uninvited disappearing control is worse than one more tap. The manual
-     * way into the lyrics page is unaffected; this gates only the idle timer (see `PlayerScreen`).
+     * Defaults **on** (the user corrected the earlier default). The getter's fallback is the default,
+     * so existing installs that never touched the toggle have no stored key and pick this up
+     * automatically; only a user who explicitly turned it off has `false` persisted and keeps it.
+     * The manual way into the lyrics page is unaffected; this gates only the idle timer.
      */
     var autoImmersiveLyrics: Boolean
         get() = prefs.getBoolean(KEY_AUTO_IMMERSIVE_LYRICS, DEFAULT_AUTO_IMMERSIVE_LYRICS)
@@ -273,4 +274,4 @@ class SettingsStore(context: Context) {
 }
 
 /** Default for [SettingsStore.autoImmersiveLyrics]; a plain constant so a unit test can pin it. */
-internal const val DEFAULT_AUTO_IMMERSIVE_LYRICS = false
+internal const val DEFAULT_AUTO_IMMERSIVE_LYRICS = true

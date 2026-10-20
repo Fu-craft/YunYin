@@ -921,7 +921,7 @@ class MainActivity : ComponentActivity() {
                     // short: switching is a tens-of-times-a-day action, so it must not read as a
                     // transition. 120ms in / 60ms out keeps the overlap of two screens below the
                     // point where two artworks are legibly superimposed.
-                    CrossfadeContent(targetState = tab, durationMillis = 120, label = "tab") { activeTab ->
+                    CrossfadeContent(targetState = tab, durationMillis = 160, label = "tab") { activeTab ->
                     when (activeTab) {
                         PlayerTab.Home -> HomeScreen(
                             state = homeState,
@@ -1022,9 +1022,9 @@ class MainActivity : ComponentActivity() {
                             tween(Motion.SmallDuration, easing = Motion.EaseOut),
                             expandFrom = Alignment.Bottom,
                         ),
-                    exit = fadeOut(tween(Motion.PressDuration, easing = Motion.EaseOut)) +
+                    exit = fadeOut(tween(Motion.SmallDuration, easing = Motion.EaseOut)) +
                         shrinkVertically(
-                            tween(Motion.PressDuration, easing = Motion.EaseOut),
+                            tween(Motion.SmallDuration, easing = Motion.EaseOut),
                             shrinkTowards = Alignment.Bottom,
                         ),
                 ) {
@@ -1062,10 +1062,10 @@ class MainActivity : ComponentActivity() {
 
             AnimatedVisibility(
                 visible = collectionState != null,
-                enter = slideInVertically(tween(320, easing = Motion.EaseOut)) { it } +
-                    fadeIn(tween(200, easing = Motion.EaseOut)),
-                exit = slideOutVertically(tween(260, easing = Motion.EaseOut)) { it } +
-                    fadeOut(tween(160, easing = Motion.EaseOut)),
+                enter = slideInVertically(tween(Motion.SheetEnterDuration, easing = Motion.EaseOut)) { it } +
+                    fadeIn(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
+                exit = slideOutVertically(tween(Motion.SheetExitDuration, easing = Motion.EaseOut)) { it } +
+                    fadeOut(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
             ) {
                 val state = lastCollection
                 if (state != null) {
@@ -1148,8 +1148,8 @@ class MainActivity : ComponentActivity() {
 
             AnimatedVisibility(
                 visible = showSettings,
-                enter = slideInVertically(tween(320, easing = Motion.EaseOut)) { it },
-                exit = slideOutVertically(tween(280, easing = Motion.EaseOut)) { it },
+                enter = slideInVertically(tween(Motion.SheetEnterDuration, easing = Motion.EaseOut)) { it },
+                exit = slideOutVertically(tween(Motion.SheetExitDuration, easing = Motion.EaseOut)) { it },
             ) {
                 SettingsScreen(
                     onClearLyricsCache = {
@@ -1437,8 +1437,8 @@ class MainActivity : ComponentActivity() {
 
             AnimatedVisibility(
                 visible = showLogin,
-                enter = slideInVertically(tween(320, easing = Motion.EaseOut)) { it },
-                exit = slideOutVertically(tween(280, easing = Motion.EaseOut)) { it },
+                enter = slideInVertically(tween(Motion.SheetEnterDuration, easing = Motion.EaseOut)) { it },
+                exit = slideOutVertically(tween(Motion.SheetExitDuration, easing = Motion.EaseOut)) { it },
             ) {                LoginScreen(
                     currentAccount = account,
                     client = container.client,
@@ -1464,8 +1464,8 @@ class MainActivity : ComponentActivity() {
             // gives the player its motion.
             AnimatedVisibility(
                 visible = showPlayer,
-                enter = slideInVertically(tween(380, easing = Motion.EaseOut)) { it } + fadeIn(tween(220, easing = Motion.EaseOut)),
-                exit = slideOutVertically(tween(320, easing = Motion.EaseOut)) { it } + fadeOut(tween(200, easing = Motion.EaseOut)),
+                enter = slideInVertically(tween(Motion.SheetEnterDuration, easing = Motion.EaseOut)) { it } + fadeIn(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
+                exit = slideOutVertically(tween(Motion.SheetEnterDuration, easing = Motion.EaseOut)) { it } + fadeOut(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
             ) {
                 // Collected here, inside the player's own branch, so the 4x/second position tick
                 // invalidates only the player screen and never the browsing tabs behind it.
@@ -1575,10 +1575,10 @@ class MainActivity : ComponentActivity() {
 
             AnimatedVisibility(
                 visible = artistState != null,
-                enter = slideInVertically(tween(320, easing = Motion.EaseOut)) { it } +
-                    fadeIn(tween(200, easing = Motion.EaseOut)),
-                exit = slideOutVertically(tween(260, easing = Motion.EaseOut)) { it } +
-                    fadeOut(tween(160, easing = Motion.EaseOut)),
+                enter = slideInVertically(tween(Motion.SheetEnterDuration, easing = Motion.EaseOut)) { it } +
+                    fadeIn(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
+                exit = slideOutVertically(tween(Motion.SheetExitDuration, easing = Motion.EaseOut)) { it } +
+                    fadeOut(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
             ) {
                 val artist = lastArtist
                 if (artist != null) {

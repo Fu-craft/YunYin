@@ -52,16 +52,27 @@ object Motion {
      */
     val CoverResumeSettle: FiniteAnimationSpec<Float> = spring(dampingRatio = 1f, stiffness = 480f)
 
-    /** Button / press feedback: 100-160ms. */
+    /**
+     * Button / press feedback: 100-160ms.
+     *
+     * Deliberately **not** slowed with the rest of the app: a press must still feel instant, and a
+     * slow acknowledgement reads as lag rather than calm.
+     */
     const val PressDuration = 160
 
-    /** Small popovers, chips, glyph and label swaps: 125-200ms. */
-    const val SmallDuration = 200
+    /** Small popovers, chips, glyph and label swaps: the calmer 3.41.4 tempo (was 200). */
+    const val SmallDuration = 260
 
-    /** Sheets and drawers: modals are allowed 200-500ms. */
-    const val SheetEnterDuration = 320
-    const val SheetExitDuration = 260
+    /** Content cross-fades: phase changes, lyric documents, titles (was 220). */
+    const val CrossfadeDuration = 280
 
-    /** Content cross-fades. */
-    const val CrossfadeDuration = 220
+    /** Scrims and simple overlay fades (was 200 in sheets, 320 on the cover overlay). */
+    const val ScrimDuration = 360
+
+    /** List-item appearance when paging appends rows (was 260). */
+    const val ItemAppearDuration = 320
+
+    /** Sheets and drawers: modals are allowed 200-500ms (was 320 / 260). */
+    const val SheetEnterDuration = 420
+    const val SheetExitDuration = 340
 }

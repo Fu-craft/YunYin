@@ -274,9 +274,9 @@ fun LibraryScreen(
     AnimatedVisibility(
         visible = openPage == LibraryPage.Playlists,
         enter = slideInHorizontally(tween(LIB_PAGE_MS, easing = Motion.EaseOut)) { it } +
-            fadeIn(tween(200, easing = Motion.EaseOut)),
+            fadeIn(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
         exit = slideOutHorizontally(tween(LIB_PAGE_EXIT_MS, easing = Motion.EaseOut)) { it } +
-            fadeOut(tween(160, easing = Motion.EaseOut)),
+            fadeOut(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
     ) {
         PlaylistsPage(
             playlists = normalPlaylists,
@@ -292,9 +292,9 @@ fun LibraryScreen(
     AnimatedVisibility(
         visible = openPage == LibraryPage.Recent,
         enter = slideInHorizontally(tween(LIB_PAGE_MS, easing = Motion.EaseOut)) { it } +
-            fadeIn(tween(200, easing = Motion.EaseOut)),
+            fadeIn(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
         exit = slideOutHorizontally(tween(LIB_PAGE_EXIT_MS, easing = Motion.EaseOut)) { it } +
-            fadeOut(tween(160, easing = Motion.EaseOut)),
+            fadeOut(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
     ) {
         RecentPage(
             tracks = recentTracks,
@@ -310,10 +310,10 @@ fun LibraryScreen(
 private enum class LibraryPage { Playlists, Recent }
 
 /** Slide-in duration for a library subpage; matches the app's other page pushes. */
-private const val LIB_PAGE_MS = 320
+private const val LIB_PAGE_MS = 420
 
 /** Exit is slightly quicker than entry, as everywhere else in this app. */
-private const val LIB_PAGE_EXIT_MS = 260
+private const val LIB_PAGE_EXIT_MS = 340
 
 /** The profile page's own content, separated so the subpages can be layered over it. */
 @Composable
@@ -725,7 +725,7 @@ private fun LibraryRow(
 ) {
     val rotation by animateFloatAsState(
         targetValue = if (expanded) 90f else 0f,
-        animationSpec = tween(220),
+        animationSpec = tween(Motion.SmallDuration, easing = Motion.EaseOut),
         label = "row-chevron",
     )
     Row(

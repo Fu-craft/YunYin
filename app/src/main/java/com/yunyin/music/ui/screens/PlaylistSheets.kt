@@ -202,7 +202,7 @@ fun PlaylistPickerSheet(
         }
         CrossfadeContent(
             targetState = phase,
-            durationMillis = Motion.SmallDuration,
+            durationMillis = Motion.CrossfadeDuration,
             label = "playlist-picker-phase",
         ) { current ->
             when (current) {

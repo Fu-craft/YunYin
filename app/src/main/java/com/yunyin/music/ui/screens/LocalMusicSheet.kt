@@ -100,7 +100,7 @@ fun LocalMusicSheet(
         CrossfadeContent(
             targetState = phase,
             modifier = Modifier.fillMaxWidth().weight(1f),
-            durationMillis = Motion.SmallDuration,
+            durationMillis = Motion.CrossfadeDuration,
             label = "local-music-phase",
         ) { current ->
             when (current) {

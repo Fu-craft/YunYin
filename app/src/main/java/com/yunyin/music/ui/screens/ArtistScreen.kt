@@ -200,7 +200,7 @@ fun ArtistScreen(
                     }
                     CrossfadeContent(
                         targetState = footerPhase,
-                        durationMillis = Motion.SmallDuration,
+                        durationMillis = Motion.CrossfadeDuration,
                         label = "all-footer",
                     ) { current ->
                         when (current) {
@@ -256,7 +256,7 @@ fun ArtistScreen(
                     }
                     CrossfadeContent(
                         targetState = footerPhase,
-                        durationMillis = Motion.SmallDuration,
+                        durationMillis = Motion.CrossfadeDuration,
                         label = "albums-footer",
                     ) { current ->
                         when (current) {
@@ -295,7 +295,7 @@ private val HeaderNameTop = 148.dp
  * purpose: content arriving must not slide around under the user's finger.
  */
 private fun LazyItemScope.appendedRowAppear(): Modifier = Modifier.animateItem(
-    fadeInSpec = tween(260),
+    fadeInSpec = tween(Motion.ItemAppearDuration),
     fadeOutSpec = null,
     placementSpec = null,
 )
@@ -458,7 +458,7 @@ private fun ArtistHeaderBlock(
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .animateContentSize(tween(220, easing = Motion.EaseOut))
+                    .animateContentSize(tween(Motion.SmallDuration, easing = Motion.EaseOut))
                     .clipToBounds(),
             ) {
                 Text(
@@ -481,7 +481,7 @@ private fun ArtistHeaderBlock(
             // LibraryScreen's expandable rows. Read only in the layer phase.
             val chevron by animateFloatAsState(
                 targetValue = if (bioExpanded) 1f else 0f,
-                animationSpec = tween(220, easing = Motion.EaseOut),
+                animationSpec = tween(Motion.SmallDuration, easing = Motion.EaseOut),
                 label = "bio-chevron",
             )
             Icon(

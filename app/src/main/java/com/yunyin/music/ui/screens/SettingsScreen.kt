@@ -211,7 +211,7 @@ fun SettingsScreen(
             )
             ToggleRow(
                 title = "自动进入沉浸歌词",
-                subtitle = "歌词页闲置几秒后自动隐藏播放控件；默认关闭",
+                subtitle = "歌词页闲置几秒后自动隐藏播放控件；默认开启",
                 enabled = autoImmersiveLyrics,
                 onChange = onAutoImmersiveLyricsChange,
             )

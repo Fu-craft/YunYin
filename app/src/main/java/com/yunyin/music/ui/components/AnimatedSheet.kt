@@ -106,8 +106,8 @@ fun AnimatedSheet(
             if (scrim) {
                 AnimatedVisibility(
                     visible = visible,
-                    enter = fadeIn(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
-                    exit = fadeOut(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
+                    enter = fadeIn(tween(Motion.ScrimDuration, easing = Motion.EaseOut)),
+                    exit = fadeOut(tween(Motion.ScrimDuration, easing = Motion.EaseOut)),
                 ) {
                     Box(
                         Modifier
@@ -122,13 +122,13 @@ fun AnimatedSheet(
                 enter = if (placement == SheetPlacement.Bottom) {
                     slideInVertically(tween(Motion.SheetEnterDuration, easing = Motion.EaseDrawer)) { it }
                 } else {
-                    fadeIn(tween(Motion.SmallDuration, easing = Motion.EaseOut)) +
+                    fadeIn(tween(Motion.SheetEnterDuration, easing = Motion.EaseOut)) +
                         scaleIn(tween(Motion.SheetEnterDuration, easing = Motion.EaseOut), initialScale = 0.94f)
                 },
                 exit = if (placement == SheetPlacement.Bottom) {
                     slideOutVertically(tween(Motion.SheetExitDuration, easing = Motion.EaseDrawer)) { it }
                 } else {
-                    fadeOut(tween(Motion.SmallDuration, easing = Motion.EaseOut)) +
+                    fadeOut(tween(Motion.SheetExitDuration, easing = Motion.EaseOut)) +
                         scaleOut(tween(Motion.SheetExitDuration, easing = Motion.EaseOut), targetScale = 0.94f)
                 },
             ) {

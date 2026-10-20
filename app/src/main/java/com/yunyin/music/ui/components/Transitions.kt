@@ -31,7 +31,7 @@ import com.yunyin.music.ui.theme.Motion
 fun <T> CrossfadeContent(
     targetState: T,
     modifier: Modifier = Modifier,
-    durationMillis: Int = 220,
+    durationMillis: Int = Motion.CrossfadeDuration,
     label: String = "crossfade-content",
     content: @Composable (T) -> Unit,
 ) {

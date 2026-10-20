@@ -1246,7 +1246,7 @@ private fun DownloadOverlay(
 
     val scrim by animateFloatAsState(
         targetValue = if (state is DownloadState.Downloading) 0.55f else 0f,
-        animationSpec = tween(320, easing = Motion.EaseOut),
+        animationSpec = tween(Motion.ScrimDuration, easing = Motion.EaseOut),
         label = "download-scrim",
     )
     // The badge stays up while `badgeVisible`, and the whole overlay unmounts once it has faded.
@@ -2145,8 +2145,8 @@ private fun LikeButton(
         // an intermediate opacity that would look like a half-filled heart.
         androidx.compose.animation.AnimatedVisibility(
             visible = liked,
-            enter = fadeIn(tween(180)),
-            exit = fadeOut(tween(120)),
+            enter = fadeIn(tween(Motion.SmallDuration)),
+            exit = fadeOut(tween(Motion.SmallDuration)),
         ) {
             CircleGlassIcon(SfIcons.HeartFill, "取消喜欢", size, onClick = onClick)
         }
@@ -2210,7 +2210,7 @@ private fun QualityChip(
     ) {
         CrossfadeContent(
             targetState = quality,
-            durationMillis = 200,
+            durationMillis = Motion.SmallDuration,
             label = "quality-chip",
         ) { active ->
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2416,7 +2416,7 @@ private fun PlayPauseButton(isPlaying: Boolean, isBuffering: Boolean, onClick: (
         // being swapped; the size difference between the two icons is preserved per state.
         CrossfadeContent(
             targetState = isPlaying,
-            durationMillis = 180,
+            durationMillis = Motion.SmallDuration,
             label = "play-pause",
         ) { playing ->
             Icon(
@@ -2492,7 +2492,7 @@ private fun BottomIcon(
         ) {
             CrossfadeContent(
                 targetState = icon.name,
-                durationMillis = 200,
+                durationMillis = Motion.SmallDuration,
                 label = "bottom-icon",
             ) {
                 Icon(
@@ -2528,20 +2528,19 @@ private const val IMMERSIVE_IDLE_MS = 4000L
  * The return is a touch longer than the departure: leaving should feel decisive (the user is reading;
  * the chrome yields), while arriving has to settle without a snap.
  */
-private const val CHROME_EXIT_MS = 320
-private const val CHROME_ENTER_MS = 340
+private const val CHROME_EXIT_MS = 400
+private const val CHROME_ENTER_MS = 440
 
 /**
  * Duration of the cross-fade between the artwork and lyrics presentations, and of the shared
  * cover's travel.
  *
- * Raised from 260 ms to 400 ms: at 260 the cover's flight read as too quick for the size of the
- * move (the user: 动效太快), and the geometry finished almost before the eye had registered that
- * the cover had left. 400 ms sits in the requested 380–420 band and inside the sheet transitions'
- * own 320/260 ms vocabulary, so the player does not feel slower than the rest of the app — only less
- * abrupt for its largest moving object. [Motion.EaseOut] starts decisively (the cover commits to the
- * move immediately) and settles gently, which is the right shape for a spatial hand-off;
- * `EaseInOut` would hesitate first and read as hesitation on a gesture the user just made.
+ * Raised 260 → 400 → **560 ms**: the first raise was still judged too quick (the user has now asked
+ * twice), and for the app's largest moving object the flight needs time to read as travel rather
+ * than a cut. 560 ms is the middle of the requested 520–600 band; it also matches the slower 3.41.4
+ * vocabulary (sheets 420/340, chrome 400/440) instead of standing apart. [Motion.EaseOut] starts
+ * decisively and settles gently, which is the right shape for a spatial hand-off; `EaseInOut` would
+ * hesitate first and read as sluggishness on a gesture the user just made.
  *
  * Both ends of the shared element use this one duration as their `boundsTransform`, and the
  * presentation content cross-fade uses the same number, so the two ends' opacity and the geometry
@@ -2549,7 +2548,7 @@ private const val CHROME_ENTER_MS = 340
  * retarget from the current position when `showLyrics` is toggled again mid-flight, so it remains
  * interruptible; the paused-cover scale is still a single shared value, so monotonicity is unchanged.
  */
-private const val PRESENTATION_FADE_MS = 400
+private const val PRESENTATION_FADE_MS = 560
 
 /**
  * Key identifying the shared album cover across the two presentations.
@@ -2629,7 +2628,7 @@ internal fun sharedCoverPausedAlpha(pausedCoverScale: Float): Float {
 val PlayerArtworkCorner = ARTWORK_CORNER
 
 /** How long the backdrop stays frozen after a presentation change begins. */
-private const val TRANSITION_SETTLE_MS = 600L
+private const val TRANSITION_SETTLE_MS = 800L
 
 /**
  * Fraction of the chrome's travel that happens *after* it has faded out completely.
@@ -2913,5 +2912,5 @@ private const val BADGE_HOLD_MS = 900L
 private const val BADGE_HOLD_ERROR_MS = 1900L
 
 /** Fade duration. Two spellings because `tween` takes an Int and `delay` a Long. */
-private const val BADGE_FADE_MS = 260
+private const val BADGE_FADE_MS = 320
 private const val BADGE_FADE_MS_L = 260L
