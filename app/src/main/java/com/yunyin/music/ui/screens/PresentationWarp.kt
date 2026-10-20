@@ -1,5 +1,6 @@
 package com.yunyin.music.ui.screens
 
+import android.animation.ValueAnimator
 import android.graphics.RuntimeShader
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.fillMaxSize
@@ -70,9 +71,10 @@ import kotlin.math.PI
  *
  * ## Fallback
  *
- * Runtime shaders need API 33+ *and* a working driver. If [isRuntimeShaderSupported] is false, the
- * view is not hardware accelerated, or the shader fails to build, [rememberPresentationWarpEffect]
- * returns `null` and the player uses its existing 560 ms cross-fade unchanged. A failed capture (the
+ * Runtime shaders need API 33+ *and* a working driver, and the system animation scale must be on
+ * (`areAnimatorsEnabled`). If any of those is false — or the shader fails to build —
+ * [rememberPresentationWarpEffect] returns `null` and the player uses its existing 560 ms cross-fade
+ * unchanged. A failed capture (the
  * layer could not be rasterised) also falls back for that one transition, leaving no overlay.
  */
 internal object PresentationWarpRules {
@@ -223,7 +225,12 @@ internal class PresentationWarpEffect private constructor(
 internal fun rememberPresentationWarpEffect(): PresentationWarpEffect? {
     val view = LocalView.current
     val density = LocalDensity.current
-    val supported = isRuntimeShaderSupported() && view.isHardwareAccelerated
+    // Animations off is a hard "no": the warp is a per-frame animation, so the plain cross-fade
+    // runs instead. Same capability gate the rest of the player uses.
+    val animatorsOn = remember {
+        runCatching { ValueAnimator.areAnimatorsEnabled() }.getOrDefault(true)
+    }
+    val supported = isRuntimeShaderSupported() && view.isHardwareAccelerated && animatorsOn
     return remember(supported, density.density) {
         if (!supported) {
             null
