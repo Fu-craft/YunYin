@@ -633,27 +633,6 @@ class NeteaseClient(
         return NetResult.Ok(out)
     }
 
-    /** Reports one qualified play to the signed-in account. Silent, fire-and-forget. */
-    suspend fun scrobble(songId: Long, sourceId: Long, seconds: Int): NetResult<Unit> {
-        val timestamp = System.currentTimeMillis()
-        lastScrobbleTimestamp = timestamp
-        val result = request(
-            "/scrobble",
-            query = PlaylistRequestRules.withCacheBust(
-                mapOf("id" to "$songId", "sourceid" to "$sourceId", "time" to "$seconds"),
-                timestamp,
-            ),
-        )
-        return when (result) {
-            is NetResult.Err -> result
-            is NetResult.Ok -> if (result.value.optInt("code") == 200) NetResult.Ok(Unit) else NetResult.Err(
-                result.value.optString("message").ifBlank {
-                    result.value.optString("msg").ifBlank { "code=${result.value.optInt("code")}" }
-                },
-            )
-        }
-    }
-
     /** Hot comments for a song (read-only, no login). Cache-busted because the instance caches. */
     suspend fun hotComments(songId: Long): NetResult<List<com.yunyin.music.core.Comment>> = request(
         "/comment/hot",

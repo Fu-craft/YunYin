@@ -212,10 +212,25 @@ class AppContainer(val appContext: Context) {
         )
     }
 
+    /** Direct weapi play reporting; the self-hosted API is a stub for writes (see WeapiScrobbleClient). */
+    private val weapiScrobble by lazy { com.yunyin.music.data.net.WeapiScrobbleClient() }
+
     /** Fire-and-forget scrobbles; never on the playback thread. */
     private val scrobbleScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     val player: PlayerController by lazy {
+        // One-time diagnostic: document that the configured server's /scrobble is a stub (200 for id=0), so a
+        // future "why is nothing recorded" report can be answered from the log; the direct weapi path never
+        // depends on it.
+        scrobbleScope.launch {
+            runCatching {
+                val stub = weapiScrobble.selfHostedIsStub(com.yunyin.music.data.SettingsStore.BASE_URL)
+                lxLog.record(
+                    "解析",
+                    "stage=scrobble-v2 probe server-scrobble-stub=$stub endpoint=${com.yunyin.music.data.SettingsStore.BASE_URL}",
+                )
+            }
+        }
         PlayerController(
             context = appContext,
             resolveStream = { trackId -> music.streamUrl(trackId, settings.quality) },
@@ -237,7 +252,7 @@ class AppContainer(val appContext: Context) {
                         anonymous = anonymous,
                     ) -> lxLog.record(
                         "解析",
-                        "stage=scrobble track=$trackId result=skip reason=" +
+                        "stage=scrobble-v2 track=$trackId result=skip reason=" +
                             when {
                                 !settings.scrobbleEnabled -> "setting-off"
                                 anonymous -> "anonymous-session"
@@ -245,17 +260,12 @@ class AppContainer(val appContext: Context) {
                             },
                     )
                     else -> scrobbleScope.launch {
-                        val result = runCatching { music.scrobble(trackId, sourceId, seconds) }.getOrNull()
-                        val outcome = when (result) {
-                            null -> "fail reason=exception"
-                            is com.yunyin.music.core.NetResult.Ok -> "ok"
-                            is com.yunyin.music.core.NetResult.Err -> "fail reason=${result.message}"
-                        }
+                        val outcome = weapiScrobble.send(settings.cookie, trackId, sourceId, seconds)
                         lxLog.record(
                             "解析",
-                            "stage=scrobble track=$trackId id=$trackId sourceid=$sourceId seconds=$seconds " +
-                                "timestamp=${client.lastScrobbleTimestamp} http=${client.lastHttpStatus} " +
-                                "body=${client.lastHttpBody.take(200)} result=$outcome",
+                            "stage=scrobble-v2 track=$trackId sourceid=$sourceId seconds=$seconds " +
+                                "endpoint=music.163.com http=${outcome.http} body=${outcome.body.take(200)} " +
+                                "result=${if (outcome.ok) "ok" else "fail reason=${outcome.reason}"}",
                         )
                     }
                 }
