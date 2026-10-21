@@ -14,6 +14,28 @@ class ScrobbleRulesTest {
         ScrobbleRules.onTick(progress, position, playing)
 
     @Test
+    fun `provider tracks are recognised and resolve through the matched NetEase id`() {
+        assertEquals("netease", ScrobbleRules.trackKind(167691L))
+        assertEquals("provider", ScrobbleRules.trackKind(-12345L))
+        assertEquals(167691L, ScrobbleRules.resolvedNeteaseId(-12345L, 167691L))
+        assertEquals(167691L, ScrobbleRules.resolvedNeteaseId(167691L, null))
+        assertEquals(null, ScrobbleRules.resolvedNeteaseId(-12345L, null))
+        assertEquals(null, ScrobbleRules.resolvedNeteaseId(-12345L, 0L))
+    }
+
+    @Test
+    fun `a decision line is always renderable, with or without the setting`() {
+        assertEquals(
+            "track=167691 start duration=264 kind=netease",
+            ScrobbleRules.startLine(167691L, 264_000L),
+        )
+        assertEquals(
+            "track=-42 start duration=264 kind=provider",
+            ScrobbleRules.startLine(-42L, 264_000L),
+        )
+    }
+
+    @Test
     fun `crossing the threshold mid-play is reportable once`() {
         val p = ScrobbleRules.Progress(playedMs = ScrobbleRules.thresholdMs(200_000L))
         assertTrue(ScrobbleRules.shouldReport(p, 200_000L))

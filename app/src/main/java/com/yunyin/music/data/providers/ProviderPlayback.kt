@@ -50,6 +50,15 @@ class ProviderPlayback(
         },
     )
 
+    /**
+     * Reverse lookup: for a provider track (negative id) that was toggled from a NetEase track, the NetEase id it
+     * matched. This is the id a scrobble must carry (the provider id is meaningless to NetEase), and it is exactly
+     * the `neteaseId=` value the cross-source toggle already logs.
+     */
+    fun neteaseIdForProviderTrack(providerTrackId: Long): Long? = synchronized(matchCache) {
+        matchCache.entries.firstOrNull { it.value?.id == providerTrackId }?.key
+    }
+
     /** The persisted full track for a provider id, or null when [id] is a NetEase id. */
     fun findProviderTrack(id: Long): Track? = store.find(id)
 

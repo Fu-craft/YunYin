@@ -87,6 +87,8 @@ class PlayerController(
     private val onStreamError: (Long) -> Unit = {},
     /** Called at a boundary when the current track qualified; the host applies the opt-in/login rules. */
     private val onScrobble: (trackId: Long, sourceId: Long, seconds: Int) -> Unit = { _, _, _ -> },
+    /** Decision-line fragments for the scrobble log; the host appends setting/account and writes them. */
+    private val onScrobbleDebug: (String) -> Unit = {},
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
@@ -449,10 +451,13 @@ class PlayerController(
         val position = if (duration > 0L) rawPosition.coerceIn(0L, duration) else rawPosition
 
         // Accumulate real playback only; ScrobbleRules ignores seeks and paused polls.
-        current?.id?.takeIf { it > 0L }?.let { id ->
+        // Provider tracks carry negative synthetic ids, but they are still played songs and must be accounted;
+        // the NetEase id is resolved when reporting. The old `> 0L` guard silently excluded every QQ/provider play.
+        current?.id?.takeIf { it != 0L }?.let { id ->
             if (scrobbleTrackId != id) {
                 scrobbleTrackId = id
                 scrobbleProgress = ScrobbleRules.Progress()
+                onScrobbleDebug(ScrobbleRules.startLine(id, duration))
             }
             scrobbleProgress = ScrobbleRules.onTick(scrobbleProgress, position, mediaController.isPlaying)
             scrobbleDurationMs = duration
@@ -542,8 +547,13 @@ class PlayerController(
     /** Reports the current track once if it qualified (latched by [ScrobbleRules.Progress.reported]). */
     private fun flushScrobble() {
         val trackId = scrobbleTrackId ?: return
-        if (trackId <= 0L) return
-        if (!ScrobbleRules.shouldReport(scrobbleProgress, scrobbleDurationMs)) return
+        if (!ScrobbleRules.shouldReport(scrobbleProgress, scrobbleDurationMs)) {
+            onScrobbleDebug(
+                "track=$trackId result=skip reason=threshold-not-reached " +
+                    "played=${scrobbleProgress.playedMs / 1000}s threshold=${ScrobbleRules.thresholdMs(scrobbleDurationMs) / 1000}s",
+            )
+            return
+        }
         val seconds = ScrobbleRules.reportSeconds(scrobbleProgress, scrobbleDurationMs)
         scrobbleProgress = scrobbleProgress.copy(reported = true)
         if (seconds <= 0) return
@@ -551,6 +561,7 @@ class PlayerController(
         // Never 0: the queue's source (playlist/album) first, then the track's album, then the song id. A 0
         // sourceid lets the server answer 200 while recording nothing.
         val sourceId = currentSourceId.takeIf { it > 0L } ?: albumId.takeIf { it > 0L } ?: trackId
+        onScrobbleDebug("track=$trackId result=queued seconds=$seconds")
         runCatching { onScrobble(trackId, sourceId, seconds) }
     }
 

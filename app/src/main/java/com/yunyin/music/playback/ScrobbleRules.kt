@@ -47,6 +47,17 @@ object ScrobbleRules {
     fun shouldReport(progress: Progress, durationMs: Long): Boolean =
         !progress.reported && progress.playedMs >= thresholdMs(durationMs)
 
+    /** NetEase ids are positive; provider tracks carry negative synthetic ids. */
+    fun trackKind(trackId: Long): String = if (trackId > 0L) "netease" else "provider"
+
+    /** The NetEase id to report: the track's own id, else the matched NetEase counterpart of a provider track. */
+    fun resolvedNeteaseId(trackId: Long, matchedNeteaseId: Long?): Long? =
+        if (trackId > 0L) trackId else matchedNeteaseId?.takeIf { it > 0L }
+
+    /** Mandatory decision line, emitted when accounting starts — never gated by the setting. */
+    fun startLine(trackId: Long, durationMs: Long): String =
+        "track=$trackId start duration=${durationMs / 1000} kind=${trackKind(trackId)}"
+
     /** A cookie is not enough: anonymous sessions write to a throwaway account, so they count as logged out. */
     fun shouldSend(enabled: Boolean, hasCookie: Boolean, anonymous: Boolean): Boolean =
         enabled && hasCookie && !anonymous

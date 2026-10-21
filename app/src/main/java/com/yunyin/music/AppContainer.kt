@@ -243,6 +243,17 @@ class AppContainer(val appContext: Context) {
             // A failed playback drops the cached URL for that track, so an expired CDN token is re-resolved instead
             // of being served from the cache until it ages out.
             onStreamError = { trackId -> music.invalidateResolution(trackId) },
+            onScrobbleDebug = { detail ->
+                val accountKind = when {
+                    settings.account == null -> "none"
+                    settings.account?.isAnonymous == true -> "anonymous"
+                    else -> "real"
+                }
+                lxLog.record(
+                    "解析",
+                    "stage=scrobble-v2 $detail setting=${if (settings.scrobbleEnabled) "on" else "off"} account=$accountKind",
+                )
+            },
             onScrobble = { trackId, sourceId, seconds ->
                 val anonymous = settings.account?.isAnonymous == true
                 when {
@@ -260,11 +271,39 @@ class AppContainer(val appContext: Context) {
                             },
                     )
                     else -> scrobbleScope.launch {
-                        val outcome = weapiScrobble.send(settings.cookie, trackId, sourceId, seconds)
+                        // Provider tracks must be scrobbled under their matched NetEase id: the toggle already
+                        // established that the user is listening to that NetEase song (the `neteaseId=` log line).
+                        val cachedId = if (trackId > 0L) trackId else providers.neteaseIdForProviderTrack(trackId)
+                        val fallback = if (cachedId == null && trackId < 0L) {
+                            music.neteaseMatchForProviderTrack(trackId)
+                        } else {
+                            null
+                        }
+                        val neteaseId = cachedId ?: fallback?.id
+                        if (neteaseId == null || neteaseId <= 0L) {
+                            lxLog.record(
+                                "解析",
+                                "stage=scrobble-v2 track=$trackId sourceid=$sourceId seconds=$seconds " +
+                                    "result=skip reason=no-netease-id",
+                            )
+                            return@launch
+                        }
+                        val neteaseSource = if (trackId > 0L) {
+                            sourceId
+                        } else {
+                            fallback?.albumId?.takeIf { it > 0L } ?: sourceId
+                        }
                         lxLog.record(
                             "解析",
-                            "stage=scrobble-v2 track=$trackId sourceid=$sourceId seconds=$seconds " +
-                                "endpoint=music.163.com http=${outcome.http} body=${outcome.body.take(200)} " +
+                            "stage=scrobble-v2 track=$trackId result=queued neteaseId=$neteaseId " +
+                                "sourceid=$neteaseSource seconds=$seconds",
+                        )
+                        val outcome = weapiScrobble.send(settings.cookie, neteaseId, neteaseSource, seconds)
+                        lxLog.record(
+                            "解析",
+                            "stage=scrobble-v2 track=$trackId neteaseId=$neteaseId sourceid=$neteaseSource " +
+                                "seconds=$seconds endpoint=music.163.com http=${outcome.http} " +
+                                "body=${outcome.body.take(200)} " +
                                 "result=${if (outcome.ok) "ok" else "fail reason=${outcome.reason}"}",
                         )
                     }
