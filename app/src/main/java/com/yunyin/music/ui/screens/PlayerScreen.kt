@@ -63,7 +63,6 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.CompositingStrategy
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.layout.onSizeChanged
@@ -71,6 +70,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -534,32 +534,65 @@ fun PlayerScreen(
         // shader draw every frame. Measured, this window is where "Slow issue draw commands" spiked.
         val transitioning = transitionActive
 
-        // ---- live mesh warp for the presentation change --------------------------------------
+        // ---- approximate mesh warp for the presentation change -------------------------------
         //
-        // A vertex-grid deformation cannot be expressed over composables, so the whole transition
-        // container is rasterised and displaced per pixel, live, every frame: both presentations are
-        // deformed together as one image (the field and its constants live in PresentationWarp.kt).
-        // The artwork cover's centre, measured by the layout below, is the dolly's focus rather than
-        // the screen centre.
-        val warp = rememberTransitionWarp()
-        val warpAvailable = warp.effect != null
+        // A vertex-grid warp is not expressible over composables, so the outgoing presentation is
+        // frozen once and that frame is displaced per pixel in AGSL while the incoming presentation
+        // renders normally underneath. Only the *outgoing* picture is treated; see
+        // [PresentationWarpOverlay] for the field and the fallbacks.
+        val warpEffect = rememberPresentationWarpEffect()
+        val warp = rememberPresentationWarpState()
+        val warpAvailable = warpEffect != null
+        // The artwork cover's centre in root coordinates: the dolly's focus, measured by the
+        // layout rather than assumed to be the screen centre. Written in layout, read only by
+        // the capture effect, so it never triggers a recomposition of the player.
         var artworkCoverCenter by remember { mutableStateOf<Offset?>(null) }
-        var warpInitialised by remember { mutableStateOf(false) }
+        val latestShowLyrics = rememberUpdatedState(showLyrics)
+        val togglePresentation: () -> Unit = {
+            if (warpAvailable && !transitionActive && !warp.sessionActive && !warp.armed) {
+                // Freeze the frame we are leaving, then flip. The capture frame still shows the
+                // outgoing presentation in full, so the snapshot starts pixel-identical.
+                warp.targetShowLyrics = !showLyrics
+                warp.armed = true
+                onToggleLyrics()
+            } else {
+                // Reversal (or a toggle during capture): retire the snapshot with a quick fade and
+                // let the plain cross-fade handle the change. Never leave a frozen frame behind.
+                if (warp.sessionActive) warp.cancelRequested = true
+                onToggleLyrics()
+            }
+        }
+
+        // A presentation change we did not initiate is a reversal for our purposes: drop the warp.
         LaunchedEffect(showLyrics) {
-            if (!warpInitialised) {
-                warpInitialised = true
+            if (warp.sessionActive && showLyrics != warp.targetShowLyrics) {
+                warp.cancelRequested = true
+            }
+        }
+
+        // Capture: arm -> one recorded frame -> freeze to a bitmap -> open the warp session.
+        LaunchedEffect(warp.armed) {
+            if (!warp.armed) return@LaunchedEffect
+            // The armed frame has drawn (and recorded) by the time the next frame starts.
+            withFrameNanos { }
+            // Disarm before the readback: `toImageBitmap` can take a frame or two, and re-recording
+            // meanwhile would freeze a mid-transition frame instead of the frame we are leaving.
+            warp.armed = false
+            val snapshot = runCatching { warp.layer.toImageBitmap() }.getOrNull()
+            if (snapshot == null || latestShowLyrics.value != warp.targetShowLyrics) {
+                warp.discard()
                 return@LaunchedEffect
             }
-            if (!warpAvailable) return@LaunchedEffect
-            val frameNs = withFrameNanos { it }
+            val startNs = withFrameNanos { it }
             val centre = artworkCoverCenter ?: Offset(screenWidthPx / 2f, screenHeightPx * 0.42f)
             warp.begin(
-                nowMs = frameNs / 1_000_000L,
-                targetShowLyrics = showLyrics,
+                bitmap = snapshot,
+                startMs = startNs / 1_000_000L,
                 center = Offset(
                     (centre.x / screenWidthPx).coerceIn(0.05f, 0.95f),
                     (centre.y / screenHeightPx).coerceIn(0.05f, 0.95f),
                 ),
+                targetShowLyrics = warp.targetShowLyrics,
             )
         }
 
@@ -569,10 +602,13 @@ fun PlayerScreen(
         // the fallback is exactly the rendering above, not an approximation of it.
         val backdropMaterial = rememberBackdropMaterialEffect()
 
-        // Live warp container: the backdrop and both presentations share this layer, so the AGSL
-        // pass deforms the whole visible frame, live, instead of a frozen copy. The container is
-        // opaque (the backdrop fills it), so displaced edges clamp onto the frame, never onto black.
-        Box(Modifier.fillMaxSize().transitionWarp(warp)) {
+        // Everything inside this box is what a warp snapshot contains: the backdrop plus both
+        // presentations. The capture modifier is inert (draws normally) unless `warp.armed` is set.
+        Box(
+            Modifier
+                .fillMaxSize()
+                .capturePresentationInto(warp.layer, warp.armed),
+        ) {
         Box(Modifier.fillMaxSize().backdropMaterial(backdropMaterial)) {
             // Bottom layer: the same field, blurred. Only visible inside the panel, because the
             // sharp layer above masks itself off there.
@@ -639,18 +675,23 @@ fun PlayerScreen(
                     // `sizeTransform` is set through the `using` infix because its setter is
                     // internal on ContentTransform; `targetContentZIndex` has a public setter.
                     //
-                    // The warp path runs longer than the plain cross-fade: a geometric deformation
-                    // needs time to be read, and both presentations live inside the deformed
-                    // container, so they cross-fade for exactly the warp's length. Without a warp
-                    // both sides keep the original 560 ms cross-fade.
-                    val transitionMs = if (warpAvailable) {
-                        TransitionWarpRules.DURATION_MS.toInt()
+                    // The warp path is longer than the plain cross-fade: the deformation needs time
+                    // to be read, while the live outgoing presentation still leaves early underneath
+                    // the overlay, so the second half never looks like a double exposure. The
+                    // fallback keeps the original 560 ms cross-fade.
+                    val incomingFadeMs = if (warpAvailable) {
+                        PresentationWarpRules.DURATION_MS.toInt()
+                    } else {
+                        PRESENTATION_FADE_MS
+                    }
+                    val outgoingFadeMs = if (warpAvailable) {
+                        PresentationWarpRules.OUTGOING_FADE_MS.toInt()
                     } else {
                         PRESENTATION_FADE_MS
                     }
                     (
-                        (fadeIn(tween(transitionMs, easing = Motion.EaseOut)) togetherWith
-                            fadeOut(tween(transitionMs, easing = Motion.EaseOut))) using null
+                        (fadeIn(tween(incomingFadeMs, easing = Motion.EaseOut)) togetherWith
+                            fadeOut(tween(outgoingFadeMs, easing = Motion.EaseOut))) using null
                         ).apply { targetContentZIndex = 1f }
                 },
                 label = "presentation",
@@ -752,7 +793,7 @@ fun PlayerScreen(
                                         cover = cover,
                                         loader = loader,
                                         download = download,
-                                        onToggleLyrics = { interaction++; onToggleLyrics() },
+                                        onToggleLyrics = { interaction++; togglePresentation() },
                                         onSaveCover = { interaction++; onSaveCover() },
                                         onDownloadDismissed = onDownloadDismissed,
                                         setDragDistance = onDrag,
@@ -832,7 +873,7 @@ fun PlayerScreen(
                                         onToggleLike = { interaction++; onToggleLike() },
                                         onCoverClick = {
                                             interaction++
-                                            onToggleLyrics()
+                                            togglePresentation()
                                         },
                                         onArtistClick = onArtistClick,
                                         cover = cover,
@@ -875,7 +916,7 @@ fun PlayerScreen(
                                         if (state.shuffle) onToggleShuffle() else onCycleRepeat()
                                     },
                                     onToggleShuffle = { interaction++; onToggleShuffle() },
-                                    onToggleLyrics = { interaction++; onToggleLyrics() },
+                                    onToggleLyrics = { interaction++; togglePresentation() },
                                     onShowQueue = { interaction++; onShowQueue() },
                                 )
                             }
@@ -945,7 +986,7 @@ fun PlayerScreen(
                                     onToggleLike = { interaction++; onToggleLike() },
                                     onCoverClick = {
                                         interaction++
-                                        onToggleLyrics()
+                                        togglePresentation()
                                     },
                                     onArtistClick = onArtistClick,
                                     cover = cover,
@@ -1003,7 +1044,7 @@ fun PlayerScreen(
                                     if (state.shuffle) onToggleShuffle() else onCycleRepeat()
                                 },
                                 onToggleShuffle = { interaction++; onToggleShuffle() },
-                                onToggleLyrics = { interaction++; onToggleLyrics() },
+                                onToggleLyrics = { interaction++; togglePresentation() },
                                 onShowQueue = { interaction++; onShowQueue() },
                             )
                         }
@@ -1046,7 +1087,7 @@ fun PlayerScreen(
                                 cover = cover,
                                 loader = loader,
                                 download = download,
-                                onToggleLyrics = { interaction++; onToggleLyrics() },
+                                onToggleLyrics = { interaction++; togglePresentation() },
                                 onSaveCover = { interaction++; onSaveCover() },
                                 onDownloadDismissed = onDownloadDismissed,
                                 setDragDistance = onDrag,
@@ -1102,13 +1143,23 @@ fun PlayerScreen(
                                 if (state.shuffle) onToggleShuffle() else onCycleRepeat()
                             },
                             onToggleShuffle = { interaction++; onToggleShuffle() },
-                            onToggleLyrics = { interaction++; onToggleLyrics() },
+                            onToggleLyrics = { interaction++; togglePresentation() },
                             onShowQueue = { interaction++; onShowQueue() },
                         )
                     }
                 }
             }
         }
+        }
+
+        // The frozen outgoing frame, warped and faded away over the live (already incoming) player.
+        // Absent on every fallback path, in which case the cross-fade above is what runs.
+        warpEffect?.let { effect ->
+            PresentationWarpOverlay(
+                state = warp,
+                effect = effect,
+                modifier = Modifier.fillMaxSize(),
+            )
         }
 
         // Both sheets are rendered last so they layer over whichever presentation is showing.
