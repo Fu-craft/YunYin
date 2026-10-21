@@ -20,10 +20,17 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           cache-read-only: false
+      # `gradlew` is committed from Windows, where git does not carry the executable bit, so the
+      # runner sees a non-executable file ("Permission denied", exit 126). Both the chmod and the
+      # explicit sdk.dir keep the job independent of how the repo was checked out.
+      - name: Prepare gradle wrapper and SDK path
+        run: |
+          chmod +x gradlew
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
       - name: Unit tests
-        run: ./gradlew :app:testDebugUnitTest --console=plain
+        run: bash ./gradlew :app:testDebugUnitTest --console=plain
       - name: Assemble debug (no signing secrets needed)
-        run: ./gradlew :app:assembleDebug --console=plain
+        run: bash ./gradlew :app:assembleDebug --console=plain
       - name: Publish test report to summary
         if: always()
         run: |
