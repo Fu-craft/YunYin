@@ -270,7 +270,26 @@ class NeteaseClient(
             json.optJSONObject("result")?.optJSONArray("songs")?.mapSearchTracks().orEmpty()
         }
 
-    suspend fun hotSearch(): NetResult<List<String>> = request("/search/hot").map { json ->
+    /** Typed-ahead suggestions (songs/artists/albums), cache-busted because the instance caches. */
+    suspend fun searchSuggest(keyword: String): NetResult<SearchSuggestions> = request(
+        "/search/suggest",
+        query = RequestCacheBust.withCacheBust(mapOf("keywords" to keyword), System.currentTimeMillis()),
+    ).map { json -> DiscoveryParsers.parseSuggest(json) }
+
+    /** Lyric-fragment search: matching songs as normal track rows. */
+    suspend fun searchLyric(keyword: String, limit: Int = 20): NetResult<List<Track>> = request(
+        "/search/lyric",
+        query = RequestCacheBust.withCacheBust(
+            mapOf("keywords" to keyword, "limit" to "$limit"),
+            System.currentTimeMillis(),
+        ),
+    ).map { json -> DiscoveryParsers.lyricSongs(json) }
+
+    suspend fun hotSearch(): NetResult<List<String>> = request("/search/hot/detail").map { json ->
+        DiscoveryParsers.hotWords(json).ifEmpty { emptyList() }
+    }
+
+    private suspend fun legacyHotSearch(): NetResult<List<String>> = request("/search/hot").map { json ->
         val hots = json.optJSONObject("result")?.optJSONArray("hots") ?: return@map emptyList()
         (0 until hots.length()).mapNotNull { hots.optJSONObject(it)?.optString("first")?.ifBlank { null } }
     }

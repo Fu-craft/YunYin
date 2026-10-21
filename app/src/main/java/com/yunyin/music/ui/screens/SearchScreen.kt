@@ -1,5 +1,6 @@
 package com.yunyin.music.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -83,7 +84,17 @@ fun SearchScreen(
     onTrackClick: (Track) -> Unit,
     onLoadMore: () -> Unit,
     modifier: Modifier = Modifier,
+    onSuggestionSong: (Track) -> Unit = onTrackClick,
+    onSuggestionArtist: (Long, String) -> Unit = { _, _ -> },
+    onSuggestionAlbum: (Long, String) -> Unit = { _, _ -> },
+    onDismissSuggestions: () -> Unit = {},
 ) {
+    val suggestions = state.suggestions
+    BackHandler(
+        enabled = suggestions.songs.isNotEmpty() ||
+            suggestions.artists.isNotEmpty() ||
+            suggestions.albums.isNotEmpty(),
+    ) { onDismissSuggestions() }
     val topBarBackdrop = rememberGlassTopBarBackdrop()
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
@@ -94,7 +105,7 @@ fun SearchScreen(
             // read as a transition into results rather than a flicker.
             val phase = when {
                 state.loading -> "loading"
-                state.searched && state.results.isEmpty() -> "empty"
+                state.searched && state.results.isEmpty() && state.lyricResults.isEmpty() -> "empty"
                 state.searched -> "results"
                 else -> "idle"
             }
@@ -143,6 +154,17 @@ fun SearchScreen(
                             InsetSeparator()
                         }
                         // Both catalogues are paged together; the row disappears at the end of the list.
+                        if (state.lyricResults.isNotEmpty()) {
+                            item("lyric-header") { SectionHeader(title = "歌词匹配") }
+                            items(state.lyricResults, key = { "lyric-${it.id}" }) { track ->
+                                TrackRow(
+                                    track = track,
+                                    loader = loader,
+                                    onClick = { onTrackClick(track) },
+                                )
+                                InsetSeparator()
+                            }
+                        }
                         if (state.canLoadMore || state.loadingMore) {
                             item("load-more") {
                                 Row(
@@ -178,6 +200,38 @@ fun SearchScreen(
                             bottom = chromeContentBottomPadding(),
                         ),
                     ) {
+                        if (!suggestions.isEmpty) {
+                            item("suggest-header") { SectionHeader(title = "搜索建议") }
+                            items(suggestions.songs, key = { "sg-song-${it.id}" }) { track ->
+                                TrackRow(track = track, loader = loader, onClick = { onSuggestionSong(track) })
+                                InsetSeparator()
+                            }
+                            items(suggestions.artists, key = { "sg-artist-${it.id}" }) { artist ->
+                                Row(
+                                    Modifier.fillMaxWidth().clickable { onSuggestionArtist(artist.id, artist.name) }
+                                        .padding(horizontal = 20.dp, vertical = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Icon(SfIcons.MagnifyingGlass, null, tint = AppTheme.palette.tertiaryLabel, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(12.dp))
+                                    Text("歌手 · ${artist.name}", fontFamily = SFPro, fontSize = 16.sp, color = AppTheme.palette.label)
+                                }
+                                InsetSeparator(startPadding = 48.dp)
+                            }
+                            items(suggestions.albums, key = { "sg-album-${it.id}" }) { album ->
+                                Row(
+                                    Modifier.fillMaxWidth().clickable { onSuggestionAlbum(album.id, album.name) }
+                                        .padding(horizontal = 20.dp, vertical = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Icon(SfIcons.ListBullet, null, tint = AppTheme.palette.tertiaryLabel, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(12.dp))
+                                    Text("专辑 · ${album.name}", fontFamily = SFPro, fontSize = 16.sp, color = AppTheme.palette.label)
+                                }
+                                InsetSeparator(startPadding = 48.dp)
+                            }
+                        }
+
                         if (state.history.isNotEmpty()) {
                             item("history-header") {
                                 Row(

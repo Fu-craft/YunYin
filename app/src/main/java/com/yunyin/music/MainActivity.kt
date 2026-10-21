@@ -927,6 +927,10 @@ class MainActivity : ComponentActivity() {
                             onRemoveHistory = appViewModel::removeHistory,
                             onTrackClick = { play(it, searchState.results) },
                             onLoadMore = appViewModel::loadMoreSearch,
+                            onSuggestionSong = { track -> play(track, listOf(track)) },
+                            onSuggestionArtist = { _, name -> appViewModel.openArtistByName(name) },
+                            onSuggestionAlbum = { id, name -> appViewModel.openAlbum(id, name, null) },
+                            onDismissSuggestions = { appViewModel.onKeywordChange("") },
                         )
 
                         PlayerTab.Library -> LibraryScreen(

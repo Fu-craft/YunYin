@@ -59,6 +59,11 @@ data class SearchUiState(
     val hot: List<String> = emptyList(),
     val history: List<String> = emptyList(),
     val searched: Boolean = false,
+    /** Typed-ahead suggestions while the field has text and no search has been submitted. */
+    val suggestions: com.yunyin.music.data.net.SearchSuggestions =
+        com.yunyin.music.data.net.SearchSuggestions(),
+    /** Songs that matched by lyric; shown as an extra section, never in place of normal results. */
+    val lyricResults: List<Track> = emptyList(),
 )
 
 /**
@@ -133,6 +138,7 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
     private val _comments = MutableStateFlow(CommentsUiState())
     val comments: StateFlow<CommentsUiState> = _comments.asStateFlow()
     private var commentsJob: kotlinx.coroutines.Job? = null
+    private var suggestJob: Job? = null
     private var artistJob: Job? = null
     private var artistRequestId = 0L
 
@@ -225,6 +231,31 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
 
     fun onKeywordChange(value: String) {
         _search.value = _search.value.copy(keyword = value)
+        suggestJob?.cancel()
+        if (value.isBlank()) {
+            _search.value = _search.value.copy(suggestions = com.yunyin.music.data.net.SearchSuggestions())
+            return
+        }
+        val query = value
+        suggestJob = viewModelScope.launch {
+            kotlinx.coroutines.delay(com.yunyin.music.data.net.DiscoveryRules.SUGGEST_DEBOUNCE_MS)
+            val result = runCatching { container.music.searchSuggest(query) }.getOrNull()
+            // A stale response must not replace the suggestions of a newer query.
+            if (_search.value.keyword != query) return@launch
+            _search.value = _search.value.copy(
+                suggestions = (result as? com.yunyin.music.core.NetResult.Ok)?.value
+                    ?: com.yunyin.music.data.net.SearchSuggestions(),
+            )
+        }
+    }
+
+    /** Lyric-fragment fallback, only when the normal search found no songs. Silent on failure. */
+    private suspend fun loadLyricMatches(keyword: String) {
+        val result = runCatching { container.music.searchLyric(keyword) }.getOrNull()
+        if (_search.value.keyword != keyword) return
+        _search.value = _search.value.copy(
+            lyricResults = (result as? com.yunyin.music.core.NetResult.Ok)?.value.orEmpty(),
+        )
     }
 
     fun submitSearch(keyword: String = _search.value.keyword) {
@@ -239,6 +270,8 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
             canLoadMore = false,
             searched = true,
             history = container.searchHistory.load(),
+            suggestions = com.yunyin.music.data.net.SearchSuggestions(),
+            lyricResults = emptyList(),
         )
         searchJob = viewModelScope.launch {
             when (val result = container.music.search(trimmed, offset = 0)) {
@@ -249,9 +282,12 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
                         results = result.value.tracks,
                         canLoadMore = result.value.hasMore,
                     )
+                    if (result.value.tracks.isEmpty()) loadLyricMatches(trimmed)
                 }
-                is com.yunyin.music.core.NetResult.Err ->
+                is com.yunyin.music.core.NetResult.Err -> {
                     _search.value = _search.value.copy(loading = false, results = emptyList())
+                    loadLyricMatches(trimmed)
+                }
             }
         }
     }
@@ -298,6 +334,8 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
             loading = false,
             loadingMore = false,
             canLoadMore = false,
+            suggestions = com.yunyin.music.data.net.SearchSuggestions(),
+            lyricResults = emptyList(),
         )
     }
 
