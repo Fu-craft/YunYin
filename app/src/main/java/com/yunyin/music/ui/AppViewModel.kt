@@ -87,6 +87,8 @@ data class CommentsUiState(
     val allMore: Boolean = false,
     val allLoading: Boolean = false,
     val allError: String? = null,
+    /** Total comments reported by the first 全部评论 page, for the sheet's header. */
+    val allTotal: Int = 0,
 )
 
 /** 歌单广场: session-cached categories, one selected category and its paginated cards. */
@@ -827,31 +829,65 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
             allLoading = true,
         )
         commentsJob = viewModelScope.launch {
-            launch {
-                val result = runCatching { container.music.hotComments(trackId) }.getOrNull()
-                if (_comments.value.trackId != trackId) return@launch
-                _comments.value = when (result) {
-                    null -> _comments.value.copy(hotLoading = false, hotError = "热门评论加载失败")
-                    is com.yunyin.music.core.NetResult.Ok ->
-                        _comments.value.copy(hot = result.value, hotLoading = false, hotError = null)
-                    is com.yunyin.music.core.NetResult.Err ->
-                        _comments.value.copy(hotLoading = false, hotError = result.message)
-                }
+            launch { loadHotComments(trackId) }
+            launch { loadAllCommentsFirstPage(trackId) }
+        }
+    }
+
+    /** 热门评论 for [trackId]; the identity guard keeps a stale response off a newer track. */
+    private suspend fun loadHotComments(trackId: Long) {
+        val result = runCatching { container.music.hotComments(trackId) }.getOrNull()
+        if (_comments.value.trackId != trackId) return
+        _comments.value = when (result) {
+            null -> _comments.value.copy(hotLoading = false, hotError = "热门评论加载失败")
+            is com.yunyin.music.core.NetResult.Ok ->
+                _comments.value.copy(hot = result.value, hotLoading = false, hotError = null)
+            is com.yunyin.music.core.NetResult.Err ->
+                _comments.value.copy(hotLoading = false, hotError = result.message)
+        }
+    }
+
+    /** First page of 全部评论; endpoint and paging are unchanged, `total` is kept for the header. */
+    private suspend fun loadAllCommentsFirstPage(trackId: Long) {
+        val result = runCatching { container.music.comments(trackId, offset = 0) }.getOrNull()
+        if (_comments.value.trackId != trackId) return
+        _comments.value = when (result) {
+            null -> _comments.value.copy(allLoading = false, allError = "评论加载失败")
+            is com.yunyin.music.core.NetResult.Ok -> _comments.value.copy(
+                all = result.value.comments,
+                allOffset = result.value.comments.size,
+                allMore = result.value.more,
+                allTotal = result.value.total,
+                allLoading = false,
+                allError = null,
+            )
+            is com.yunyin.music.core.NetResult.Err ->
+                _comments.value.copy(allLoading = false, allError = result.message)
+        }
+    }
+
+    /**
+     * Retries only the section that failed, so a retry never blanks the section that is already
+     * loaded. Uses the same two endpoints and paging rules as the initial load.
+     */
+    fun retryComments(tab: CommentsTab) {
+        val state = _comments.value
+        if (state.trackId <= 0L) return
+        when (tab) {
+            CommentsTab.HOT -> {
+                if (state.hotLoading) return
+                _comments.value = state.copy(hotLoading = true, hotError = null)
+                // Joined to the sheet's own job, so closing the sheet cancels a retry in flight.
+                commentsJob = viewModelScope.launch { loadHotComments(state.trackId) }
             }
-            launch {
-                val result = runCatching { container.music.comments(trackId, offset = 0) }.getOrNull()
-                if (_comments.value.trackId != trackId) return@launch
-                _comments.value = when (result) {
-                    null -> _comments.value.copy(allLoading = false, allError = "评论加载失败")
-                    is com.yunyin.music.core.NetResult.Ok -> _comments.value.copy(
-                        all = result.value.comments,
-                        allOffset = result.value.comments.size,
-                        allMore = result.value.more,
-                        allLoading = false,
-                        allError = null,
-                    )
-                    is com.yunyin.music.core.NetResult.Err ->
-                        _comments.value.copy(allLoading = false, allError = result.message)
+
+            CommentsTab.ALL -> {
+                if (state.allLoading) return
+                if (state.all.isEmpty()) {
+                    _comments.value = state.copy(allLoading = true, allError = null)
+                    commentsJob = viewModelScope.launch { loadAllCommentsFirstPage(state.trackId) }
+                } else {
+                    loadMoreComments()
                 }
             }
         }
@@ -876,6 +912,7 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
                     all = com.yunyin.music.data.net.CommentPagingRules.appendUnique(now.all, result.value.comments),
                     allOffset = now.allOffset + result.value.comments.size,
                     allMore = result.value.more,
+                    allTotal = result.value.total,
                     allLoading = false,
                     allError = null,
                 )

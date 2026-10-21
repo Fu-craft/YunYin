@@ -1660,6 +1660,7 @@ class MainActivity : ComponentActivity() {
                     onDismiss = appViewModel::closeComments,
                     onSelectTab = appViewModel::selectCommentsTab,
                     onLoadMore = appViewModel::loadMoreComments,
+                    onRetry = appViewModel::retryComments,
                 )
             }
 
