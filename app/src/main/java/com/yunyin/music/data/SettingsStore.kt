@@ -91,6 +91,28 @@ class SettingsStore(context: Context) {
         get() = prefs.getString(KEY_PLAYER_STYLE, "classic") ?: "classic"
         set(value) = prefs.edit().putString(KEY_PLAYER_STYLE, value).apply()
 
+    // ------------------------------------------------------------ now-playing background
+    //
+    // Three switches ported from NeriPlayer's 正在播放 background section. Defaults match
+    // NeriPlayer's own defaults: the dynamic background is on (it is the app's signature look), its
+    // audio reactivity is on, and the blurred-cover background is off (it replaces the dynamic look,
+    // so it is opt-in). Defaults live in constants so a unit test can pin them.
+
+    /** 正在播放模糊封面背景: use the current cover, blurred, as the now-playing page background. */
+    var nowPlayingCoverBlurBackground: Boolean
+        get() = prefs.getBoolean(KEY_NOW_PLAYING_COVER_BLUR, DEFAULT_NOW_PLAYING_COVER_BLUR)
+        set(value) = prefs.edit().putBoolean(KEY_NOW_PLAYING_COVER_BLUR, value).apply()
+
+    /** 正在播放音频律动: let the dynamic background react to the audio taps. */
+    var nowPlayingAudioReactive: Boolean
+        get() = prefs.getBoolean(KEY_NOW_PLAYING_AUDIO_REACTIVE, DEFAULT_NOW_PLAYING_AUDIO_REACTIVE)
+        set(value) = prefs.edit().putBoolean(KEY_NOW_PLAYING_AUDIO_REACTIVE, value).apply()
+
+    /** 正在播放动态背景: run the dynamic (time-based) background at all. */
+    var nowPlayingDynamicBackground: Boolean
+        get() = prefs.getBoolean(KEY_NOW_PLAYING_DYNAMIC, DEFAULT_NOW_PLAYING_DYNAMIC)
+        set(value) = prefs.edit().putBoolean(KEY_NOW_PLAYING_DYNAMIC, value).apply()
+
     // ------------------------------------------------------------ updates
 
     /**
@@ -262,6 +284,9 @@ class SettingsStore(context: Context) {
         private const val KEY_SEAMLESS_TRANSITION = "seamless_transition"
         private const val KEY_AUTO_IMMERSIVE_LYRICS = "auto_immersive_lyrics"
         private const val KEY_PLAYER_STYLE = "player_style"
+        private const val KEY_NOW_PLAYING_COVER_BLUR = "now_playing_cover_blur_background"
+        private const val KEY_NOW_PLAYING_AUDIO_REACTIVE = "now_playing_audio_reactive"
+        private const val KEY_NOW_PLAYING_DYNAMIC = "now_playing_dynamic_background"
         private const val KEY_PROFILE_SIGNATURE = "profile_signature"
         private const val KEY_CUSTOM_NICKNAME = "custom_nickname"
         private const val KEY_USE_NETEASE_NAME = "use_netease_name"
@@ -275,3 +300,9 @@ class SettingsStore(context: Context) {
 
 /** Default for [SettingsStore.autoImmersiveLyrics]; a plain constant so a unit test can pin it. */
 internal const val DEFAULT_AUTO_IMMERSIVE_LYRICS = true
+
+// Now-playing background defaults, matching NeriPlayer (GPL-3.0) exactly:
+// app/src/main/java/moe/ouom/neriplayer/ui/settings/route/AppSettingsRouteState.kt
+internal const val DEFAULT_NOW_PLAYING_COVER_BLUR = false
+internal const val DEFAULT_NOW_PLAYING_AUDIO_REACTIVE = true
+internal const val DEFAULT_NOW_PLAYING_DYNAMIC = true

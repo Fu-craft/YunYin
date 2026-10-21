@@ -230,6 +230,18 @@ class MainActivity : ComponentActivity() {
         var lyriconEnabled by remember { mutableStateOf(container.lyricon.enabled) }
         var seamlessTransition by remember { mutableStateOf(container.settings.seamlessTransition) }
         var autoImmersiveLyrics by remember { mutableStateOf(container.settings.autoImmersiveLyrics) }
+        // The three now-playing background switches. Compose state + the store, same arrangement as
+        // the other settings: the player reads the state so a toggle takes effect immediately, and
+        // the store makes it survive a restart.
+        var nowPlayingCoverBlurBackground by remember {
+            mutableStateOf(container.settings.nowPlayingCoverBlurBackground)
+        }
+        var nowPlayingAudioReactive by remember {
+            mutableStateOf(container.settings.nowPlayingAudioReactive)
+        }
+        var nowPlayingDynamicBackground by remember {
+            mutableStateOf(container.settings.nowPlayingDynamicBackground)
+        }
         // The player's centrepiece. Held as Compose state as well as persisted, for the same reason as the
         // settings above: a SharedPreferences write does not invalidate composition, so a value read
         // straight from the store would change only on the next launch.
@@ -1159,6 +1171,21 @@ class MainActivity : ComponentActivity() {
                         autoImmersiveLyrics = enabled
                         container.settings.autoImmersiveLyrics = enabled
                     },
+                    nowPlayingCoverBlurBackground = nowPlayingCoverBlurBackground,
+                    onNowPlayingCoverBlurBackgroundChange = { enabled ->
+                        nowPlayingCoverBlurBackground = enabled
+                        container.settings.nowPlayingCoverBlurBackground = enabled
+                    },
+                    nowPlayingAudioReactive = nowPlayingAudioReactive,
+                    onNowPlayingAudioReactiveChange = { enabled ->
+                        nowPlayingAudioReactive = enabled
+                        container.settings.nowPlayingAudioReactive = enabled
+                    },
+                    nowPlayingDynamicBackground = nowPlayingDynamicBackground,
+                    onNowPlayingDynamicBackgroundChange = { enabled ->
+                        nowPlayingDynamicBackground = enabled
+                        container.settings.nowPlayingDynamicBackground = enabled
+                    },
                     sleepTimerLabel = when {
                         sleepTimerEndOfTrack -> "播完当前歌"
                         sleepTimerEnd != null -> {
@@ -1493,6 +1520,9 @@ class MainActivity : ComponentActivity() {
                     lyricOffsetMs = playerViewModel.lyricOffsetMs,
                     onLyricOffsetChange = playerViewModel::setLyricOffset,
                     autoImmersiveLyrics = autoImmersiveLyrics,
+                    nowPlayingCoverBlurBackground = nowPlayingCoverBlurBackground,
+                    nowPlayingAudioReactive = nowPlayingAudioReactive,
+                    nowPlayingDynamicBackground = nowPlayingDynamicBackground,
                     download = playerViewModel.download,
                     onSaveCover = playerViewModel::saveCover,
                     onDownloadDismissed = playerViewModel::clearDownloadState,

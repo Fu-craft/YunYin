@@ -105,6 +105,16 @@ fun SettingsScreen(
     /** Whether the lyrics page auto-hides the chrome after the idle delay (default off). */
     autoImmersiveLyrics: Boolean = false,
     onAutoImmersiveLyricsChange: (Boolean) -> Unit = {},
+    /**
+     * The three now-playing background switches (ported from NeriPlayer's 正在播放 section).
+     * Defaults are NeriPlayer's: dynamic on, audio reactive on, blurred cover off.
+     */
+    nowPlayingCoverBlurBackground: Boolean = false,
+    onNowPlayingCoverBlurBackgroundChange: (Boolean) -> Unit = {},
+    nowPlayingAudioReactive: Boolean = true,
+    onNowPlayingAudioReactiveChange: (Boolean) -> Unit = {},
+    nowPlayingDynamicBackground: Boolean = true,
+    onNowPlayingDynamicBackgroundChange: (Boolean) -> Unit = {},
     /** Remaining sleep-timer label ("关闭" / "还有约 12 分钟" / "播完当前歌"). */
     sleepTimerLabel: String = "关闭",
     onShowSleepTimer: () -> Unit = {},
@@ -225,6 +235,26 @@ fun SettingsScreen(
                 subtitle = "歌词页闲置几秒后自动隐藏播放控件；默认开启",
                 enabled = autoImmersiveLyrics,
                 onChange = onAutoImmersiveLyricsChange,
+            )
+            // Now-playing background switches, ported from NeriPlayer's motion section. Labels are
+            // the user's own wording; the descriptions are NeriPlayer's one-liners.
+            ToggleRow(
+                title = "正在播放模糊封面背景",
+                subtitle = "使用当前封面作为正在播放页面背景",
+                enabled = nowPlayingCoverBlurBackground,
+                onChange = onNowPlayingCoverBlurBackgroundChange,
+            )
+            ToggleRow(
+                title = "正在播放音频律动",
+                subtitle = "控制正在播放页面的音频律动效果",
+                enabled = nowPlayingAudioReactive,
+                onChange = onNowPlayingAudioReactiveChange,
+            )
+            ToggleRow(
+                title = "正在播放动态背景",
+                subtitle = "控制正在播放页面的动态背景效果",
+                enabled = nowPlayingDynamicBackground,
+                onChange = onNowPlayingDynamicBackgroundChange,
             )
             LinkRow(
                 text = "定时关闭",

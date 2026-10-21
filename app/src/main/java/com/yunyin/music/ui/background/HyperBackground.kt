@@ -73,6 +73,23 @@ fun HyperBackground(
      * screen, which is exactly what a frozen backdrop should look like.
      */
     paused: Boolean = false,
+    /**
+     * Whether the shader may consume the audio taps (the "正在播放音频律动" setting).
+     *
+     * Off does **not** freeze the background: the time-based drift keeps running, only the
+     * beat/level uniforms are held at zero so the fields stop pulsing. The smoothing targets are
+     * zero, so the effect eases out rather than snapping.
+     */
+    audioReactive: Boolean = true,
+    /**
+     * Freezes time-based motion only, while still letting palette changes reach the screen.
+     *
+     * This is the "正在播放动态背景" setting combined with animations-off and battery saver: the
+     * shader is still composed (because the dynamic layer is enabled), but it draws the current
+     * palette as a still frame and requests no further frames. Palette cross-fades are the one thing
+     * that still redraws, so a track change is never left with the previous track's colours.
+     */
+    staticMotion: Boolean = false,
 ) {
     val context = LocalContext.current
     val view = LocalView.current
@@ -105,6 +122,8 @@ fun HyperBackground(
     val latestPalette by rememberUpdatedState(palette)
     val latestIsDark by rememberUpdatedState(isDark)
     val latestPaused by rememberUpdatedState(paused)
+    val latestAudioReactive by rememberUpdatedState(audioReactive)
+    val latestStaticMotion by rememberUpdatedState(staticMotion)
 
     var frameTick by remember { mutableIntStateOf(0) }
 
@@ -166,13 +185,20 @@ fun HyperBackground(
                 shader.setPalette(colors, currentPalette.saturateOffset, currentPalette.lightOffset)
                 val paletteSettling = fadeProgress(fadeStartNs, frameNs) < 1f
 
-                if (animatorsOn) {
+                // Motion (time drift + audio) is the only part the settings may switch off. The
+                // palette path above always runs, so a paused/static background is never stale.
+                val motionEnabled = animatorsOn && !latestStaticMotion
+                if (motionEnabled) {
                     // Absolute time: shared by every instance, so they stay in step.
                     shader.setAnimTime((frameNs / 1_000_000_000f) % ANIM_TIME_WRAP)
 
                     // --- audio reactivity -------------------------------------
-                    val targetLevel = AudioReactive.level.value.coerceIn(0f, 1f)
-                    val targetBeat = AudioReactive.beat.value.coerceIn(0f, 1f)
+                    // With the setting off the targets are zero, so the smoothed uniforms ease the
+                    // fields to rest instead of pulsing; the drift above is unaffected.
+                    val targetLevel =
+                        if (latestAudioReactive) AudioReactive.level.value.coerceIn(0f, 1f) else 0f
+                    val targetBeat =
+                        if (latestAudioReactive) AudioReactive.beat.value.coerceIn(0f, 1f) else 0f
                     // Asymmetric smoothing: fast attack, slow release, so beats read crisply
                     // without the whole screen flickering.
                     smoothLevel += (targetLevel - smoothLevel) *
@@ -187,7 +213,7 @@ fun HyperBackground(
                 // The counter exists only to invalidate the Canvas. Advancing it on a frame that
                 // changed nothing means issuing the full-screen shader draw for no reason — the
                 // exact cost this class's `paused` flag was added to avoid.
-                advanced = animatorsOn || paletteSettling
+                advanced = motionEnabled || paletteSettling
             }
             if (advanced) frameTick++
         }
