@@ -1820,7 +1820,7 @@ private fun TrackActionsSheet(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
         )
-        ActionRow(SfIcons.SquareAndArrowUp, "保存封面", true) {
+        ActionRow(SfIcons.SquareAndArrowDown, "保存封面", true) {
             close { onSaveCover() }
         }
         val beatModeActions = LocalBeatModeActions.current
@@ -1852,12 +1852,12 @@ private fun TrackActionsSheet(
                 close()
             }
         }
-        ActionRow(SfIcons.QuoteOpening, "分享歌曲", track != null) {
+        ActionRow(SfIcons.SquareAndArrowUp, "分享歌曲", track != null) {
             close { onShare() }
         }
         val commentActions = LocalCommentActions.current
         if (commentActions != null) {
-            ActionRow(SfIcons.HeartFill, "评论", track != null) {
+            ActionRow(SfIcons.BubbleLeft, "评论", track != null) {
                 close { commentActions.onOpen() }
             }
         }

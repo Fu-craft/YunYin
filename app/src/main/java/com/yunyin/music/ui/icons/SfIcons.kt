@@ -259,6 +259,24 @@ object SfIcons {
         }
     }
 
+    val PersonOutline: ImageVector = icon("person") {
+        // The bar's 资料库 glyph: monoline like house and the playlist grid. The filled `Person`
+        // stays for avatar placeholders, where a silhouette reads better than an outline.
+        mono("person.head", width = 1.9f) {
+            moveTo(15.4f, 8f)
+            curveTo(15.4f, 9.88f, 13.88f, 11.4f, 12f, 11.4f)
+            curveTo(10.12f, 11.4f, 8.6f, 9.88f, 8.6f, 8f)
+            curveTo(8.6f, 6.12f, 10.12f, 4.6f, 12f, 4.6f)
+            curveTo(13.88f, 4.6f, 15.4f, 6.12f, 15.4f, 8f)
+            close()
+        }
+        mono("person.shoulders", width = 1.9f) {
+            moveTo(4.9f, 20.3f)
+            curveTo(5.6f, 16.1f, 8.5f, 14.2f, 12f, 14.2f)
+            curveTo(15.5f, 14.2f, 18.4f, 16.1f, 19.1f, 20.3f)
+        }
+    }
+
     val ChevronLeft: ImageVector = icon("chevron.left") {
         mono("chevron.left", width = 2.4f) {
             moveTo(15f, 4.8f)
@@ -331,6 +349,21 @@ object SfIcons {
             curveTo(16.5f, 10.4f, 17.3f, 11.2f, 17.3f, 12.3f)
             curveTo(17.3f, 13.5f, 16.4f, 14.4f, 15.2f, 14.4f)
             curveTo(15.0f, 14.4f, 14.8f, 14.4f, 14.6f, 15.2f)
+            close()
+        }
+    }
+
+    /** `bubble.left` — comments, so the 评论 row is no longer a second heart. */
+    val BubbleLeft: ImageVector = icon("bubble.left") {
+        mono("bubble.left", width = 1.9f) {
+            moveTo(12f, 4.0f)
+            curveTo(7.4f, 4.0f, 3.7f, 7.0f, 3.7f, 10.8f)
+            curveTo(3.7f, 13.0f, 4.9f, 14.9f, 6.9f, 16.2f)
+            lineTo(6.1f, 20.2f)
+            lineTo(10.4f, 17.7f)
+            curveTo(10.9f, 17.8f, 11.5f, 17.8f, 12f, 17.8f)
+            curveTo(16.6f, 17.8f, 20.3f, 14.8f, 20.3f, 10.8f)
+            curveTo(20.3f, 7.0f, 16.6f, 4.0f, 12f, 4.0f)
             close()
         }
     }
@@ -733,6 +766,29 @@ object SfIcons {
             lineTo(16.1f, 7.3f)
         }
         mono("square.and.arrow.up.box", width = 1.9f) {
+            moveTo(6.0f, 11.0f)
+            horizontalLineTo(4.6f)
+            curveTo(4.05f, 11.0f, 3.6f, 11.45f, 3.6f, 12.0f)
+            verticalLineTo(19.4f)
+            curveTo(3.6f, 19.95f, 4.05f, 20.4f, 4.6f, 20.4f)
+            horizontalLineTo(19.4f)
+            curveTo(19.95f, 20.4f, 20.4f, 19.95f, 20.4f, 19.4f)
+            verticalLineTo(12.0f)
+            curveTo(20.4f, 11.45f, 19.95f, 11.0f, 19.4f, 11.0f)
+            horizontalLineTo(18.0f)
+        }
+    }
+
+    /** `square.and.arrow.down` — save the cover, distinct from the share glyph beside it. */
+    val SquareAndArrowDown: ImageVector = icon("square.and.arrow.down") {
+        mono("square.and.arrow.down", width = 1.9f) {
+            moveTo(12f, 3.4f)
+            verticalLineTo(14.2f)
+            moveTo(7.9f, 10.1f)
+            lineTo(12f, 14.2f)
+            lineTo(16.1f, 10.1f)
+        }
+        mono("square.and.arrow.down.box", width = 1.9f) {
             moveTo(6.0f, 11.0f)
             horizontalLineTo(4.6f)
             curveTo(4.05f, 11.0f, 3.6f, 11.45f, 3.6f, 12.0f)

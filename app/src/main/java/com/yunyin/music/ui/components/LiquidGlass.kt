@@ -203,7 +203,7 @@ enum class PlayerTab(val label: String, val icon: androidx.compose.ui.graphics.v
     /** 歌单广场: a browse screen of playlist covers, hence the grid glyph. */
     PlaylistSquare("歌单广场", SfIcons.SquareGrid2x2),
     Search("搜索", SfIcons.MagnifyingGlass),
-    Library("资料库", SfIcons.Person),
+    Library("资料库", SfIcons.PersonOutline),
 }
 
 /**
