@@ -46,6 +46,22 @@ object SfIcons {
         pathBuilder = pathBuilder,
     )
 
+    /** Rounded-rectangle sub-path; the shared corner maths of the grid-style glyphs. */
+    private fun PathBuilder.roundedRect(x: Float, y: Float, size: Float, radius: Float) {
+        val r = radius.coerceAtMost(size / 2f)
+        val k = r * 0.5523f
+        moveTo(x + r, y)
+        lineTo(x + size - r, y)
+        curveTo(x + size - r + k, y, x + size, y + r - k, x + size, y + r)
+        lineTo(x + size, y + size - r)
+        curveTo(x + size, y + size - r + k, x + size - r + k, y + size, x + size - r, y + size)
+        lineTo(x + r, y + size)
+        curveTo(x + r - k, y + size, x, y + size - r + k, x, y + size - r)
+        lineTo(x, y + r)
+        curveTo(x, y + r - k, x + r - k, y, x + r, y)
+        close()
+    }
+
     // ------------------------------------------------------------------ transport
 
     val Play: ImageVector = icon("play.fill") {
@@ -754,6 +770,29 @@ object SfIcons {
         mono("pencil.tip", width = 1.5f) {
             moveTo(7.72f, 14.52f)
             lineTo(9.48f, 16.28f)
+        }
+    }
+
+    // ------------------------------------------------------------------ browse
+
+    /**
+     * SF Symbols' `square.grid.2x2` — four rounded tiles.
+     *
+     * The 歌单广场 tab: that screen is a grid of playlist covers, so the glyph is the grid itself.
+     * Monoline like the other tab glyphs (house, person), on the same 24 pt grid and with the same
+     * 2.1 pt rounded stroke, so the four-slot bar still reads as one icon family.
+     */
+    val SquareGrid2x2: ImageVector = icon("square.grid.2x2") {
+        val tile = 7.0f
+        listOf(
+            3.6f to 3.6f,
+            13.4f to 3.6f,
+            3.6f to 13.4f,
+            13.4f to 13.4f,
+        ).forEach { (x, y) ->
+            mono("square.grid.2x2.tile", width = 1.9f) {
+                roundedRect(x, y, tile, radius = 2.0f)
+            }
         }
     }
 }

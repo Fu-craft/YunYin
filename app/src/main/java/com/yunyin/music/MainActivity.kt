@@ -75,6 +75,7 @@ import com.yunyin.music.ui.components.PlayerTab
 import com.yunyin.music.ui.components.QueueSheet
 import com.yunyin.music.ui.components.TabBarInset
 import com.yunyin.music.ui.screens.CollectionScreen
+import com.yunyin.music.ui.screens.PlaylistSquareScreen
 import com.yunyin.music.ui.screens.ArtistScreen
 import com.yunyin.music.ui.screens.HomeScreen
 import com.yunyin.music.ui.screens.LibraryScreen
@@ -903,6 +904,12 @@ class MainActivity : ComponentActivity() {
                     // short: switching is a tens-of-times-a-day action, so it must not read as a
                     // transition. 120ms in / 60ms out keeps the overlap of two screens below the
                     // point where two artworks are legibly superimposed.
+                    // 歌单广场 loads when the tab is first opened, not at app start: the catalogue
+                    // is only needed then, and the view model caches it for the session so
+                    // re-entering the tab costs nothing.
+                    LaunchedEffect(tab) {
+                        if (tab == PlayerTab.PlaylistSquare) appViewModel.openPlaylistSquare()
+                    }
                     CrossfadeContent(targetState = tab, durationMillis = 160, label = "tab") { activeTab ->
                     when (activeTab) {
                         PlayerTab.Home -> HomeScreen(
@@ -914,7 +921,6 @@ class MainActivity : ComponentActivity() {
                             onChartClick = { id, title, cover ->
                                 appViewModel.openChart(id, title, cover)
                             },
-                            onOpenPlaylistSquare = { appViewModel.openPlaylistSquare() },
                         )
 
                         PlayerTab.Search -> SearchScreen(
@@ -933,6 +939,26 @@ class MainActivity : ComponentActivity() {
                             onSuggestionArtist = { _, name -> appViewModel.openArtistByName(name) },
                             onSuggestionAlbum = { id, name -> appViewModel.openAlbum(id, name, null) },
                             onDismissSuggestions = { appViewModel.onKeywordChange("") },
+                        )
+
+                        PlayerTab.PlaylistSquare -> PlaylistSquareScreen(
+                            state = playlistSquareState,
+                            loader = container.artwork,
+                            onCategorySelected = appViewModel::selectPlaylistCategory,
+                            onLoadMore = appViewModel::loadMorePlaylistSquare,
+                            onRefresh = appViewModel::refreshPlaylistSquare,
+                            onPlaylistClick = { playlist ->
+                                appViewModel.openPlaylist(
+                                    com.yunyin.music.core.Playlist(
+                                        id = playlist.id,
+                                        name = playlist.name,
+                                        coverUrl = playlist.coverUrl,
+                                        trackCount = playlist.trackCount,
+                                        playCount = playlist.playCount,
+                                        description = playlist.description,
+                                    ),
+                                )
+                            },
                         )
 
                         PlayerTab.Library -> LibraryScreen(
@@ -1030,7 +1056,8 @@ class MainActivity : ComponentActivity() {
                 }
 
                 // Bottom row: the tab bar fills the same width as the capsule above it (the column applies
-                // the screen inset) and its three slots (主页 / 资料库 / 心动模式) divide that width equally.
+                // the screen inset) and its four slots (主页 / 歌单广场 / 资料库 / 心动模式) divide that width
+                // equally.
                 FloatingTabBar(
                     selected = tab,
                     onSelect = { tab = if (showSettings) tab else it; showSettings = false },
@@ -1624,29 +1651,6 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                 }
-            }
-
-            if (playlistSquareState.visible) {
-                com.yunyin.music.ui.screens.PlaylistSquareSheet(
-                    state = playlistSquareState,
-                    loader = container.artwork,
-                    onDismiss = appViewModel::closePlaylistSquare,
-                    onSelectCategory = appViewModel::selectPlaylistCategory,
-                    onLoadMore = appViewModel::loadMorePlaylistSquare,
-                    onPlaylistClick = { playlist ->
-                        appViewModel.openPlaylist(
-                            com.yunyin.music.core.Playlist(
-                                id = playlist.id,
-                                name = playlist.name,
-                                coverUrl = playlist.coverUrl,
-                                trackCount = playlist.trackCount,
-                                playCount = playlist.playCount,
-                                description = playlist.description,
-                            ),
-                        )
-                        appViewModel.closePlaylistSquare()
-                    },
-                )
             }
 
             if (commentsState.visible) {

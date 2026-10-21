@@ -20,6 +20,17 @@ data class PlaylistSquarePage(val playlists: List<DiscoveryPlaylist>, val more: 
 object PlaylistSquareRules {
     const val PAGE_SIZE = 20
 
+    /** Catalogue default, present in every `/playlist/catlist` response. */
+    const val DEFAULT_CATEGORY = "全部"
+
+    /** The category a fresh page selects: 全部 when offered, otherwise the first real category. */
+    fun preferredCategory(categories: List<String>): String =
+        categories.firstOrNull { it == DEFAULT_CATEGORY } ?: categories.firstOrNull() ?: DEFAULT_CATEGORY
+
+    /** Chips always show something, even before the (cached) category list has arrived. */
+    fun visibleCategories(categories: List<String>): List<String> =
+        if (categories.isEmpty()) listOf(DEFAULT_CATEGORY) else categories
+
     fun categories(json: JSONObject): List<String> {
         val out = LinkedHashSet<String>()
         json.optJSONObject("all")?.optString("name")?.ifBlank { null }?.let { out += it }

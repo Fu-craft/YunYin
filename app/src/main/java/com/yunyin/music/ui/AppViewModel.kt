@@ -91,7 +91,6 @@ data class CommentsUiState(
 
 /** 歌单广场: session-cached categories, one selected category and its paginated cards. */
 data class PlaylistSquareUiState(
-    val visible: Boolean = false,
     val categories: List<String> = emptyList(),
     val selected: String = "全部",
     val playlists: List<com.yunyin.music.data.net.DiscoveryPlaylist> = emptyList(),
@@ -101,6 +100,8 @@ data class PlaylistSquareUiState(
     val loadingMore: Boolean = false,
     val categoriesLoading: Boolean = false,
     val error: String? = null,
+    /** True once a first page has completed (successfully or not), so "empty" is not shown mid-load. */
+    val loaded: Boolean = false,
 )
 
 data class ArtistUiState(
@@ -367,29 +368,35 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
         _search.value = _search.value.copy(history = emptyList())
     }
 
+    /**
+     * Ensures the 歌单广场 tab has its categories and a first page.
+     *
+     * Called on tab entry, not at app start: the catalogue is only needed when the user opens the
+     * tab, and the state is session-cached afterwards so re-entering is free. Safe to call repeatedly.
+     */
     fun openPlaylistSquare() {
-        if (!_playlistSquare.value.visible) {
-            _playlistSquare.value = _playlistSquare.value.copy(visible = true)
+        val state = _playlistSquare.value
+        if (state.categories.isEmpty()) {
             squareJob?.cancel()
+            _playlistSquare.value = state.copy(categoriesLoading = true, error = null)
             squareJob = viewModelScope.launch {
-                val categories = _playlistSquare.value.categories
-                if (categories.isNotEmpty()) return@launch
-                _playlistSquare.value = _playlistSquare.value.copy(categoriesLoading = true)
                 val result = runCatching { container.music.playlistCategories() }.getOrNull()
                 val names = (result as? com.yunyin.music.core.NetResult.Ok)?.value.orEmpty()
                 _playlistSquare.value = _playlistSquare.value.copy(
                     categories = names,
                     categoriesLoading = false,
-                    selected = names.firstOrNull() ?: "全部",
+                    selected = com.yunyin.music.data.net.PlaylistSquareRules.preferredCategory(names),
                 )
                 loadPlaylistSquarePage(first = true)
             }
+        } else if (state.playlists.isEmpty() && state.error == null && !state.loading) {
+            loadPlaylistSquarePage(first = true)
         }
     }
 
-    fun closePlaylistSquare() {
-        squareJob?.cancel()
-        _playlistSquare.value = _playlistSquare.value.copy(visible = false)
+    /** Re-fetches the selected category's first page (the screen's refresh affordance). */
+    fun refreshPlaylistSquare() {
+        loadPlaylistSquarePage(first = true)
     }
 
     fun selectPlaylistCategory(category: String) {
@@ -431,11 +438,13 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
                         more = page.more,
                         loading = false,
                         loadingMore = false,
+                        loaded = true,
                     )
                 }
                 else -> _playlistSquare.value = current.copy(
                     loading = false,
                     loadingMore = false,
+                    loaded = true,
                     error = if (first) "歌单加载失败" else "加载更多失败",
                 )
             }

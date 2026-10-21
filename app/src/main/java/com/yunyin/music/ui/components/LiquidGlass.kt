@@ -193,12 +193,15 @@ import kotlinx.coroutines.launch
  *
  * **Not every entry is a slot in the bar.** [Search] is a screen — reached from the home screen's own
  * search box (`HomeScreen.onSearchClick` → `MainActivity`'s `tab` state) — and the bar renders
- * [Home], [Library] and the 心动模式 action instead. The enum stays whole because it is also the screen
+ * [Home], 歌单广场, [Library] and the 心动模式 action instead. The enum stays whole because it is also the screen
  * router: `MainActivity` switches the visible screen on it, so deleting the entry would delete the
  * search screen.
  */
 enum class PlayerTab(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
     Home("主页", SfIcons.House),
+
+    /** 歌单广场: a browse screen of playlist covers, hence the grid glyph. */
+    PlaylistSquare("歌单广场", SfIcons.SquareGrid2x2),
     Search("搜索", SfIcons.MagnifyingGlass),
     Library("资料库", SfIcons.Person),
 }
@@ -219,7 +222,7 @@ private sealed interface BarSlot {
 }
 
 /**
- * The bar's slots, in order: 主页 / 资料库 / 心动模式.
+ * The bar's slots, in order: 主页 / 歌单广场 / 资料库 / 心动模式.
  *
  * [PlayerTab.Search] is deliberately absent: the home screen already has a search box, so a slot for
  * the same screen would be a second door to one room. [BarSlot.BeatMode] is listed explicitly rather
@@ -230,6 +233,7 @@ private sealed interface BarSlot {
  */
 private val BarSlots: List<BarSlot> = listOf(
     BarSlot.Screen(PlayerTab.Home),
+    BarSlot.Screen(PlayerTab.PlaylistSquare),
     BarSlot.Screen(PlayerTab.Library),
     BarSlot.BeatMode,
 )
@@ -593,8 +597,9 @@ private fun glassPressScale(widthPx: Float, expansionPx: Float, progress: Float)
  * ([TabBarInset]); the bar then fills that row — the same width as the now-playing capsule above it —
  * and its three slots divide the measured width equally, instead of wrapping a fixed 176 dp capsule.
  *
- * The bar presents [BarSlots]: 主页, 资料库 and 心动模式. [PlayerTab.Search] keeps its enum entry because
- * it still routes the screen, but it has no slot — see [BarSlots] and [PlayerTab]. The 心动模式 slot is
+ * The bar presents [BarSlots]: 主页, 歌单广场, 资料库 and 心动模式. [PlayerTab.Search] keeps its enum
+ * entry because it still routes the screen, but it has no slot — see [BarSlots] and [PlayerTab]. The
+ * 心动模式 slot is
  * an action, so the pill never rests on it: after it fires, `selectionResync` settles the pill back onto
  * the screen tab the user is actually on.
  *
@@ -744,7 +749,7 @@ private fun LiquidBottomTabs(
     val squeeze = with(density) { 4f.dp.toPx() }
 
     // The bar spans the same width as the now-playing row above it (`BoxWithConstraints` here rather
-    // than a constant): the three slots divide the measured width equally, so the tab row no longer
+    // than a constant): the slots divide the measured width equally, so the tab row no longer
     // looks short next to the full-width capsule. The reference's 4 dp gutters are kept — the slots
     // share `width - 8 dp` — and `tabWidth` is the drag/pill unit in pixels.
     //
