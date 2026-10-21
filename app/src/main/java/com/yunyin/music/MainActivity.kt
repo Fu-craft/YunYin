@@ -230,7 +230,6 @@ class MainActivity : ComponentActivity() {
         // publishing, and it mirrors the stored value, so the switch cannot disagree with what is running.
         var lyriconEnabled by remember { mutableStateOf(container.lyricon.enabled) }
         var seamlessTransition by remember { mutableStateOf(container.settings.seamlessTransition) }
-        var scrobbleEnabled by remember { mutableStateOf(container.settings.scrobbleEnabled) }
         var autoImmersiveLyrics by remember { mutableStateOf(container.settings.autoImmersiveLyrics) }
         // The three now-playing background switches. Compose state + the store, same arrangement as
         // the other settings: the player reads the state so a toggle takes effect immediately, and
@@ -649,14 +648,8 @@ class MainActivity : ComponentActivity() {
         ): Boolean {
             val safeQueue = queue.ifEmpty { listOf(track) }
             val index = safeQueue.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
-            // `/scrobble` needs the origin (playlist/album), never 0. Explicit playlist id wins, then the last
-            // playlist opened for this queue, then the track's album, then the song id as the last resort.
-            val scrobbleSource = playlistId
-                ?: lastPlaylistId
-                ?: track.albumId.takeIf { it > 0L }
-                ?: track.id
             var started = false
-            runCatching { container.player.playQueue(safeQueue, index, sourceId = scrobbleSource) }
+            runCatching { container.player.playQueue(safeQueue, index) }
                 .onSuccess {
                     started = true
                     showPlayer = true
@@ -1171,7 +1164,6 @@ class MainActivity : ComponentActivity() {
                         // than leaving it in the shade until the next track change.
                         if (!enabled) container.tickerLyrics.clear()
                     },
-                    scrobbleEnabled = scrobbleEnabled,
                     seamlessTransition = seamlessTransition,
                     autoImmersiveLyrics = autoImmersiveLyrics,
                     onAutoImmersiveLyricsChange = { enabled ->
@@ -1212,10 +1204,6 @@ class MainActivity : ComponentActivity() {
                         // — `Player` and `MediaController` expose no skip-silence control — which is why
                         // the service owns that half.
                         container.settings.seamlessTransition = enabled
-                    },
-                    onScrobbleEnabledChange = { enabled ->
-                        scrobbleEnabled = enabled
-                        container.settings.scrobbleEnabled = enabled
                     },
                     // The crash file is app-private, so on an unrooted device it is unreachable without
                     // adb — and when the crash is on *launch*, adb is the only other route, which is no

@@ -562,17 +562,6 @@ class MusicRepository(
 
     suspend fun artistTopSongs(artistId: Long): List<Track> = client.artistTopSongs(artistId).listOrEmpty()
 
-    /**
-     * NetEase counterpart of a provider track, for scrobbling a toggled play. Uses the shared matcher (title +
-     * artist + duration guards) against the NetEase search — the same rule the cross-source toggle uses.
-     */
-    suspend fun neteaseMatchForProviderTrack(id: Long): Track? {
-        val track = providers?.findProviderTrack(id) ?: return null
-        if (track.name.isBlank()) return null
-        val candidates = client.search("${track.name} ${track.artistLine}", limit = 10).listOrEmpty()
-        return com.yunyin.music.data.providers.ProviderMatcher.bestMatch(candidates, track)
-    }
-
     suspend fun hotComments(songId: Long): NetResult<List<com.yunyin.music.core.Comment>> =
         client.hotComments(songId)
 
