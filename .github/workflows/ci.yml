@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+      - name: Unit tests
+        run: ./gradlew :app:testDebugUnitTest --console=plain
+      - name: Assemble debug (no signing secrets needed)
+        run: ./gradlew :app:assembleDebug --console=plain
+      - name: Publish test report to summary
+        if: always()
+        run: |
+          echo "## Unit tests" >> "$GITHUB_STEP_SUMMARY"
+          if [ -d app/build/reports/tests/testDebugUnitTest ]; then
+            echo "Report: app/build/reports/tests/testDebugUnitTest/index.html (uploaded below)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY" || true
+          import glob, xml.etree.ElementTree as ET
+          total = fail = 0
+          for f in glob.glob("app/build/test-results/testDebugUnitTest/*.xml"):
+              r = ET.parse(f).getroot()
+              total += int(r.get("tests") or 0)
+              fail += int(r.get("failures") or 0) + int(r.get("errors") or 0)
+          print(f"tests={total} failures={fail}")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-report
+          path: app/build/reports/tests/testDebugUnitTest
+          if-no-files-found: ignore
