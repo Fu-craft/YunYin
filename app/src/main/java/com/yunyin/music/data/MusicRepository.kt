@@ -567,6 +567,11 @@ class MusicRepository(
 
     suspend fun searchLyric(keyword: String): NetResult<List<Track>> = client.searchLyric(keyword)
 
+    suspend fun playlistCategories(): NetResult<List<String>> = client.playlistCategories()
+
+    suspend fun topPlaylists(cat: String, offset: Int): NetResult<com.yunyin.music.data.net.PlaylistSquarePage> =
+        client.topPlaylists(cat, offset)
+
     suspend fun hotComments(songId: Long): NetResult<List<com.yunyin.music.core.Comment>> =
         client.hotComments(songId)
 

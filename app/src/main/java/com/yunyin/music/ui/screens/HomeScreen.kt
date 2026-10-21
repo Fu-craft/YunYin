@@ -86,6 +86,7 @@ fun HomeScreen(
     onTrackClick: (Track, List<Track>) -> Unit,
     onPlaylistClick: (Playlist) -> Unit,
     onChartClick: (Long, String, String?) -> Unit,
+    onOpenPlaylistSquare: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val feed = state.feed
@@ -105,6 +106,19 @@ fun HomeScreen(
                     bottom = chromeContentBottomPadding(),
                 ),
             ) {
+                item("square-entry") {
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .clickable(onClick = onOpenPlaylistSquare)
+                            .padding(horizontal = 20.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("歌单广场", fontFamily = SFPro, fontWeight = FontWeight.Bold, fontSize = 17.sp,
+                            color = AppTheme.palette.label, modifier = Modifier.weight(1f))
+                        Text("按分类发现歌单 ›", fontFamily = SFPro, fontSize = 13.sp,
+                            color = AppTheme.palette.secondaryLabel)
+                    }
+                }
                 if (feed.featuredPlaylists.isNotEmpty()) {
             item("featured-header") {
                 SectionHeader(

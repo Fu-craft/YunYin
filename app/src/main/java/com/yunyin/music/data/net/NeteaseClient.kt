@@ -285,6 +285,25 @@ class NeteaseClient(
         ),
     ).map { json -> DiscoveryParsers.lyricSongs(json) }
 
+    /** 歌单广场 category names (`all` + `sub[]`); cached for the session by the caller. */
+    suspend fun playlistCategories(): NetResult<List<String>> = request(
+        "/playlist/catlist",
+        query = RequestCacheBust.withCacheBust(emptyMap(), System.currentTimeMillis()),
+    ).map { json -> PlaylistSquareRules.categories(json) }
+
+    /** 歌单广场 page for a category name (e.g. 全部); paginated by limit/offset, `more` for the end state. */
+    suspend fun topPlaylists(cat: String, offset: Int, limit: Int = PlaylistSquareRules.PAGE_SIZE): NetResult<PlaylistSquarePage> =
+        request(
+            "/top/playlist",
+            query = RequestCacheBust.withCacheBust(
+                mapOf("cat" to cat, "limit" to "$limit", "offset" to "$offset"),
+                System.currentTimeMillis(),
+            ),
+        ).map { json ->
+            val page = PlaylistSquareRules.page(json)
+            PlaylistSquarePage(page.playlists, page.more)
+        }
+
     suspend fun hotSearch(): NetResult<List<String>> = request("/search/hot/detail").map { json ->
         DiscoveryParsers.hotWords(json).ifEmpty { emptyList() }
     }

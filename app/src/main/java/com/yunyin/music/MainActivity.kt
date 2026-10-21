@@ -196,6 +196,7 @@ class MainActivity : ComponentActivity() {
         val collectionState by appViewModel.collection.collectAsState()
         val artistState by appViewModel.artist.collectAsState()
         val commentsState by appViewModel.comments.collectAsState()
+        val playlistSquareState by appViewModel.playlistSquare.collectAsState()
 
         // Collected at the top rather than next to the sheet that uses it: Settings (which shows the
         // "检查更新" row) is composed before the sheet, so a value read further down would not be in scope
@@ -913,6 +914,7 @@ class MainActivity : ComponentActivity() {
                             onChartClick = { id, title, cover ->
                                 appViewModel.openChart(id, title, cover)
                             },
+                            onOpenPlaylistSquare = { appViewModel.openPlaylistSquare() },
                         )
 
                         PlayerTab.Search -> SearchScreen(
@@ -1622,6 +1624,29 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                 }
+            }
+
+            if (playlistSquareState.visible) {
+                com.yunyin.music.ui.screens.PlaylistSquareSheet(
+                    state = playlistSquareState,
+                    loader = container.artwork,
+                    onDismiss = appViewModel::closePlaylistSquare,
+                    onSelectCategory = appViewModel::selectPlaylistCategory,
+                    onLoadMore = appViewModel::loadMorePlaylistSquare,
+                    onPlaylistClick = { playlist ->
+                        appViewModel.openPlaylist(
+                            com.yunyin.music.core.Playlist(
+                                id = playlist.id,
+                                name = playlist.name,
+                                coverUrl = playlist.coverUrl,
+                                trackCount = playlist.trackCount,
+                                playCount = playlist.playCount,
+                                description = playlist.description,
+                            ),
+                        )
+                        appViewModel.closePlaylistSquare()
+                    },
+                )
             }
 
             if (commentsState.visible) {

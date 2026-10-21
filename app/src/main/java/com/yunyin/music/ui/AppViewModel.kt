@@ -89,6 +89,20 @@ data class CommentsUiState(
     val allError: String? = null,
 )
 
+/** 歌单广场: session-cached categories, one selected category and its paginated cards. */
+data class PlaylistSquareUiState(
+    val visible: Boolean = false,
+    val categories: List<String> = emptyList(),
+    val selected: String = "全部",
+    val playlists: List<com.yunyin.music.data.net.DiscoveryPlaylist> = emptyList(),
+    val offset: Int = 0,
+    val more: Boolean = true,
+    val loading: Boolean = false,
+    val loadingMore: Boolean = false,
+    val categoriesLoading: Boolean = false,
+    val error: String? = null,
+)
+
 data class ArtistUiState(
     val id: Long = 0L,
     val name: String = "",
@@ -134,6 +148,10 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
 
     private val _artist = MutableStateFlow<ArtistUiState?>(null)
     val artist: StateFlow<ArtistUiState?> = _artist.asStateFlow()
+
+    private val _playlistSquare = MutableStateFlow(PlaylistSquareUiState())
+    val playlistSquare: StateFlow<PlaylistSquareUiState> = _playlistSquare.asStateFlow()
+    private var squareJob: kotlinx.coroutines.Job? = null
 
     private val _comments = MutableStateFlow(CommentsUiState())
     val comments: StateFlow<CommentsUiState> = _comments.asStateFlow()
@@ -347,6 +365,81 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
     fun clearHistory() {
         container.searchHistory.clear()
         _search.value = _search.value.copy(history = emptyList())
+    }
+
+    fun openPlaylistSquare() {
+        if (!_playlistSquare.value.visible) {
+            _playlistSquare.value = _playlistSquare.value.copy(visible = true)
+            squareJob?.cancel()
+            squareJob = viewModelScope.launch {
+                val categories = _playlistSquare.value.categories
+                if (categories.isNotEmpty()) return@launch
+                _playlistSquare.value = _playlistSquare.value.copy(categoriesLoading = true)
+                val result = runCatching { container.music.playlistCategories() }.getOrNull()
+                val names = (result as? com.yunyin.music.core.NetResult.Ok)?.value.orEmpty()
+                _playlistSquare.value = _playlistSquare.value.copy(
+                    categories = names,
+                    categoriesLoading = false,
+                    selected = names.firstOrNull() ?: "全部",
+                )
+                loadPlaylistSquarePage(first = true)
+            }
+        }
+    }
+
+    fun closePlaylistSquare() {
+        squareJob?.cancel()
+        _playlistSquare.value = _playlistSquare.value.copy(visible = false)
+    }
+
+    fun selectPlaylistCategory(category: String) {
+        if (category == _playlistSquare.value.selected) return
+        _playlistSquare.value = _playlistSquare.value.copy(selected = category)
+        loadPlaylistSquarePage(first = true)
+    }
+
+    fun loadMorePlaylistSquare() {
+        val s = _playlistSquare.value
+        if (!com.yunyin.music.data.net.PlaylistSquareRules.canLoadMore(s.more, s.loadingMore || s.loading)) return
+        loadPlaylistSquarePage(first = false)
+    }
+
+    /** Loads the selected category's first page, or appends the next one; failures keep loaded cards. */
+    private fun loadPlaylistSquarePage(first: Boolean) {
+        val state = _playlistSquare.value
+        squareJob?.cancel()
+        _playlistSquare.value = state.copy(
+            loading = first,
+            loadingMore = !first,
+            error = null,
+        )
+        squareJob = viewModelScope.launch {
+            val offset = if (first) 0 else state.offset
+            val result = runCatching { container.music.topPlaylists(state.selected, offset) }.getOrNull()
+            val current = _playlistSquare.value
+            if (current.selected != state.selected) return@launch
+            when (result) {
+                is com.yunyin.music.core.NetResult.Ok -> {
+                    val page = result.value
+                    _playlistSquare.value = current.copy(
+                        playlists = if (first) {
+                            page.playlists
+                        } else {
+                            com.yunyin.music.data.net.PlaylistSquareRules.appendUnique(current.playlists, page.playlists)
+                        },
+                        offset = offset + page.playlists.size,
+                        more = page.more,
+                        loading = false,
+                        loadingMore = false,
+                    )
+                }
+                else -> _playlistSquare.value = current.copy(
+                    loading = false,
+                    loadingMore = false,
+                    error = if (first) "歌单加载失败" else "加载更多失败",
+                )
+            }
+        }
     }
 
     // ---------------------------------------------------------------- detail
