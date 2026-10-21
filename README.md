@@ -69,8 +69,8 @@ keyAlias=mykey
 keyPassword=****
 ```
 
-字体：界面使用 **SF Pro**，因授权限制不随仓库分发。构建前需把字体文件放到
-`app/src/main/res/font/sf_pro.ttf`，或把 `ui/theme/Type.kt` 中的 `SFPro` 换成可自由分发的字体。
+字体：界面优先使用 **SF Pro**，但因授权限制不随仓库分发；把字体文件放到
+`app/src/main/res/font/sf_pro.ttf` 即可启用，缺失时会自动回退到系统无衬线字体（Roboto / Noto Sans），构建与运行不受影响。
 
 ```bash
 ./gradlew :app:assembleDebug      # 调试包

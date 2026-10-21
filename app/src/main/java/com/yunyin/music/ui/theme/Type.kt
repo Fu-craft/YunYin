@@ -9,24 +9,62 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
-import com.yunyin.music.R
+import com.yunyin.music.YunYinApp
 
 /**
- * SF Pro, bundled and mapped across the weight axis.
+ * The interface font: SF Pro when the licence-restricted file is present, the platform's own
+ * sans-serif family otherwise.
  *
- * iOS expresses hierarchy with size and weight on a single family rather than
- * distinct typefaces, so every role resolves to SF Pro.
+ * The repository cannot redistribute SF Pro (Apple's licence), so `res/font/sf_pro.ttf` is
+ * gitignored. Referencing `R.font.sf_pro` here made a clean checkout fail to *compile* — the R class
+ * simply has no such field without the file — which is an open-source blocker, not just a CI
+ * annoyance. The resource is therefore resolved **at runtime** by name: a missing font is a runtime
+ * capability, so the app builds and runs on a clean checkout with the system family.
+ *
+ * The typography scale, weights and line heights are unchanged either way; only the family's
+ * resolution differs. When the file is present, the variable font is mapped across the same weight
+ * axis as before, so the look is identical.
+ *
+ * Lazy and exception-safe: if the process has no [YunYinApp] yet (previews, plain JVM tests) or the
+ * lookup fails, it falls back rather than throwing.
  */
 @OptIn(ExperimentalTextApi::class)
-val SFPro: FontFamily = FontFamily(
-    Font(R.font.sf_pro, weight = FontWeight.Light, variationSettings = FontVariation.Settings(FontVariation.weight(300))),
-    Font(R.font.sf_pro, weight = FontWeight.Normal, variationSettings = FontVariation.Settings(FontVariation.weight(400))),
-    Font(R.font.sf_pro, weight = FontWeight.Medium, variationSettings = FontVariation.Settings(FontVariation.weight(500))),
-    Font(R.font.sf_pro, weight = FontWeight.SemiBold, variationSettings = FontVariation.Settings(FontVariation.weight(600))),
-    Font(R.font.sf_pro, weight = FontWeight.Bold, variationSettings = FontVariation.Settings(FontVariation.weight(700))),
-    Font(R.font.sf_pro, weight = FontWeight.ExtraBold, variationSettings = FontVariation.Settings(FontVariation.weight(800))),
-    Font(R.font.sf_pro, weight = FontWeight.Black, variationSettings = FontVariation.Settings(FontVariation.weight(900))),
+val SFPro: FontFamily by lazy(LazyThreadSafetyMode.PUBLICATION) { loadSfPro() }
+
+/** One entry of the weight axis that used to be a compile-time `Font(R.font.sf_pro, …)`. */
+private data class SfProWeight(val weight: FontWeight, val axis: Int)
+
+private val SF_PRO_WEIGHTS = listOf(
+    SfProWeight(FontWeight.Light, 300),
+    SfProWeight(FontWeight.Normal, 400),
+    SfProWeight(FontWeight.Medium, 500),
+    SfProWeight(FontWeight.SemiBold, 600),
+    SfProWeight(FontWeight.Bold, 700),
+    SfProWeight(FontWeight.ExtraBold, 800),
+    SfProWeight(FontWeight.Black, 900),
 )
+
+@OptIn(ExperimentalTextApi::class)
+private fun loadSfPro(): FontFamily {
+    val context = runCatching { YunYinApp.instance.applicationContext }.getOrNull()
+        ?: return FontFamily.Default
+    return runCatching {
+        val id = context.resources.getIdentifier("sf_pro", "font", context.packageName)
+        if (id == 0) {
+            FontFamily.Default
+        } else {
+            FontFamily(
+                *SF_PRO_WEIGHTS.map { entry ->
+                    Font(
+                        id,
+                        weight = entry.weight,
+                        variationSettings = FontVariation.Settings(FontVariation.weight(entry.axis)),
+                    )
+                }.toTypedArray(),
+            )
+        }
+    }.getOrDefault(FontFamily.Default)
+}
 
 /**
  * Typography scale mirroring iOS Dynamic Type sizes.
