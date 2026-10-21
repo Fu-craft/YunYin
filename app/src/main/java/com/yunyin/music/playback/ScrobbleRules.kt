@@ -47,6 +47,10 @@ object ScrobbleRules {
     fun shouldReport(progress: Progress, durationMs: Long): Boolean =
         !progress.reported && progress.playedMs >= thresholdMs(durationMs)
 
+    /** A cookie is not enough: anonymous sessions write to a throwaway account, so they count as logged out. */
+    fun shouldSend(enabled: Boolean, hasCookie: Boolean, anonymous: Boolean): Boolean =
+        enabled && hasCookie && !anonymous
+
     /** The position to send as `/scrobble`'s `time`, clamped into the track and expressed in seconds. */
     fun reportSeconds(progress: Progress, durationMs: Long): Int {
         val played = if (durationMs > 0L) minOf(progress.playedMs, durationMs) else progress.playedMs

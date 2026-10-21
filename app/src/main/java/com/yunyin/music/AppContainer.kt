@@ -229,11 +229,21 @@ class AppContainer(val appContext: Context) {
             // of being served from the cache until it ages out.
             onStreamError = { trackId -> music.invalidateResolution(trackId) },
             onScrobble = { trackId, sourceId, seconds ->
+                val anonymous = settings.account?.isAnonymous == true
                 when {
-                    !settings.scrobbleEnabled ->
-                        lxLog.record("解析", "stage=scrobble track=$trackId result=skip reason=setting-off")
-                    settings.cookie.isBlank() ->
-                        lxLog.record("解析", "stage=scrobble track=$trackId result=skip reason=logged-out")
+                    !com.yunyin.music.playback.ScrobbleRules.shouldSend(
+                        enabled = settings.scrobbleEnabled,
+                        hasCookie = settings.cookie.isNotBlank(),
+                        anonymous = anonymous,
+                    ) -> lxLog.record(
+                        "解析",
+                        "stage=scrobble track=$trackId result=skip reason=" +
+                            when {
+                                !settings.scrobbleEnabled -> "setting-off"
+                                anonymous -> "anonymous-session"
+                                else -> "logged-out"
+                            },
+                    )
                     else -> scrobbleScope.launch {
                         val result = runCatching { music.scrobble(trackId, sourceId, seconds) }.getOrNull()
                         val outcome = when (result) {
@@ -241,7 +251,12 @@ class AppContainer(val appContext: Context) {
                             is com.yunyin.music.core.NetResult.Ok -> "ok"
                             is com.yunyin.music.core.NetResult.Err -> "fail reason=${result.message}"
                         }
-                        lxLog.record("解析", "stage=scrobble track=$trackId seconds=$seconds result=$outcome")
+                        lxLog.record(
+                            "解析",
+                            "stage=scrobble track=$trackId id=$trackId sourceid=$sourceId seconds=$seconds " +
+                                "timestamp=${client.lastScrobbleTimestamp} http=${client.lastHttpStatus} " +
+                                "body=${client.lastHttpBody.take(200)} result=$outcome",
+                        )
                     }
                 }
             },

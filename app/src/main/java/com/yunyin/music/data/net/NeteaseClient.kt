@@ -97,6 +97,8 @@ class NeteaseClient(
             val startedNs = System.nanoTime()
             http.newCall(builder.build()).execute().use { response ->
                 val text = response.body?.string().orEmpty()
+                lastHttpStatus = response.code
+                lastHttpBody = text.take(400)
                 lastHttpBytes = text.toByteArray(Charsets.UTF_8).size
                 lastHttpMs = (System.nanoTime() - startedNs) / 1_000_000
 
@@ -501,6 +503,15 @@ class NeteaseClient(
     @Volatile
     private var lastHttpBytes: Int = 0
 
+    @Volatile var lastHttpStatus: Int = 0
+        private set
+
+    @Volatile var lastHttpBody: String = ""
+        private set
+
+    @Volatile var lastScrobbleTimestamp: Long = 0L
+        private set
+
     @Volatile
     private var lastHttpMs: Long = 0L
 
@@ -624,11 +635,13 @@ class NeteaseClient(
 
     /** Reports one qualified play to the signed-in account. Silent, fire-and-forget. */
     suspend fun scrobble(songId: Long, sourceId: Long, seconds: Int): NetResult<Unit> {
+        val timestamp = System.currentTimeMillis()
+        lastScrobbleTimestamp = timestamp
         val result = request(
             "/scrobble",
             query = PlaylistRequestRules.withCacheBust(
                 mapOf("id" to "$songId", "sourceid" to "$sourceId", "time" to "$seconds"),
-                System.currentTimeMillis(),
+                timestamp,
             ),
         )
         return when (result) {

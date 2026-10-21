@@ -235,7 +235,7 @@ fun SettingsScreen(
             )
             ToggleRow(
                 title = "上报听歌记录",
-                subtitle = "把播放记录写入你的网易云账号（默认关闭，需登录；只在本机播放达到门槛时上报）",
+                subtitle = "把播放记录写入你的网易云账号（默认关闭，需要登录真实账号；匿名会话不会上报）",
                 enabled = scrobbleEnabled,
                 onChange = onScrobbleEnabledChange,
             )

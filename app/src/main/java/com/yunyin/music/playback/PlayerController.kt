@@ -102,6 +102,7 @@ class PlayerController(
     private var scrobbleTrackId: Long? = null
     private var scrobbleProgress = ScrobbleRules.Progress()
     private var scrobbleDurationMs = 0L
+    private var currentSourceId = 0L
 
     // The player publishes at 4 Hz, far too coarse to drive karaoke timing, so the UI asks
     // this for a per-frame interpolated position. See [PositionInterpolator] for why it must
@@ -312,9 +313,16 @@ class PlayerController(
     // ---------------------------------------------------------------- queue
 
     /** Replaces the queue and starts at [startIndex], playing unless [autoPlay] says otherwise. */
-    fun playQueue(tracks: List<Track>, startIndex: Int, autoPlay: Boolean = true) {
+    fun playQueue(
+        tracks: List<Track>,
+        startIndex: Int,
+        autoPlay: Boolean = true,
+        /** Playlist/album the queue started from; `/scrobble` needs this, not 0 or the song id. */
+        sourceId: Long = 0L,
+    ) {
         val mediaController = controller ?: return
         if (tracks.isEmpty()) return
+        currentSourceId = sourceId
         val items = tracks.map { TrackMediaItem.mediaItem(it) }
         // Record the concrete Track list: MediaItem metadata is lossy (no album id /
         // duration), and the UI renders richer rows than the player item carries.
@@ -448,6 +456,9 @@ class PlayerController(
             }
             scrobbleProgress = ScrobbleRules.onTick(scrobbleProgress, position, mediaController.isPlaying)
             scrobbleDurationMs = duration
+            // Report the moment the threshold is crossed (NetEase's own behaviour); the boundary call in
+            // flushScrobble-style listeners stays as the fallback. The reported latch makes both paths once-only.
+            if (ScrobbleRules.shouldReport(scrobbleProgress, scrobbleDurationMs)) flushScrobble()
         }
 
         // Track the user's real loop mode whenever no preview override is in effect, so leaving a
@@ -536,7 +547,10 @@ class PlayerController(
         val seconds = ScrobbleRules.reportSeconds(scrobbleProgress, scrobbleDurationMs)
         scrobbleProgress = scrobbleProgress.copy(reported = true)
         if (seconds <= 0) return
-        val sourceId = currentQueue.firstOrNull { it.id == trackId }?.albumId ?: 0L
+        val albumId = currentQueue.firstOrNull { it.id == trackId }?.albumId ?: 0L
+        // Never 0: the queue's source (playlist/album) first, then the track's album, then the song id. A 0
+        // sourceid lets the server answer 200 while recording nothing.
+        val sourceId = currentSourceId.takeIf { it > 0L } ?: albumId.takeIf { it > 0L } ?: trackId
         runCatching { onScrobble(trackId, sourceId, seconds) }
     }
 

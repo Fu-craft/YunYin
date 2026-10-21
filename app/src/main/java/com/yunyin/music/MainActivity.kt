@@ -649,8 +649,14 @@ class MainActivity : ComponentActivity() {
         ): Boolean {
             val safeQueue = queue.ifEmpty { listOf(track) }
             val index = safeQueue.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
+            // `/scrobble` needs the origin (playlist/album), never 0. Explicit playlist id wins, then the last
+            // playlist opened for this queue, then the track's album, then the song id as the last resort.
+            val scrobbleSource = playlistId
+                ?: lastPlaylistId
+                ?: track.albumId.takeIf { it > 0L }
+                ?: track.id
             var started = false
-            runCatching { container.player.playQueue(safeQueue, index) }
+            runCatching { container.player.playQueue(safeQueue, index, sourceId = scrobbleSource) }
                 .onSuccess {
                     started = true
                     showPlayer = true

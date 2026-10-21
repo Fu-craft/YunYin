@@ -14,6 +14,21 @@ class ScrobbleRulesTest {
         ScrobbleRules.onTick(progress, position, playing)
 
     @Test
+    fun `crossing the threshold mid-play is reportable once`() {
+        val p = ScrobbleRules.Progress(playedMs = ScrobbleRules.thresholdMs(200_000L))
+        assertTrue(ScrobbleRules.shouldReport(p, 200_000L))
+        assertFalse(ScrobbleRules.shouldReport(p.copy(reported = true), 200_000L))
+    }
+
+    @Test
+    fun `anonymous and logged-out sessions never send`() {
+        assertTrue(ScrobbleRules.shouldSend(enabled = true, hasCookie = true, anonymous = false))
+        assertFalse(ScrobbleRules.shouldSend(enabled = false, hasCookie = true, anonymous = false))
+        assertFalse(ScrobbleRules.shouldSend(enabled = true, hasCookie = false, anonymous = false))
+        assertFalse(ScrobbleRules.shouldSend(enabled = true, hasCookie = true, anonymous = true))
+    }
+
+    @Test
     fun `half the duration or four minutes, whichever comes first`() {
         assertEquals(90_000L, ScrobbleRules.thresholdMs(180_000L))
         assertEquals(240_000L, ScrobbleRules.thresholdMs(900_000L))
