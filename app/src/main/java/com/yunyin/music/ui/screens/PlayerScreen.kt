@@ -66,7 +66,6 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -321,7 +320,7 @@ fun PlayerScreen(
     }
 
     // 1 = chrome fully present, 0 = immersed. Everything that belongs to the chrome — the header,
-    // the transport, the frosted split and the lyric fade zones — is derived from this one value,
+    // the transport, the bottom scrim and the lyric fade zones — is derived from this one value,
     // so the whole state change is a single coordinated move rather than several independent
     // snaps.
     //
@@ -490,54 +489,15 @@ fun PlayerScreen(
 
         // Fluid, audio-reactive background. The artwork contributes only its palette.
         //
-        // Frosting is achieved by drawing the *same* full-screen field twice: once blurred and
-        // once sharp, with the sharp copy masked off inside the control panel. Both copies use
-        // identical geometry and uniforms, so their colours are identical and the only
-        // difference at the boundary is sharpness — no tonal step, which is what a second,
-        // separately-sized shader instance produced.
+        // One continuous field for the whole page. An earlier version drew it twice (a blurred copy
+        // under a sharp copy masked off inside the control panel) to fake a frosted panel; once the
+        // two copies became translucent over the NeriPlayer-style base, the mask's edge turned a
+        // soft blur boundary into a visible tonal step above the controls. The page background now
+        // runs continuously from top to bottom, and contrast for the controls comes from a soft
+        // bottom scrim instead (see the control bar).
         //
-        // The panel sits at the bottom in portrait. In landscape it follows the chrome rail, which
-        // is on the *left* in the lyrics presentation (lyrics take the wide right-hand area) and on
-        // the *right* in the artwork presentation (the cover leads on the left). The mask is
-        // derived from the same `chromeOnLeft` flag as the layout, so the two cannot disagree.
-        val chromeOnLeft = isLandscape && showLyrics
-        val frostEdge = when {
-            !isLandscape -> FrostEdge.Bottom
-            chromeOnLeft -> FrostEdge.Left
-            else -> FrostEdge.Right
-        }
-        // The *settled* panel size, i.e. with the chrome fully visible. The landscape rail is an
-        // animation away from its full width (`LANDSCAPE_CONTROLS_WIDTH * chromeProgress`), so
-        // taking its measured width here would fold the fade into the size and make the frost
-        // retract twice as fast as the scrim. The portrait bar keeps its size and only fades, so
-        // its measured height is already the settled one.
-        val frostPanelPx = if (isLandscape) {
-            with(density) { LANDSCAPE_CONTROLS_WIDTH.roundToPx() }
-        } else {
-            panelHeightPx
-        }
-        val frostExtentPx = if (isLandscape) screenWidthPx else screenHeightPx
-
-        val frostFraction = if (showLyrics && frostExtentPx > 0f && frostPanelPx > 0) {
-            // How much of the axis the frost should cover right now: its settled share of the
-            // panel, shrinking to nothing as the chrome leaves. Expressed as the fraction of the
-            // sharp layer that SURVIVES, which is what the mask consumes:
-            //   * far end (bottom / right): the panel hugs the far edge, so the sharp region is
-            //     everything before it -> `1 - frosted`.
-            //   * near end (left): the panel hugs the near edge, so the sharp region is everything
-            //     after it -> `frosted`.
-            // Driving the retraction from this single product keeps the boundary exactly on the
-            // panel's edge at full chrome and correct at every point of the fade — the previous
-            // two-term interpolation retracted in the wrong direction for the near end.
-            val panelFraction = (frostPanelPx.toFloat() / frostExtentPx).coerceIn(0f, 1f)
-            val frosted = panelFraction * chromeProgress
-            if (frostEdge == FrostEdge.Left) frosted else 1f - frosted
-        } else {
-            1f
-        }
-
-        // Recede slightly further while immersed so the lyrics have the most contrast exactly
-        // when nothing else competes with them. Applied to both layers, so the split stays even.
+        // Recede slightly further while immersed so the lyrics have the most contrast exactly when
+        // nothing else competes with them.
         val backgroundDim = BACKGROUND_DIM + (1f - chromeProgress) * IMMERSIVE_EXTRA_DIM
 
         // Freeze the backdrop while the two presentations cross-fade: it sits behind both of them,
@@ -647,8 +607,8 @@ fun PlayerScreen(
             }
             if (nowPlayingDynamicBackground) {
                 // Dynamic shader, drawn over the cover at 80 % so the artwork still shows through.
-                // Bottom layer: the same field, blurred. Only visible inside the panel, because the
-                // sharp layer above masks itself off there.
+                // One full-screen copy, so the field is identical from the top of the page to the
+                // bottom; there is no masked or separately-blurred copy to disagree with it.
                 HyperBackground(
                     palette = palette,
                     isDark = true,
@@ -658,22 +618,7 @@ fun PlayerScreen(
                     staticMotion = !dynamicMotionEnabled,
                     modifier = Modifier
                         .fillMaxSize()
-                        .graphicsLayer { alpha = NowPlayingBackgroundRules.DYNAMIC_ALPHA }
-                        .blur(CONTROL_BAR_BLUR),
-                )
-                // Top layer: the field, sharp, masked to finish at the panel's leading edge. The mask
-                // is a rounded rectangle, so the frosted region reads as an inset panel.
-                HyperBackground(
-                    palette = palette,
-                    isDark = true,
-                    dim = backgroundDim,
-                    paused = transitioning,
-                    audioReactive = audioReactiveEnabled,
-                    staticMotion = !dynamicMotionEnabled,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .graphicsLayer { alpha = NowPlayingBackgroundRules.DYNAMIC_ALPHA }
-                        .sharpAbove(frostFraction, frostEdge),
+                        .graphicsLayer { alpha = NowPlayingBackgroundRules.DYNAMIC_ALPHA },
                 )
             }
         }
@@ -732,7 +677,7 @@ fun PlayerScreen(
                 // Portrait and landscape differ in *where the chrome lives*, so the two branches
                 // below share one rule: landscape puts the chrome in a left-hand rail and gives the
                 // remaining (right-hand) area to the content — the cover, or the lyrics. That is
-                // what the frosted backdrop keys off too, so the frost never has to move between
+                // also what the chrome-side scrim follows, so it never has to move between
                 // presentations.
                 if (isLandscape) {
                     // ---------------------------------------- landscape: full-bleed + rail overlay
@@ -752,7 +697,7 @@ fun PlayerScreen(
                     // Which side the rail takes depends on the presentation: lyrics keep it on the
                     // left (so the text reads from the wide right-hand area, as the reference has
                     // it), the artwork puts it on the right (so the cover leads on the left). The
-                    // frosted backdrop keys off the same flag, so the two cannot disagree.
+                    // rail's scrim keys off the same flag, so the two cannot disagree.
                     val railOnLeft = lyricsShown
                     val railWidth = LANDSCAPE_CONTROLS_WIDTH
 
@@ -978,8 +923,8 @@ fun PlayerScreen(
                                 // The bottom zone must *cover the panel*: clamping it to a fraction of
                                 // the viewport (an earlier version, to make landscape fit) left lyric
                                 // text visible straight through the panel, which is exactly what made
-                                // the frost look broken. Landscape is a separate branch above and does
-                                // not need the clamp.
+                                // the controls read as broken. Landscape is a separate branch above
+                                // and does not need the clamp.
                                 topFadeZone = CHROME_TOP_FADE * chromeProgress,
                                 bottomFadeZone = if (panelHeightPx == 0) {
                                     0.dp
@@ -1029,11 +974,31 @@ fun PlayerScreen(
                             Spacer(Modifier.weight(1f))
                         }
 
-                        // Control bar.
-                        //
-                        // The frost comes from the masked backdrop layers above, so the panel itself
-                        // only supplies a *very* light scrim for button legibility. Its alpha ramps in
-                        // from zero at the top edge, so there is no step where the panel begins.
+                        // Soft bottom scrim. Longer than the control bar itself, so the page
+                        // background fades into the controls instead of meeting them at an edge:
+                        // alpha is zero at its top and eases up to the control tint at the screen
+                        // bottom, over roughly the bottom third of the page. It sits above the
+                        // lyrics (which are already faded out there) and below the controls, and it
+                        // is independent of which background layers are enabled, so the same
+                        // continuous tone reaches the bottom whether the dynamic shader is on, the
+                        // blurred cover is on, or only the static palette remains.
+                        Box(
+                            Modifier
+                                .align(Alignment.BottomCenter)
+                                .fillMaxWidth()
+                                .height(with(density) { (screenHeightPx * BOTTOM_SCRIM_FRACTION).toDp() })
+                                .background(
+                                    Brush.verticalGradient(
+                                        0f to Color.Transparent,
+                                        0.35f to Color.Black.copy(alpha = CONTROL_BAR_TINT * 0.18f),
+                                        0.72f to Color.Black.copy(alpha = CONTROL_BAR_TINT * 0.62f),
+                                        1f to Color.Black.copy(alpha = CONTROL_BAR_TINT),
+                                    ),
+                                ),
+                        )
+
+                        // Control bar. The panel itself is fully transparent; the page background
+                        // (and the scrim above) runs underneath it.
                         Box(
                             Modifier
                                 .align(Alignment.BottomCenter)
@@ -1042,17 +1007,6 @@ fun PlayerScreen(
                                 .chromeSlide(chromeProgress, ChromeEdge.Bottom)
                                 .then(wakeOnTap),
                         ) {
-                            Box(
-                                Modifier
-                                    .matchParentSize()
-                                    .background(
-                                        Brush.verticalGradient(
-                                            0f to Color.Transparent,
-                                            0.55f to Color.Black.copy(alpha = CONTROL_BAR_TINT),
-                                            1f to Color.Black.copy(alpha = CONTROL_BAR_TINT),
-                                        ),
-                                    ),
-                            )
                             PlayerControls(
                                 state = state,
                                 displayedPosition = displayedPosition,
@@ -2896,18 +2850,21 @@ private val CHROME_TOP_FADE = 140.dp
 private val CHROME_BOTTOM_FADE = 300.dp
 
 /**
- * Tint over the frosted control bar.
+ * Maximum alpha of the soft bottom scrim behind the controls.
  *
- * Enough to hold the buttons against bright artwork, low enough that the blurred mesh is
- * still clearly present (the bar must not look like a flat panel).
+ * Enough to hold the buttons against bright artwork, low enough that the continuous background
+ * still reads through the bottom of the page.
  */
 private const val CONTROL_BAR_TINT = 0.38f
 
-/** Blur applied to the reused background behind the control bar. */
-private val CONTROL_BAR_BLUR = 40.dp
-
-/** Corner radius of the frosted control panel. */
-private val PANEL_CORNER_RADIUS = 20.dp
+/**
+ * Share of the screen height covered by the soft bottom scrim.
+ *
+ * 0.34 puts its transparent start above the control bar, so the scrim eases the background into
+ * the controls instead of beginning at their top edge; the gradient reaches full tint only at the
+ * very bottom of the page.
+ */
+private const val BOTTOM_SCRIM_FRACTION = 0.34f
 
 /** Width of the landscape chrome rail, sized so the transport still fits. */
 private val LANDSCAPE_CONTROLS_WIDTH = 340.dp
@@ -2955,109 +2912,7 @@ private const val BACKGROUND_DIM = 0.30f
 /** Begin the lyrics fade this far above the panel, so it completes at its top edge. */
 private const val LYRIC_FADE_REACH_PX = 90
 
-/**
- * Masks the content so the frosted region ends at [keepFraction] of the axis.
- *
- * Used to confine the sharp copy of the backdrop to the area outside the control panel. The
- * transition is a short alpha ramp rather than a hard cut, and because the layer it reveals
- * underneath is a blurred copy of the *same* image, the ramp changes only sharpness — never
- * colour — so it cannot read as a tonal band.
- *
- * [keepFraction] is the fraction of the axis on the **content** side of the boundary, i.e. where
- * the sharp layer survives: on the far end (bottom / right) the sharp region is everything before
- * the boundary, so it is `1 - frosted`; on the near end (left) it is everything after it, so it is
- * `frosted` itself. The caller computes it from the panel's share of the axis times the chrome's
- * progress, so the boundary sits exactly on the panel's edge at full chrome and retracts to nothing
- * as the chrome leaves. Deriving the boundary directly here (rather than interpolating from a
- * measured panel) is what keeps all three edges consistent.
- *
- * The cut-out for the bottom edge is a rounded-top rectangle so the frosted region reads as an
- * inset panel. The operation is `DstOut` — it *removes* the sharp layer inside that shape,
- * revealing the blurred copy beneath. (`DstIn` with the same path would do the opposite and keep
- * the sharp content inside the panel.)
- */
-private fun Modifier.sharpAbove(
-    keepFraction: Float,
-    edge: FrostEdge = FrostEdge.Bottom,
-): Modifier =
-    this
-        .graphicsLayer {
-            // Only request an offscreen layer when a mask will actually be drawn.
-            //
-            // `CompositingStrategy.Offscreen` allocates a full-screen buffer and composites it
-            // back — the price of being able to `DstOut` the content. On the artwork screen
-            // `keepFraction` is 1f, so the draw lambda returns immediately without masking, and
-            // that buffer was pure waste on every frame.
-            compositingStrategy = if (keepFraction < 1f) {
-                CompositingStrategy.Offscreen
-            } else {
-                CompositingStrategy.Auto
-            }
-        }
-        .drawWithContent {
-            drawContent()
-            val end = keepFraction.coerceIn(0f, 1f)
-            // Fully sharp (no chrome) or fully frosted (nothing left to keep): nothing to mask.
-            if (end >= 1f) return@drawWithContent
-            if (end <= 0f) return@drawWithContent
 
-            val ramp = 0.05f
-            val horizontal = edge != FrostEdge.Bottom
-            val along = if (horizontal) size.width else size.height
-
-            // The panel hugs either the far end of the axis (bottom / right) or the near end
-            // (left). Which one decides which side of the boundary is cut, and which way the soft
-            // ramp faces, so it is derived once here rather than duplicated per edge.
-            val farEnd = edge != FrostEdge.Left
-            val rampPx = ramp * along
-            val boundary = end * along
-            val solidBoundary = if (farEnd) {
-                (boundary + rampPx).coerceAtMost(along)
-            } else {
-                (boundary - rampPx).coerceAtLeast(0f)
-            }
-
-            val soft = androidx.compose.ui.graphics.Path().apply {
-                when (edge) {
-                    FrostEdge.Bottom ->
-                        addRect(androidx.compose.ui.geometry.Rect(0f, boundary, size.width, solidBoundary))
-                    FrostEdge.Right ->
-                        addRect(androidx.compose.ui.geometry.Rect(boundary, 0f, solidBoundary, size.height))
-                    FrostEdge.Left ->
-                        addRect(androidx.compose.ui.geometry.Rect(solidBoundary, 0f, boundary, size.height))
-                }
-            }
-            val solid = androidx.compose.ui.graphics.Path().apply {
-                when (edge) {
-                    FrostEdge.Bottom -> {
-                        // The portrait panel floats above the screen's bottom edge, so its
-                        // top-facing corners are rounded.
-                        val radius = PANEL_CORNER_RADIUS.toPx()
-                        val round = androidx.compose.ui.geometry.CornerRadius(radius, radius)
-                        val zero = androidx.compose.ui.geometry.CornerRadius.Zero
-                        addRoundRect(
-                            androidx.compose.ui.geometry.RoundRect(
-                                left = 0f, top = solidBoundary, right = size.width, bottom = size.height,
-                                topLeftCornerRadius = round, topRightCornerRadius = round,
-                                bottomLeftCornerRadius = zero, bottomRightCornerRadius = zero,
-                            ),
-                        )
-                    }
-                    // A landscape rail is flush with the screen's top and bottom edges, so its
-                    // corners must be square: rounding them cut two notches out of the frost
-                    // boundary, which read as a band across the top of the panel.
-                    FrostEdge.Right ->
-                        addRect(androidx.compose.ui.geometry.Rect(solidBoundary, 0f, size.width, size.height))
-                    FrostEdge.Left ->
-                        addRect(androidx.compose.ui.geometry.Rect(0f, 0f, solidBoundary, size.height))
-                }
-            }
-            drawPath(soft, Color.Black.copy(alpha = 0.55f), blendMode = BlendMode.DstOut)
-            drawPath(solid, Color.Black, blendMode = BlendMode.DstOut)
-        }
-
-/** Which screen edge the frosted control panel occupies. */
-private enum class FrostEdge { Bottom, Left, Right }
 
 /**
  * Download-feedback timings.
