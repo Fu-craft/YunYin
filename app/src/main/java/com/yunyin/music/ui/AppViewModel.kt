@@ -67,6 +67,23 @@ data class SearchUiState(
  * `name`/`coverUrl` are seeded from what the caller already has (the tapped row's first artist name), then
  * replaced by the detail response when it lands — so the page is never blank while loading.
  */
+enum class CommentsTab { HOT, ALL }
+
+/** Read-only comment sheet: hot and paged-all lists with independent loading/error state. */
+data class CommentsUiState(
+    val visible: Boolean = false,
+    val trackId: Long = 0L,
+    val tab: CommentsTab = CommentsTab.HOT,
+    val hot: List<com.yunyin.music.core.Comment> = emptyList(),
+    val hotLoading: Boolean = false,
+    val hotError: String? = null,
+    val all: List<com.yunyin.music.core.Comment> = emptyList(),
+    val allOffset: Int = 0,
+    val allMore: Boolean = false,
+    val allLoading: Boolean = false,
+    val allError: String? = null,
+)
+
 data class ArtistUiState(
     val id: Long = 0L,
     val name: String = "",
@@ -112,6 +129,10 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
 
     private val _artist = MutableStateFlow<ArtistUiState?>(null)
     val artist: StateFlow<ArtistUiState?> = _artist.asStateFlow()
+
+    private val _comments = MutableStateFlow(CommentsUiState())
+    val comments: StateFlow<CommentsUiState> = _comments.asStateFlow()
+    private var commentsJob: kotlinx.coroutines.Job? = null
     private var artistJob: Job? = null
     private var artistRequestId = 0L
 
@@ -654,6 +675,79 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
         artistJob = null
         artistRequestId++
         _artist.value = null
+    }
+
+    fun openComments(trackId: Long) {
+        if (trackId <= 0L) return
+        commentsJob?.cancel()
+        _comments.value = CommentsUiState(
+            visible = true,
+            trackId = trackId,
+            hotLoading = true,
+            allLoading = true,
+        )
+        commentsJob = viewModelScope.launch {
+            launch {
+                val result = runCatching { container.music.hotComments(trackId) }.getOrNull()
+                if (_comments.value.trackId != trackId) return@launch
+                _comments.value = when (result) {
+                    null -> _comments.value.copy(hotLoading = false, hotError = "热门评论加载失败")
+                    is com.yunyin.music.core.NetResult.Ok ->
+                        _comments.value.copy(hot = result.value, hotLoading = false, hotError = null)
+                    is com.yunyin.music.core.NetResult.Err ->
+                        _comments.value.copy(hotLoading = false, hotError = result.message)
+                }
+            }
+            launch {
+                val result = runCatching { container.music.comments(trackId, offset = 0) }.getOrNull()
+                if (_comments.value.trackId != trackId) return@launch
+                _comments.value = when (result) {
+                    null -> _comments.value.copy(allLoading = false, allError = "评论加载失败")
+                    is com.yunyin.music.core.NetResult.Ok -> _comments.value.copy(
+                        all = result.value.comments,
+                        allOffset = result.value.comments.size,
+                        allMore = result.value.more,
+                        allLoading = false,
+                        allError = null,
+                    )
+                    is com.yunyin.music.core.NetResult.Err ->
+                        _comments.value.copy(allLoading = false, allError = result.message)
+                }
+            }
+        }
+    }
+
+    fun selectCommentsTab(tab: CommentsTab) {
+        _comments.value = _comments.value.copy(tab = tab)
+    }
+
+    fun loadMoreComments() {
+        val current = _comments.value
+        if (!com.yunyin.music.data.net.CommentPagingRules.canLoadMore(current.allMore, current.allLoading)) return
+        val trackId = current.trackId
+        _comments.value = current.copy(allLoading = true, allError = null)
+        commentsJob = viewModelScope.launch {
+            val result = runCatching { container.music.comments(trackId, offset = current.allOffset) }.getOrNull()
+            val now = _comments.value
+            if (now.trackId != trackId) return@launch
+            _comments.value = when (result) {
+                null -> now.copy(allLoading = false, allError = "加载更多评论失败")
+                is com.yunyin.music.core.NetResult.Ok -> now.copy(
+                    all = com.yunyin.music.data.net.CommentPagingRules.appendUnique(now.all, result.value.comments),
+                    allOffset = now.allOffset + result.value.comments.size,
+                    allMore = result.value.more,
+                    allLoading = false,
+                    allError = null,
+                )
+                is com.yunyin.music.core.NetResult.Err -> now.copy(allLoading = false, allError = result.message)
+            }
+        }
+    }
+
+    fun closeComments() {
+        commentsJob?.cancel()
+        commentsJob = null
+        _comments.value = CommentsUiState()
     }
 
     companion object {

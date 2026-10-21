@@ -85,6 +85,8 @@ class PlayerController(
     private val sourceFailureNote: (Long) -> String? = { null },
     /** Called with a track id when its playback failed, so the resolver can drop a cached (expired) URL. */
     private val onStreamError: (Long) -> Unit = {},
+    /** Called at a boundary when the current track qualified; the host applies the opt-in/login rules. */
+    private val onScrobble: (trackId: Long, sourceId: Long, seconds: Int) -> Unit = { _, _, _ -> },
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
@@ -95,6 +97,11 @@ class PlayerController(
     private var positionJob: Job? = null
     private var trialJob: Job? = null
     private var trialRequestId = 0L
+
+    // Scrobble accounting for the current item; reported only at transitions/pause/release.
+    private var scrobbleTrackId: Long? = null
+    private var scrobbleProgress = ScrobbleRules.Progress()
+    private var scrobbleDurationMs = 0L
 
     // The player publishes at 4 Hz, far too coarse to drive karaoke timing, so the UI asks
     // this for a per-frame interpolated position. See [PositionInterpolator] for why it must
@@ -107,7 +114,12 @@ class PlayerController(
 
     private val listener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
-            if (isPlaying) startPositionTicker() else stopPositionTicker()
+            if (isPlaying) {
+                startPositionTicker()
+            } else {
+                stopPositionTicker()
+                flushScrobble()
+            }
             publish()
         }
 
@@ -134,6 +146,7 @@ class PlayerController(
         override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) = publish()
 
         override fun onMediaItemTransition(mediaItem: androidx.media3.common.MediaItem?, reason: Int) {
+            flushScrobble()
             // Clear per-track trial state immediately so the previous song's notice cannot leak across a
             // transition. The resolver below then fills in the new track's state if needed.
             _state.value = _state.value.copy(trialEndMs = null, notice = null)
@@ -427,6 +440,16 @@ class PlayerController(
         val rawPosition = mediaController.currentPosition.coerceAtLeast(0L)
         val position = if (duration > 0L) rawPosition.coerceIn(0L, duration) else rawPosition
 
+        // Accumulate real playback only; ScrobbleRules ignores seeks and paused polls.
+        current?.id?.takeIf { it > 0L }?.let { id ->
+            if (scrobbleTrackId != id) {
+                scrobbleTrackId = id
+                scrobbleProgress = ScrobbleRules.Progress()
+            }
+            scrobbleProgress = ScrobbleRules.onTick(scrobbleProgress, position, mediaController.isPlaying)
+            scrobbleDurationMs = duration
+        }
+
         // Track the user's real loop mode whenever no preview override is in effect, so leaving a
         // preview restores what they actually had rather than a hard-coded default.
         if (!_state.value.isTrialPreview) savedRepeatMode = mediaController.repeatMode
@@ -471,6 +494,7 @@ class PlayerController(
     }
 
     fun release() {
+        flushScrobble()
         stopPositionTicker()
         prefetchJob?.cancel()
         prefetchTrackId = null
@@ -502,6 +526,18 @@ class PlayerController(
                 if (prefetchTrackId == nextId) prefetchTrackId = null
             }
         }
+    }
+
+    /** Reports the current track once if it qualified (latched by [ScrobbleRules.Progress.reported]). */
+    private fun flushScrobble() {
+        val trackId = scrobbleTrackId ?: return
+        if (trackId <= 0L) return
+        if (!ScrobbleRules.shouldReport(scrobbleProgress, scrobbleDurationMs)) return
+        val seconds = ScrobbleRules.reportSeconds(scrobbleProgress, scrobbleDurationMs)
+        scrobbleProgress = scrobbleProgress.copy(reported = true)
+        if (seconds <= 0) return
+        val sourceId = currentQueue.firstOrNull { it.id == trackId }?.albumId ?: 0L
+        runCatching { onScrobble(trackId, sourceId, seconds) }
     }
 
     /** Maps an ExoPlayer failure to a message that says what actually failed (see the resolver in PlaybackService). */

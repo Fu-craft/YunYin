@@ -117,6 +117,7 @@ import com.yunyin.music.data.download.DownloadPhase
 import com.yunyin.music.data.download.TrackDownloadState
 import com.yunyin.music.ui.download.LocalDownloadController
 import com.yunyin.music.ui.beat.LocalBeatModeActions
+import com.yunyin.music.ui.comments.LocalCommentActions
 import com.yunyin.music.ui.playlist.LocalPlaylistActions
 import com.yunyin.music.ui.DownloadState
 import com.mocharealm.accompanist.lyrics.core.model.SyncedLyrics
@@ -1853,6 +1854,12 @@ private fun TrackActionsSheet(
         }
         ActionRow(SfIcons.QuoteOpening, "分享歌曲", track != null) {
             close { onShare() }
+        }
+        val commentActions = LocalCommentActions.current
+        if (commentActions != null) {
+            ActionRow(SfIcons.HeartFill, "评论", track != null) {
+                close { commentActions.onOpen() }
+            }
         }
         ActionRow(SfIcons.Clock, "歌词校准", hasLyrics) {
             close { onCalibrateLyrics() }

@@ -102,6 +102,9 @@ fun SettingsScreen(
     /** Whether tracks run into each other without the dead air that makes them sound like files. */
     seamlessTransition: Boolean = true,
     onSeamlessTransitionChange: (Boolean) -> Unit = {},
+    /** Opt-in: write listening history to the NetEase account (default off). */
+    scrobbleEnabled: Boolean = false,
+    onScrobbleEnabledChange: (Boolean) -> Unit = {},
     /** Whether the lyrics page auto-hides the chrome after the idle delay (default off). */
     autoImmersiveLyrics: Boolean = false,
     onAutoImmersiveLyricsChange: (Boolean) -> Unit = {},
@@ -229,6 +232,12 @@ fun SettingsScreen(
                 subtitle = "柔化每首歌的开头，切歌不会突然出声",
                 enabled = seamlessTransition,
                 onChange = onSeamlessTransitionChange,
+            )
+            ToggleRow(
+                title = "上报听歌记录",
+                subtitle = "把播放记录写入你的网易云账号（默认关闭，需登录；只在本机播放达到门槛时上报）",
+                enabled = scrobbleEnabled,
+                onChange = onScrobbleEnabledChange,
             )
             ToggleRow(
                 title = "自动进入沉浸歌词",

@@ -562,6 +562,15 @@ class MusicRepository(
 
     suspend fun artistTopSongs(artistId: Long): List<Track> = client.artistTopSongs(artistId).listOrEmpty()
 
+    suspend fun hotComments(songId: Long): NetResult<List<com.yunyin.music.core.Comment>> =
+        client.hotComments(songId)
+
+    suspend fun comments(songId: Long, offset: Int, limit: Int = 20): NetResult<com.yunyin.music.core.CommentsPage> =
+        client.comments(songId, offset, limit)
+
+    suspend fun scrobble(songId: Long, sourceId: Long, seconds: Int): NetResult<Unit> =
+        client.scrobble(songId, sourceId, seconds)
+
     /** 心动模式 queue for a song inside a playlist (requires a logged-in session on the instance). */
     suspend fun beatMode(songId: Long, startSongId: Long, playlistId: Long?): NetResult<List<Track>> =
         client.beatMode(songId, startSongId, playlistId)

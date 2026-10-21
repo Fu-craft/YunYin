@@ -622,6 +622,70 @@ class NeteaseClient(
         return NetResult.Ok(out)
     }
 
+    /** Reports one qualified play to the signed-in account. Silent, fire-and-forget. */
+    suspend fun scrobble(songId: Long, sourceId: Long, seconds: Int): NetResult<Unit> {
+        val result = request(
+            "/scrobble",
+            query = PlaylistRequestRules.withCacheBust(
+                mapOf("id" to "$songId", "sourceid" to "$sourceId", "time" to "$seconds"),
+                System.currentTimeMillis(),
+            ),
+        )
+        return when (result) {
+            is NetResult.Err -> result
+            is NetResult.Ok -> if (result.value.optInt("code") == 200) NetResult.Ok(Unit) else NetResult.Err(
+                result.value.optString("message").ifBlank {
+                    result.value.optString("msg").ifBlank { "code=${result.value.optInt("code")}" }
+                },
+            )
+        }
+    }
+
+    /** Hot comments for a song (read-only, no login). Cache-busted because the instance caches. */
+    suspend fun hotComments(songId: Long): NetResult<List<com.yunyin.music.core.Comment>> = request(
+        "/comment/hot",
+        query = PlaylistRequestRules.withCacheBust(
+            mapOf("id" to "$songId", "type" to "0"),
+            System.currentTimeMillis(),
+        ),
+    ).map { json -> parseComments(json.optJSONArray("hotComments")) }
+
+    /** One page of all comments for a song. */
+    suspend fun comments(songId: Long, offset: Int, limit: Int = 20): NetResult<com.yunyin.music.core.CommentsPage> =
+        request(
+            "/comment/music",
+            query = PlaylistRequestRules.withCacheBust(
+                mapOf("id" to "$songId", "limit" to "$limit", "offset" to "$offset"),
+                System.currentTimeMillis(),
+            ),
+        ).map { json ->
+            com.yunyin.music.core.CommentsPage(
+                comments = parseComments(json.optJSONArray("comments")),
+                more = json.optBoolean("more"),
+                total = json.optInt("total"),
+            )
+        }
+
+    private fun parseComments(array: org.json.JSONArray?): List<com.yunyin.music.core.Comment> {
+        if (array == null) return emptyList()
+        return (0 until array.length()).mapNotNull { index ->
+            val item = array.optJSONObject(index) ?: return@mapNotNull null
+            val user = item.optJSONObject("user")
+            val id = item.optLong("commentId").takeIf { it > 0L } ?: item.optLong("id")
+            if (id <= 0L) return@mapNotNull null
+            val content = item.optString("content")
+            if (content.isBlank()) return@mapNotNull null
+            com.yunyin.music.core.Comment(
+                id = id,
+                nickname = user?.optString("nickname").orEmpty().ifBlank { "网易云用户" },
+                avatarUrl = user?.optString("avatarUrl")?.ifBlank { null },
+                content = content,
+                likedCount = item.optInt("likedCount"),
+                timeMs = item.optLong("time"),
+            )
+        }
+    }
+
     // ---------------------------------------------------------------- playlist writes
     //
     // These are the NeteaseCloudMusicApi mutation endpoints. They take form fields and require the logged-in

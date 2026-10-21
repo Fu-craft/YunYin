@@ -195,6 +195,7 @@ class MainActivity : ComponentActivity() {
         val searchState by appViewModel.search.collectAsState()
         val collectionState by appViewModel.collection.collectAsState()
         val artistState by appViewModel.artist.collectAsState()
+        val commentsState by appViewModel.comments.collectAsState()
 
         // Collected at the top rather than next to the sheet that uses it: Settings (which shows the
         // "检查更新" row) is composed before the sheet, so a value read further down would not be in scope
@@ -229,6 +230,7 @@ class MainActivity : ComponentActivity() {
         // publishing, and it mirrors the stored value, so the switch cannot disagree with what is running.
         var lyriconEnabled by remember { mutableStateOf(container.lyricon.enabled) }
         var seamlessTransition by remember { mutableStateOf(container.settings.seamlessTransition) }
+        var scrobbleEnabled by remember { mutableStateOf(container.settings.scrobbleEnabled) }
         var autoImmersiveLyrics by remember { mutableStateOf(container.settings.autoImmersiveLyrics) }
         // The three now-playing background switches. Compose state + the store, same arrangement as
         // the other settings: the player reads the state so a toggle takes effect immediately, and
@@ -1163,6 +1165,7 @@ class MainActivity : ComponentActivity() {
                         // than leaving it in the shade until the next track change.
                         if (!enabled) container.tickerLyrics.clear()
                     },
+                    scrobbleEnabled = scrobbleEnabled,
                     seamlessTransition = seamlessTransition,
                     autoImmersiveLyrics = autoImmersiveLyrics,
                     onAutoImmersiveLyricsChange = { enabled ->
@@ -1203,6 +1206,10 @@ class MainActivity : ComponentActivity() {
                         // — `Player` and `MediaController` expose no skip-silence control — which is why
                         // the service owns that half.
                         container.settings.seamlessTransition = enabled
+                    },
+                    onScrobbleEnabledChange = { enabled ->
+                        scrobbleEnabled = enabled
+                        container.settings.scrobbleEnabled = enabled
                     },
                     // The crash file is app-private, so on an unrooted device it is unreachable without
                     // adb — and when the crash is on *launch*, adb is the only other route, which is no
@@ -1482,6 +1489,10 @@ class MainActivity : ComponentActivity() {
                         com.yunyin.music.ui.playlist.PlaylistActions(
                             onAddToPlaylist = { track -> openPlaylistPicker(track) },
                         ),
+                    com.yunyin.music.ui.comments.LocalCommentActions provides
+                        com.yunyin.music.ui.comments.CommentActions(
+                            onOpen = { playback.current?.let { track -> appViewModel.openComments(track.id) } },
+                        ),
                 ) {
                     PlayerScreen(
                     state = playback,
@@ -1613,6 +1624,16 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                 }
+            }
+
+            if (commentsState.visible) {
+                com.yunyin.music.ui.comments.CommentsSheet(
+                    state = commentsState,
+                    loader = container.artwork,
+                    onDismiss = appViewModel::closeComments,
+                    onSelectTab = appViewModel::selectCommentsTab,
+                    onLoadMore = appViewModel::loadMoreComments,
+                )
             }
 
             // Queue sheet. It animates itself inside the Dialog; an outer AnimatedVisibility would

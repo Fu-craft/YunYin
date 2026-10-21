@@ -69,6 +69,16 @@ class SettingsStore(context: Context) {
         set(value) = prefs.edit().putBoolean(KEY_SEAMLESS_TRANSITION, value).apply()
 
     /**
+     * Opt-in: report qualified plays to the signed-in NetEase account (`/scrobble`).
+     *
+     * Defaults **off** because it writes the user's listening history to their account (Settings → 播放 →
+     * 上报听歌记录). Read at report time, so toggling takes effect immediately; logged out is always a no-op.
+     */
+    var scrobbleEnabled: Boolean
+        get() = prefs.getBoolean(KEY_SCROBBLE_ENABLED, false)
+        set(value) = prefs.edit().putBoolean(KEY_SCROBBLE_ENABLED, value).apply()
+
+    /**
      * Whether the lyrics page auto-enters immersive mode after [IMMERSIVE_IDLE_MS] of inactivity.
      *
      * Defaults **on** (the user corrected the earlier default). The getter's fallback is the default,
@@ -282,6 +292,7 @@ class SettingsStore(context: Context) {
         private const val KEY_STATUS_BAR_LYRICS = "status_bar_lyrics"
         private const val KEY_LYRICON_ENABLED = "lyricon_enabled"
         private const val KEY_SEAMLESS_TRANSITION = "seamless_transition"
+        private const val KEY_SCROBBLE_ENABLED = "scrobble_enabled"
         private const val KEY_AUTO_IMMERSIVE_LYRICS = "auto_immersive_lyrics"
         private const val KEY_PLAYER_STYLE = "player_style"
         private const val KEY_NOW_PLAYING_COVER_BLUR = "now_playing_cover_blur_background"

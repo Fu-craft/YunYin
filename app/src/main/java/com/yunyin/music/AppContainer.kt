@@ -29,6 +29,7 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 /**
  * Hand-rolled DI container.
@@ -211,6 +212,9 @@ class AppContainer(val appContext: Context) {
         )
     }
 
+    /** Fire-and-forget scrobbles; never on the playback thread. */
+    private val scrobbleScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     val player: PlayerController by lazy {
         PlayerController(
             context = appContext,
@@ -224,6 +228,23 @@ class AppContainer(val appContext: Context) {
             // A failed playback drops the cached URL for that track, so an expired CDN token is re-resolved instead
             // of being served from the cache until it ages out.
             onStreamError = { trackId -> music.invalidateResolution(trackId) },
+            onScrobble = { trackId, sourceId, seconds ->
+                when {
+                    !settings.scrobbleEnabled ->
+                        lxLog.record("解析", "stage=scrobble track=$trackId result=skip reason=setting-off")
+                    settings.cookie.isBlank() ->
+                        lxLog.record("解析", "stage=scrobble track=$trackId result=skip reason=logged-out")
+                    else -> scrobbleScope.launch {
+                        val result = runCatching { music.scrobble(trackId, sourceId, seconds) }.getOrNull()
+                        val outcome = when (result) {
+                            null -> "fail reason=exception"
+                            is com.yunyin.music.core.NetResult.Ok -> "ok"
+                            is com.yunyin.music.core.NetResult.Err -> "fail reason=${result.message}"
+                        }
+                        lxLog.record("解析", "stage=scrobble track=$trackId seconds=$seconds result=$outcome")
+                    }
+                }
+            },
         )
     }
 
