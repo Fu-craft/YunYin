@@ -197,13 +197,25 @@ import kotlinx.coroutines.launch
  * router: `MainActivity` switches the visible screen on it, so deleting the entry would delete the
  * search screen.
  */
-enum class PlayerTab(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
-    Home("主页", SfIcons.House),
+enum class PlayerTab(
+    val label: String,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector,
+    /**
+     * Filled variant drawn while this slot is selected.
+     *
+     * iOS-style bar marks are outline at rest and solid when selected; the pair is drawn to the same
+     * optical box in [SfIcons] (the fill is the outline grown by half its stroke), so the swap adds
+     * weight without moving or resizing the glyph. The swap happens inside the existing accent mask,
+     * so the travelling pill's animation is untouched.
+     */
+    val selectedIcon: androidx.compose.ui.graphics.vector.ImageVector = icon,
+) {
+    Home("主页", SfIcons.House, SfIcons.HouseFill),
 
     /** 歌单广场: a browse screen of playlist covers, hence the grid glyph. */
-    PlaylistSquare("歌单广场", SfIcons.SquareGrid2x2),
-    Search("搜索", SfIcons.MagnifyingGlass),
-    Library("资料库", SfIcons.PersonOutline),
+    PlaylistSquare("歌单广场", SfIcons.SquareGrid2x2, SfIcons.SquareGrid2x2Fill),
+    Search("搜索", SfIcons.MagnifyingGlass, SfIcons.MagnifyingGlass),
+    Library("资料库", SfIcons.PersonOutline, SfIcons.PersonFill),
 }
 
 /**
@@ -597,7 +609,9 @@ private fun glassPressScale(widthPx: Float, expansionPx: Float, progress: Float)
  * ([TabBarInset]); the bar then fills that row — the same width as the now-playing capsule above it —
  * and its three slots divide the measured width equally, instead of wrapping a fixed 176 dp capsule.
  *
- * The bar presents [BarSlots]: 主页, 歌单广场, 资料库 and 心动模式. [PlayerTab.Search] keeps its enum
+ * Each screen slot swaps to a filled mark while selected (outline at rest), so the bar's selection
+ * reads as a weight change as well as a tint. The bar presents [BarSlots]: 主页, 歌单广场, 资料库 and
+ * 心动模式. [PlayerTab.Search] keeps its enum
  * entry because it still routes the screen, but it has no slot — see [BarSlots] and [PlayerTab]. The
  * 心动模式 slot is
  * an action, so the pill never rests on it: after it fires, `selectionResync` settles the pill back onto
@@ -672,7 +686,11 @@ fun FloatingTabBar(
                     contentColor
                 }
                 Icon(
-                    imageVector = if (slot is BarSlot.Screen) slot.tab.icon else SfIcons.Heart,
+                    imageVector = when (slot) {
+                        is BarSlot.Screen ->
+                            if (slot.tab == selected) slot.tab.selectedIcon else slot.tab.icon
+                        BarSlot.BeatMode -> SfIcons.Heart
+                    },
                     contentDescription = if (isBeatMode && !beatModeSignedIn) {
                         "$BeatModeLabel，请先登录"
                     } else {

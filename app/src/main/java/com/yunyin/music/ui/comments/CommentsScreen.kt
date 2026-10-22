@@ -1,26 +1,28 @@
 package com.yunyin.music.ui.comments
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.Orientation
-import androidx.compose.foundation.gestures.draggable
-import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
@@ -29,34 +31,33 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.DialogProperties
+import com.kyant.backdrop.backdrops.layerBackdrop
 import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
 import com.yunyin.music.core.Comment
 import com.yunyin.music.data.ArtworkLoader
 import com.yunyin.music.ui.CommentsTab
 import com.yunyin.music.ui.CommentsUiState
-import com.yunyin.music.ui.components.AnimatedSheet
 import com.yunyin.music.ui.components.Artwork
+import com.yunyin.music.ui.components.GlassTopBar
 import com.yunyin.music.ui.components.InsetSeparator
 import com.yunyin.music.ui.components.ProminentButton
-import com.yunyin.music.ui.components.QueueSheetDismissRules
 import com.yunyin.music.ui.components.formatCount
+import com.yunyin.music.ui.components.liquidGlassControl
 import com.yunyin.music.ui.components.rememberControlRipple
+import com.yunyin.music.ui.components.rememberGlassTopBarBackdrop
 import com.yunyin.music.ui.icons.SfIcons
 import com.yunyin.music.ui.theme.AppleShapes
 import com.yunyin.music.ui.theme.AppTheme
@@ -65,197 +66,185 @@ import com.yunyin.music.ui.theme.SFPro
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import kotlinx.coroutines.launch
+
+/** Height of the glass strip's content: 48 dp title row + 8 dp gap + 44 dp segmented control. */
+private val CommentsTopBarHeight = 100.dp
+
+/** Breathing room between the bar's bottom edge and the first comment. */
+private val CommentsContentTopGap = 8.dp
 
 /**
- * Read-only comments: 热门评论 and 全部评论, each with its own loading/error state.
+ * Maximum content width.
  *
- * No posting and no liking — this is a listening surface, not a social one. Content is rendered as
- * plain text (no HTML/linkification); long comments clamp to six lines and expand on tap. The list
- * pages with a footer action and the append rule lives in `CommentPagingRules` (id-deduped, bounded
- * by the server's `more`).
+ * On a phone this never applies (the content is full width); on a tablet or in landscape it keeps
+ * body text near a comfortable measure instead of stretching a comment across the whole screen.
+ */
+private val CommentsContentMaxWidth = 720.dp
+
+/**
+ * 歌曲评论 — a full-screen page (it used to be a bottom sheet).
  *
- * Design notes (the `ui-ux-pro-max` guidance for an app list surface, adapted to this project):
- *  - **The comment is the hero.** Body text is 15 pt with 22 pt leading (the skill's 1.4–1.5 line
- *    height for reading text); the author line is one compact 13 pt row and the date is 11 pt, so
- *    the eye lands on the words first and the metadata never competes.
- *  - **A real segmented control**, not two labels: a 44 dp track (secondary background) with an
- *    inset selected segment (tertiary background) — the app's existing "filled capsule inside a
- *    quiet track" idiom, and a larger touch target than the two bare texts it replaces.
- *  - **Rhythm**: 14 dp vertical padding per row, hairline separators inset to the text column
- *    (66 dp = 20 dp gutter + 34 dp avatar + 12 dp gap), 8 dp between header/title/segments.
- *  - **One trailing column for the like count**, bottom-aligned with the last text line and muted at
- *    zero, instead of a floating badge.
- *  - The app's language is kept over the skill's defaults: SF Pro, `AppTheme.palette` semantic
- *    colours, `AppleShapes` (24 dp sheet corner, 16 dp control, pill), `Motion.*` tokens, and the
- *    same draggable-grabber sheet chrome as the queue sheet.
+ * Structure: a [GlassTopBar] strip carrying the back disc, the track title (ellipsised) and the
+ * segmented control, with the list scrolling underneath it. The segmented control therefore sticks
+ * below the bar by construction — it is inside the fixed strip, not a collapsing toolbar — while the
+ * rows keep the same hierarchy the 4.9.0 redesign established: content first (15 pt / 22 pt
+ * leading), author + date as one compact secondary line, like count bottom-aligned with the last
+ * text line, six-line clamp with an animated expand.
+ *
+ * Design decisions the `ui-ux-pro-max` guidance drove: a real navigation surface with a predictable
+ * back action (back gesture/button returns to the player); a fixed header + content padding so the
+ * strip never covers the first row; one centred content column with a maximum measure on large
+ * screens; and 44 dp targets for every actionable control (back disc, segments, footer actions).
+ * The skill's own palette/display type were rejected again — the app's SF Pro, `AppTheme.palette`,
+ * `AppleShapes` and `Motion.*` tokens are the established language.
+ *
+ * Data flow is untouched: the same `/comment/hot` and `/comment/music` endpoints, the same
+ * `CommentPagingRules` paging/dedupe, the same cache-bust and per-section isolation. This file is UI
+ * only.
  */
 @Composable
-fun CommentsSheet(
+fun CommentsScreen(
     state: CommentsUiState,
     loader: ArtworkLoader,
-    onDismiss: () -> Unit,
+    onBack: () -> Unit,
     onSelectTab: (CommentsTab) -> Unit,
     onLoadMore: () -> Unit,
     /** Retries the failed section only; the other section keeps whatever it already has. */
     onRetry: (CommentsTab) -> Unit,
 ) {
-    // Drag-to-dismiss from the grabber + header, exactly like the queue sheet: following the finger
-    // only moves a graphics layer, so it never recomposes the list.
-    var dragOffset by remember { mutableFloatStateOf(0f) }
-    val dragScope = rememberCoroutineScope()
-    val density = LocalDensity.current
+    BackHandler(onBack = onBack)
 
-    AnimatedSheet(
-        onDismissed = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
-        sheetModifier = Modifier
-            .fillMaxWidth()
-            .fillMaxHeight(0.78f)
-            .graphicsLayer { translationY = dragOffset }
-            // System bar clearance, then the app's sheet gutter; the rounded sheet itself floats
-            // above the gesture bar instead of ending under it.
-            .navigationBarsPadding()
-            .padding(horizontal = 12.dp, vertical = 12.dp)
-            .clip(ContinuousRoundedRectangle(AppleShapes.sheet))
-            .background(AppTheme.palette.background)
-            // Swallows taps on the sheet body so they do not reach the dismiss scrim behind it.
-            .clickable(enabled = false, indication = null, interactionSource = null) { },
-    ) { close ->
-        Column(Modifier.fillMaxSize()) {
-            // ---------------------------------------------------------------- header (drag handle)
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .draggable(
-                        orientation = Orientation.Vertical,
-                        state = rememberDraggableState { delta ->
-                            dragOffset = (dragOffset + delta).coerceAtLeast(0f)
-                        },
-                        onDragStopped = { velocity ->
-                            val distancePx = with(density) {
-                                QueueSheetDismissRules.DistanceDp.dp.toPx()
-                            }
-                            if (QueueSheetDismissRules.shouldDismiss(
-                                    offsetPx = dragOffset,
-                                    distancePx = distancePx,
-                                    velocityPxPerMs = velocity / 1000f,
-                                )
-                            ) {
-                                close()
-                            } else {
-                                dragScope.launch {
-                                    androidx.compose.animation.core.Animatable(dragOffset)
-                                        .animateTo(0f, Motion.SpringSettle) {
-                                            dragOffset = value
-                                        }
-                                }
-                            }
-                        },
-                    ),
-            ) {
-                Grabber()
-                Row(
-                    Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp, bottom = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+    val backdrop = rememberGlassTopBarBackdrop()
+    val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    // Content starts below the whole fixed strip and scrolls up under its progressive blur.
+    val contentTop = statusTop + CommentsTopBarHeight + CommentsContentTopGap
+
+    Box(Modifier.fillMaxSize().background(AppTheme.palette.background)) {
+        // The recorded page layer: everything that scrolls is painted into it, and the glass strip
+        // is composed outside it, so the strip samples the rows rather than itself.
+        Box(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+                Column(
+                    Modifier
+                        .fillMaxHeight()
+                        .fillMaxWidth()
+                        .widthIn(max = CommentsContentMaxWidth),
                 ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            text = "评论",
-                            fontFamily = SFPro,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 20.sp,
-                            color = AppTheme.palette.label,
+                    if (state.tab == CommentsTab.HOT) {
+                        CommentSection(
+                            comments = state.hot,
+                            loading = state.hotLoading,
+                            error = state.hotError,
+                            emptyText = "暂无热门评论",
+                            loader = loader,
+                            onRetry = { onRetry(CommentsTab.HOT) },
+                            contentTop = contentTop,
+                            contentBottom = bottomInset + 16.dp,
+                            footer = null,
                         )
-                        CommentCountLabel(state)
-                    }
-                    Box(
-                        Modifier
-                            .height(44.dp)
-                            .clip(ContinuousRoundedRectangle(AppleShapes.pill))
-                            .clickable(
-                                indication = rememberControlRipple(bounded = true),
-                                interactionSource = null,
-                                onClick = { close {} },
-                            )
-                            .padding(horizontal = 12.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            text = "收起",
-                            fontFamily = SFPro,
-                            fontWeight = FontWeight.Medium,
-                            fontSize = 13.sp,
-                            color = AppTheme.palette.accent,
+                    } else {
+                        CommentSection(
+                            comments = state.all,
+                            loading = state.allLoading,
+                            error = state.allError,
+                            emptyText = "还没有评论",
+                            loader = loader,
+                            onRetry = { onRetry(CommentsTab.ALL) },
+                            contentTop = contentTop,
+                            contentBottom = bottomInset + 16.dp,
+                            footer = {
+                                AllCommentsFooter(
+                                    state = state,
+                                    onLoadMore = onLoadMore,
+                                    onRetry = { onRetry(CommentsTab.ALL) },
+                                )
+                            },
                         )
                     }
                 }
-                CommentsSegmentedControl(
-                    selected = state.tab,
-                    onSelect = onSelectTab,
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 2.dp),
-                )
-                Spacer(Modifier.height(6.dp))
             }
+        }
 
-            // ---------------------------------------------------------------- content
-            if (state.tab == CommentsTab.HOT) {
-                CommentSection(
-                    comments = state.hot,
-                    loading = state.hotLoading,
-                    error = state.hotError,
-                    emptyText = "暂无热门评论",
-                    emptyIcon = SfIcons.QuoteOpening,
-                    loader = loader,
-                    onRetry = { onRetry(CommentsTab.HOT) },
-                    footer = null,
-                )
-            } else {
-                CommentSection(
-                    comments = state.all,
-                    loading = state.allLoading,
-                    error = state.allError,
-                    emptyText = "还没有评论",
-                    emptyIcon = SfIcons.QuoteOpening,
-                    loader = loader,
-                    onRetry = { onRetry(CommentsTab.ALL) },
-                    footer = {
-                        AllCommentsFooter(
-                            state = state,
-                            onLoadMore = onLoadMore,
-                            onRetry = { onRetry(CommentsTab.ALL) },
-                        )
-                    },
-                )
+        GlassTopBar(
+            backdrop = backdrop,
+            modifier = Modifier.align(Alignment.TopCenter),
+            contentHeight = CommentsTopBarHeight,
+        ) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+                Column(
+                    Modifier
+                        .fillMaxHeight()
+                        .fillMaxWidth()
+                        .widthIn(max = CommentsContentMaxWidth),
+                ) {
+                    CommentsTitleRow(state = state, backdrop = backdrop, onBack = onBack)
+                    CommentsSegmentedControl(
+                        selected = state.tab,
+                        onSelect = onSelectTab,
+                        modifier = Modifier.padding(horizontal = 20.dp),
+                    )
+                    Spacer(Modifier.height(8.dp))
+                }
             }
         }
     }
 }
 
-/** Native-sheet grabber: 36 × 5 dp, centred, the same handle the queue sheet uses. */
+/** Title row: back disc, then the track name (ellipsised) with 「评论」 as its caption. */
 @Composable
-private fun Grabber() {
-    Box(Modifier.fillMaxWidth().padding(top = 8.dp), contentAlignment = Alignment.Center) {
+private fun CommentsTitleRow(
+    state: CommentsUiState,
+    backdrop: com.kyant.backdrop.Backdrop,
+    onBack: () -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Box(
             Modifier
-                .size(width = 36.dp, height = 5.dp)
-                .clip(ContinuousRoundedRectangle(AppleShapes.pill))
-                .background(AppTheme.palette.tertiaryLabel),
-        )
+                .size(44.dp)
+                .liquidGlassControl(backdrop, CircleShape)
+                .clickable(
+                    indication = rememberControlRipple(bounded = true),
+                    interactionSource = null,
+                    onClick = onBack,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = SfIcons.ChevronLeft,
+                contentDescription = "返回",
+                tint = AppTheme.palette.label,
+                modifier = Modifier.size(19.dp),
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            val title = state.trackTitle.ifBlank { "评论" }
+            Text(
+                text = title,
+                fontFamily = SFPro,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 17.sp,
+                color = AppTheme.palette.label,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (state.trackTitle.isNotBlank()) {
+                Text(
+                    text = "评论",
+                    fontFamily = SFPro,
+                    fontSize = 12.sp,
+                    color = AppTheme.palette.secondaryLabel,
+                    maxLines = 1,
+                )
+            }
+        }
+        // Keeps the title optically centred between the disc and the screen edge.
+        Spacer(Modifier.width(44.dp))
     }
-}
-
-/** "N 条评论" under the title, from the total the all-comments page already returns. */
-@Composable
-private fun CommentCountLabel(state: CommentsUiState) {
-    if (state.allTotal <= 0) return
-    Text(
-        text = "${formatCount(state.allTotal.toLong())} 条评论",
-        fontFamily = SFPro,
-        fontSize = 12.sp,
-        color = AppTheme.palette.secondaryLabel,
-        modifier = Modifier.padding(top = 1.dp),
-    )
 }
 
 /**
@@ -331,37 +320,53 @@ private fun CommentSection(
     loading: Boolean,
     error: String?,
     emptyText: String,
-    emptyIcon: androidx.compose.ui.graphics.vector.ImageVector,
     loader: ArtworkLoader,
     onRetry: () -> Unit,
+    contentTop: Dp,
+    contentBottom: Dp,
     footer: (@Composable () -> Unit)?,
 ) {
     when {
-        comments.isEmpty() && error != null -> SectionMessage(
-            icon = SfIcons.WifiSlash,
-            title = "评论加载失败",
-            detail = error,
-            action = "重新加载",
-            onAction = onRetry,
-        )
-        comments.isEmpty() && loading -> SkeletonList()
-        comments.isEmpty() -> SectionMessage(
-            icon = emptyIcon,
-            title = emptyText,
-            detail = null,
-            action = null,
-            onAction = null,
-        )
+        comments.isEmpty() && error != null -> Box(
+            Modifier.fillMaxSize().padding(top = contentTop, bottom = contentBottom),
+        ) {
+            SectionMessage(
+                icon = SfIcons.WifiSlash,
+                title = "评论加载失败",
+                detail = error,
+                action = "重新加载",
+                onAction = onRetry,
+            )
+        }
+
+        comments.isEmpty() && loading -> Box(
+            Modifier.fillMaxSize().padding(top = contentTop, bottom = contentBottom),
+        ) {
+            SkeletonList()
+        }
+
+        comments.isEmpty() -> Box(
+            Modifier.fillMaxSize().padding(top = contentTop, bottom = contentBottom),
+        ) {
+            SectionMessage(
+                icon = SfIcons.QuoteOpening,
+                title = emptyText,
+                detail = null,
+                action = null,
+                onAction = null,
+            )
+        }
+
         else -> LazyColumn(
             Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = 16.dp),
+            contentPadding = PaddingValues(top = contentTop, bottom = contentBottom),
         ) {
             itemsIndexed(comments, key = { _, comment -> comment.id }) { index, comment ->
                 Column {
                     CommentRow(comment = comment, loader = loader)
                     if (index != comments.lastIndex) {
-                        // Inset to the text column (gutter 20 + avatar 34 + gap 12): the rule belongs
-                        // to the comment text, not to the avatar.
+                        // Inset to the text column (gutter 20 + avatar 34 + gap 12): the rule
+                        // belongs to the comment text, not to the avatar.
                         InsetSeparator(startPadding = 66.dp)
                     }
                 }
@@ -403,7 +408,7 @@ private fun SectionMessage(
                 fontFamily = SFPro,
                 fontSize = 12.sp,
                 color = AppTheme.palette.tertiaryLabel,
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                textAlign = TextAlign.Center,
             )
         }
         if (action != null && onAction != null) {
@@ -541,8 +546,7 @@ private fun ActionPill(text: String, onClick: () -> Unit) {
  *
  * Author (13 pt, muted) and date (11 pt, more muted) share one compact line; the body is 15 pt with
  * 22 pt leading and clamps to six lines, expanding on tap with `animateContentSize`; the like count
- * is a small heart + number in a trailing column, bottom-aligned so it sits on the last text line
- * when the comment is short and stays out of the text's way when it is long.
+ * is a small heart + number in a trailing column, bottom-aligned so it sits on the last text line.
  */
 @Composable
 private fun CommentRow(comment: Comment, loader: ArtworkLoader) {

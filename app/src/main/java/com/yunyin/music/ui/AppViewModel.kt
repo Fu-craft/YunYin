@@ -78,6 +78,8 @@ enum class CommentsTab { HOT, ALL }
 data class CommentsUiState(
     val visible: Boolean = false,
     val trackId: Long = 0L,
+    /** Track name for the full-screen page's title; empty falls back to 「评论」. */
+    val trackTitle: String = "",
     val tab: CommentsTab = CommentsTab.HOT,
     val hot: List<com.yunyin.music.core.Comment> = emptyList(),
     val hotLoading: Boolean = false,
@@ -819,12 +821,13 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
         _artist.value = null
     }
 
-    fun openComments(trackId: Long) {
+    fun openComments(trackId: Long, trackTitle: String = "") {
         if (trackId <= 0L) return
         commentsJob?.cancel()
         _comments.value = CommentsUiState(
             visible = true,
             trackId = trackId,
+            trackTitle = trackTitle,
             hotLoading = true,
             allLoading = true,
         )

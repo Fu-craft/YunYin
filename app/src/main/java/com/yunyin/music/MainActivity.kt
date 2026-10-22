@@ -1518,7 +1518,7 @@ class MainActivity : ComponentActivity() {
                         ),
                     com.yunyin.music.ui.comments.LocalCommentActions provides
                         com.yunyin.music.ui.comments.CommentActions(
-                            onOpen = { playback.current?.let { track -> appViewModel.openComments(track.id) } },
+                            onOpen = { playback.current?.let { track -> appViewModel.openComments(track.id, track.name) } },
                         ),
                 ) {
                     PlayerScreen(
@@ -1653,15 +1653,31 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            if (commentsState.visible) {
-                com.yunyin.music.ui.comments.CommentsSheet(
-                    state = commentsState,
-                    loader = container.artwork,
-                    onDismiss = appViewModel::closeComments,
-                    onSelectTab = appViewModel::selectCommentsTab,
-                    onLoadMore = appViewModel::loadMoreComments,
-                    onRetry = appViewModel::retryComments,
-                )
+            // The comments page, layered over the player like the artist page and keeping its
+            // state through the exit animation so the outgoing page has something to slide.
+            var lastComments by remember { mutableStateOf<com.yunyin.music.ui.CommentsUiState?>(null) }
+            SideEffect { commentsState.takeIf { it.visible }?.let { lastComments = it } }
+
+            AnimatedVisibility(
+                visible = commentsState.visible,
+                enter = slideInVertically(tween(Motion.SheetEnterDuration, easing = Motion.EaseOut)) { it } +
+                    fadeIn(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
+                exit = slideOutVertically(tween(Motion.SheetExitDuration, easing = Motion.EaseOut)) { it } +
+                    fadeOut(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
+            ) {
+                val screenState = if (commentsState.visible) commentsState else lastComments
+                if (screenState != null) {
+                    Surface(Modifier.fillMaxSize(), color = AppTheme.palette.background) {
+                        com.yunyin.music.ui.comments.CommentsScreen(
+                            state = screenState,
+                            loader = container.artwork,
+                            onBack = appViewModel::closeComments,
+                            onSelectTab = appViewModel::selectCommentsTab,
+                            onLoadMore = appViewModel::loadMoreComments,
+                            onRetry = appViewModel::retryComments,
+                        )
+                    }
+                }
             }
 
             // Queue sheet. It animates itself inside the Dialog; an outer AnimatedVisibility would
@@ -1752,6 +1768,7 @@ class MainActivity : ComponentActivity() {
         BackHandler(enabled = collectionState != null) { appViewModel.closeCollection() }
         BackHandler(enabled = artistState != null) { appViewModel.closeArtist() }
         BackHandler(enabled = showPlayer) { showPlayer = false }
+        BackHandler(enabled = commentsState.visible) { appViewModel.closeComments() }
         BackHandler(enabled = showSettings) { showSettings = false }
         BackHandler(enabled = showLogin) { showLogin = false }
         BackHandler(enabled = showQueue) { showQueue = false }
