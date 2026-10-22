@@ -232,6 +232,7 @@ class MainActivity : ComponentActivity() {
         // publishing, and it mirrors the stored value, so the switch cannot disagree with what is running.
         var lyriconEnabled by remember { mutableStateOf(container.lyricon.enabled) }
         var seamlessTransition by remember { mutableStateOf(container.settings.seamlessTransition) }
+        var crossfadeSeconds by remember { mutableStateOf(container.settings.crossfadeSeconds) }
         var autoImmersiveLyrics by remember { mutableStateOf(container.settings.autoImmersiveLyrics) }
         // The three now-playing background switches. Compose state + the store, same arrangement as
         // the other settings: the player reads the state so a toggle takes effect immediately, and
@@ -1201,6 +1202,7 @@ class MainActivity : ComponentActivity() {
                         // than leaving it in the shade until the next track change.
                         if (!enabled) container.tickerLyrics.clear()
                     },
+                    crossfadeSeconds = crossfadeSeconds,
                     seamlessTransition = seamlessTransition,
                     autoImmersiveLyrics = autoImmersiveLyrics,
                     onAutoImmersiveLyricsChange = { enabled ->
@@ -1241,6 +1243,14 @@ class MainActivity : ComponentActivity() {
                         // — `Player` and `MediaController` expose no skip-silence control — which is why
                         // the service owns that half.
                         container.settings.seamlessTransition = enabled
+                    },
+                    onCycleCrossfadeSeconds = {
+                        val next = com.yunyin.music.playback.CrossfadeRules.DURATIONS_SECONDS.let { list ->
+                            val i = list.indexOf(crossfadeSeconds).coerceAtLeast(0)
+                            list[(i + 1) % list.size]
+                        }
+                        crossfadeSeconds = next
+                        container.settings.crossfadeSeconds = next
                     },
                     // The crash file is app-private, so on an unrooted device it is unreachable without
                     // adb — and when the crash is on *launch*, adb is the only other route, which is no

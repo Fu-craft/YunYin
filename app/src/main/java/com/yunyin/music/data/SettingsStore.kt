@@ -68,6 +68,11 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_SEAMLESS_TRANSITION, true)
         set(value) = prefs.edit().putBoolean(KEY_SEAMLESS_TRANSITION, value).apply()
 
+    /** Overlap length for the dual-player crossfade (3/6/9/12 s, default 6). */
+    var crossfadeSeconds: Int
+        get() = prefs.getInt(KEY_CROSSFADE_SECONDS, 6)
+        set(value) = prefs.edit().putInt(KEY_CROSSFADE_SECONDS, value.coerceIn(0, 12)).apply()
+
     /**
      * Whether the lyrics page auto-enters immersive mode after [IMMERSIVE_IDLE_MS] of inactivity.
      *
@@ -282,6 +287,7 @@ class SettingsStore(context: Context) {
         private const val KEY_STATUS_BAR_LYRICS = "status_bar_lyrics"
         private const val KEY_LYRICON_ENABLED = "lyricon_enabled"
         private const val KEY_SEAMLESS_TRANSITION = "seamless_transition"
+        private const val KEY_CROSSFADE_SECONDS = "crossfade_seconds"
         private const val KEY_AUTO_IMMERSIVE_LYRICS = "auto_immersive_lyrics"
         private const val KEY_PLAYER_STYLE = "player_style"
         private const val KEY_NOW_PLAYING_COVER_BLUR = "now_playing_cover_blur_background"

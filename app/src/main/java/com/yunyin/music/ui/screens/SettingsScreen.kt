@@ -102,6 +102,9 @@ fun SettingsScreen(
     /** Whether tracks run into each other without the dead air that makes them sound like files. */
     seamlessTransition: Boolean = true,
     onSeamlessTransitionChange: (Boolean) -> Unit = {},
+    /** Overlap length in seconds for the dual-player crossfade. */
+    crossfadeSeconds: Int = 6,
+    onCycleCrossfadeSeconds: () -> Unit = {},
     /** Whether the lyrics page auto-hides the chrome after the idle delay (default off). */
     autoImmersiveLyrics: Boolean = false,
     onAutoImmersiveLyricsChange: (Boolean) -> Unit = {},
@@ -226,9 +229,14 @@ fun SettingsScreen(
             SectionLabel("播放")
             ToggleRow(
                 title = "无缝衔接",
-                subtitle = "切歌时淡出并淡入约 1.5 秒（音量衔接，不重叠；不能消除网络加载间隙）",
+                subtitle = "切歌时两首歌重叠淡入淡出，时长可选；下一首未及时加载时会退化为普通切换",
                 enabled = seamlessTransition,
                 onChange = onSeamlessTransitionChange,
+            )
+            LinkRow(
+                text = "交叉淡化时长",
+                value = "${crossfadeSeconds} 秒",
+                onClick = onCycleCrossfadeSeconds,
             )
             ToggleRow(
                 title = "自动进入沉浸歌词",

@@ -28,6 +28,7 @@ import kotlinx.coroutines.runBlocking
 class PlaybackService : MediaSessionService() {
 
     private var mediaSession: MediaSession? = null
+    private var crossfadeCoordinator: CrossfadeCoordinator? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -69,31 +70,44 @@ class PlaybackService : MediaSessionService() {
             }
         }
 
-        val player = ExoPlayer.Builder(
-            this,
-            // The preference is read live by the processor, so the Settings switch takes effect without
-            // reaching across the session — `Player`/`MediaController` expose no audio-processing control.
-            ReactiveRenderersFactory(this, SeamlessAudioProcessor { container.settings.seamlessTransition }),
-        )
-            .setMediaSourceFactory(DefaultMediaSourceFactory(resolvingFactory))
-            .setHandleAudioBecomingNoisy(true)
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(C.USAGE_MEDIA)
-                    .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
-                    .build(),
-                /* handleAudioFocus = */ true,
+        val createPlayer: () -> ExoPlayer = {
+            ExoPlayer.Builder(
+                this,
+                // The preference is read live by the processor, so the Settings switch takes effect without
+                // reaching across the session — `Player`/`MediaController` expose no audio-processing control.
+                ReactiveRenderersFactory(this, SeamlessAudioProcessor { container.settings.seamlessTransition }),
             )
-            .build()
-            .apply {
-                repeatMode = Player.REPEAT_MODE_ALL
-                setWakeMode(C.WAKE_MODE_NETWORK)
-                // Silence trimming is deliberately NOT enabled: it removes a song's trailing fade as
-                // well as leading dead air, so a seek into the tail ran out of audio and advanced the
-                // track. See SeamlessAudioProcessor for the full reasoning.
-            }
-
+                .setMediaSourceFactory(DefaultMediaSourceFactory(resolvingFactory))
+                .setHandleAudioBecomingNoisy(true)
+                .setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(C.USAGE_MEDIA)
+                        .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                        .build(),
+                    /* handleAudioFocus = */ true,
+                )
+                .setLoadControl(
+                    androidx.media3.exoplayer.DefaultLoadControl.Builder()
+                        .setBufferDurationsMs(15_000, 60_000, 1_500, 3_000)
+                        .build(),
+                )
+                .build()
+                .apply {
+                    repeatMode = Player.REPEAT_MODE_ALL
+                    setWakeMode(C.WAKE_MODE_NETWORK)
+                    volume = 1f
+                }
+        }
+        val player = createPlayer()
         mediaSession = MediaSession.Builder(this, player).build()
+        crossfadeCoordinator = CrossfadeCoordinator(
+            session = mediaSession!!,
+            initial = player,
+            createPlayer = createPlayer,
+            settings = container.settings,
+            log = container.lxLog,
+        )
+
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession
@@ -108,8 +122,10 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        runCatching { crossfadeCoordinator?.release() }
+        crossfadeCoordinator = null
         mediaSession?.run {
-            player.release()
+            runCatching { player.release() }
             release()
         }
         mediaSession = null

@@ -456,25 +456,6 @@ class PlayerController(
             repeatMode = mediaController.repeatMode,
             shuffle = mediaController.shuffleModeEnabled,
         )
-
-        // Boundary fade: volume only (no extra decoder, no double audio). The gain curve is pure and tested;
-        // this only applies it when the value actually changes, so the 4 Hz ticker is not a setVolume spam.
-        val targetVolume = runCatching {
-            CrossfadeRules.gain(
-                positionMs = position,
-                durationMs = duration.coerceAtLeast(0L),
-                enabled = crossfadeEnabled(),
-                hasNext = CrossfadeRules.hasNextItem(
-                    index = index,
-                    itemCount = mediaController.mediaItemCount,
-                    repeatMode = mediaController.repeatMode,
-                ),
-            )
-        }.getOrDefault(1f)
-        if (kotlin.math.abs(targetVolume - lastAppliedVolume) > 0.01f) {
-            lastAppliedVolume = targetVolume
-            runCatching { mediaController.volume = targetVolume }
-        }
     }
 
     private fun startPositionTicker() {
