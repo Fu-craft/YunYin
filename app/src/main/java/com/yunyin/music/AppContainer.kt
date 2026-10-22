@@ -132,7 +132,7 @@ class AppContainer(val appContext: Context) {
     val lyricon: LyriconBridge by lazy { LyriconBridge(appContext, settings) }
 
     /** Flyme's status-bar lyric, via a resident notification ticker (Flyme-family ROMs only). */
-    val tickerLyrics: FlymeLyricNotifier by lazy { FlymeLyricNotifier() }
+    val tickerLyrics: FlymeLyricNotifier by lazy { FlymeLyricNotifier(appContext, lxLog) }
 
     /**
      * Imported LX (洛雪) custom sources.

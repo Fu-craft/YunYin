@@ -1,97 +1,138 @@
 package com.yunyin.music.data
 
 import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.content.Context
+import android.os.Build
 import android.os.SystemClock
 import android.util.Log
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import com.yunyin.music.R
+import com.yunyin.music.data.lxsource.LxSourceLog
 
 /**
- * Flyme 状态栏歌词 — attaches the lyric ticker to the **media notification itself**.
+ * Flyme 状态栏歌词, implemented literally from the official 适配说明.
  *
- * ## Why not a separate notification (the 4.15.1–4.15.3 failures)
+ *  - a **standalone** notification (not the media notification), its **own channel**, always the **same id**;
+ *  - `PRIORITY_MAX`, a 60 dp-class small icon (Flyme renders it left of the ticker), `setTicker(line)`;
+ *  - `FLAG_NO_CLEAR` always (mandatory resident notification), both private flags + ticker-icon extras only while
+ *    a lyric line is active;
+ *  - pause/stop/disable: `setTicker(null)`, clear both flags, post once more, then drop the entry;
+ *  - private flags reflected once; absent + non-Meizu ⇒ feature unsupported; Meizu manufacturer/brand fallback.
  *
- * Flyme's feature is a notification ticker, and a standalone ticker-only notification can "exist" without its
- * ticker ever scrolling (established-but-ignored). NeriPlayer (GPL-3.0,
- * `core/player/service/presentation/AndroidPlaybackServicePresentationPort.kt`) applies the ticker, both private
- * flags and the ticker-icon extras to the **notification the system already associates with playback** — the media
- * notification. This class is now only the state holder: the media-notification provider calls [attachTicker] while
- * building, and [currentTicker] when re-rendering.
- *
- * ## Rules kept
- *
- *  - both private flags only while playing with a lyric line; paused clears the ticker (stale line otherwise sticks);
- *  - at most one update per second (Android drops faster notification updates; intermediate lines are dropped);
- *  - ~1 s after a track change before the first line, so the previous track's text cannot stay;
- *  - ROM gate: no reflected/fallback flags → the media notification is left completely untouched.
+ * The media notification is not touched at all.
  */
-class FlymeLyricNotifier {
+class FlymeLyricNotifier(
+    private val context: Context,
+    private val log: LxSourceLog? = null,
+) {
 
-    /** The two private flags, reflection first, Meizu manufacturer/brand fallback (NeriPlayer's rule). */
-    private val flags: Flags? by lazy { resolveFlags() }
+    private val flags: Flags? by lazy {
+        val resolved = resolveFlags()
+        record(
+            "supported=${resolved != null} showFlag=${resolved?.showTicker ?: 0} " +
+                "updateFlag=${resolved?.updateTicker ?: 0} manufacturer=${safeManufacturer()} " +
+                "brand=${safeBrand()} sdk=${Build.VERSION.SDK_INT}",
+        )
+        resolved
+    }
 
     fun isSupported(): Boolean = flags != null
 
     private var throttle = FlymeLyricThrottle.State()
-    private var ticker: String? = null
-    private var lastTrackKey: String? = null
+    private var activeLine: String? = null
+    private var posted = false
 
-    /** Called (on the main thread) whenever the effective ticker changed and the media notification should refresh. */
-    var onTickerChanged: (() -> Unit)? = null
-
-    /**
-     * Feeds the current lyric line. [fallback] is the track title, used as the track key and as the lead-in line.
-     * With no playback or no line the ticker is cleared immediately (no rate limit on clearing).
-     */
+    /** Feeds the current lyric line; [fallback] is the track title and the track-change key. */
     fun update(line: String?, fallback: String?, playing: Boolean) {
-        if (flags == null) return
+        val resolved = flags ?: return
         val now = SystemClock.elapsedRealtime()
         throttle = FlymeLyricThrottle.onTrackChanged(throttle, fallback, now)
         if (!playing) {
-            setTicker(null)
+            clearTicker(resolved)
             return
         }
         val text = line?.takeIf { it.isNotBlank() } ?: fallback?.takeIf { it.isNotBlank() }
         if (text == null) {
-            setTicker(null)
+            clearTicker(resolved)
             return
         }
-        if (text == ticker) return
+        if (text == activeLine) return
         if (!FlymeLyricThrottle.canPost(throttle, now)) return
         throttle = FlymeLyricThrottle.markPosted(throttle, now)
-        setTicker(text)
+        post(resolved, text)
     }
 
-    /** The ticker for the media-notification builder, or null when it must stay untouched. */
-    fun currentTicker(): String? = ticker
-
-    /**
-     * Applies the Flyme ticker to the already-built media notification. Idempotent and never throws; when anything
-     * is missing it simply leaves the media notification as Media3 built it.
-     */
-    fun attachTicker(notification: Notification) {
-        val resolved = flags ?: return
-        val text = ticker ?: return
-        runCatching {
-            notification.tickerText = text
-            // The media notification already exists, so both flags are valid on every render (NeriPlayer applies
-            // both unconditionally): ALWAYS keeps it scrolling, ONLY_UPDATE says "only the ticker changed".
-            notification.flags = notification.flags or resolved.showTicker or resolved.updateTicker
-            notification.extras.putInt("ticker_icon", R.drawable.ic_ticker_note)
-            notification.extras.putBoolean("ticker_icon_switch", false)
-        }.onFailure { Log.w(TAG, "Failed to attach Flyme ticker", it) }
-    }
-
-    /** Cancels a ticker posted by an older app version and clears the state. */
+    /** Stops the lyric: cleared ticker/flags notice, then removes the entry. */
     fun clear() {
-        setTicker(null)
         throttle = FlymeLyricThrottle.State()
-        lastTrackKey = null
+        activeLine = null
+        flags?.let { clearTicker(it) }
+        runCatching { NotificationManagerCompat.from(context).cancel(NOTIFICATION_ID) }
+        posted = false
     }
 
-    private fun setTicker(value: String?) {
-        if (value == ticker) return
-        ticker = value
-        runCatching { onTickerChanged?.invoke() }
+    private fun post(resolved: Flags, text: String) {
+        runCatching {
+            ensureChannel()
+            val builder = NotificationCompat.Builder(context, CHANNEL_ID)
+                .setPriority(Notification.PRIORITY_MAX)
+                .setSmallIcon(R.drawable.ic_lyric_ticker_60)
+                .setTicker(text)
+                .setOnlyAlertOnce(true)
+                .setSilent(true)
+                .setShowWhen(false)
+                .setOngoing(true)
+            if (activeLine == null) builder.setContentTitle(context.getString(R.string.app_name))
+            val notification = builder.build()
+            notification.flags = FlymeLyricNotificationRules.activeFlags(resolved.showTicker, resolved.updateTicker)
+            notification.extras.putBoolean("ticker_icon_switch", false)
+            notification.extras.putInt("ticker_icon", R.drawable.ic_ticker_note)
+            NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
+            activeLine = text
+            posted = true
+            record("post len=${text.length} id=$NOTIFICATION_ID flags=0x${notification.flags.toString(16)}")
+        }.onFailure { Log.w(TAG, "Failed to post Flyme lyric", it) }
+    }
+
+    private fun clearTicker(resolved: Flags) {
+        if (!posted && activeLine == null) return
+        activeLine = null
+        runCatching {
+            val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+                .setPriority(Notification.PRIORITY_MAX)
+                .setSmallIcon(R.drawable.ic_lyric_ticker_60)
+                .setTicker(null)
+                .setSilent(true)
+                .setOnlyAlertOnce(true)
+                .setShowWhen(false)
+                .setOngoing(true)
+                .build()
+            notification.flags = FlymeLyricNotificationRules.clearedFlags(resolved.showTicker, resolved.updateTicker)
+            NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
+            record("clear")
+        }.onFailure { Log.w(TAG, "Failed to clear Flyme lyric", it) }
+        runCatching { NotificationManagerCompat.from(context).cancel(NOTIFICATION_ID) }
+        posted = false
+    }
+
+    private fun ensureChannel() {
+        val manager = context.getSystemService(NotificationManager::class.java) ?: return
+        if (manager.getNotificationChannel(CHANNEL_ID) != null) return
+        manager.createNotificationChannel(
+            NotificationChannel(
+                CHANNEL_ID,
+                context.getString(R.string.ticker_channel_name),
+               // Flyme wants HIGH; sound/vibration/badge off so it never pops per line.
+                NotificationManager.IMPORTANCE_HIGH,
+            ).apply {
+                setSound(null, null)
+                enableVibration(false)
+                setShowBadge(false)
+            },
+        )
     }
 
     private fun resolveFlags(): Flags? {
@@ -103,25 +144,28 @@ class FlymeLyricNotifier {
             )
         }.getOrNull()
         if (reflected != null) return reflected
-        val manufacturer = runCatching { android.os.Build.MANUFACTURER }.getOrNull()
-        val brand = runCatching { android.os.Build.BRAND }.getOrNull()
-        val isMeizu = listOf(manufacturer, brand).any {
-            it?.trim()?.equals("meizu", ignoreCase = true) == true
-        }
-        return if (isMeizu) {
-            Flags(FLYME_FLAG_ALWAYS_SHOW_TICKER_FALLBACK, FLYME_FLAG_ONLY_UPDATE_TICKER_FALLBACK)
+        return if (FlymeLyricNotificationRules.isFlymeManufacturer(safeManufacturer(), safeBrand())) {
+            Flags(
+                FlymeLyricNotificationRules.FLAG_ALWAYS_SHOW_TICKER,
+                FlymeLyricNotificationRules.FLAG_ONLY_UPDATE_TICKER,
+            )
         } else {
             null
         }
     }
 
+    private fun safeManufacturer(): String? = runCatching { Build.MANUFACTURER }.getOrNull()
+    private fun safeBrand(): String? = runCatching { Build.BRAND }.getOrNull()
+
+    private fun record(detail: String) {
+        runCatching { log?.record("解析", "stage=flyme-lyric $detail") }
+    }
+
     private data class Flags(val showTicker: Int, val updateTicker: Int)
 
     private companion object {
-        private const val TAG = "YunYin/TickerLyrics"
-
-        /** NeriPlayer's fallbacks: AOSP never defines these flags. */
-        const val FLYME_FLAG_ALWAYS_SHOW_TICKER_FALLBACK = 0x01000000
-        const val FLYME_FLAG_ONLY_UPDATE_TICKER_FALLBACK = 0x02000000
+        const val TAG = "YunYin/TickerLyrics"
+        const val NOTIFICATION_ID = FlymeLyricNotificationRules.NOTIFICATION_ID
+        const val CHANNEL_ID = FlymeLyricNotificationRules.CHANNEL_ID
     }
 }

@@ -10,11 +10,7 @@ import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.DefaultMediaNotificationProvider
-import android.os.Handler
-import android.os.Looper
-import androidx.media3.session.MediaNotification
 import androidx.media3.session.MediaSession
-import com.google.common.collect.ImmutableList
 import androidx.media3.session.MediaSessionService
 import com.yunyin.music.AppContainer
 import com.yunyin.music.R
@@ -35,7 +31,6 @@ class PlaybackService : MediaSessionService() {
 
     private var mediaSession: MediaSession? = null
     private var crossfadeCoordinator: CrossfadeCoordinator? = null
-    private val mainHandler = Handler(Looper.getMainLooper())
     private lateinit var container: AppContainer
 
     override fun onCreate() {
@@ -119,10 +114,6 @@ class PlaybackService : MediaSessionService() {
         mediaSession = MediaSession.Builder(this, player).build()
         // The Flyme ticker rides on the media notification (NeriPlayer's approach); a separate ticker
         // notification is not used. The provider mutates only ticker fields/flags, never the media content.
-        setMediaNotificationProvider(TickerMediaNotificationProvider(this))
-        container.tickerLyrics.onTickerChanged = {
-            mainHandler.post { refreshTickerNotification() }
-        }
         crossfadeCoordinator = CrossfadeCoordinator(
             session = mediaSession!!,
             initial = player,
@@ -144,45 +135,7 @@ class PlaybackService : MediaSessionService() {
         super.onTaskRemoved(rootIntent)
     }
 
-    /** Re-renders the media notification after a lyric line changed (Media3's documented update hook). */
-    private fun refreshTickerNotification() {
-        val session = mediaSession ?: return
-        runCatching { onUpdateNotification(session, false) }
-    }
-
-    /**
-     * Wraps Media3's default provider (delegation, not subclassing: `createNotification` is final in 1.11.1) and
-     * mutates only the ticker fields/flags of the built media notification. Everything else — channel, actions,
-     * artwork, seek bar — is exactly the default provider's output.
-     */
-    private inner class TickerMediaNotificationProvider(context: android.content.Context) :
-        MediaNotification.Provider {
-        private val delegate = DefaultMediaNotificationProvider(context)
-
-        override fun createNotification(
-            mediaSession: MediaSession,
-            customLayout: ImmutableList<androidx.media3.session.CommandButton>,
-            actionFactory: MediaNotification.ActionFactory,
-            onNotificationChangedCallback: MediaNotification.Provider.Callback,
-        ): MediaNotification {
-            val mediaNotification = delegate.createNotification(
-                mediaSession, customLayout, actionFactory, onNotificationChangedCallback,
-            )
-            runCatching { container.tickerLyrics.attachTicker(mediaNotification.notification) }
-            return mediaNotification
-        }
-
-        override fun handleCustomCommand(
-            session: MediaSession,
-            action: String,
-            extras: android.os.Bundle,
-        ): Boolean = delegate.handleCustomCommand(session, action, extras)
-
-        override fun getNotificationChannelInfo() = delegate.notificationChannelInfo
-    }
-
     override fun onDestroy() {
-        container.tickerLyrics.onTickerChanged = null
         runCatching { crossfadeCoordinator?.release() }
         crossfadeCoordinator = null
         mediaSession?.run {
