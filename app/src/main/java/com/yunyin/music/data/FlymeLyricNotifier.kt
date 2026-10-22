@@ -5,8 +5,6 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.os.Build
-import android.os.Handler
-import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -17,14 +15,12 @@ import com.yunyin.music.data.lxsource.LxSourceLog
 /**
  * Flyme 状态栏歌词, implemented literally from the official 适配说明.
  *
- *  - a **standalone** notification (not the media notification), its **own channel**, always the **same id**;
- *  - `PRIORITY_MAX`, a 60 dp-class small icon (Flyme renders it left of the ticker), `setTicker(line)`;
- *  - `FLAG_NO_CLEAR` always (mandatory resident notification), both private flags + ticker-icon extras only while
- *    a lyric line is active;
- *  - pause/stop/disable: `setTicker(null)`, clear both flags, post once more, then drop the entry;
- *  - private flags reflected once; absent + non-Meizu ⇒ feature unsupported; Meizu manufacturer/brand fallback.
+ * The shipping post and the 测试状态栏歌词 button share [buildNotification] (one code path), so “the test scrolls”
+ * proves playback scrolls too.
  *
- * The media notification is not touched at all.
+ * **No `setSilent`/`setOnlyAlertOnce`:** device evidence collected via the in-app test shows Flyme skips the ticker
+ * animation for silent notifications — variant A (silent=false) scrolled while the shipping silent post did not.
+ * Audibility is prevented by the already-silent channel (no sound, no vibration, no badge) and `setDefaults(0)`.
  */
 class FlymeLyricNotifier(
     private val context: Context,
@@ -39,11 +35,6 @@ class FlymeLyricNotifier(
                 "reflectedShow=${resolved?.showTicker ?: "none"} " +
                 "reflectedUpdate=${resolved?.updateTicker ?: "none"} supported=${resolved != null}",
         )
-        record(
-            "supported=${resolved != null} showFlag=${resolved?.showTicker ?: 0} " +
-                "updateFlag=${resolved?.updateTicker ?: 0} manufacturer=${safeManufacturer()} " +
-                "brand=${safeBrand()} sdk=${Build.VERSION.SDK_INT}",
-        )
         resolved
     }
 
@@ -56,7 +47,6 @@ class FlymeLyricNotifier(
     private var activeLine: String? = null
     private var posted = false
 
-    /** Feeds the current lyric line; [fallback] is the track title and the track-change key. */
     fun update(line: String?, fallback: String?, playing: Boolean) {
         val resolved = flags ?: run { record("skip reason=unsupported"); return }
         val now = SystemClock.elapsedRealtime()
@@ -81,7 +71,6 @@ class FlymeLyricNotifier(
         post(resolved, text)
     }
 
-    /** Stops the lyric: cleared ticker/flags notice, then removes the entry. */
     fun clear() {
         throttle = FlymeLyricThrottle.State()
         activeLine = null
@@ -90,39 +79,56 @@ class FlymeLyricNotifier(
         posted = false
     }
 
-    private fun post(resolved: Flags, text: String) {
+    /** Settings → 播放 → 「测试状态栏歌词」: one shipping notification, same builder. */
+    fun runSelfTest() {
+        val resolved = flags ?: Flags(
+            FlymeLyricNotificationRules.FLAG_ALWAYS_SHOW_TICKER,
+            FlymeLyricNotificationRules.FLAG_ONLY_UPDATE_TICKER,
+        )
+        runCatching { post(resolved, "测试歌词 · 云音", test = true) }
+    }
+
+    private fun post(resolved: Flags, text: String, test: Boolean = false) {
         runCatching {
             ensureChannel()
-            val builder = NotificationCompat.Builder(context, CHANNEL_ID)
-                .setPriority(Notification.PRIORITY_MAX)
-                .setSmallIcon(R.drawable.ic_lyric_ticker_60)
-                .setTicker(text)
-                .setOnlyAlertOnce(true)
-                .setSilent(true)
-                .setShowWhen(false)
-                .setOngoing(true)
-            if (activeLine == null) builder.setContentTitle(context.getString(R.string.app_name))
-            val notification = builder.build()
-            notification.flags = FlymeLyricNotificationRules.activeFlags(resolved.showTicker, resolved.updateTicker)
-            notification.extras.putBoolean("ticker_icon_switch", false)
-            notification.extras.putInt("ticker_icon", R.drawable.ic_ticker_note)
+            val notification = buildNotification(resolved, text)
             NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
             activeLine = text
             posted = true
-            record("post len=${text.length} id=$NOTIFICATION_ID flags=0x${notification.flags.toString(16)}")
+            val prefix = if (test) "test post" else "post"
+            record(
+                "$prefix len=${text.length} id=$NOTIFICATION_ID flags=0x${notification.flags.toString(16)} " +
+                    "silent=false priority=${Notification.PRIORITY_MAX} channel=${FlymeLyricNotificationRules.CHANNEL_ID}",
+            )
         }.onFailure { Log.w(TAG, "Failed to post Flyme lyric", it) }
+    }
+
+    /** The one builder used by playback and the self-test. */
+    private fun buildNotification(resolved: Flags, text: String): Notification {
+        val builder = NotificationCompat.Builder(context, FlymeLyricNotificationRules.CHANNEL_ID)
+            .setPriority(Notification.PRIORITY_MAX)
+            .setSmallIcon(R.drawable.ic_lyric_ticker_60)
+            .setTicker(text)
+            .setDefaults(0)
+            .setShowWhen(false)
+            .setOngoing(true)
+        if (activeLine == null) builder.setContentTitle(context.getString(R.string.app_name))
+        val notification = builder.build()
+        notification.flags = FlymeLyricNotificationRules.activeFlags(resolved.showTicker, resolved.updateTicker)
+        notification.extras.putBoolean("ticker_icon_switch", false)
+        notification.extras.putInt("ticker_icon", R.drawable.ic_ticker_note)
+        return notification
     }
 
     private fun clearTicker(resolved: Flags) {
         if (!posted && activeLine == null) return
         activeLine = null
         runCatching {
-            val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+            val notification = NotificationCompat.Builder(context, FlymeLyricNotificationRules.CHANNEL_ID)
                 .setPriority(Notification.PRIORITY_MAX)
                 .setSmallIcon(R.drawable.ic_lyric_ticker_60)
                 .setTicker(null)
-                .setSilent(true)
-                .setOnlyAlertOnce(true)
+                .setDefaults(0)
                 .setShowWhen(false)
                 .setOngoing(true)
                 .build()
@@ -134,11 +140,16 @@ class FlymeLyricNotifier(
         posted = false
     }
 
-    private fun ensureChannel(channelId: String = CHANNEL_ID, importance: Int = NotificationManager.IMPORTANCE_HIGH) {
+    private fun ensureChannel() {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
+        val channelId = FlymeLyricNotificationRules.CHANNEL_ID
         if (manager.getNotificationChannel(channelId) != null) return
         manager.createNotificationChannel(
-            NotificationChannel(channelId, context.getString(R.string.ticker_channel_name), importance).apply {
+            NotificationChannel(
+                channelId,
+                context.getString(R.string.ticker_channel_name),
+                NotificationManager.IMPORTANCE_HIGH,
+            ).apply {
                 setSound(null, null)
                 enableVibration(false)
                 setShowBadge(false)
@@ -168,7 +179,6 @@ class FlymeLyricNotifier(
     private fun safeManufacturer(): String? = runCatching { Build.MANUFACTURER }.getOrNull()
     private fun safeBrand(): String? = runCatching { Build.BRAND }.getOrNull()
 
-    /** Writes to both sinks: the general diagnostic line and the append-only copy the Settings sheet reads. */
     private fun record(detail: String) {
         runCatching { log?.record("解析", "stage=flyme-lyric $detail") }
         runCatching {
@@ -178,60 +188,10 @@ class FlymeLyricNotifier(
         }
     }
 
-    /** Settings → 播放 → 测试状态栏歌词: four recipes, one every 2.5 s, each variant logged. */
-    fun runSelfTest(onDone: () -> Unit) {
-        val handler = Handler(Looper.getMainLooper())
-        val resolved = flags ?: Flags(
-            FlymeLyricNotificationRules.FLAG_ALWAYS_SHOW_TICKER,
-            FlymeLyricNotificationRules.FLAG_ONLY_UPDATE_TICKER,
-        )
-        record("test start supported=${flags != null}")
-        var index = 0
-        val step = object : Runnable {
-            override fun run() {
-                if (index >= FlymeLyricNotificationRules.TestVariant.entries.size) {
-                    record("test done")
-                    runCatching { onDone() }
-                    return
-                }
-                val variant = FlymeLyricNotificationRules.TestVariant.entries[index]
-                index++
-                record("test variant=${variant.label}")
-                runCatching { postTestVariant(resolved, variant, "测试歌词 · 云音") }
-                handler.postDelayed(this, 2_500L)
-            }
-        }
-        handler.post(step)
-    }
-
-    private fun postTestVariant(resolved: Flags, variant: FlymeLyricNotificationRules.TestVariant, text: String) {
-        if (variant.minImportance) ensureChannel(MIN_CHANNEL_ID, NotificationManager.IMPORTANCE_MIN) else ensureChannel()
-        val builder = NotificationCompat.Builder(context, if (variant.minImportance) MIN_CHANNEL_ID else CHANNEL_ID)
-            .setPriority(Notification.PRIORITY_MAX)
-            .setSmallIcon(if (variant.label.startsWith("C")) R.mipmap.ic_launcher else R.drawable.ic_lyric_ticker_60)
-            .setTicker(text)
-            .setOnlyAlertOnce(variant.onlyAlertOnce)
-            .setShowWhen(false)
-            .setOngoing(true)
-            .setContentTitle(context.getString(R.string.app_name))
-        if (variant.silent) builder.setSilent(true)
-        val notification = builder.build()
-        notification.flags = FlymeLyricNotificationRules.activeFlags(resolved.showTicker, resolved.updateTicker)
-        notification.extras.putBoolean("ticker_icon_switch", false)
-        notification.extras.putInt("ticker_icon", R.drawable.ic_ticker_note)
-        NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
-        record(
-            "test post id=$NOTIFICATION_ID flags=0x${notification.flags.toString(16)} silent=${variant.silent} " +
-                "priority=${Notification.PRIORITY_MAX} channel=${if (variant.minImportance) MIN_CHANNEL_ID else CHANNEL_ID}",
-        )
-    }
-
     private data class Flags(val showTicker: Int, val updateTicker: Int)
 
     private companion object {
         const val TAG = "YunYin/TickerLyrics"
         const val NOTIFICATION_ID = FlymeLyricNotificationRules.NOTIFICATION_ID
-        const val CHANNEL_ID = FlymeLyricNotificationRules.CHANNEL_ID
-        const val MIN_CHANNEL_ID = "flyme_status_bar_lyrics_min"
     }
 }

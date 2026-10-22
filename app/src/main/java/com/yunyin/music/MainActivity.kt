@@ -1245,13 +1245,8 @@ class MainActivity : ComponentActivity() {
                         container.settings.seamlessTransition = enabled
                     },
                     onTestFlymeLyric = {
-                        container.tickerLyrics.runSelfTest {
-                            Toast.makeText(
-                                context,
-                                "已依次尝试 4 种方式，请告诉我哪种能在状态栏看到歌词",
-                                Toast.LENGTH_LONG,
-                            ).show()
-                        }
+                        container.tickerLyrics.runSelfTest()
+                        Toast.makeText(context, "已发送测试歌词，请看状态栏是否滚动", Toast.LENGTH_LONG).show()
                     },
                     onCycleCrossfadeSeconds = {
                         val next = com.yunyin.music.playback.CrossfadeRules.DURATIONS_SECONDS.let { list ->

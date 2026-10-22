@@ -29,14 +29,6 @@ object FlymeLyricNotificationRules {
     fun clearedFlags(showTicker: Int, updateTicker: Int): Int =
         Notification.FLAG_NO_CLEAR and (showTicker or updateTicker).inv()
 
-    /** The in-app self-test matrix: four ways the ticker may need to be posted, one per 2.5 s. */
-    enum class TestVariant(val label: String, val silent: Boolean, val onlyAlertOnce: Boolean, val minImportance: Boolean) {
-        A("A-doc-literal", silent = false, onlyAlertOnce = false, minImportance = false),
-        B("B-silent", silent = true, onlyAlertOnce = true, minImportance = false),
-        C("C-launcher-icon", silent = false, onlyAlertOnce = false, minImportance = false),
-        D("D-min-importance", silent = false, onlyAlertOnce = false, minImportance = true),
-    }
-
     val isFlymeManufacturer: (String?, String?) -> Boolean = { manufacturer, brand ->
         listOf(manufacturer, brand).any { value -> value?.trim()?.equals("meizu", ignoreCase = true) == true }
     }
