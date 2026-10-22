@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -104,20 +103,18 @@ internal object PlaylistSquareLayoutRules {
     /** A chip's visual capsule is 32 dp; its touch target is the row's 44 dp. */
     const val CHIP_TOUCH_HEIGHT_DP = 44f
 
-    /** Card type metrics. These are the line heights the reserved space is computed from. */
-    const val TITLE_LINE_HEIGHT_DP = 20f
-    const val TITLE_MAX_LINES = 2
-    const val META_LINE_HEIGHT_DP = 16f
-
     /**
-     * Minimum height of the title block: the tallest allowed title (two lines) at its real line
-     * height. Applied as `heightIn(min = …)`, never as a fixed height, so a two-line title is not
-     * clamped and a one-line title still reserves the same tile height.
+     * Card text line counts — the whole equal-height mechanism.
+     *
+     * `minLines == maxLines` lets a one-line title occupy two natural lines while a two-line title
+     * keeps its own natural lines. There is deliberately **no** explicit `lineHeight` and **no**
+     * fixed/minimum height: a hand-computed line box was smaller than the font's real line box, so
+     * glyphs painted outside the measured bounds and the card's rounded clip sliced them.
      */
-    fun titleMinHeightDp(): Float = TITLE_LINE_HEIGHT_DP * TITLE_MAX_LINES
+    const val TITLE_LINES = 2
 
-    /** Minimum height of the secondary line: one real line of the 11 pt meta text. */
-    fun metaMinHeightDp(): Float = META_LINE_HEIGHT_DP
+    /** The meta line is always exactly one natural line; `metaLabel` never returns blank. */
+    const val META_LINES = 1
 
     /** Horizontal inset that caps the grid at [MAX_CONTENT_WIDTH_DP] and never drops below 20 dp. */
     fun horizontalPaddingForWidthDp(widthDp: Float): Float =
@@ -134,14 +131,16 @@ internal object PlaylistSquareLayoutRules {
 
     /**
      * The card's second line: the curator's own blurb when the catalogue has one, otherwise the
-     * track count. Empty string (not null) when neither exists, so the caller can drop the line.
+     * track count, otherwise a neutral label. It is **never blank** when both are missing — that is
+     * what guarantees exactly one meta line per card, which is what keeps the tiles equal height
+     * without any fixed-height container.
      */
     fun metaLabel(description: String?, trackCount: Int): String {
         val curator = description
             ?.trim()
             ?.takeIf { it.isNotEmpty() && !it.equals("null", ignoreCase = true) }
         if (curator != null) return curator
-        return if (trackCount > 0) "$trackCount 首" else ""
+        return if (trackCount > 0) "$trackCount 首" else "歌单"
     }
 
     /** Play-count badge text; empty when the count is unknown, so no "0" badge is ever drawn. */
@@ -465,26 +464,25 @@ private fun PlaylistSquareCard(
             fontFamily = SFPro,
             fontWeight = FontWeight.SemiBold,
             fontSize = 15.sp,
-            lineHeight = PlaylistSquareLayoutRules.TITLE_LINE_HEIGHT_DP.sp,
             color = AppTheme.palette.label,
-            // Equal-height grid: the height is reserved through heightIn (minimum only), so one-line
-            // and two-line titles produce the same tile height without clamping the text itself.
-            modifier = Modifier.heightIn(min = PlaylistSquareLayoutRules.titleMinHeightDp().dp),
-            maxLines = PlaylistSquareLayoutRules.TITLE_MAX_LINES,
+            // Equal height is structural: minLines == maxLines. A one-line title occupies two
+            // natural lines, a two-line title keeps its own; no explicit lineHeight (a hand-computed
+            // line box smaller than the font's real one let glyphs paint outside the measured bounds
+            // and be cut by the card clip) and no heightIn.
+            minLines = PlaylistSquareLayoutRules.TITLE_LINES,
+            maxLines = PlaylistSquareLayoutRules.TITLE_LINES,
             overflow = TextOverflow.Ellipsis,
         )
         Spacer(Modifier.height(3.dp))
-        // Same rule for the secondary line: one real 16 dp line is reserved, the text keeps its
-        // natural height (an 11 pt label fits comfortably inside 16 dp), and an empty catalogue
-        // blurb still leaves the tile the same height. No fixed-height parent ever clips glyphs.
         Text(
             text = meta,
             fontFamily = SFPro,
             fontSize = 11.sp,
-            lineHeight = PlaylistSquareLayoutRules.META_LINE_HEIGHT_DP.sp,
             color = AppTheme.palette.secondaryLabel,
-            modifier = Modifier.heightIn(min = PlaylistSquareLayoutRules.metaMinHeightDp().dp),
-            maxLines = 1,
+            // metaLabel() never returns blank, so this is always exactly one natural line. No
+            // lineHeight, no heightIn, no fixed-height parent: the glyphs own their line box.
+            minLines = PlaylistSquareLayoutRules.META_LINES,
+            maxLines = PlaylistSquareLayoutRules.META_LINES,
             overflow = TextOverflow.Ellipsis,
         )
     }
@@ -623,29 +621,33 @@ private fun SkeletonCard() {
                 .clip(ContinuousRoundedRectangle(AppleShapes.card))
                 .background(AppTheme.palette.secondaryBackground),
         )
-        // Mirrors the real card: 8 dp gap, two 20 dp title lines (bars 16 + 8 gap = 40), 3 dp gap,
-        // 14 dp secondary row. The swap from skeleton to data therefore does not change row height.
+        // The skeleton uses the real typography: transparent placeholder glyphs in the same Text
+        // slots, with the bar as the text's background. Its height is therefore the real font's line
+        // box, not a guessed number — the swap to data cannot change the tile height.
         Spacer(Modifier.height(8.dp))
-        Box(
-            Modifier
+        Text(
+            text = "\u00A0\n\u00A0",
+            fontFamily = SFPro,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 15.sp,
+            color = Color.Transparent,
+            minLines = PlaylistSquareLayoutRules.TITLE_LINES,
+            maxLines = PlaylistSquareLayoutRules.TITLE_LINES,
+            modifier = Modifier
                 .fillMaxWidth(0.82f)
-                .height(16.dp)
-                .clip(ContinuousRoundedRectangle(AppleShapes.control))
-                .background(AppTheme.palette.secondaryBackground),
-        )
-        Spacer(Modifier.height(8.dp))
-        Box(
-            Modifier
-                .fillMaxWidth(0.55f)
-                .height(16.dp)
                 .clip(ContinuousRoundedRectangle(AppleShapes.control))
                 .background(AppTheme.palette.secondaryBackground),
         )
         Spacer(Modifier.height(3.dp))
-        Box(
-            Modifier
+        Text(
+            text = "\u00A0",
+            fontFamily = SFPro,
+            fontSize = 11.sp,
+            color = Color.Transparent,
+            minLines = PlaylistSquareLayoutRules.META_LINES,
+            maxLines = PlaylistSquareLayoutRules.META_LINES,
+            modifier = Modifier
                 .fillMaxWidth(0.42f)
-                .height(PlaylistSquareLayoutRules.META_LINE_HEIGHT_DP.dp)
                 .clip(ContinuousRoundedRectangle(AppleShapes.control))
                 .background(AppTheme.palette.secondaryBackground),
         )
