@@ -126,10 +126,12 @@ fun CommentsScreen(
         Box(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
                 Column(
+                    // Constrain first, then fill: the other order lets fillMaxWidth fix the width to
+                    // the parent before widthIn is consulted, which would ignore the max on tablets.
                     Modifier
                         .fillMaxHeight()
-                        .fillMaxWidth()
-                        .widthIn(max = CommentsContentMaxWidth),
+                        .widthIn(max = CommentsContentMaxWidth)
+                        .fillMaxWidth(),
                 ) {
                     if (state.tab == CommentsTab.HOT) {
                         CommentSection(
@@ -173,10 +175,12 @@ fun CommentsScreen(
         ) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
                 Column(
+                    // Constrain first, then fill: the other order lets fillMaxWidth fix the width to
+                    // the parent before widthIn is consulted, which would ignore the max on tablets.
                     Modifier
                         .fillMaxHeight()
-                        .fillMaxWidth()
-                        .widthIn(max = CommentsContentMaxWidth),
+                        .widthIn(max = CommentsContentMaxWidth)
+                        .fillMaxWidth(),
                 ) {
                     CommentsTitleRow(state = state, backdrop = backdrop, onBack = onBack)
                     CommentsSegmentedControl(
