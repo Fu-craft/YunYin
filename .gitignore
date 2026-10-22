@@ -75,3 +75,7 @@ app/src/main/res/font/sf_pro.ttf
 
 # Motion-audit plans: internal working documents, kept local like tools/ and docs/HANDOFF.md.
 animation-plans/
+# 图标设计稿（本地渲染，不入库）
+/icon-soft/
+/icon-soft2/
+/icon-concepts/
