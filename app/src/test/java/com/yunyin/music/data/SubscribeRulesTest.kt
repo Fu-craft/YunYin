@@ -15,6 +15,15 @@ class SubscribeRulesTest {
     }
 
     @Test
+    fun `detail beats the cached list row and drives the label`() {
+        assertTrue(SubscribeRules.seedSubscribed(detail = true, cache = false))
+        assertFalse(SubscribeRules.seedSubscribed(detail = false, cache = true))
+        assertTrue(SubscribeRules.seedSubscribed(detail = null, cache = true))
+        assertEquals("取消收藏", SubscribeRules.label(true))
+        assertEquals("收藏", SubscribeRules.label(false))
+    }
+
+    @Test
     fun `optimistic state is reverted on failure only`() {
         assertTrue(SubscribeRules.shouldRevert(ok = false))
         assertFalse(SubscribeRules.shouldRevert(ok = true))

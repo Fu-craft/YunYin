@@ -603,11 +603,28 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
             owned = com.yunyin.music.data.playlist.PlaylistOwnership.canEdit(playlist, uid),
             canBeatMode = true,
             kind = CollectionKind.Playlist,
-            subscribed = playlist.subscribed,
+            subscribed = com.yunyin.music.data.SubscribeRules.seedSubscribed(null, playlist.subscribed),
             subscribedCount = playlist.subscribedCount,
             subscribeAvailable = realSession(),
         )
+        container.lxLog.record(
+            "解析",
+            "stage=sub read=playlist id=${playlist.id} source=list-cache subscribed=${playlist.subscribed}",
+        )
         collectionJob = viewModelScope.launch {
+            val sub = runCatching { container.music.playlist(playlist.id) }.getOrNull()
+            if (requestId == collectionRequestId && _collection.value?.id == playlist.id) {
+                                if (sub != null) {
+                    _collection.value = _collection.value?.copy(
+                        subscribed = com.yunyin.music.data.SubscribeRules.seedSubscribed(sub.subscribed, playlist.subscribed),
+                        subscribedCount = sub.subscribedCount,
+                    )
+                }
+                container.lxLog.record(
+                    "解析",
+                    "stage=sub read=playlist id=${playlist.id} source=${if (sub != null) "detail" else "none"} subscribed=${sub?.subscribed ?: playlist.subscribed}",
+                )
+            }
             // Progressive: the first batch renders immediately, later batches append in order. A 566/1267-track
             // playlist used to stop at 200 because the loader made one `limit = 200` request.
             val result = runCatching {
@@ -878,6 +895,7 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
                             followed = info.followed,
                             followAvailable = realSession(),
                         )
+                        container.lxLog.record("解析", "stage=sub read=artist id=$artistId source=detail followed=${info.followed}")
                     }
                 }
                 val hotResult = hot.await()
@@ -994,9 +1012,10 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
                         com.yunyin.music.data.FmRules.albumSubscribedSeeded(true, sub.value)
                     else -> com.yunyin.music.data.FmRules.albumSubscribedSeeded(false, false)
                 }
-                if (sub !is com.yunyin.music.core.NetResult.Ok) {
-                    container.lxLog.record("解析", "stage=sub action=album id=$albumId read=fail assume=false")
-                }
+                container.lxLog.record(
+                    "解析",
+                    "stage=sub read=album id=$albumId source=${if (sub is com.yunyin.music.core.NetResult.Ok) "detail" else "none"} subscribed=$subscribed",
+                )
                 _collection.value = _collection.value?.copy(
                     tracks = tracks,
                     loading = false,
