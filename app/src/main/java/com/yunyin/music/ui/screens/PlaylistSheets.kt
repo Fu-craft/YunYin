@@ -57,6 +57,8 @@ fun PlaylistEditorSheet(
     initialDescription: String,
     busy: Boolean,
     message: String?,
+    /** Host-driven exit after a successful save: set when the write finishes. */
+    submitCloseRequest: Boolean = false,
     onSubmit: (name: String, description: String) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -68,6 +70,7 @@ fun PlaylistEditorSheet(
         placement = SheetPlacement.Center,
         scrim = false,
         dismissible = !busy,
+        closeRequest = submitCloseRequest,
         sheetModifier = Modifier
             .fillMaxWidth()
             .clip(ContinuousRoundedRectangle(AppleShapes.sheet))
@@ -269,6 +272,8 @@ fun PlaylistConfirmSheet(
     confirmLabel: String,
     destructive: Boolean = true,
     busy: Boolean = false,
+    /** Host-driven exit once the confirmed write completes (success or failure). */
+    closeRequest: Boolean = false,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -278,6 +283,7 @@ fun PlaylistConfirmSheet(
         placement = SheetPlacement.Center,
         scrim = false,
         dismissible = !busy,
+        closeRequest = closeRequest,
         sheetModifier = Modifier
             .fillMaxWidth()
             .clip(ContinuousRoundedRectangle(AppleShapes.sheet))

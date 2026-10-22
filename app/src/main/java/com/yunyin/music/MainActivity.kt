@@ -266,6 +266,13 @@ class MainActivity : ComponentActivity() {
         var pendingRemoveTrack by remember { mutableStateOf<com.yunyin.music.core.Track?>(null) }
         var pendingUnlikeTrack by remember { mutableStateOf<com.yunyin.music.core.Track?>(null) }
         var playlistWriteBusy by remember { mutableStateOf(false) }
+        // Host-driven exits: an async save/write/import finishing asks the sheet to leave through its
+        // own exit animation; the host keeps the sheet composed until its onDismissed callback.
+        var playlistEditorCloseRequest by remember { mutableStateOf(false) }
+        var deleteCloseRequest by remember { mutableStateOf(false) }
+        var removeCloseRequest by remember { mutableStateOf(false) }
+        var unlikeCloseRequest by remember { mutableStateOf(false) }
+        var lxUrlCloseRequest by remember { mutableStateOf(false) }
         var showSleepTimer by remember { mutableStateOf(false) }
         val sleepTimerEnd by container.player.sleepTimerEnd.collectAsState()
         val sleepTimerEndOfTrack by container.player.sleepTimerEndOfTrack.collectAsState()
@@ -284,12 +291,14 @@ class MainActivity : ComponentActivity() {
             }
             playlistEditorTarget = null
             playlistEditorMessage = null
+            playlistEditorCloseRequest = false
             showPlaylistEditor = true
         }
 
         fun openPlaylistEdit(target: com.yunyin.music.core.Playlist) {
             playlistEditorTarget = target
             playlistEditorMessage = null
+            playlistEditorCloseRequest = false
             showPlaylistEditor = true
         }
 
@@ -322,7 +331,8 @@ class MainActivity : ComponentActivity() {
                             toast(if (target == null) "已创建歌单「${name.trim()}」" else "已保存歌单「${name.trim()}」")
                             appViewModel.refreshUserPlaylists(account)
                             if (target != null) appViewModel.refreshCollection()
-                            showPlaylistEditor = false
+                            // Stay composed for the exit animation; onDismissed clears the flag.
+                            playlistEditorCloseRequest = true
                         }
                         is com.yunyin.music.core.NetResult.Err -> playlistEditorMessage = result.message
                     }
@@ -396,18 +406,18 @@ class MainActivity : ComponentActivity() {
                     when (val result = container.music.deletePlaylist(target.id)) {
                         is com.yunyin.music.core.NetResult.Ok -> {
                             toast("已删除歌单")
-                            pendingDeletePlaylist = null
+                            deleteCloseRequest = true
                             appViewModel.closeCollection()
                             appViewModel.refreshUserPlaylists(account)
                         }
                         is com.yunyin.music.core.NetResult.Err -> {
                             toast(result.message)
-                            pendingDeletePlaylist = null
+                            deleteCloseRequest = true
                         }
                     }
                 } catch (t: Throwable) {
                     toast("删除失败：${(t.message ?: t.javaClass.simpleName).take(120)}")
-                    pendingDeletePlaylist = null
+                    deleteCloseRequest = true
                 } finally {
                     playlistWriteBusy = false
                 }
@@ -424,17 +434,17 @@ class MainActivity : ComponentActivity() {
                     when (val result = container.music.removeTracksFromPlaylist(playlistId, listOf(track.id))) {
                         is com.yunyin.music.core.NetResult.Ok -> {
                             toast("已移除")
-                            pendingRemoveTrack = null
+                            removeCloseRequest = true
                             appViewModel.refreshCollection()
                         }
                         is com.yunyin.music.core.NetResult.Err -> {
                             toast(result.message)
-                            pendingRemoveTrack = null
+                            removeCloseRequest = true
                         }
                     }
                 } catch (t: Throwable) {
                     toast("移除失败：${(t.message ?: t.javaClass.simpleName).take(120)}")
-                    pendingRemoveTrack = null
+                    removeCloseRequest = true
                 } finally {
                     playlistWriteBusy = false
                 }
@@ -457,7 +467,7 @@ class MainActivity : ComponentActivity() {
             }.onFailure { t ->
                 toast("取消喜欢失败：${(t.message ?: t.javaClass.simpleName).take(120)}")
             }
-            pendingUnlikeTrack = null
+            unlikeCloseRequest = true
         }
 
         fun pickSleepTimer(option: Int?) {
@@ -561,9 +571,9 @@ class MainActivity : ComponentActivity() {
                     val result = container.lxSources.importFromUrl(url)
                     lxImportMessage = lxResultMessage(result)
                     if (result is LxImportResult.Success) {
-                        // Only a successful import closes the dialog; a failure keeps the URL there to fix.
-                        showLxUrlSheet = false
-                        lxUrlDraft = ""
+                        // Only a successful import closes the dialog; a failure keeps the URL there to
+                        // fix. The exit animates first — the host clears it from onDismissed.
+                        lxUrlCloseRequest = true
                     }
                 } catch (t: Throwable) {
                     lxImportMessage = "导入时发生内部错误：${(t.message ?: t.javaClass.simpleName).take(120)}"
@@ -1348,7 +1358,8 @@ class MainActivity : ComponentActivity() {
                         runCatching {
                             lxUrlDraft = ""
                             lxImportMessage = null
-                            showLxUrlSheet = true
+                            lxUrlCloseRequest = false
+            showLxUrlSheet = true
                         }.onFailure { t ->
                             lxImportMessage = "无法打开导入窗口：${(t.message ?: t.javaClass.simpleName).take(120)}"
                             runCatching { container.lxLog.record("打开从链接导入失败", t.stackTraceToString()) }
@@ -1400,8 +1411,14 @@ class MainActivity : ComponentActivity() {
                     initialDescription = playlistEditorTarget?.description.orEmpty(),
                     busy = playlistEditorBusy,
                     message = playlistEditorMessage,
+                    submitCloseRequest = playlistEditorCloseRequest,
                     onSubmit = { name, description -> submitPlaylist(name, description) },
-                    onDismiss = { if (!playlistEditorBusy) showPlaylistEditor = false },
+                    onDismiss = {
+                        if (!playlistEditorBusy) {
+                            showPlaylistEditor = false
+                            playlistEditorCloseRequest = false
+                        }
+                    },
                 )
             }
             if (showPlaylistPicker) {
@@ -1419,8 +1436,14 @@ class MainActivity : ComponentActivity() {
                     message = "确定删除「${target.name}」吗？",
                     confirmLabel = "删除",
                     busy = playlistWriteBusy,
+                    closeRequest = deleteCloseRequest,
                     onConfirm = { deletePlaylistNow() },
-                    onDismiss = { if (!playlistWriteBusy) pendingDeletePlaylist = null },
+                    onDismiss = {
+                        if (!playlistWriteBusy) {
+                            pendingDeletePlaylist = null
+                            deleteCloseRequest = false
+                        }
+                    },
                 )
             }
             pendingRemoveTrack?.let { track ->
@@ -1429,8 +1452,14 @@ class MainActivity : ComponentActivity() {
                     message = "从歌单中移除「${track.name}」？",
                     confirmLabel = "移除",
                     busy = playlistWriteBusy,
+                    closeRequest = removeCloseRequest,
                     onConfirm = { removeTrackNow() },
-                    onDismiss = { if (!playlistWriteBusy) pendingRemoveTrack = null },
+                    onDismiss = {
+                        if (!playlistWriteBusy) {
+                            pendingRemoveTrack = null
+                            removeCloseRequest = false
+                        }
+                    },
                 )
             }
             pendingUnlikeTrack?.let { track ->
@@ -1439,8 +1468,12 @@ class MainActivity : ComponentActivity() {
                     message = "取消喜欢「${track.name}」？",
                     confirmLabel = "取消喜欢",
                     busy = false,
+                    closeRequest = unlikeCloseRequest,
                     onConfirm = { removeLikedNow() },
-                    onDismiss = { pendingUnlikeTrack = null },
+                    onDismiss = {
+                        pendingUnlikeTrack = null
+                        unlikeCloseRequest = false
+                    },
                 )
             }
             if (showSleepTimer) {
@@ -1459,8 +1492,10 @@ class MainActivity : ComponentActivity() {
                     message = lxImportMessage,
                     onUrlChange = { lxUrlDraft = it },
                     onImport = { importLxFromUrl() },
+                    closeRequest = lxUrlCloseRequest,
                     onDismiss = {
                         showLxUrlSheet = false
+                        lxUrlCloseRequest = false
                         lxUrlDraft = ""
                         lxImportMessage = null
                     },
@@ -1798,7 +1833,7 @@ class MainActivity : ComponentActivity() {
             }
             // Shown for anything except the idle state, so a failed download inside the sheet stays
             // visible (with its own message and the "浏览器打开" fallback) rather than vanishing silently.
-            if (updateState !is com.yunyin.music.data.update.UpdateUiState.Idle) {
+            if (lastUpdate != null) {
                 val shown = lastUpdate
                 if (shown != null) {
                     UpdateSheet(
@@ -1811,7 +1846,11 @@ class MainActivity : ComponentActivity() {
                             openUrl(update.pageUrl)
                         },
                         onSkip = { container.update.skip(it) },
-                        onDismiss = { container.update.dismiss() },
+                        onDismiss = {
+                            container.update.dismiss()
+                            // Cleared only after the sheet's exit has finished.
+                            lastUpdate = null
+                        },
                     )
                 }
             }
@@ -1830,7 +1869,6 @@ class MainActivity : ComponentActivity() {
         BackHandler(enabled = commentsState.visible) { appViewModel.closeComments() }
         BackHandler(enabled = showSettings) { showSettings = false }
         BackHandler(enabled = showLogin) { showLogin = false }
-        BackHandler(enabled = showQueue) { showQueue = false }
 
         // Surface playback errors once, then clear them.
         LaunchedEffect(playbackError) {

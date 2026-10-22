@@ -16,6 +16,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -58,12 +63,19 @@ fun UpdateSheet(
     // Idle and AvailableSkipped render nothing. In particular a *skipped* version must not keep the sheet
     // up: that is what "跳过" means, and a sheet that stayed open made the tap look broken. The row in
     // Settings still shows "有新版本", so the offer stays reachable deliberately.
-    val update = when (state) {
+    val presenting = when (state) {
         is UpdateUiState.Available -> state.update
         is UpdateUiState.Downloading -> state.update
         is UpdateUiState.Failed -> state.update
         else -> null
-    } ?: return
+    }
+    // Hold the last presenting update through its exit: when the state stops presenting (skipped,
+    // opened in the browser, download finished), the sheet must animate out on real content instead
+    // of the host unmounting the Dialog on the spot.
+    var lastShown by remember { mutableStateOf<AvailableUpdate?>(null) }
+    SideEffect { presenting?.let { lastShown = it } }
+    val update = presenting ?: lastShown ?: return
+    val closing = presenting == null
 
     // Held as a nullable value rather than re-tested with a cast further down: the compiler cannot carry
     // the `is` check across the composable's branches, and an `as` there is a warning plus a crash risk if
@@ -74,7 +86,11 @@ fun UpdateSheet(
     AnimatedSheet(
         // While downloading there is nothing to dismiss to: the work is already in flight and the app
         // shows progress inside the sheet, so the scrim must not act as a cancel button.
-        onDismissed = onDismiss,
+        onDismissed = {
+            lastShown = null
+            onDismiss()
+        },
+        closeRequest = closing,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
         dismissible = !downloading,
         sheetModifier = Modifier
@@ -155,7 +171,9 @@ fun UpdateSheet(
                     filled = true,
                     enabled = !downloading,
                     onClick = {
-                        if (apkAvailable) onInstall(update) else onOpenPage(update)
+                        // Install keeps the sheet up to show download progress; opening the release
+                        // page leaves this dialog, so it must animate out first.
+                        if (apkAvailable) onInstall(update) else close { onOpenPage(update) }
                     },
                 )
             }

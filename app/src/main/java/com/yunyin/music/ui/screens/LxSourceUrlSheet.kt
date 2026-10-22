@@ -66,6 +66,8 @@ fun LxSourceUrlSheet(
     onUrlChange: (String) -> Unit,
     onImport: () -> Unit,
     onDismiss: () -> Unit,
+    /** Host-driven exit after a successful import: the sheet stays up for its exit animation. */
+    closeRequest: Boolean = false,
 ) {
     AnimatedSheet(
         // `onDismissed` is the only place the host removes the sheet; the buttons below only call close().
@@ -75,6 +77,7 @@ fun LxSourceUrlSheet(
         scrim = false,
         // Back press / scrim dismissal is off while an import is in flight: the URL must not be lost mid-fetch.
         dismissible = !importing,
+        closeRequest = closeRequest,
         sheetModifier = Modifier
             .fillMaxWidth()
             .imePadding()

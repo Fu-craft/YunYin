@@ -59,6 +59,11 @@ class SheetClose internal constructor(private val dismiss: (after: () -> Unit) -
  *
  * Back press and (when [scrim]) a scrim tap both route through `close`, so every dismissal
  * animates. [dismissible] = false makes those no-ops while a download is in flight.
+ *
+ * [closeRequest] is the host-driven counterpart: an async write/save/import finishes and asks the
+ * sheet to leave, instead of the host flipping its visibility state and unmounting the Dialog on the
+ * spot (which is what made those popups vanish). The content stays composed for the whole exit and
+ * the host only clears it from [onDismissed].
  */
 @Composable
 fun AnimatedSheet(
@@ -67,12 +72,27 @@ fun AnimatedSheet(
     placement: SheetPlacement = SheetPlacement.Bottom,
     dismissible: Boolean = true,
     scrim: Boolean = true,
+    /** Host-driven dismissal; set true once the action that owns the sheet has completed. */
+    closeRequest: Boolean = false,
     sheetModifier: Modifier = Modifier,
     content: @Composable ColumnScope.(close: SheetClose) -> Unit,
 ) {
     var visible by remember { mutableStateOf(false) }
     var closing by remember { mutableStateOf(false) }
     var afterDismiss by remember { mutableStateOf<(() -> Unit)?>(null) }
+
+    // Host-driven dismissal runs through the same exit as a user's close(): the Dialog stays composed
+    // until [onDismissed], so the exit animates on the real content instead of snapping away.
+    LaunchedEffect(closeRequest) {
+        if (closeRequest) {
+            closing = true
+        } else if (closing) {
+            // The host withdrew the request (or a newer state replaced it) before the exit finished:
+            // re-enter rather than waiting for a dismissal nobody asked for.
+            closing = false
+            visible = true
+        }
+    }
 
     // Start the entrance on the first frame, so AnimatedVisibility has a frame at `false` to
     // animate away from.
@@ -81,11 +101,15 @@ fun AnimatedSheet(
     LaunchedEffect(closing) {
         if (!closing) return@LaunchedEffect
         visible = false
-        delay(Motion.SheetExitDuration.toLong())
+        // Wait for the slower of the two exits: the scrim fades for ScrimDuration, which is longer
+        // than the panel's SheetExitDuration. Unmounting at the panel's duration cut the last frames
+        // of the scrim off every dismissal.
+        delay(maxOf(Motion.SheetExitDuration, Motion.ScrimDuration).toLong())
         val action = afterDismiss
         afterDismiss = null
         onDismissed()
         action?.invoke()
+        closing = false
     }
 
     fun close(after: () -> Unit = {}) {
@@ -135,6 +159,16 @@ fun AnimatedSheet(
                 Column(modifier = sheetModifier) {
                     content(SheetClose { after -> close(after) })
                 }
+            }
+            // The content stays composed through the exit, so it is still hittable for one more frame:
+            // cover it while leaving, so a row cannot fire again and a second dismissal cannot stack.
+            if (closing) {
+                Box(
+                    Modifier.fillMaxSize().clickable(
+                        indication = null,
+                        interactionSource = null,
+                    ) { },
+                )
             }
         }
     }
