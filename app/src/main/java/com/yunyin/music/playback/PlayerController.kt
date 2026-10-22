@@ -85,6 +85,8 @@ class PlayerController(
     private val sourceFailureNote: (Long) -> String? = { null },
     /** Called with a track id when its playback failed, so the resolver can drop a cached (expired) URL. */
     private val onStreamError: (Long) -> Unit = {},
+    /** 歌曲无缝衔接: read live so the Settings switch applies without recreating the player. */
+    private val crossfadeEnabled: () -> Boolean = { true },
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
@@ -95,6 +97,7 @@ class PlayerController(
     private var positionJob: Job? = null
     private var trialJob: Job? = null
     private var trialRequestId = 0L
+    private var lastAppliedVolume = 1f
 
     // The player publishes at 4 Hz, far too coarse to drive karaoke timing, so the UI asks
     // this for a per-frame interpolated position. See [PositionInterpolator] for why it must
@@ -453,6 +456,25 @@ class PlayerController(
             repeatMode = mediaController.repeatMode,
             shuffle = mediaController.shuffleModeEnabled,
         )
+
+        // Boundary fade: volume only (no extra decoder, no double audio). The gain curve is pure and tested;
+        // this only applies it when the value actually changes, so the 4 Hz ticker is not a setVolume spam.
+        val targetVolume = runCatching {
+            CrossfadeRules.gain(
+                positionMs = position,
+                durationMs = duration.coerceAtLeast(0L),
+                enabled = crossfadeEnabled(),
+                hasNext = CrossfadeRules.hasNextItem(
+                    index = index,
+                    itemCount = mediaController.mediaItemCount,
+                    repeatMode = mediaController.repeatMode,
+                ),
+            )
+        }.getOrDefault(1f)
+        if (kotlin.math.abs(targetVolume - lastAppliedVolume) > 0.01f) {
+            lastAppliedVolume = targetVolume
+            runCatching { mediaController.volume = targetVolume }
+        }
     }
 
     private fun startPositionTicker() {

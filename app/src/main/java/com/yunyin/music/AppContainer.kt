@@ -225,6 +225,7 @@ class AppContainer(val appContext: Context) {
             // A failed playback drops the cached URL for that track, so an expired CDN token is re-resolved instead
             // of being served from the cache until it ages out.
             onStreamError = { trackId -> music.invalidateResolution(trackId) },
+            crossfadeEnabled = { settings.seamlessTransition },
         )
     }
 

@@ -226,7 +226,7 @@ fun SettingsScreen(
             SectionLabel("播放")
             ToggleRow(
                 title = "无缝衔接",
-                subtitle = "柔化每首歌的开头，切歌不会突然出声",
+                subtitle = "切歌时淡出并淡入约 1.5 秒（音量衔接，不重叠；不能消除网络加载间隙）",
                 enabled = seamlessTransition,
                 onChange = onSeamlessTransitionChange,
             )
