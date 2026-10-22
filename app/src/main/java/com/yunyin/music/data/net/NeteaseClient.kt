@@ -953,6 +953,18 @@ class NeteaseClient(
         }
     }
 
+    /** Album subscribe state from the lightweight dynamic endpoint (`isSub`, comment/share counts). */
+    suspend fun albumSubscribed(id: Long): NetResult<Boolean> = request(
+        "/album/detail/dynamic",
+        query = RequestCacheBust.withCacheBust(mapOf("id" to "$id"), System.currentTimeMillis()),
+    ).map { json -> json.optBoolean("isSub") }
+
+    /** 私人 FM batch: song objects; anonymous works, a real session personalizes. */
+    suspend fun personalFm(): NetResult<List<Track>> = request(
+        "/personal_fm",
+        query = RequestCacheBust.withCacheBust(emptyMap(), System.currentTimeMillis()),
+    ).map { json -> json.optJSONArray("data")?.mapDetailTracks().orEmpty() }
+
     suspend fun likeSong(id: Long, like: Boolean): NetResult<Unit> = request(
         "/like",
         query = mapOf(

@@ -215,7 +215,7 @@ fun CollectionScreen(
                     onPlayAll = onPlayAll,
                     onMoreClick = { showMenu = true },
                     subscribed = state.subscribed,
-                    onToggleSubscribe = if (subscribeAvailable) onToggleSubscribe else null,
+                    onToggleSubscribe = onToggleSubscribe,
                     onHeightChanged = { headerHeightPx = it },
                 )
             }

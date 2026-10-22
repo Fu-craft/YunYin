@@ -687,6 +687,7 @@ class MainActivity : ComponentActivity() {
             /** The playlist this queue came from, for 心动模式's `pid`; null when it did not come from one. */
             playlistId: Long? = null,
         ): Boolean {
+            appViewModel.stopFm()
             val safeQueue = queue.ifEmpty { listOf(track) }
             val index = safeQueue.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
             var started = false

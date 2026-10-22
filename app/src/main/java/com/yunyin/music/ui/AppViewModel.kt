@@ -535,6 +535,44 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    private var fmJob: Job? = null
+    private var fmBatchNo = 0
+
+    /** Starts 私人 FM: replaces the queue with a batch and keeps appending batches before it runs dry. */
+    fun startFm() {
+        fmJob?.cancel()
+        fmBatchNo = 0
+        fmJob = viewModelScope.launch {
+            loadFmBatch(first = true)
+            while (true) {
+                delay(2_000L)
+                val state = container.player.state.value
+                if (com.yunyin.music.data.FmRules.shouldRefill(state.index, state.queue.size)) {
+                    loadFmBatch(first = false)
+                }
+            }
+        }
+    }
+
+    /** Leaving FM is implicit: any normal queue start calls this. */
+    fun stopFm() {
+        fmJob?.cancel()
+        fmJob = null
+    }
+
+    private suspend fun loadFmBatch(first: Boolean) {
+        fmBatchNo++
+        val result = runCatching { container.music.personalFm() }.getOrNull()
+        val tracks = (result as? com.yunyin.music.core.NetResult.Ok)?.value.orEmpty()
+        val ok = tracks.isNotEmpty()
+        container.lxLog.record(
+            "解析",
+            "stage=fm batch=$fmBatchNo result=${if (ok) "ok" else "fail"} appended=${tracks.size}",
+        )
+        if (!ok) return
+        if (first) container.player.playQueue(tracks, 0) else container.player.enqueueNext(tracks)
+    }
+
     // ---------------------------------------------------------------- detail
 
     fun openPlaylist(playlist: Playlist, uid: Long = 0L) {
@@ -932,14 +970,24 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
             subscribeAvailable = realSession(),
         )
         collectionJob = viewModelScope.launch {
+            val sub = runCatching { container.music.albumSubscribed(albumId) }.getOrNull()
             val result = runCatching { container.music.albumTracks(albumId) }
             if (requestId == collectionRequestId) {
                 val tracks = result.getOrElse { emptyList() }
+                val subscribed = when (sub) {
+                    is com.yunyin.music.core.NetResult.Ok ->
+                        com.yunyin.music.data.FmRules.albumSubscribedSeeded(true, sub.value)
+                    else -> com.yunyin.music.data.FmRules.albumSubscribedSeeded(false, false)
+                }
+                if (sub !is com.yunyin.music.core.NetResult.Ok) {
+                    container.lxLog.record("解析", "stage=sub action=album id=$albumId read=fail assume=false")
+                }
                 _collection.value = _collection.value?.copy(
                     tracks = tracks,
                     loading = false,
                     subtitle = "${tracks.size} 首",
                     error = if (result.isFailure) "专辑加载失败，请重试" else null,
+                    subscribed = subscribed,
                 )
             }
         }
