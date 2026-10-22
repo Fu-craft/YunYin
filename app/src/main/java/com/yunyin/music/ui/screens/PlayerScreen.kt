@@ -1806,7 +1806,7 @@ private fun TrackActionsSheet(
             .navigationBarsPadding()
             .padding(horizontal = 12.dp, vertical = 12.dp)
             .clip(ContinuousRoundedRectangle(AppleShapes.sheet))
-            .background(Color(0xFF1C1C1E))
+            .background(AppTheme.palette.secondaryBackground)
             .clickable(enabled = false, indication = null, interactionSource = null) { }
             .padding(vertical = 6.dp),
     ) { close ->
@@ -1815,7 +1815,7 @@ private fun TrackActionsSheet(
             fontFamily = SFPro,
             fontWeight = FontWeight.SemiBold,
             fontSize = 15.sp,
-            color = Color.White.copy(alpha = 0.6f),
+            color = AppTheme.palette.label.copy(alpha = 0.6f),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
@@ -1873,12 +1873,12 @@ private fun TrackActionsSheet(
             fontFamily = SFPro,
             fontWeight = FontWeight.Medium,
             fontSize = 17.sp,
-            color = Color.White,
+            color = AppTheme.palette.label,
             textAlign = TextAlign.Center,
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable(
-                    indication = rememberControlRipple(bounded = false),
+                    indication = rememberControlRipple(bounded = false, color = AppTheme.palette.label.copy(alpha = 0.24f)),
                     interactionSource = null,
                     onClick = { close() },
                 )
@@ -1917,9 +1917,9 @@ private fun ActionRow(
         Modifier
             .fillMaxWidth()
             .clickable(
-                // The sheet is a fixed dark surface with white ink in either appearance, so the
-                // theme's own ink would paint a dark ripple here on a light theme.
-                indication = rememberControlRipple(bounded = true),
+                // Indication uses the theme ink (white on dark, black on light), matching the row's
+                // label colour; bounded because the row is a full-width list row.
+                indication = rememberControlRipple(bounded = true, color = AppTheme.palette.label.copy(alpha = 0.24f)),
                 interactionSource = null,
                 enabled = enabled,
                 onClick = onClick,
@@ -1930,7 +1930,7 @@ private fun ActionRow(
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = Color.White.copy(alpha = alpha),
+            tint = AppTheme.palette.label.copy(alpha = alpha),
             modifier = Modifier.size(22.dp),
         )
         Spacer(Modifier.width(16.dp))
@@ -1938,7 +1938,7 @@ private fun ActionRow(
             text = label,
             fontFamily = SFPro,
             fontSize = 17.sp,
-            color = Color.White.copy(alpha = alpha),
+            color = AppTheme.palette.label.copy(alpha = alpha),
         )
     }
 }
@@ -1957,8 +1957,8 @@ private fun LyricOffsetSheet(
     onChange: (Long) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    // The sheet is a dark surface too, so its pill buttons get the white indication as well. Bounded
-    // here: a pill's ripple should stay inside the pill rather than spill past its rounded edge.
+    // The sheet follows the theme now, so its pill buttons use the theme ink for the indication.
+    // Bounded here: a pill's ripple should stay inside the pill rather than spill past its edge.
     val resetRipple = rememberControlRipple(bounded = true)
     AnimatedSheet(
         onDismissed = onDismiss,
@@ -1976,7 +1976,7 @@ private fun LyricOffsetSheet(
                 interactionSource = null,
             ) { }
             .clip(ContinuousRoundedRectangle(AppleShapes.sheet))
-            .background(Color(0xFF1C1C1E))
+            .background(AppTheme.palette.secondaryBackground)
             .padding(20.dp),
     ) { close ->
         Text(
@@ -1984,7 +1984,7 @@ private fun LyricOffsetSheet(
             fontFamily = SFPro,
             fontWeight = FontWeight.Bold,
             fontSize = 20.sp,
-            color = Color.White,
+            color = AppTheme.palette.label,
         )
         Spacer(Modifier.height(4.dp))
         Text(
@@ -1995,7 +1995,7 @@ private fun LyricOffsetSheet(
             },
             fontFamily = SFPro,
             fontSize = 13.sp,
-            color = Color.White.copy(alpha = 0.65f),
+            color = AppTheme.palette.label.copy(alpha = 0.65f),
         )
         Spacer(Modifier.height(16.dp))
 
@@ -2015,7 +2015,7 @@ private fun LyricOffsetSheet(
                 text = "提前",
                 fontFamily = SFPro,
                 fontSize = 12.sp,
-                color = Color.White.copy(alpha = 0.55f),
+                color = AppTheme.palette.label.copy(alpha = 0.55f),
             )
             Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                 Text(
@@ -2023,14 +2023,14 @@ private fun LyricOffsetSheet(
                     fontFamily = SFPro,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 15.sp,
-                    color = Color.White,
+                    color = AppTheme.palette.label,
                 )
             }
             Text(
                 text = "延后",
                 fontFamily = SFPro,
                 fontSize = 12.sp,
-                color = Color.White.copy(alpha = 0.55f),
+                color = AppTheme.palette.label.copy(alpha = 0.55f),
             )
         }
 
@@ -2041,7 +2041,7 @@ private fun LyricOffsetSheet(
                 fontFamily = SFPro,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 15.sp,
-                color = Color.White.copy(alpha = 0.75f),
+                color = AppTheme.palette.label.copy(alpha = 0.75f),
                 modifier = Modifier
                     .clip(ContinuousRoundedRectangle(AppleShapes.pill))
                     .clickable(
@@ -2056,10 +2056,10 @@ private fun LyricOffsetSheet(
                 fontFamily = SFPro,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 15.sp,
-                color = Color.White,
+                color = AppTheme.palette.label,
                 modifier = Modifier
                     .clip(ContinuousRoundedRectangle(AppleShapes.pill))
-                    .background(Color.White.copy(alpha = 0.16f))
+                    .background(AppTheme.palette.label.copy(alpha = 0.16f))
                     .clickable(indication = resetRipple, interactionSource = null, onClick = { close() })
                     .padding(horizontal = 18.dp, vertical = 8.dp),
             )
@@ -2380,7 +2380,7 @@ private fun QualitySheet(
             .navigationBarsPadding()
             .padding(horizontal = 12.dp, vertical = 12.dp)
             .clip(ContinuousRoundedRectangle(AppleShapes.sheet))
-            .background(Color(0xFF1C1C1E))
+            .background(AppTheme.palette.secondaryBackground)
             // Swallows taps on the sheet body so they do not reach the dismiss scrim behind it.
             .clickable(enabled = false, indication = null, interactionSource = null) { }
             .padding(vertical = 6.dp),
@@ -2390,7 +2390,7 @@ private fun QualitySheet(
             fontFamily = SFPro,
             fontWeight = FontWeight.SemiBold,
             fontSize = 15.sp,
-            color = Color.White.copy(alpha = 0.6f),
+            color = AppTheme.palette.label.copy(alpha = 0.6f),
             modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
         )
         AudioQuality.entries.forEach { tier ->
@@ -2406,12 +2406,12 @@ private fun QualitySheet(
             fontFamily = SFPro,
             fontWeight = FontWeight.Medium,
             fontSize = 17.sp,
-            color = Color.White,
+            color = AppTheme.palette.label,
             textAlign = TextAlign.Center,
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable(
-                    indication = rememberControlRipple(bounded = false),
+                    indication = rememberControlRipple(bounded = false, color = AppTheme.palette.label.copy(alpha = 0.24f)),
                     interactionSource = null,
                     onClick = { close() },
                 )
@@ -2431,7 +2431,7 @@ private fun QualityRow(
         Modifier
             .fillMaxWidth()
             .clickable(
-                indication = rememberControlRipple(bounded = true),
+                indication = rememberControlRipple(bounded = true, color = AppTheme.palette.label.copy(alpha = 0.24f)),
                 interactionSource = null,
                 onClick = onClick,
             )
@@ -2441,9 +2441,9 @@ private fun QualityRow(
         Icon(
             imageVector = tier.icon,
             contentDescription = null,
-            // A fixed accent rather than the theme palette: the sheet is always a dark surface, so it
-            // needs a colour that is legible on dark regardless of the app's appearance.
-            tint = if (selected) AppleColors.musicRed else Color.White.copy(alpha = 0.85f),
+            // The theme accent; the sheet's surface and labels are theme tokens too, so selection stays
+            // legible in both appearances.
+            tint = if (selected) AppTheme.palette.accent else AppTheme.palette.label.copy(alpha = 0.85f),
             modifier = Modifier.size(22.dp),
         )
         Spacer(Modifier.width(16.dp))
@@ -2453,20 +2453,20 @@ private fun QualityRow(
                 fontFamily = SFPro,
                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                 fontSize = 17.sp,
-                color = Color.White,
+                color = AppTheme.palette.label,
             )
             Text(
                 text = tier.detail,
                 fontFamily = SFPro,
                 fontSize = 12.sp,
-                color = Color.White.copy(alpha = 0.5f),
+                color = AppTheme.palette.label.copy(alpha = 0.5f),
             )
         }
         if (selected) {
             Icon(
                 imageVector = SfIcons.Checkmark,
                 contentDescription = "已选择",
-                tint = AppleColors.musicRed,
+                tint = AppTheme.palette.accent,
                 modifier = Modifier.size(18.dp),
             )
         }

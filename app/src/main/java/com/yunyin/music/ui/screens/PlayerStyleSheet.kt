@@ -52,10 +52,11 @@ fun PlayerStyleSheet(
     onSelect: (PlayerStyle) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    // A fixed dark surface, matching the quality sheet and the app's other bottom panels.
-    val surface = Color(0xFF1C1C1E)
-    val label = Color.White
-    val secondary = Color.White.copy(alpha = 0.55f)
+    // Theme tokens: dark resolves to the same #1C1C1E / white as the old fixed values, and light
+    // follows the app instead of painting a dark panel on a light page.
+    val surface = AppTheme.palette.secondaryBackground
+    val label = AppTheme.palette.label
+    val secondary = AppTheme.palette.label.copy(alpha = 0.55f)
 
     AnimatedSheet(
         onDismissed = onDismiss,
@@ -111,8 +112,8 @@ private fun PlayerStyleRow(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
-    val label = Color.White
-    val secondary = Color.White.copy(alpha = 0.55f)
+    val label = AppTheme.palette.label
+    val secondary = AppTheme.palette.label.copy(alpha = 0.55f)
     Row(
         Modifier
             .fillMaxWidth()
@@ -124,7 +125,7 @@ private fun PlayerStyleRow(
         // A small glyph of the shape itself: a rounded square for the classic cover, a disc for vinyl.
         StyleGlyph(
             style = style,
-            tint = if (selected) AppTheme.palette.accent else Color.White.copy(alpha = 0.75f),
+            tint = if (selected) AppTheme.palette.accent else label.copy(alpha = 0.75f),
         )
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -176,7 +177,7 @@ private fun StyleGlyph(style: PlayerStyle, tint: Color) {
                     Modifier
                         .size(7.dp)
                         .clip(CircleShape)
-                        .background(Color(0xFF1C1C1E)),
+                        .background(AppTheme.palette.secondaryBackground),
                 )
             }
         }

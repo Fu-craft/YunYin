@@ -62,7 +62,11 @@ fun LocalMusicSheet(
         sheetModifier = Modifier
             .fillMaxWidth()
             .fillMaxSize(0.92f)
+            // Standard sheet chrome: navigation-bar clearance, then the app's 12 dp gutter, then the
+            // shared 24 dp corner. The content is a plain list (no full-bleed artwork), so nothing
+            // needs to escape the rounded surface.
             .navigationBarsPadding()
+            .padding(horizontal = 12.dp, vertical = 12.dp)
             .clip(ContinuousRoundedRectangle(AppleShapes.sheet))
             .background(AppTheme.palette.background),
     ) { close ->

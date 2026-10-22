@@ -1101,6 +1101,9 @@ class MainActivity : ComponentActivity() {
                             state = state,
                             loader = container.artwork,
                             onBack = appViewModel::closeCollection,
+                            // Error state and the count row's refresh both replay the request that
+                            // opened the page (playlist / liked / chart / album).
+                            onRefresh = appViewModel::retryCollection,
                             onTrackClick = { track, index ->
                                 play(track, state.tracks, state.id.takeIf { state.canBeatMode })
                             },

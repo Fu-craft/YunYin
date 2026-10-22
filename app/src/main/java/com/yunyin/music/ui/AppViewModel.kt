@@ -45,7 +45,14 @@ data class CollectionUiState(
     val owned: Boolean = false,
     /** True only for a real playlist (track + playlist ids exist), so 心动模式 has the ids it needs. */
     val canBeatMode: Boolean = false,
+    /** What opened this page; a retry has to replay the same request, not always a playlist load. */
+    val kind: CollectionKind = CollectionKind.Playlist,
+    /** Set when the load failed; distinct from a successful playlist that happens to be empty. */
+    val error: String? = null,
 )
+
+/** The source of a collection page, so an error retry can replay the right request. */
+enum class CollectionKind { Playlist, Liked, Chart, Album }
 
 /** Search tab content. */
 data class SearchUiState(
@@ -64,6 +71,11 @@ data class SearchUiState(
         com.yunyin.music.data.net.SearchSuggestions(),
     /** Songs that matched by lyric; shown as an extra section, never in place of normal results. */
     val lyricResults: List<Track> = emptyList(),
+    /**
+     * A failed request. Distinct from an empty successful result: the former must never render as
+     * 「未找到…」. With existing [results] this is an append failure and the rows stay on screen.
+     */
+    val error: String? = null,
 )
 
 /**
@@ -253,7 +265,8 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
     // ---------------------------------------------------------------- search
 
     fun onKeywordChange(value: String) {
-        _search.value = _search.value.copy(keyword = value)
+        // Typing a new query dismisses the previous attempt's error: it described a different query.
+        _search.value = _search.value.copy(keyword = value, error = null)
         suggestJob?.cancel()
         if (value.isBlank()) {
             _search.value = _search.value.copy(suggestions = com.yunyin.music.data.net.SearchSuggestions())
@@ -295,6 +308,7 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
             history = container.searchHistory.load(),
             suggestions = com.yunyin.music.data.net.SearchSuggestions(),
             lyricResults = emptyList(),
+            error = null,
         )
         searchJob = viewModelScope.launch {
             when (val result = container.music.search(trimmed, offset = 0)) {
@@ -304,11 +318,17 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
                         loading = false,
                         results = result.value.tracks,
                         canLoadMore = result.value.hasMore,
+                        error = null,
                     )
                     if (result.value.tracks.isEmpty()) loadLyricMatches(trimmed)
                 }
                 is com.yunyin.music.core.NetResult.Err -> {
-                    _search.value = _search.value.copy(loading = false, results = emptyList())
+                    // Kept as an error, not as an empty result: 「搜索失败」 + retry, never 「未找到」.
+                    _search.value = _search.value.copy(
+                        loading = false,
+                        results = emptyList(),
+                        error = result.message,
+                    )
                     loadLyricMatches(trimmed)
                 }
             }
@@ -339,10 +359,12 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
                             result.value.tracks,
                         ),
                         canLoadMore = result.value.hasMore,
+                        error = null,
                     )
                 }
                 is com.yunyin.music.core.NetResult.Err ->
-                    _search.value = _search.value.copy(loadingMore = false)
+                    // The already-loaded rows stay; the footer turns into a retry.
+                    _search.value = _search.value.copy(loadingMore = false, error = result.message)
             }
         }
     }
@@ -359,6 +381,7 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
             canLoadMore = false,
             suggestions = com.yunyin.music.data.net.SearchSuggestions(),
             lyricResults = emptyList(),
+            error = null,
         )
     }
 
@@ -469,11 +492,13 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
             playCount = playlist.playCount,
             owned = com.yunyin.music.data.playlist.PlaylistOwnership.canEdit(playlist, uid),
             canBeatMode = true,
+            kind = CollectionKind.Playlist,
         )
         collectionJob = viewModelScope.launch {
             // Progressive: the first batch renders immediately, later batches append in order. A 566/1267-track
             // playlist used to stop at 200 because the loader made one `limit = 200` request.
-            val tracks = container.music.playlistTracksProgressive(playlist.id, totalHint = playlist.trackCount) { partial ->
+            val result = runCatching {
+            container.music.playlistTracksProgressive(playlist.id, totalHint = playlist.trackCount) { partial ->
                 val shown = _collection.value?.id
                 if (shown != null &&
                     collectionResultApplies(requestId, collectionRequestId, shown, playlist.id)
@@ -485,14 +510,21 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
                     )
                 }
             }
+            }
             val shown = _collection.value?.id
             if (shown != null &&
                 collectionResultApplies(requestId, collectionRequestId, shown, playlist.id)
             ) {
+                val tracks = result.getOrElse { emptyList() }
+                // Failure vs a playlist that genuinely has no playable tracks: the header already
+                // told us how many it expects, so an empty list for a non-empty playlist is a load
+                // failure (the progressive loader swallows per-page errors and returns what it has).
+                val failed = result.isFailure || (tracks.isEmpty() && playlist.trackCount > 0)
                 _collection.value = _collection.value?.copy(
                     tracks = tracks,
                     loading = false,
                     subtitle = "${tracks.size} 首",
+                    error = if (failed) "歌单加载失败，请重试" else null,
                 )
             }
         }
@@ -505,7 +537,8 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
         collectionJob?.cancel()
         val requestId = ++collectionRequestId
         collectionJob = viewModelScope.launch {
-            val tracks = container.music.playlistTracksProgressive(
+            val result = runCatching {
+            container.music.playlistTracksProgressive(
                 id = current.id,
                 totalHint = current.tracks.size.coerceAtLeast(0),
                 forceRefresh = forceNetwork,
@@ -518,14 +551,17 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
                     )
                 }
             }
+            }
             val detail = container.music.playlist(current.id)
             if (requestId == collectionRequestId) {
+                val tracks = result.getOrElse { current.tracks }
                 _collection.value = _collection.value?.copy(
                     title = detail?.name ?: current.title,
                     description = detail?.description ?: current.description,
                     tracks = tracks,
                     loading = false,
                     subtitle = "${tracks.size} 首",
+                    error = if (result.isFailure) "刷新失败，请重试" else null,
                 )
             }
         }
@@ -551,7 +587,7 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
         // Without this the cover stayed on the cloud playlist's own artwork and liking a song here never
         // changed it.
         val cover = container.liked.newestAddedCoverUrl() ?: coverUrl
-        _collection.value = CollectionUiState(title = "我喜欢的音乐", coverUrl = cover)
+        _collection.value = CollectionUiState(title = "我喜欢的音乐", coverUrl = cover, kind = CollectionKind.Liked)
         collectionJob = viewModelScope.launch {
             val tracks = container.liked.tracks(uid)
             val shown = _collection.value?.id
@@ -634,13 +670,36 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
     fun openChart(id: Long, title: String, coverUrl: String?) {
         collectionJob?.cancel()
         val requestId = ++collectionRequestId
-        _collection.value = CollectionUiState(id = id, title = title, coverUrl = coverUrl)
+        _collection.value = CollectionUiState(
+            id = id,
+            title = title,
+            coverUrl = coverUrl,
+            kind = CollectionKind.Chart,
+        )
         collectionJob = viewModelScope.launch {
-            val tracks = container.music.playlistTracks(id)
+            val result = runCatching { container.music.playlistTracks(id) }
             val shown = _collection.value?.id
             if (shown != null && collectionResultApplies(requestId, collectionRequestId, shown, id)) {
-                _collection.value = _collection.value?.copy(tracks = tracks, loading = false)
+                _collection.value = _collection.value?.copy(
+                    tracks = result.getOrElse { emptyList() },
+                    loading = false,
+                    error = if (result.isFailure) "榜单加载失败，请重试" else null,
+                )
             }
+        }
+    }
+
+    /**
+     * Retries the collection page after a load error by replaying the request that opened it, so a
+     * failed album does not get retried as a playlist (and a failed playlist keeps its cache-bust).
+     */
+    fun retryCollection() {
+        val state = _collection.value ?: return
+        when (state.kind) {
+            CollectionKind.Playlist -> refreshCollection(forceNetwork = true)
+            CollectionKind.Liked -> openLikedSongs(accountUid(), state.coverUrl)
+            CollectionKind.Chart -> openChart(state.id, state.title, state.coverUrl)
+            CollectionKind.Album -> openAlbum(state.id, state.title, state.coverUrl)
         }
     }
 
@@ -802,14 +861,22 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
         collectionJob?.cancel()
         if (albumId <= 0L) return
         val requestId = ++collectionRequestId
-        _collection.value = CollectionUiState(id = albumId, title = title, coverUrl = coverUrl, loading = true)
+        _collection.value = CollectionUiState(
+            id = albumId,
+            title = title,
+            coverUrl = coverUrl,
+            loading = true,
+            kind = CollectionKind.Album,
+        )
         collectionJob = viewModelScope.launch {
-            val tracks = runCatching { container.music.albumTracks(albumId) }.getOrElse { emptyList() }
+            val result = runCatching { container.music.albumTracks(albumId) }
             if (requestId == collectionRequestId) {
+                val tracks = result.getOrElse { emptyList() }
                 _collection.value = _collection.value?.copy(
                     tracks = tracks,
                     loading = false,
                     subtitle = "${tracks.size} 首",
+                    error = if (result.isFailure) "专辑加载失败，请重试" else null,
                 )
             }
         }

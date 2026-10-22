@@ -80,6 +80,7 @@ import com.yunyin.music.ui.CollectionUiState
 import com.yunyin.music.ui.components.Artwork
 import com.yunyin.music.ui.components.DefaultTopBarTintIntensity
 import com.yunyin.music.ui.components.EmptyState
+import com.yunyin.music.ui.components.ProminentButton
 import com.yunyin.music.ui.components.GlassTopBar
 import com.yunyin.music.ui.components.formatCount
 import com.yunyin.music.ui.components.formatDuration
@@ -218,6 +219,37 @@ fun CollectionScreen(
                             strokeWidth = 2.5.dp,
                             modifier = Modifier.size(26.dp),
                         )
+                    }
+                }
+            } else if (state.tracks.isEmpty() && state.error != null) {
+                item("error") {
+                    Column(
+                        Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 32.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        androidx.compose.material3.Icon(
+                            SfIcons.WifiSlash,
+                            contentDescription = null,
+                            tint = AppTheme.palette.tertiaryLabel,
+                            modifier = Modifier.size(36.dp),
+                        )
+                        Text(
+                            "歌单加载失败",
+                            fontFamily = SFPro,
+                            fontWeight = FontWeight.Medium,
+                            fontSize = 16.sp,
+                            color = AppTheme.palette.label,
+                        )
+                        Text(
+                            state.error,
+                            fontFamily = SFPro,
+                            fontSize = 13.sp,
+                            color = AppTheme.palette.secondaryLabel,
+                            textAlign = TextAlign.Center,
+                        )
+                        Spacer(Modifier.height(2.dp))
+                        ProminentButton(text = "重新加载", onClick = { onRefresh?.invoke() })
                     }
                 }
             } else if (state.tracks.isEmpty()) {

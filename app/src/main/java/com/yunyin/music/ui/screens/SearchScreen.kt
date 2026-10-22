@@ -1,6 +1,7 @@
 package com.yunyin.music.ui.screens
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -40,10 +41,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kyant.backdrop.backdrops.layerBackdrop
+import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
 import com.yunyin.music.core.Track
 import com.yunyin.music.data.ArtworkLoader
 import com.yunyin.music.ui.SearchUiState
 import com.yunyin.music.ui.components.CrossfadeContent
+import com.yunyin.music.ui.components.ProminentButton
 import com.yunyin.music.ui.components.GlassTopBar
 import com.yunyin.music.ui.components.InsetSeparator
 import com.yunyin.music.ui.components.SectionHeader
@@ -54,6 +57,7 @@ import com.yunyin.music.ui.components.liquidGlassControl
 import com.yunyin.music.ui.components.rememberControlRipple
 import com.yunyin.music.ui.components.rememberGlassTopBarBackdrop
 import com.yunyin.music.ui.icons.SfIcons
+import com.yunyin.music.ui.theme.AppleShapes
 import com.yunyin.music.ui.theme.AppTheme
 import com.yunyin.music.ui.theme.SFPro
 
@@ -103,16 +107,16 @@ fun SearchScreen(
         Box(Modifier.fillMaxSize().layerBackdrop(topBarBackdrop)) {
             // The four states used to swap in a single frame. Cross-fading them makes "searching"
             // read as a transition into results rather than a flicker.
-            val phase = when {
-                state.loading -> "loading"
-                state.searched && state.results.isEmpty() && state.lyricResults.isEmpty() -> "empty"
-                state.searched -> "results"
-                else -> "idle"
-            }
+            val phase = SearchPhaseRules.phase(
+                loading = state.loading,
+                searched = state.searched,
+                error = state.error,
+                resultCount = state.results.size + state.lyricResults.size,
+            )
 
             CrossfadeContent(targetState = phase, label = "search-phase") { active ->
                 when (active) {
-                    "loading" -> Box(
+                    SearchPhase.Loading -> Box(
                         Modifier.fillMaxSize().padding(top = glassTopBarTopPadding() + 40.dp),
                         contentAlignment = Alignment.TopCenter,
                     ) {
@@ -123,7 +127,38 @@ fun SearchScreen(
                         )
                     }
 
-                    "empty" -> Column(
+                    SearchPhase.Error -> Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(top = glassTopBarTopPadding())
+                            .padding(40.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Icon(
+                            SfIcons.WifiSlash,
+                            contentDescription = null,
+                            tint = AppTheme.palette.tertiaryLabel,
+                            modifier = Modifier.size(36.dp),
+                        )
+                        Text(
+                            "搜索失败",
+                            fontFamily = SFPro,
+                            fontWeight = FontWeight.Medium,
+                            fontSize = 16.sp,
+                            color = AppTheme.palette.label,
+                        )
+                        Text(
+                            state.error ?: "",
+                            fontFamily = SFPro,
+                            fontSize = 13.sp,
+                            color = AppTheme.palette.secondaryLabel,
+                        )
+                        Spacer(Modifier.height(2.dp))
+                        ProminentButton(text = "重试", onClick = { onSubmit(state.keyword) })
+                    }
+
+                    SearchPhase.Empty -> Column(
                         Modifier
                             .fillMaxWidth()
                             .padding(top = glassTopBarTopPadding())
@@ -138,7 +173,7 @@ fun SearchScreen(
                         )
                     }
 
-                    "results" -> LazyColumn(
+                    SearchPhase.Results -> LazyColumn(
                         contentPadding = PaddingValues(
                             top = glassTopBarTopPadding(),
                             bottom = chromeContentBottomPadding(),
@@ -165,7 +200,35 @@ fun SearchScreen(
                                 InsetSeparator()
                             }
                         }
-                        if (state.canLoadMore || state.loadingMore) {
+                        if (state.error != null) {
+                            // Append failure: the rows above stay; only the footer turns into a retry.
+                            item("load-more-error") {
+                                Column(
+                                    Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Text(
+                                        "加载更多失败",
+                                        fontFamily = SFPro,
+                                        fontSize = 12.sp,
+                                        color = AppTheme.palette.secondaryLabel,
+                                    )
+                                    Text(
+                                        "重试",
+                                        fontFamily = SFPro,
+                                        fontWeight = FontWeight.Medium,
+                                        fontSize = 14.sp,
+                                        color = AppTheme.palette.accent,
+                                        modifier = Modifier
+                                            .clip(ContinuousRoundedRectangle(AppleShapes.pill))
+                                            .background(AppTheme.palette.secondaryBackground)
+                                            .clickable { onLoadMore() }
+                                            .padding(horizontal = 18.dp, vertical = 9.dp),
+                                    )
+                                }
+                            }
+                        } else if (state.canLoadMore || state.loadingMore) {
                             item("load-more") {
                                 Row(
                                     Modifier
@@ -194,7 +257,7 @@ fun SearchScreen(
                         }
                     }
 
-                    else -> LazyColumn(
+                    SearchPhase.Idle -> LazyColumn(
                         contentPadding = PaddingValues(
                             top = glassTopBarTopPadding(),
                             bottom = chromeContentBottomPadding(),
