@@ -153,20 +153,19 @@ object SfIcons {
     /**
      * Heart, monoline — the 心动模式 bar entry.
      *
-     * The refit gives it the family's optical box: path 3.9–20.1 with the 1.9 pt stroke, i.e. a
-     * visible 19.9 pt square, and a higher peak (y = 4.2) than the old 4.4 so it no longer reads as
-     * a smaller badge next to the house. Lobe and tip curves are one continuous outline, so nothing
-     * pinches at 28 dp.
+     * The 4.10.0 redraw widened the lobes to the family's 19 pt optical box (path 3.4–20.6, stroke
+     * 1.9 → visible 2.45–21.55) and pulled the tip in to 20.2, so at 28 dp the mark reads full and
+     * rounded instead of narrow. The lobe/tip curves are one continuous outline: no pinch survives.
      */
     val Heart: ImageVector = icon("heart") {
         mono("heart", width = 1.9f) {
-            moveTo(12f, 20.5f)
-            curveTo(12f, 20.5f, 3.9f, 15.2f, 3.9f, 9.2f)
-            curveTo(3.9f, 6.4f, 6.1f, 4.2f, 8.9f, 4.2f)
-            curveTo(10.5f, 4.2f, 11.4f, 5.1f, 12f, 6.0f)
-            curveTo(12.6f, 5.1f, 13.5f, 4.2f, 15.1f, 4.2f)
-            curveTo(17.9f, 4.2f, 20.1f, 6.4f, 20.1f, 9.2f)
-            curveTo(20.1f, 15.2f, 12f, 20.5f, 12f, 20.5f)
+            moveTo(12f, 20.2f)
+            curveTo(12f, 20.2f, 3.4f, 14.8f, 3.4f, 8.9f)
+            curveTo(3.4f, 6.1f, 5.6f, 3.9f, 8.4f, 3.9f)
+            curveTo(10.2f, 3.9f, 11.3f, 4.9f, 12f, 5.8f)
+            curveTo(12.7f, 4.9f, 13.8f, 3.9f, 15.6f, 3.9f)
+            curveTo(18.4f, 3.9f, 20.6f, 6.1f, 20.6f, 8.9f)
+            curveTo(20.6f, 14.8f, 12f, 20.2f, 12f, 20.2f)
             close()
         }
     }
@@ -174,13 +173,13 @@ object SfIcons {
     /** Filled heart: the outline silhouette grown by half the stroke, so the swap does not resize. */
     val HeartFill: ImageVector = icon("heart.fill") {
         path(fill = SolidColor(Color.Black)) {
-            moveTo(12f, 21.45f)
-            curveTo(12f, 21.45f, 2.95f, 15.05f, 2.95f, 9.15f)
-            curveTo(2.95f, 6.0f, 5.5f, 3.25f, 8.65f, 3.25f)
-            curveTo(10.4f, 3.25f, 11.5f, 4.2f, 12f, 5.15f)
-            curveTo(12.5f, 4.2f, 13.6f, 3.25f, 15.35f, 3.25f)
-            curveTo(18.5f, 3.25f, 21.05f, 6.0f, 21.05f, 9.15f)
-            curveTo(21.05f, 15.05f, 12f, 21.45f, 12f, 21.45f)
+            moveTo(12f, 21.15f)
+            curveTo(12f, 21.15f, 2.45f, 14.7f, 2.45f, 8.75f)
+            curveTo(2.45f, 5.65f, 4.95f, 2.95f, 8.1f, 2.95f)
+            curveTo(10.1f, 2.95f, 11.3f, 4.05f, 12f, 5.05f)
+            curveTo(12.7f, 4.05f, 13.9f, 2.95f, 15.9f, 2.95f)
+            curveTo(19.05f, 2.95f, 21.55f, 5.65f, 21.55f, 8.75f)
+            curveTo(21.55f, 14.7f, 12f, 21.15f, 12f, 21.15f)
             close()
         }
     }
@@ -216,42 +215,50 @@ object SfIcons {
     /**
      * House, monoline — 主页.
      *
-     * One continuous roof-and-walls outline with a steep 7.6 pt pitch: the old 6.7 pt roof made the
-     * base squat at 28 dp, and the extra height is what visually balances the wider grid and heart.
-     * Round joins soften the apex and the eaves without erasing the corner.
+     * One continuous roof-and-walls outline with a steep 7.7 pt pitch, plus an **arched-door
+     * opening**: the door is what makes the resting glyph read as the 4.10.0 mark at 28 dp, since a
+     * roof-only outline is all but indistinguishable from the old one at that size. The filled state
+     * keeps the same opening cut out, so the two states describe one object.
      */
     val House: ImageVector = icon("house") {
         mono("house", width = 1.9f) {
-            moveTo(12f, 3.5f)
-            lineTo(20.5f, 11.1f)
-            lineTo(20.5f, 18.9f)
-            curveTo(20.5f, 19.78f, 19.78f, 20.5f, 18.9f, 20.5f)
-            lineTo(5.1f, 20.5f)
-            curveTo(4.22f, 20.5f, 3.5f, 19.78f, 3.5f, 18.9f)
-            lineTo(3.5f, 11.1f)
+            moveTo(12f, 3.3f)
+            lineTo(20.6f, 11.0f)
+            lineTo(20.6f, 19.0f)
+            curveTo(20.6f, 19.94f, 19.84f, 20.7f, 18.9f, 20.7f)
+            lineTo(5.1f, 20.7f)
+            curveTo(4.16f, 20.7f, 3.4f, 19.94f, 3.4f, 19.0f)
+            lineTo(3.4f, 11.0f)
             close()
+        }
+        mono("house.door", width = 1.9f) {
+            moveTo(9.55f, 20.7f)
+            lineTo(9.55f, 16.85f)
+            curveTo(9.55f, 15.5f, 10.65f, 14.4f, 12f, 14.4f)
+            curveTo(13.35f, 14.4f, 14.45f, 15.5f, 14.45f, 16.85f)
+            lineTo(14.45f, 20.7f)
         }
     }
 
     /**
-     * Filled house: the same silhouette grown by half the stroke (2.55–21.45), with an arched door
+     * Filled house: the same silhouette grown by half the stroke (2.55–21.45), with the arched door
      * cut so the solid state keeps a readable interior at 28 dp instead of becoming a block.
      */
     val HouseFill: ImageVector = icon("house.fill") {
         path(fill = SolidColor(Color.Black)) {
-            moveTo(11.15f, 2.62f)
-            curveTo(11.55f, 2.3f, 12.45f, 2.3f, 12.85f, 2.62f)
-            lineTo(21.45f, 10.55f)
-            lineTo(21.45f, 18.95f)
-            curveTo(21.45f, 20.33f, 20.33f, 21.45f, 18.95f, 21.45f)
-            lineTo(14.6f, 21.45f)
-            lineTo(14.6f, 16.35f)
-            curveTo(14.6f, 14.92f, 13.44f, 13.76f, 12f, 13.76f)
-            curveTo(10.56f, 13.76f, 9.4f, 14.92f, 9.4f, 16.35f)
-            lineTo(9.4f, 21.45f)
-            lineTo(5.05f, 21.45f)
-            curveTo(3.67f, 21.45f, 2.55f, 20.33f, 2.55f, 18.95f)
-            lineTo(2.55f, 10.55f)
+            moveTo(11.1f, 2.4f)
+            curveTo(11.5f, 2.1f, 12.5f, 2.1f, 12.9f, 2.4f)
+            lineTo(21.55f, 10.45f)
+            lineTo(21.55f, 18.9f)
+            curveTo(21.55f, 20.3f, 20.4f, 21.55f, 18.9f, 21.55f)
+            lineTo(14.6f, 21.55f)
+            lineTo(14.6f, 16.75f)
+            curveTo(14.6f, 15.3f, 13.45f, 14.15f, 12f, 14.15f)
+            curveTo(10.55f, 14.15f, 9.4f, 15.3f, 9.4f, 16.75f)
+            lineTo(9.4f, 21.55f)
+            lineTo(5.1f, 21.55f)
+            curveTo(3.6f, 21.55f, 2.45f, 20.3f, 2.45f, 18.9f)
+            lineTo(2.45f, 10.45f)
             close()
         }
     }
@@ -279,48 +286,49 @@ object SfIcons {
     /**
      * Person, monoline — 资料库.
      *
-     * Head radius 3.5 on the family grid and shoulders spanning 3.9–20.1: the old glyph was a
-     * 6.8 pt head over a 14.2 pt bust, which read narrower and lighter than the house beside it.
-     * The bust is an open arc, so its round caps give the shoulders the same 1.9 pt weight.
+     * The 4.10.0 redraw gives the head radius 3.8 (was 3.4) and a rounder, wider shoulder arc
+     * (3.6–20.4), so at 28 dp the bust carries the same weight as the house and grid instead of
+     * reading as a small head over a thin line. The filled state is the same silhouette grown by
+     * half the stroke.
      */
     val PersonOutline: ImageVector = icon("person") {
         // The bar's 资料库 glyph: monoline like house and the playlist grid. The filled `Person`
         // stays for avatar placeholders, where a silhouette reads better than an outline.
         mono("person.head", width = 1.9f) {
-            moveTo(12f, 4.5f)
-            curveTo(13.93f, 4.5f, 15.5f, 6.07f, 15.5f, 8f)
-            curveTo(15.5f, 9.93f, 13.93f, 11.5f, 12f, 11.5f)
-            curveTo(10.07f, 11.5f, 8.5f, 9.93f, 8.5f, 8f)
-            curveTo(8.5f, 6.07f, 10.07f, 4.5f, 12f, 4.5f)
+            moveTo(12f, 4.1f)
+            curveTo(14.1f, 4.1f, 15.8f, 5.8f, 15.8f, 7.9f)
+            curveTo(15.8f, 10.0f, 14.1f, 11.7f, 12f, 11.7f)
+            curveTo(9.9f, 11.7f, 8.2f, 10.0f, 8.2f, 7.9f)
+            curveTo(8.2f, 5.8f, 9.9f, 4.1f, 12f, 4.1f)
             close()
         }
         mono("person.shoulders", width = 1.9f) {
-            moveTo(3.9f, 20.5f)
-            curveTo(4.65f, 16.3f, 8.0f, 14.1f, 12f, 14.1f)
-            curveTo(16.0f, 14.1f, 19.35f, 16.3f, 20.1f, 20.5f)
+            moveTo(3.4f, 20.6f)
+            curveTo(4.2f, 16.0f, 7.8f, 13.8f, 12f, 13.8f)
+            curveTo(16.2f, 13.8f, 19.8f, 16.0f, 20.6f, 20.6f)
         }
     }
 
     /**
      * Filled person for the bar's selected state: head disk plus bust grown by half the stroke, so
-     * it occupies [PersonOutline]'s 2.95–21.05 box instead of looking like a different glyph.
+     * it occupies [PersonOutline]'s 2.65–21.35 box instead of looking like a different glyph.
      */
     val PersonFill: ImageVector = icon("person.fill.selected") {
         path(fill = SolidColor(Color.Black)) {
-            moveTo(12f, 3.55f)
-            curveTo(14.46f, 3.55f, 16.45f, 5.54f, 16.45f, 8f)
-            curveTo(16.45f, 10.46f, 14.46f, 12.45f, 12f, 12.45f)
-            curveTo(9.54f, 12.45f, 7.55f, 10.46f, 7.55f, 8f)
-            curveTo(7.55f, 5.54f, 9.54f, 3.55f, 12f, 3.55f)
+            moveTo(12f, 3.15f)
+            curveTo(14.62f, 3.15f, 16.75f, 5.28f, 16.75f, 7.9f)
+            curveTo(16.75f, 10.52f, 14.62f, 12.65f, 12f, 12.65f)
+            curveTo(9.38f, 12.65f, 7.25f, 10.52f, 7.25f, 7.9f)
+            curveTo(7.25f, 5.28f, 9.38f, 3.15f, 12f, 3.15f)
             close()
         }
         path(fill = SolidColor(Color.Black)) {
-            moveTo(2.95f, 20.9f)
-            curveTo(3.6f, 15.95f, 7.15f, 12.55f, 12f, 12.55f)
-            curveTo(16.85f, 12.55f, 20.4f, 15.95f, 21.05f, 20.9f)
-            curveTo(21.05f, 21.32f, 20.7f, 21.45f, 20.3f, 21.45f)
-            lineTo(3.7f, 21.45f)
-            curveTo(3.3f, 21.45f, 2.95f, 21.32f, 2.95f, 20.9f)
+            moveTo(2.45f, 20.95f)
+            curveTo(3.2f, 15.8f, 7.1f, 12.5f, 12f, 12.5f)
+            curveTo(16.9f, 12.5f, 20.8f, 15.8f, 21.55f, 20.95f)
+            curveTo(21.55f, 21.35f, 21.2f, 21.55f, 20.8f, 21.55f)
+            lineTo(3.2f, 21.55f)
+            curveTo(2.8f, 21.55f, 2.45f, 21.35f, 2.45f, 20.95f)
             close()
         }
     }
@@ -887,15 +895,15 @@ object SfIcons {
      * 2.1 pt rounded stroke, so the four-slot bar still reads as one icon family.
      */
     val SquareGrid2x2: ImageVector = icon("square.grid.2x2") {
-        val tile = 7.0f
+        val tile = 7.2f
         listOf(
-            3.6f to 3.6f,
-            13.4f to 3.6f,
-            3.6f to 13.4f,
+            3.4f to 3.4f,
+            13.4f to 3.4f,
+            3.4f to 13.4f,
             13.4f to 13.4f,
         ).forEach { (x, y) ->
             mono("square.grid.2x2.tile", width = 1.9f) {
-                roundedRect(x, y, tile, radius = 2.0f)
+                roundedRect(x, y, tile, radius = 2.6f)
             }
         }
     }
@@ -909,13 +917,13 @@ object SfIcons {
      */
     val SquareGrid2x2Fill: ImageVector = icon("square.grid.2x2.fill") {
         listOf(
-            2.65f to 2.65f,
-            12.45f to 2.65f,
-            2.65f to 12.45f,
+            2.45f to 2.45f,
+            12.45f to 2.45f,
+            2.45f to 12.45f,
             12.45f to 12.45f,
         ).forEach { (x, y) ->
             path(fill = SolidColor(Color.Black)) {
-                roundedRect(x, y, size = 8.9f, radius = 2.6f)
+                roundedRect(x, y, size = 9.1f, radius = 3.0f)
             }
         }
     }
