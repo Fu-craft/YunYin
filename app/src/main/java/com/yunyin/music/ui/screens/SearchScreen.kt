@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -37,6 +38,7 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -46,6 +48,7 @@ import com.yunyin.music.core.Track
 import com.yunyin.music.data.ArtworkLoader
 import com.yunyin.music.ui.SearchUiState
 import com.yunyin.music.ui.components.CrossfadeContent
+import com.yunyin.music.ui.components.PagingAutoLoader
 import com.yunyin.music.ui.components.ProminentButton
 import com.yunyin.music.ui.components.GlassTopBar
 import com.yunyin.music.ui.components.InsetSeparator
@@ -100,6 +103,7 @@ fun SearchScreen(
             suggestions.albums.isNotEmpty(),
     ) { onDismissSuggestions() }
     val topBarBackdrop = rememberGlassTopBarBackdrop()
+    val resultsListState = rememberLazyListState()
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
 
@@ -174,6 +178,7 @@ fun SearchScreen(
                     }
 
                     SearchPhase.Results -> LazyColumn(
+                        state = resultsListState,
                         contentPadding = PaddingValues(
                             top = glassTopBarTopPadding(),
                             bottom = chromeContentBottomPadding(),
@@ -228,31 +233,31 @@ fun SearchScreen(
                                     )
                                 }
                             }
-                        } else if (state.canLoadMore || state.loadingMore) {
-                            item("load-more") {
-                                Row(
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .clickable(enabled = !state.loadingMore) { onLoadMore() }
-                                        .padding(vertical = 18.dp),
-                                    horizontalArrangement = Arrangement.Center,
-                                    verticalAlignment = Alignment.CenterVertically,
+                        } else if (state.loadingMore) {
+                            item("load-more-spinner") {
+                                Box(
+                                    Modifier.fillMaxWidth().padding(vertical = 18.dp),
+                                    contentAlignment = Alignment.Center,
                                 ) {
-                                    if (state.loadingMore) {
-                                        CircularProgressIndicator(
-                                            color = AppTheme.palette.accent,
-                                            strokeWidth = 2.dp,
-                                            modifier = Modifier.size(18.dp),
-                                        )
-                                    } else {
-                                        Text(
-                                            "加载更多",
-                                            fontFamily = SFPro,
-                                            fontSize = 15.sp,
-                                            color = AppTheme.palette.accent,
-                                        )
-                                    }
+                                    CircularProgressIndicator(
+                                        color = AppTheme.palette.accent,
+                                        strokeWidth = 2.dp,
+                                        modifier = Modifier.size(18.dp),
+                                    )
                                 }
+                            }
+                        } else if (!state.canLoadMore) {
+                            item("load-more-end") {
+                                Text(
+                                    text = "没有更多结果",
+                                    fontFamily = SFPro,
+                                    fontSize = 12.sp,
+                                    color = AppTheme.palette.tertiaryLabel,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 16.dp),
+                                    textAlign = TextAlign.Center,
+                                )
                             }
                         }
                     }
@@ -390,6 +395,20 @@ fun SearchScreen(
                 }
             }
         }
+
+        // Automatic pagination: the footer is informational only, and this reads the results list's
+        // own scroll state so a short first page also loads the next one.
+        PagingAutoLoader(
+            lastVisibleItemIndex = {
+                resultsListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+            },
+            totalItemCount = { resultsListState.layoutInfo.totalItemsCount },
+            hasMore = state.canLoadMore,
+            loadingMore = state.loadingMore || state.loading,
+            appendError = state.error != null,
+            hasItems = state.results.isNotEmpty() || state.lyricResults.isNotEmpty(),
+            onLoadMore = onLoadMore,
+        )
 
         // The search field strip: fixed, frosted, composed outside the layer it samples.
         GlassTopBar(

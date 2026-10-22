@@ -24,7 +24,9 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -50,6 +52,7 @@ import com.yunyin.music.core.Comment
 import com.yunyin.music.data.ArtworkLoader
 import com.yunyin.music.ui.CommentsTab
 import com.yunyin.music.ui.CommentsUiState
+import com.yunyin.music.ui.components.PagingAutoLoader
 import com.yunyin.music.ui.components.Artwork
 import com.yunyin.music.ui.components.GlassTopBar
 import com.yunyin.music.ui.components.InsetSeparator
@@ -115,6 +118,7 @@ fun CommentsScreen(
     BackHandler(onBack = onBack)
 
     val backdrop = rememberGlassTopBarBackdrop()
+    val allListState = rememberLazyListState()
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     // Content starts below the whole fixed strip and scrolls up under its progressive blur.
@@ -158,10 +162,12 @@ fun CommentsScreen(
                             footer = {
                                 AllCommentsFooter(
                                     state = state,
-                                    onLoadMore = onLoadMore,
                                     onRetry = { onRetry(CommentsTab.ALL) },
                                 )
                             },
+                            listState = allListState,
+                            autoLoad = onLoadMore,
+                            hasMore = state.allMore,
                         )
                     }
                 }
@@ -329,7 +335,21 @@ private fun CommentSection(
     contentTop: Dp,
     contentBottom: Dp,
     footer: (@Composable () -> Unit)?,
+    listState: LazyListState = rememberLazyListState(),
+    autoLoad: (() -> Unit)? = null,
+    hasMore: Boolean = false,
 ) {
+    if (autoLoad != null) {
+        PagingAutoLoader(
+            lastVisibleItemIndex = { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 },
+            totalItemCount = { listState.layoutInfo.totalItemsCount },
+            hasMore = hasMore,
+            loadingMore = loading,
+            appendError = error != null,
+            hasItems = comments.isNotEmpty(),
+            onLoadMore = autoLoad,
+        )
+    }
     when {
         comments.isEmpty() && error != null -> Box(
             Modifier.fillMaxSize().padding(top = contentTop, bottom = contentBottom),
@@ -363,6 +383,7 @@ private fun CommentSection(
 
         else -> LazyColumn(
             Modifier.fillMaxSize(),
+            state = listState,
             contentPadding = PaddingValues(top = contentTop, bottom = contentBottom),
         ) {
             itemsIndexed(comments, key = { _, comment -> comment.id }) { index, comment ->
@@ -473,7 +494,6 @@ private fun SkeletonList() {
 @Composable
 private fun AllCommentsFooter(
     state: CommentsUiState,
-    onLoadMore: () -> Unit,
     onRetry: () -> Unit,
 ) {
     Box(
@@ -489,7 +509,7 @@ private fun AllCommentsFooter(
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    text = "加载更多…",
+                    text = "正在加载…",
                     fontFamily = SFPro,
                     fontSize = 13.sp,
                     color = AppTheme.palette.secondaryLabel,
@@ -507,9 +527,7 @@ private fun AllCommentsFooter(
                 ActionPill(text = "重试", onClick = onRetry)
             }
 
-            state.allMore -> ActionPill(text = "加载更多", onClick = onLoadMore)
-
-            state.all.isNotEmpty() -> Text(
+            state.all.isNotEmpty() && !state.allMore -> Text(
                 text = "没有更多评论",
                 fontFamily = SFPro,
                 fontSize = 12.sp,

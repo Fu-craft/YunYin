@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.CircularProgressIndicator
@@ -51,6 +52,7 @@ import com.yunyin.music.ui.PlaylistSquareUiState
 import com.yunyin.music.ui.components.Artwork
 import com.yunyin.music.ui.components.EmptyState
 import com.yunyin.music.ui.components.GlassTopBar
+import com.yunyin.music.ui.components.PagingAutoLoader
 import com.yunyin.music.ui.components.chromeContentBottomPadding
 import com.yunyin.music.ui.components.formatCount
 import com.yunyin.music.ui.components.glassTopBarTopPadding
@@ -185,6 +187,7 @@ internal fun PlaylistSquareScreen(
     val categories = remember(state.categories) {
         PlaylistSquareLayoutRules.visibleCategories(state.categories)
     }
+    val gridState = rememberLazyGridState()
 
     androidx.compose.foundation.layout.BoxWithConstraints(modifier.fillMaxSize()) {
         val columns = PlaylistSquareLayoutRules.columnsForWidthDp(maxWidth.value)
@@ -198,6 +201,7 @@ internal fun PlaylistSquareScreen(
             LazyVerticalGrid(
                 columns = GridCells.Fixed(columns),
                 modifier = Modifier.fillMaxSize(),
+                state = gridState,
                 contentPadding = PaddingValues(
                     start = pagePadding,
                     end = pagePadding,
@@ -273,9 +277,7 @@ internal fun PlaylistSquareScreen(
                     item(span = { GridItemSpan(maxLineSpan) }, key = "square-footer") {
                         SquareFooter(
                             loadingMore = state.loadingMore,
-                            more = state.more,
                             error = state.error,
-                            onLoadMore = onLoadMore,
                             // A footer error can only be a failed append now (the first page uses
                             // SquareError above), so retrying it continues from where it stopped.
                             onRetry = onLoadMore,
@@ -284,6 +286,16 @@ internal fun PlaylistSquareScreen(
                 }
             }
         }
+
+        PagingAutoLoader(
+            lastVisibleItemIndex = { gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 },
+            totalItemCount = { gridState.layoutInfo.totalItemsCount },
+            hasMore = state.more,
+            loadingMore = state.loadingMore || state.loading,
+            appendError = state.error != null,
+            hasItems = state.playlists.isNotEmpty(),
+            onLoadMore = onLoadMore,
+        )
 
         GlassTopBar(
             backdrop = backdrop,
@@ -510,13 +522,11 @@ private fun PlaylistSquareCard(
     }
 }
 
-/** Footer: loading-more, a 加载更多 button, or the end of the catalogue. */
+/** Footer: an appending spinner, an append error with retry, or the end of the catalogue. */
 @Composable
 private fun SquareFooter(
     loadingMore: Boolean,
-    more: Boolean,
     error: String?,
-    onLoadMore: () -> Unit,
     onRetry: () -> Unit,
 ) {
     Box(
@@ -532,7 +542,7 @@ private fun SquareFooter(
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    text = "加载更多…",
+                    text = "正在加载…",
                     fontFamily = SFPro,
                     fontSize = 13.sp,
                     color = AppTheme.palette.secondaryLabel,
@@ -549,23 +559,6 @@ private fun SquareFooter(
                 Spacer(Modifier.height(6.dp))
                 SquareRetryButton(text = "重试", onClick = onRetry)
             }
-
-            more -> Text(
-                text = "加载更多",
-                fontFamily = SFPro,
-                fontWeight = FontWeight.Medium,
-                fontSize = 13.sp,
-                color = AppTheme.palette.accent,
-                modifier = Modifier
-                    .clip(ContinuousRoundedRectangle(AppleShapes.pill))
-                    .background(AppTheme.palette.secondaryBackground)
-                    .clickable(
-                        indication = rememberControlRipple(bounded = true),
-                        interactionSource = null,
-                        onClick = onLoadMore,
-                    )
-                    .padding(horizontal = 20.dp, vertical = 9.dp),
-            )
 
             else -> Text(
                 text = "没有更多歌单",

@@ -57,6 +57,8 @@ import com.yunyin.music.ui.components.CrossfadeContent
 import com.yunyin.music.ui.components.DefaultTopBarTintIntensity
 import com.yunyin.music.ui.components.EmptyState
 import com.yunyin.music.ui.components.GlassTopBar
+import com.yunyin.music.ui.components.PagingAutoLoader
+import com.yunyin.music.ui.components.PagingAutoLoaderAtFooter
 import com.yunyin.music.ui.components.glassTopBarTopPadding
 import com.yunyin.music.ui.components.liquidGlassControl
 import com.yunyin.music.ui.components.rememberControlRipple
@@ -96,6 +98,7 @@ fun ArtistScreen(
     var bioExpanded by remember(state.briefDesc) { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
+    val albumRailState = rememberLazyListState()
 
     // The frosted top bar's pixel source: the page content recorded with the page background painted
     // in first (`rememberGlassTopBarBackdrop`), which is the arrangement that makes the strip render
@@ -155,7 +158,7 @@ fun ArtistScreen(
             }
 
             item("all-title") { SectionTitle("全部歌曲") }
-            if (state.songsError != null || state.allSongs.isEmpty()) {
+            if (state.allSongs.isEmpty()) {
                 item("all-state") {
                     // Data-carrying target: an error message is distinct from "loading"/"empty", so
                     // the cross-fade is real rather than both branches rendering the same snapshot.
@@ -189,10 +192,11 @@ fun ArtistScreen(
                     )
                 }
                 item("all-footer") {
-                    // The footer swaps kind (spinner / 加载更多 / end) as pages arrive; cross-fade it so
-                    // the row under the thumb never changes in one frame.
+                    // The footer is informational now: automatic paging owns the trigger, while an
+                    // append failure keeps the loaded songs and offers the explicit retry.
                     val footerPhase: Any = when {
                         state.loadingSongs -> "loading"
+                        state.songsError != null -> "error"
                         state.allMore -> "more"
                         else -> "end"
                     }
@@ -205,7 +209,8 @@ fun ArtistScreen(
                             "loading" -> Box(Modifier.fillMaxWidth().padding(20.dp), contentAlignment = Alignment.Center) {
                                 CircularProgressIndicator(color = palette.accent, strokeWidth = 2.5.dp, modifier = Modifier.size(20.dp))
                             }
-                            "more" -> LoadMoreRow("加载更多歌曲", onLoadMoreSongs)
+                            "error" -> FooterRetry(state.songsError ?: "加载更多歌曲失败", onLoadMoreSongs)
+                            "more" -> Spacer(Modifier.height(8.dp))
                             else -> EndRow("已显示全部歌曲")
                         }
                     }
@@ -213,7 +218,7 @@ fun ArtistScreen(
             }
 
             item("albums-title") { SectionTitle("专辑") }
-            if (state.albumsError != null || state.albums.isEmpty()) {
+            if (state.albums.isEmpty()) {
                 item("albums-state") {
                     val phase: Any = state.albumsError ?: if (state.loading) "loading" else "empty"
                     CrossfadeContent(
@@ -233,6 +238,7 @@ fun ArtistScreen(
             } else {
                 item("albums-rail") {
                     LazyRow(
+                        state = albumRailState,
                         contentPadding = PaddingValues(horizontal = 20.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
@@ -249,6 +255,7 @@ fun ArtistScreen(
                 item("albums-footer") {
                     val footerPhase: Any = when {
                         state.loadingAlbums -> "loading"
+                        state.albumsError != null -> "error"
                         state.albumsMore -> "more"
                         else -> "end"
                     }
@@ -261,8 +268,9 @@ fun ArtistScreen(
                             "loading" -> Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
                                 CircularProgressIndicator(color = palette.accent, strokeWidth = 2.5.dp, modifier = Modifier.size(20.dp))
                             }
-                            "more" -> LoadMoreRow("加载更多专辑", onLoadMoreAlbums)
-                            else -> Spacer(Modifier.height(8.dp))
+                            "error" -> FooterRetry(state.albumsError ?: "加载更多专辑失败", onLoadMoreAlbums)
+                            "more" -> Spacer(Modifier.height(8.dp))
+                            else -> EndRow("已显示全部专辑")
                         }
                     }
                 }
@@ -271,6 +279,28 @@ fun ArtistScreen(
             item("bottom") { Spacer(Modifier.navigationBarsPadding().height(12.dp)) }
             }
         }
+
+        // Automatic paging for the two artist sections. The albums live in a horizontal rail, so its
+        // own scroll state is the near-end signal; the songs section is one part of the outer list, so
+        // its footer becoming visible is the equivalent sentinel.
+        PagingAutoLoader(
+            lastVisibleItemIndex = { albumRailState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 },
+            totalItemCount = { albumRailState.layoutInfo.totalItemsCount },
+            hasMore = state.albumsMore,
+            loadingMore = state.loadingAlbums,
+            appendError = state.albumsError != null,
+            hasItems = state.albums.isNotEmpty(),
+            onLoadMore = onLoadMoreAlbums,
+        )
+        PagingAutoLoaderAtFooter(
+            listState = listState,
+            footerKey = "all-footer",
+            hasMore = state.allMore,
+            loadingMore = state.loadingSongs,
+            appendError = state.songsError != null,
+            hasItems = state.allSongs.isNotEmpty(),
+            onLoadMore = onLoadMoreSongs,
+        )
 
         // Pinned last, outside the recorded layer, so it draws over the scrolling header and samples
         // it instead of sampling itself — the collection page's arrangement, reused verbatim.
@@ -538,6 +568,18 @@ private fun LoadMoreRow(label: String, onClick: () -> Unit) {
 private fun EndRow(text: String) {
     Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
         Text(text, fontFamily = SFPro, fontSize = 12.sp, color = AppTheme.palette.tertiaryLabel)
+    }
+}
+
+@Composable
+private fun FooterRetry(message: String, onRetry: () -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(message, fontFamily = SFPro, fontSize = 12.sp, color = AppTheme.palette.secondaryLabel)
+        Spacer(Modifier.height(8.dp))
+        LoadMoreRow("重试", onRetry)
     }
 }
 
