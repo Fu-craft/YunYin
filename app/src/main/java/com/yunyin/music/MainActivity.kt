@@ -1244,6 +1244,15 @@ class MainActivity : ComponentActivity() {
                         // the service owns that half.
                         container.settings.seamlessTransition = enabled
                     },
+                    onTestFlymeLyric = {
+                        container.tickerLyrics.runSelfTest {
+                            Toast.makeText(
+                                context,
+                                "已依次尝试 4 种方式，请告诉我哪种能在状态栏看到歌词",
+                                Toast.LENGTH_LONG,
+                            ).show()
+                        }
+                    },
                     onCycleCrossfadeSeconds = {
                         val next = com.yunyin.music.playback.CrossfadeRules.DURATIONS_SECONDS.let { list ->
                             val i = list.indexOf(crossfadeSeconds).coerceAtLeast(0)

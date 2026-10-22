@@ -40,6 +40,19 @@ class FlymeLyricNotificationRulesTest {
     }
 
     @Test
+    fun `the self-test matrix has four distinct variants and keeps the stable id`() {
+        val variants = FlymeLyricNotificationRules.TestVariant.entries
+        assertEquals(4, variants.size)
+        assertEquals(4, variants.map { it.label }.toSet().size)
+        assertEquals("A-doc-literal", variants[0].label)
+        assertTrue(variants[0].silent == false && variants[0].onlyAlertOnce == false)
+        assertTrue(variants[1].silent == true && variants[1].onlyAlertOnce == true)
+        assertTrue(variants[2].label.startsWith("C"))
+        assertTrue(variants[3].minImportance)
+        assertEquals(2001, FlymeLyricNotificationRules.NOTIFICATION_ID)
+    }
+
+    @Test
     fun `meizu is recognised from manufacturer or brand`() {
         assertTrue(FlymeLyricNotificationRules.isFlymeManufacturer("Meizu", null))
         assertTrue(FlymeLyricNotificationRules.isFlymeManufacturer(null, "meizu"))

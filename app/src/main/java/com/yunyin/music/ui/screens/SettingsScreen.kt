@@ -105,6 +105,8 @@ fun SettingsScreen(
     /** Overlap length in seconds for the dual-player crossfade. */
     crossfadeSeconds: Int = 6,
     onCycleCrossfadeSeconds: () -> Unit = {},
+    /** Settings → 播放 → 测试状态栏歌词 (cycles four recipes). */
+    onTestFlymeLyric: () -> Unit = {},
     /** Whether the lyrics page auto-hides the chrome after the idle delay (default off). */
     autoImmersiveLyrics: Boolean = false,
     onAutoImmersiveLyricsChange: (Boolean) -> Unit = {},
@@ -238,6 +240,7 @@ fun SettingsScreen(
                 value = "${crossfadeSeconds} 秒",
                 onClick = onCycleCrossfadeSeconds,
             )
+            ActionRow(text = "测试状态栏歌词", onClick = onTestFlymeLyric)
             ToggleRow(
                 title = "自动进入沉浸歌词",
                 subtitle = "歌词页闲置几秒后自动隐藏播放控件；默认开启",

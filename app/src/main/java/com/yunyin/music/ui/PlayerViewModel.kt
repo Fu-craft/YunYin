@@ -275,9 +275,13 @@ class PlayerViewModel(private val container: AppContainer) : ViewModel() {
                 tickerLine = null
                 container.tickerLyrics.clear()
             }
+            container.tickerLyrics.logSkip("setting-off")
             return
         }
-        if (!container.tickerLyrics.isSupported()) return
+        if (!container.tickerLyrics.isSupported()) {
+            container.tickerLyrics.logSkip("unsupported")
+            return
+        }
         if (track == null) {
             tickerLine = null
             container.tickerLyrics.clear()
