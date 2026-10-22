@@ -946,7 +946,11 @@ class MainActivity : ComponentActivity() {
                     LaunchedEffect(tab) {
                         if (tab == PlayerTab.PlaylistSquare) appViewModel.openPlaylistSquare()
                     }
-                    CrossfadeContent(targetState = tab, durationMillis = 160, label = "tab") { activeTab ->
+                    CrossfadeContent(
+                                            targetState = tab,
+                                            durationMillis = com.yunyin.music.ui.theme.Motion.TabCrossfadeDuration,
+                                            label = "tab",
+                                        ) { activeTab ->
                     when (activeTab) {
                         PlayerTab.Home -> HomeScreen(
                             state = homeState,

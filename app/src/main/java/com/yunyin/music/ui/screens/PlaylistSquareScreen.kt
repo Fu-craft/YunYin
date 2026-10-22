@@ -50,6 +50,7 @@ import com.yunyin.music.data.ArtworkLoader
 import com.yunyin.music.data.net.DiscoveryPlaylist
 import com.yunyin.music.ui.PlaylistSquareUiState
 import com.yunyin.music.ui.components.Artwork
+import com.yunyin.music.ui.components.CrossfadeContent
 import com.yunyin.music.ui.components.EmptyState
 import com.yunyin.music.ui.components.GlassTopBar
 import com.yunyin.music.ui.components.PagingAutoLoader
@@ -529,12 +530,16 @@ private fun SquareFooter(
     error: String?,
     onRetry: () -> Unit,
 ) {
+    val phase = PlaylistSquareFooterRules.phase(loadingMore, error)
     Box(
         Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp),
         contentAlignment = Alignment.Center,
     ) {
-        when {
-            loadingMore -> Row(verticalAlignment = Alignment.CenterVertically) {
+        // The three footer states used to replace each other on the same frame; a short cross-fade
+        // makes a paging tick read as a change rather than a flash.
+        CrossfadeContent(targetState = phase, durationMillis = Motion.SmallDuration, label = "square-footer") { active ->
+        when (active) {
+            SquareFooterPhase.Loading -> Row(verticalAlignment = Alignment.CenterVertically) {
                 CircularProgressIndicator(
                     color = AppTheme.palette.accent,
                     strokeWidth = 2.dp,
@@ -549,9 +554,9 @@ private fun SquareFooter(
                 )
             }
 
-            error != null -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            SquareFooterPhase.Error -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    text = error,
+                    text = error.orEmpty(),
                     fontFamily = SFPro,
                     fontSize = 12.sp,
                     color = AppTheme.palette.secondaryLabel,
@@ -560,12 +565,13 @@ private fun SquareFooter(
                 SquareRetryButton(text = "重试", onClick = onRetry)
             }
 
-            else -> Text(
+            SquareFooterPhase.End -> Text(
                 text = "没有更多歌单",
                 fontFamily = SFPro,
                 fontSize = 12.sp,
                 color = AppTheme.palette.tertiaryLabel,
             )
+        }
         }
     }
 }

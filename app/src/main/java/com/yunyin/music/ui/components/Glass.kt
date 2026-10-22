@@ -106,15 +106,19 @@ fun SectionHeader(
             }
         }
         if (onMore != null) {
-            Icon(
-                imageVector = com.yunyin.music.ui.icons.SfIcons.ChevronRight,
-                contentDescription = "更多",
-                tint = AppTheme.palette.tertiaryLabel,
-                modifier = Modifier
-                    .size(20.dp)
-                    .clip(CircleShape)
-                    .clickable(onClick = onMore),
-            )
+            // 44 dp touch target, same 20 dp glyph: the chevron was the smallest actionable control
+            // on the home shelves (20 dp is barely half the minimum target).
+            Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = com.yunyin.music.ui.icons.SfIcons.ChevronRight,
+                    contentDescription = "更多",
+                    tint = AppTheme.palette.tertiaryLabel,
+                    modifier = Modifier
+                        .size(20.dp)
+                        .clip(CircleShape)
+                        .clickable(onClick = onMore),
+                )
+            }
         }
     }
 }

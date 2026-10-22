@@ -66,6 +66,13 @@ object Motion {
     /** Content cross-fades: phase changes, lyric documents, titles (was 220). */
     const val CrossfadeDuration = 280
 
+    /**
+     * Tab switches. Faster than a content cross-fade on purpose: switching tabs is a high-frequency
+     * action, so the fade is only there to keep the swap from flashing — 160ms reads as instant with
+     * a legible change, while the regular cross-fade at 280ms feels sluggish on a tab bar.
+     */
+    const val TabCrossfadeDuration = 160
+
     /** Scrims and simple overlay fades (was 200 in sheets, 320 on the cover overlay). */
     const val ScrimDuration = 360
 

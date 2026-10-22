@@ -167,8 +167,9 @@ fun LxSourceUrlSheet(
             if (url.isNotEmpty() && !importing) {
                 Spacer(Modifier.width(8.dp))
                 Box(
+                    // 44 dp touch target around the 14 dp clear glyph.
                     Modifier
-                        .size(24.dp)
+                        .size(44.dp)
                         .clip(ContinuousRoundedRectangle(AppleShapes.control))
                         .clickable { onUrlChange("") },
                     contentAlignment = Alignment.Center,

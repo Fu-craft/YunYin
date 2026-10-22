@@ -1,6 +1,7 @@
 package com.yunyin.music.ui.components
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
@@ -150,6 +151,13 @@ fun QueueSheet(
                 Row(
                     Modifier
                         .fillMaxWidth()
+                        // Songs get inserted, skipped and reordered while the queue is open; without
+                        // this the rows teleport. The app's item-appear duration for fades, Compose's
+                        // default spring for placement (no new numbers to justify).
+                        .animateItem(
+                            fadeInSpec = tween(Motion.ItemAppearDuration, easing = Motion.EaseOut),
+                            fadeOutSpec = tween(Motion.ItemAppearDuration, easing = Motion.EaseOut),
+                        )
                         .clickable { close { onSelect(index) } }
                         .padding(horizontal = 20.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
