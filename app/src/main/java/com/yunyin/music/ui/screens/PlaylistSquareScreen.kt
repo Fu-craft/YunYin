@@ -4,11 +4,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -16,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -25,14 +28,19 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kyant.backdrop.backdrops.layerBackdrop
@@ -52,6 +60,7 @@ import com.yunyin.music.ui.components.rememberGlassTopBarBackdrop
 import com.yunyin.music.ui.icons.SfIcons
 import com.yunyin.music.ui.theme.AppleShapes
 import com.yunyin.music.ui.theme.AppTheme
+import com.yunyin.music.ui.theme.Motion
 import com.yunyin.music.ui.theme.SFPro
 
 /**
@@ -77,6 +86,27 @@ internal object PlaylistSquareLayoutRules {
 
     fun columnsForWidthDp(widthDp: Float): Int =
         if (widthDp >= THREE_COLUMN_MIN_WIDTH_DP) 3 else 2
+
+    /** Page gutter and grid rhythm, all on the app's 4/8 dp scale. */
+    const val PAGE_PADDING_DP = 20f
+    const val GRID_GAP_DP = 16f
+    const val GRID_VERTICAL_GAP_DP = 20f
+
+    /**
+     * Widest the grid is allowed to grow.
+     *
+     * On a tablet the columns still fill a readable card size instead of stretching to huge tiles;
+     * the extra width becomes symmetric page inset.
+     */
+    const val MAX_CONTENT_WIDTH_DP = 900f
+
+    /** A chip's visual capsule is 32 dp; its touch target is the row's 44 dp. */
+    const val CHIP_TOUCH_HEIGHT_DP = 44f
+
+    /** Horizontal inset that caps the grid at [MAX_CONTENT_WIDTH_DP] and never drops below 20 dp. */
+    fun horizontalPaddingForWidthDp(widthDp: Float): Float =
+        if (widthDp <= MAX_CONTENT_WIDTH_DP) PAGE_PADDING_DP
+        else ((widthDp - MAX_CONTENT_WIDTH_DP) / 2f).coerceAtLeast(PAGE_PADDING_DP)
 
     /** The category a fresh page selects. Single-sourced in the data rules. */
     fun preferredCategory(categories: List<String>): String =
@@ -143,6 +173,7 @@ internal fun PlaylistSquareScreen(
 
     androidx.compose.foundation.layout.BoxWithConstraints(modifier.fillMaxSize()) {
         val columns = PlaylistSquareLayoutRules.columnsForWidthDp(maxWidth.value)
+        val pagePadding = PlaylistSquareLayoutRules.horizontalPaddingForWidthDp(maxWidth.value).dp
         val gridBottomPadding = chromeContentBottomPadding()
         val gridTopPadding = glassTopBarTopPadding()
 
@@ -153,16 +184,19 @@ internal fun PlaylistSquareScreen(
                 columns = GridCells.Fixed(columns),
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(
-                    start = 20.dp,
-                    end = 20.dp,
+                    start = pagePadding,
+                    end = pagePadding,
                     top = gridTopPadding,
                     bottom = gridBottomPadding,
                 ),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp),
+                horizontalArrangement = Arrangement.spacedBy(PlaylistSquareLayoutRules.GRID_GAP_DP.dp),
+                verticalArrangement = Arrangement.spacedBy(PlaylistSquareLayoutRules.GRID_VERTICAL_GAP_DP.dp),
             ) {
                 item(span = { GridItemSpan(maxLineSpan) }, key = "square-title") {
-                    Column(Modifier.padding(top = 4.dp, bottom = 2.dp)) {
+                    // A little more air above the title than below it: the strip above already
+                    // supplies its own 48 dp row, so 8 dp reads as the first content line, not a
+                    // continuation of the bar.
+                    Column(Modifier.padding(top = 8.dp, bottom = 2.dp)) {
                         Text(
                             text = "歌单广场",
                             fontFamily = SFPro,
@@ -212,6 +246,13 @@ internal fun PlaylistSquareScreen(
                             playlist = playlist,
                             loader = loader,
                             onClick = { onPlaylistClick(playlist) },
+                            // Appended rows fade in on the app's token; placement stays instant so
+                            // paging never slides the grid under the finger.
+                            modifier = Modifier.animateItem(
+                                fadeInSpec = tween(Motion.ItemAppearDuration),
+                                fadeOutSpec = null,
+                                placementSpec = null,
+                            ),
                         )
                     }
                     item(span = { GridItemSpan(maxLineSpan) }, key = "square-footer") {
@@ -257,40 +298,92 @@ internal fun PlaylistSquareScreen(
     }
 }
 
-/** Horizontal, selectable category chips. Reuses the app's capsule language. */
+/**
+ * Horizontal, selectable category chips.
+ *
+ * The visual capsule stays 32 dp (the app's chip idiom), but the tappable row is 44 dp: the target is
+ * the box around the capsule, so the filter is comfortable without looking heavier. A soft edge fade
+ * appears only while the strip can still scroll that way, which is the affordance for the ~70
+ * categories — grouping them would add a level of navigation to a one-tap filter.
+ */
 @Composable
 private fun CategoryChips(
     categories: List<String>,
     selected: String,
     onSelected: (String) -> Unit,
 ) {
-    LazyRow(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        contentPadding = PaddingValues(vertical = 2.dp),
-    ) {
-        items(categories, key = { it }) { category ->
-            val isSelected = category == selected
-            Text(
-                text = category,
-                fontFamily = SFPro,
-                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
-                fontSize = 13.sp,
-                color = if (isSelected) Color.White else AppTheme.palette.secondaryLabel,
-                modifier = Modifier
-                    .clip(ContinuousRoundedRectangle(AppleShapes.pill))
-                    .background(
-                        if (isSelected) AppTheme.palette.accent else AppTheme.palette.secondaryBackground,
+    val listState = rememberLazyListState()
+    val canScrollBack by remember { derivedStateOf { listState.canScrollBackward } }
+    val canScrollForward by remember { derivedStateOf { listState.canScrollForward } }
+    Box(Modifier.fillMaxWidth()) {
+        LazyRow(
+            state = listState,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            // Extra end room so the last chip can clear the fade instead of sitting under it.
+            contentPadding = PaddingValues(end = 32.dp),
+        ) {
+            items(categories, key = { it }) { category ->
+                val isSelected = category == selected
+                Box(
+                    Modifier
+                        .height(PlaylistSquareLayoutRules.CHIP_TOUCH_HEIGHT_DP.dp)
+                        .clip(ContinuousRoundedRectangle(AppleShapes.pill))
+                        .clickable(
+                            indication = rememberControlRipple(bounded = true),
+                            interactionSource = null,
+                            onClick = { onSelected(category) },
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = category,
+                        fontFamily = SFPro,
+                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                        fontSize = 13.sp,
+                        color = if (isSelected) Color.White else AppTheme.palette.secondaryLabel,
+                        modifier = Modifier
+                            .clip(ContinuousRoundedRectangle(AppleShapes.pill))
+                            .background(
+                                if (isSelected) {
+                                    AppTheme.palette.accent
+                                } else {
+                                    AppTheme.palette.secondaryBackground
+                                },
+                            )
+                            // 32 dp visual height inside the 44 dp target.
+                            .padding(horizontal = 14.dp, vertical = 7.dp),
                     )
-                    .clickable(
-                        indication = rememberControlRipple(bounded = true),
-                        interactionSource = null,
-                        onClick = { onSelected(category) },
-                    )
-                    // 32 dp tall + 14 dp horizontal: a comfortable chip on the 8 dp rhythm.
-                    .padding(horizontal = 14.dp, vertical = 7.dp),
-            )
+                }
+            }
         }
+        ChipEdgeFade(visible = canScrollBack, atStart = true)
+        ChipEdgeFade(visible = canScrollForward, atStart = false)
     }
+}
+
+/** Page-coloured fade over the chip strip, so "more categories" reads without a rail or divider. */
+@Composable
+private fun BoxScope.ChipEdgeFade(visible: Boolean, atStart: Boolean) {
+    if (!visible) return
+    val background = AppTheme.palette.background
+    val stops = if (atStart) {
+        listOf(background, background.copy(alpha = 0f))
+    } else {
+        listOf(background.copy(alpha = 0f), background)
+    }
+    Box(
+        Modifier
+            .align(if (atStart) Alignment.CenterStart else Alignment.CenterEnd)
+            .width(32.dp)
+            .fillMaxHeight()
+            .background(
+                Brush.horizontalGradient(
+                    colors = stops,
+                    startX = 0f,
+                    endX = Float.POSITIVE_INFINITY,
+                ),
+            ),
+    )
 }
 
 /** One playlist tile: cover, title and one muted line, with the play count riding the cover. */
@@ -299,11 +392,12 @@ private fun PlaylistSquareCard(
     playlist: DiscoveryPlaylist,
     loader: ArtworkLoader,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val meta = PlaylistSquareLayoutRules.metaLabel(playlist.description, playlist.trackCount)
     val badge = PlaylistSquareLayoutRules.playCountLabel(playlist.playCount)
     Column(
-        Modifier
+        modifier
             .fillMaxWidth()
             .clip(ContinuousRoundedRectangle(AppleShapes.card))
             .clickable(
@@ -326,7 +420,9 @@ private fun PlaylistSquareCard(
                         .align(Alignment.BottomStart)
                         .padding(8.dp)
                         .clip(ContinuousRoundedRectangle(AppleShapes.pill))
-                        .background(Color.Black.copy(alpha = 0.52f))
+                        // 62 % black is the measured minimum that keeps 11 pt white legible on the
+                        // brightest covers the catalogue ships, while still showing the cover through.
+                        .background(Color.Black.copy(alpha = 0.62f))
                         .padding(horizontal = 7.dp, vertical = 3.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -334,13 +430,14 @@ private fun PlaylistSquareCard(
                         SfIcons.Play,
                         contentDescription = null,
                         tint = Color.White,
-                        modifier = Modifier.size(9.dp),
+                        modifier = Modifier.size(10.dp),
                     )
                     Spacer(Modifier.width(4.dp))
                     Text(
                         text = badge,
                         fontFamily = SFPro,
-                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 11.sp,
                         color = Color.White,
                     )
                 }
@@ -351,22 +448,30 @@ private fun PlaylistSquareCard(
             text = playlist.name,
             fontFamily = SFPro,
             fontWeight = FontWeight.SemiBold,
-            fontSize = 14.sp,
-            lineHeight = 18.sp,
+            fontSize = 15.sp,
+            lineHeight = 20.sp,
             color = AppTheme.palette.label,
+            // Two lines are always reserved: a one-line title and a two-line title then leave their
+            // rows' baselines aligned instead of making the grid ragged.
+            minLines = 2,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
-        if (meta.isNotEmpty()) {
-            Spacer(Modifier.height(3.dp))
-            Text(
-                text = meta,
-                fontFamily = SFPro,
-                fontSize = 11.sp,
-                color = AppTheme.palette.secondaryLabel,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+        Spacer(Modifier.height(3.dp))
+        // The secondary row keeps its height even when the catalogue has no blurb, for the same
+        // reason: every tile is the same height whatever data it got.
+        Box(Modifier.height(14.dp)) {
+            if (meta.isNotEmpty()) {
+                Text(
+                    text = meta,
+                    fontFamily = SFPro,
+                    fontSize = 11.sp,
+                    lineHeight = 14.sp,
+                    color = AppTheme.palette.secondaryLabel,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
@@ -504,19 +609,29 @@ private fun SkeletonCard() {
                 .clip(ContinuousRoundedRectangle(AppleShapes.card))
                 .background(AppTheme.palette.secondaryBackground),
         )
-        Spacer(Modifier.height(10.dp))
+        // Mirrors the real card: 8 dp gap, two 20 dp title lines (bars 16 + 8 gap = 40), 3 dp gap,
+        // 14 dp secondary row. The swap from skeleton to data therefore does not change row height.
+        Spacer(Modifier.height(8.dp))
         Box(
             Modifier
                 .fillMaxWidth(0.82f)
-                .height(12.dp)
+                .height(16.dp)
                 .clip(ContinuousRoundedRectangle(AppleShapes.control))
                 .background(AppTheme.palette.secondaryBackground),
         )
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(8.dp))
         Box(
             Modifier
-                .fillMaxWidth(0.48f)
-                .height(10.dp)
+                .fillMaxWidth(0.55f)
+                .height(16.dp)
+                .clip(ContinuousRoundedRectangle(AppleShapes.control))
+                .background(AppTheme.palette.secondaryBackground),
+        )
+        Spacer(Modifier.height(3.dp))
+        Box(
+            Modifier
+                .fillMaxWidth(0.42f)
+                .height(14.dp)
                 .clip(ContinuousRoundedRectangle(AppleShapes.control))
                 .background(AppTheme.palette.secondaryBackground),
         )
@@ -525,7 +640,11 @@ private fun SkeletonCard() {
 
 @Composable
 private fun ChipSkeletonRow() {
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(
+        Modifier.height(PlaylistSquareLayoutRules.CHIP_TOUCH_HEIGHT_DP.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         listOf(52.dp, 64.dp, 44.dp, 72.dp, 56.dp).forEach { width ->
             Box(
                 Modifier

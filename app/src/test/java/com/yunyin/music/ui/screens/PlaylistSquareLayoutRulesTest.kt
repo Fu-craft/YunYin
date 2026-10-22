@@ -2,6 +2,7 @@ package com.yunyin.music.ui.screens
 
 import com.yunyin.music.data.net.PlaylistSquareRules
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -57,5 +58,20 @@ class PlaylistSquareLayoutRulesTest {
     @Test
     fun `the default category is single-sourced with the data rules`() {
         assertEquals(PlaylistSquareRules.DEFAULT_CATEGORY, PlaylistSquareLayoutRules.DEFAULT_CATEGORY)
+    }
+
+    @Test
+    fun `page gutters cap the grid at 900 dp on large screens`() {
+        assertEquals(20f, PlaylistSquareLayoutRules.horizontalPaddingForWidthDp(360f), 0.01f)
+        assertEquals(20f, PlaylistSquareLayoutRules.horizontalPaddingForWidthDp(900f), 0.01f)
+        // 1200 dp tablet: (1200 - 900) / 2 = 150 dp each side, so cards never stretch past 900 dp.
+        assertEquals(150f, PlaylistSquareLayoutRules.horizontalPaddingForWidthDp(1200f), 0.01f)
+    }
+
+    @Test
+    fun `the chip target is 44 dp and the grid gaps sit on the 4 dp scale`() {
+        assertTrue(PlaylistSquareLayoutRules.CHIP_TOUCH_HEIGHT_DP >= 44f)
+        assertEquals(0f, PlaylistSquareLayoutRules.GRID_GAP_DP % 4f, 0.001f)
+        assertEquals(0f, PlaylistSquareLayoutRules.GRID_VERTICAL_GAP_DP % 4f, 0.001f)
     }
 }
