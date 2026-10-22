@@ -411,16 +411,11 @@ private fun PlaylistSquareCard(
 ) {
     val meta = PlaylistSquareLayoutRules.metaLabel(playlist.description, playlist.trackCount)
     val badge = PlaylistSquareLayoutRules.playCountLabel(playlist.playCount)
-    Column(
-        modifier
-            .fillMaxWidth()
-            .clip(ContinuousRoundedRectangle(AppleShapes.card))
-            .clickable(
-                indication = rememberControlRipple(bounded = true),
-                interactionSource = null,
-                onClick = onClick,
-            ),
-    ) {
+    // No clip anywhere above the text: the rounded shape lives on the cover (its own clip) and on
+    // the ripple overlay, which is a sibling drawn over the content. Text therefore cannot be
+    // sliced by an ancestor, whatever the glyph metrics do.
+    Box(modifier.fillMaxWidth()) {
+    Column(Modifier.fillMaxWidth()) {
         Box {
             Artwork(
                 url = playlist.coverUrl,
@@ -472,6 +467,11 @@ private fun PlaylistSquareCard(
             minLines = PlaylistSquareLayoutRules.TITLE_LINES,
             maxLines = PlaylistSquareLayoutRules.TITLE_LINES,
             overflow = TextOverflow.Ellipsis,
+            // Same font-padding safety as the meta line: the variable SF Pro's vertical metrics can
+            // exceed Android's default metrics, and the line box must contain the glyphs.
+            style = androidx.compose.ui.text.TextStyle(
+                platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = true),
+            ),
         )
         Spacer(Modifier.height(3.dp))
         Text(
@@ -484,7 +484,29 @@ private fun PlaylistSquareCard(
             minLines = PlaylistSquareLayoutRules.META_LINES,
             maxLines = PlaylistSquareLayoutRules.META_LINES,
             overflow = TextOverflow.Ellipsis,
+            // Safety net for the variable SF Pro (its vertical metrics can differ from Android's
+            // default metrics): keep the font padding Compose normally reserves, so the measured
+            // line box includes the glyphs' ascenders/descenders.
+            style = androidx.compose.ui.text.TextStyle(
+                platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = true),
+            ),
         )
+        // Breathing room: even a font whose ink overflows its measured line box by a pixel or two
+        // still ends inside the visual card. There is no ancestor clip to cut it.
+        Spacer(Modifier.height(4.dp))
+    }
+    // Tap target + ripple: a sibling overlay clipped to the card's rounded shape. It draws over the
+    // content but never clips it; the rounded ripple is the only thing the shape applies to.
+    Box(
+        Modifier
+            .matchParentSize()
+            .clip(ContinuousRoundedRectangle(AppleShapes.card))
+            .clickable(
+                indication = rememberControlRipple(bounded = true),
+                interactionSource = null,
+                onClick = onClick,
+            ),
+    )
     }
 }
 
@@ -651,6 +673,8 @@ private fun SkeletonCard() {
                 .clip(ContinuousRoundedRectangle(AppleShapes.control))
                 .background(AppTheme.palette.secondaryBackground),
         )
+        // Mirrors the real card's 4 dp bottom breathing room.
+        Spacer(Modifier.height(4.dp))
     }
 }
 
