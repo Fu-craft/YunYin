@@ -181,7 +181,6 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -200,23 +199,20 @@ import kotlinx.coroutines.launch
  */
 enum class PlayerTab(
     val label: String,
-    val icon: androidx.compose.ui.graphics.vector.ImageVector,
     /**
-     * Filled variant drawn while this slot is selected.
-     *
-     * iOS-style bar marks are outline at rest and solid when selected; the pair is drawn to the same
-     * optical box in [SfIcons] (the fill is the outline grown by half its stroke), so the swap adds
-     * weight without moving or resizing the glyph. The swap happens inside the existing accent mask,
-     * so the travelling pill's animation is untouched.
+     * The slot's one and only glyph. It does **not** change with selection: the bar communicates the
+     * selected state with the accent tint and the travelling pill, never by substituting a different
+     * drawing. (The removed `selectedIcon` field is what let three releases in a row ship a Home slot
+     * that looked like a different icon once it was selected.)
      */
-    val selectedIcon: androidx.compose.ui.graphics.vector.ImageVector = icon,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector,
 ) {
-    Home("主页", SfIcons.House, SfIcons.HouseFill),
+    Home("主页", SfIcons.House),
 
     /** 歌单广场: a browse screen of playlist covers, hence the grid glyph. */
-    PlaylistSquare("歌单广场", SfIcons.SquareGrid2x2, SfIcons.SquareGrid2x2Fill),
-    Search("搜索", SfIcons.MagnifyingGlass, SfIcons.MagnifyingGlass),
-    Library("资料库", SfIcons.PersonOutline, SfIcons.PersonFill),
+    PlaylistSquare("歌单广场", SfIcons.SquareGrid2x2),
+    Search("搜索", SfIcons.MagnifyingGlass),
+    Library("资料库", SfIcons.PersonOutline),
 }
 
 /**
@@ -255,21 +251,18 @@ private val BarSlots: List<BarSlot> = listOf(
 private const val BeatModeLabel = "心动模式"
 
 /**
- * The bar's slot-icon rule — the single source of truth for every draw pass.
+ * The bar's slot-icon rule — the single source of truth for every draw pass, in every state.
  *
- * The glass bar draws its slot row twice (the visible panel, then an invisible accent-masked copy
- * that the travelling selection samples). Both passes use the same content lambda, so they agree as
- * long as the glyph is resolved here and not from the router's selected screen — which can lag the
- * pill during a drag, or fall back to Home while the search screen is open. Outline at rest, filled
- * while the slot is the bar's highlighted slot; 心动模式 is an action, so it is always the outline
- * heart. Kept pure (and pinned by `BarIconRulesTest`) so a refactor cannot desync the passes.
+ * One glyph per slot: a slot draws exactly [PlayerTab.icon] whether it is selected or not. Selection
+ * is carried only by the accent tint and the travelling pill/backdrop, so switching tabs can never
+ * make an icon look like a different icon (the regression that shipped in 4.10.0-4.10.2 and is now
+ * pinned by `BarIconRulesTest`). 心动模式 is an action, so it is always the outline heart.
+ *
+ * The glass bar draws its slot row twice (the visible panel and the invisible accent-mask copy the
+ * selection samples); both passes use the same content lambda and this rule, so they cannot diverge.
  */
 internal object BarIconRules {
-    fun iconFor(
-        tab: PlayerTab,
-        highlighted: Boolean,
-    ): androidx.compose.ui.graphics.vector.ImageVector =
-        if (highlighted) tab.selectedIcon else tab.icon
+    fun iconFor(tab: PlayerTab): androidx.compose.ui.graphics.vector.ImageVector = tab.icon
 
     fun beatModeIcon(): androidx.compose.ui.graphics.vector.ImageVector = SfIcons.Heart
 }
@@ -630,9 +623,9 @@ private fun glassPressScale(widthPx: Float, expansionPx: Float, progress: Float)
  * ([TabBarInset]); the bar then fills that row — the same width as the now-playing capsule above it —
  * and its three slots divide the measured width equally, instead of wrapping a fixed 176 dp capsule.
  *
- * Each screen slot swaps to a filled mark while selected (outline at rest), so the bar's selection
- * reads as a weight change as well as a tint. The bar presents [BarSlots]: 主页, 歌单广场, 资料库 and
- * 心动模式. [PlayerTab.Search] keeps its enum
+ * Every screen slot draws its one outline glyph in both states; the selected slot is distinguished by
+ * the accent tint and the travelling pill alone, never by a different drawing. The bar presents
+ * [BarSlots]: 主页, 歌单广场, 资料库 and 心动模式. [PlayerTab.Search] keeps its enum
  * entry because it still routes the screen, but it has no slot — see [BarSlots] and [PlayerTab]. The
  * 心动模式 slot is
  * an action, so the pill never rests on it: after it fires, `selectionResync` settles the pill back onto
@@ -706,11 +699,9 @@ fun FloatingTabBar(
                 } else {
                     contentColor
                 }
-                val highlightedSlot = LocalBarHighlightedSlot.current
                 Icon(
                     imageVector = when (slot) {
-                        is BarSlot.Screen ->
-                            BarIconRules.iconFor(slot.tab, highlighted = index == highlightedSlot)
+                        is BarSlot.Screen -> BarIconRules.iconFor(slot.tab)
                         BarSlot.BeatMode -> BarIconRules.beatModeIcon()
                     },
                     contentDescription = if (isBeatMode && !beatModeSignedIn) {
@@ -894,23 +885,6 @@ private fun LiquidBottomTabs(
                     onTabSelected(index)
                 }
         }
-        // The slot the bar itself shows as highlighted: the slot under the pill while a press/drag is
-        // in progress, and the settled selection otherwise. Icon artwork resolves from this one value
-        // (see [BarIconRules]), so the panel row, the accent-mask row and the pill cannot disagree —
-        // and dragging previews the filled mark on the slot under the finger before release.
-        var highlightedSlot by remember(tabsCount) { mutableIntStateOf(selectedTabIndex()) }
-        LaunchedEffect(dampedDragAnimation, currentIndex, tabsCount) {
-            snapshotFlow {
-                if (dampedDragAnimation.pressProgress > 0f) {
-                    dampedDragAnimation.value.fastRoundToInt()
-                } else {
-                    currentIndex
-                }
-            }
-                .distinctUntilChanged()
-                .collectLatest { index -> highlightedSlot = index.coerceIn(0, tabsCount - 1) }
-        }
-
         // The material modifiers are independent of the animated geometry; only the press progress
         // they read changes. Remembering them keeps a recomposition from rebuilding the effects.
         val panelMaterial = remember(backdrop, containerColor, material, dampedDragAnimation) {
@@ -924,47 +898,45 @@ private fun LiquidBottomTabs(
             glassSelectionMaterial(selectionBackdrop, dampedDragAnimation, isLightTheme)
         }
 
-        CompositionLocalProvider(LocalBarHighlightedSlot provides highlightedSlot) {
-            // 1. The panel. `drawBackdrop` draws the blurred source view, then its surface, then its
-            // content; the press growth lives in the node's `layerBlock` (the layer phase).
+        // 1. The panel. `drawBackdrop` draws the blurred source view, then its surface, then its
+        // content; the press growth lives in the node's `layerBlock` (the layer phase).
+        Row(
+            Modifier
+                .graphicsLayer { translationX = panelOffset }
+                .then(panelMaterial)
+                .then(interactiveHighlight.modifier)
+                .height(panelHeight)
+                .width(panelWidth)
+                .padding(4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            content = content,
+        )
+
+        // 2. The accent mask: the same row, recorded into a layer and never drawn directly (the
+        // outer alpha is 0). Its own glass pass exists only so the droplet has something to refract;
+        // the recorded row keeps full strength for the tint.
+        CompositionLocalProvider(
+            LocalLiquidBottomTabScale provides {
+                lerp(1f, 1.2f, dampedDragAnimation.pressProgress)
+            },
+        ) {
             Row(
                 Modifier
+                    .clearAndSetSemantics {}
+                    .alpha(0f)
+                    .layerBackdrop(tabsBackdrop)
                     .graphicsLayer { translationX = panelOffset }
-                    .then(panelMaterial)
+                    .then(refractionMaterial)
                     .then(interactiveHighlight.modifier)
-                    .height(panelHeight)
+                    .height(panelHeight - 8.dp)
                     .width(panelWidth)
-                    .padding(4.dp),
+                    .padding(horizontal = 4.dp)
+                    .graphicsLayer(colorFilter = ColorFilter.tint(accentColor)),
                 verticalAlignment = Alignment.CenterVertically,
                 content = content,
             )
-
-            // 2. The accent mask: the same row, recorded into a layer and never drawn directly (the
-            // outer alpha is 0). Its own glass pass exists only so the droplet has something to refract;
-            // the recorded row keeps full strength for the tint.
-            CompositionLocalProvider(
-                LocalLiquidBottomTabScale provides {
-                    lerp(1f, 1.2f, dampedDragAnimation.pressProgress)
-                },
-            ) {
-                Row(
-                    Modifier
-                        .clearAndSetSemantics {}
-                        .alpha(0f)
-                        .layerBackdrop(tabsBackdrop)
-                        .graphicsLayer { translationX = panelOffset }
-                        .then(refractionMaterial)
-                        .then(interactiveHighlight.modifier)
-                        .height(panelHeight - 8.dp)
-                        .width(panelWidth)
-                        .padding(horizontal = 4.dp)
-                        .graphicsLayer(colorFilter = ColorFilter.tint(accentColor)),
-                    verticalAlignment = Alignment.CenterVertically,
-                    content = content,
-                )
-            }
-
         }
+
 
         // 3. The selection: its own piece of glass, travelling between the slots. It samples the
         // source view *and* the accent-tinted row, so the glyph under it is accent-coloured.
@@ -1001,11 +973,6 @@ private fun squeezeOffset(animationValue: Float, width: Float, squeeze: Float): 
  */
 internal val LocalLiquidBottomTabScale = staticCompositionLocalOf { { 1f } }
 
-/**
- * The slot the bar draws as highlighted, published to the tab content so icon resolution and the
- * travelling pill share one value. -1 before the first composition.
- */
-internal val LocalBarHighlightedSlot = staticCompositionLocalOf { -1 }
 
 /**
  * One tab in the strip. `RowScope` because the slots are equal widths.

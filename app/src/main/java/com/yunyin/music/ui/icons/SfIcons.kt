@@ -222,7 +222,8 @@ object SfIcons {
      * radius curves where the roof meets the walls, and rounded base corners — no sharp triangle.
      * Its path box is 3.4-20.6 × 3.9-20.6, exactly the other outlines' box, so the four resting
      * marks share one optical size. The arched door is an outline opening, which is what keeps the
-     * glyph recognisable as a house at 28 dp without adding a second filled mass.
+     * glyph recognisable as a house at 28 dp. The bar draws this outline in both states — it never
+     * swaps in a filled mark.
      */
     val House: ImageVector = icon("house") {
         mono("house", width = 1.9f) {
@@ -244,35 +245,6 @@ object SfIcons {
             curveTo(9.65f, 15.62f, 10.7f, 14.55f, 12f, 14.55f)
             curveTo(13.3f, 14.55f, 14.35f, 15.62f, 14.35f, 16.9f)
             lineTo(14.35f, 20.6f)
-        }
-    }
-
-    /**
-     * Filled house: the selected-state mark.
-     *
-     * Its path box is 2.95-21.05 in both axes — the same box as the other three fills — so selecting
-     * 主页 adds weight without changing size or position (4.10.1 drew it 2.45-21.55, which read as a
-     * size jump). The arch door is a rounded cut, and the apex/eaves/base are curves for the same
-     * reason as the outline: the family has no sharp triangles.
-     */
-    val HouseFill: ImageVector = icon("house.fill") {
-        path(fill = SolidColor(Color.Black)) {
-            moveTo(11.15f, 3.15f)
-            curveTo(11.55f, 2.95f, 12.45f, 2.95f, 12.85f, 3.15f)
-            lineTo(20.8f, 10.0f)
-            curveTo(21.0f, 10.2f, 21.05f, 10.35f, 21.05f, 10.55f)
-            lineTo(21.05f, 18.6f)
-            curveTo(21.05f, 19.95f, 19.95f, 21.05f, 18.6f, 21.05f)
-            lineTo(14.6f, 21.05f)
-            lineTo(14.6f, 16.3f)
-            curveTo(14.6f, 14.85f, 13.45f, 13.7f, 12f, 13.7f)
-            curveTo(10.55f, 13.7f, 9.4f, 14.85f, 9.4f, 16.3f)
-            lineTo(9.4f, 21.05f)
-            lineTo(5.4f, 21.05f)
-            curveTo(4.05f, 21.05f, 2.95f, 19.95f, 2.95f, 18.6f)
-            lineTo(2.95f, 10.55f)
-            curveTo(2.95f, 10.35f, 3.0f, 10.2f, 3.2f, 10.0f)
-            close()
         }
     }
 
@@ -301,8 +273,7 @@ object SfIcons {
      *
      * The 4.10.0 redraw gives the head radius 3.8 (was 3.4) and a rounder, wider shoulder arc
      * (3.6–20.4), so at 28 dp the bust carries the same weight as the house and grid instead of
-     * reading as a small head over a thin line. The filled state is the same silhouette grown by
-     * half the stroke.
+     * reading as a small head over a thin line. The bar draws this outline in both states.
      */
     val PersonOutline: ImageVector = icon("person") {
         // The bar's 资料库 glyph: monoline like house and the playlist grid. The filled `Person`
@@ -319,33 +290,6 @@ object SfIcons {
             moveTo(3.4f, 20.6f)
             curveTo(4.2f, 16.0f, 7.8f, 13.8f, 12f, 13.8f)
             curveTo(16.2f, 13.8f, 19.8f, 16.0f, 20.6f, 20.6f)
-        }
-    }
-
-    /**
-     * Filled person for the bar's selected state.
-     *
-     * The selected-state counterpart of [PersonOutline], drawn to the family's fill box
-     * (2.95-21.05 in both axes): head disk plus bust as one silhouette, so the mark gains weight
-     * without changing size or position.
-     */
-    val PersonFill: ImageVector = icon("person.fill.selected") {
-        path(fill = SolidColor(Color.Black)) {
-            moveTo(12f, 2.95f)
-            curveTo(14.62f, 2.95f, 16.75f, 5.08f, 16.75f, 7.7f)
-            curveTo(16.75f, 10.32f, 14.62f, 12.45f, 12f, 12.45f)
-            curveTo(9.38f, 12.45f, 7.25f, 10.32f, 7.25f, 7.7f)
-            curveTo(7.25f, 5.08f, 9.38f, 2.95f, 12f, 2.95f)
-            close()
-        }
-        path(fill = SolidColor(Color.Black)) {
-            moveTo(2.95f, 20.7f)
-            curveTo(3.65f, 15.7f, 7.4f, 12.35f, 12f, 12.35f)
-            curveTo(16.6f, 12.35f, 20.35f, 15.7f, 21.05f, 20.7f)
-            curveTo(21.05f, 21.0f, 20.7f, 21.05f, 20.4f, 21.05f)
-            lineTo(3.6f, 21.05f)
-            curveTo(3.3f, 21.05f, 2.95f, 21.0f, 2.95f, 20.7f)
-            close()
         }
     }
 
@@ -917,18 +861,5 @@ object SfIcons {
         mono("square.grid.2x2.tile", width = 1.9f) { roundedRect(13.4f, 3.4f, 7.2f, 2.6f) }
         mono("square.grid.2x2.tile", width = 1.9f) { roundedRect(3.4f, 13.4f, 7.2f, 2.6f) }
         mono("square.grid.2x2.tile", width = 1.9f) { roundedRect(13.4f, 13.4f, 7.2f, 2.6f) }
-    }
-
-    /**
-     * Filled grid for the bar's selected state.
-     *
-     * Four 8.6 pt tiles at 2.95-21.05 with a 0.9 pt gap: the family's fill box (the other fills are
-     * 2.95-21.05 too), so selecting 歌单广场 thickens the mark without changing its size.
-     */
-    val SquareGrid2x2Fill: ImageVector = icon("square.grid.2x2.fill") {
-        path(fill = SolidColor(Color.Black)) { roundedRect(2.95f, 2.95f, 8.6f, 2.8f) }
-        path(fill = SolidColor(Color.Black)) { roundedRect(12.45f, 2.95f, 8.6f, 2.8f) }
-        path(fill = SolidColor(Color.Black)) { roundedRect(2.95f, 12.45f, 8.6f, 2.8f) }
-        path(fill = SolidColor(Color.Black)) { roundedRect(12.45f, 12.45f, 8.6f, 2.8f) }
     }
 }

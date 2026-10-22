@@ -12,14 +12,14 @@ import org.junit.Test
  * the contract is checked by parsing the source file the same way `tools/icon_bounds.py` does (that
  * script is the human-facing report; this test is the CI-enforced guard).
  *
- * The design contract:
- *  - every **outline** uses the 3.4–20.6 horizontal box (the 2×2 grid is square, so it uses that box
- *    on both axes; the heart/person/house use 3.9–20.6 for their vertical mass);
- *  - every **filled** variant uses exactly 2.95–21.05 in both axes, so selecting a slot adds weight
- *    without changing its size or position (the 4.10.1 house was 2.45–21.55 and read as a jump).
+ * The design contract, now that the bar draws one outline glyph per slot in both states:
+ *  - every **bar outline** uses the 3.4–20.6 horizontal box (the 2×2 grid is square, so it uses that
+ *    box on both axes; the heart/person/house use 3.9–20.6 for their vertical mass);
+ *  - `HeartFill` is no longer a bar glyph — it remains for the like buttons and keeps the family's
+ *    2.95–21.05 fill box, so the full set still reads as one family.
  *
  * The numbers below are the deliberate expected table: a redraw must update them, which is the
- * point — the two states cannot silently drift apart again.
+ * point — the bar cannot silently substitute a different drawing again.
  */
 class SfIconsBoundsTest {
 
@@ -27,12 +27,10 @@ class SfIconsBoundsTest {
 
     private val contract: Map<String, Bounds> = linkedMapOf(
         "House" to Bounds(3.4f, 20.6f, 3.9f, 20.6f),
-        "HouseFill" to Bounds(2.95f, 21.05f, 2.95f, 21.05f),
         "SquareGrid2x2" to Bounds(3.4f, 20.6f, 3.4f, 20.6f),
-        "SquareGrid2x2Fill" to Bounds(2.95f, 21.05f, 2.95f, 21.05f),
         "PersonOutline" to Bounds(3.4f, 20.6f, 4.1f, 20.6f),
-        "PersonFill" to Bounds(2.95f, 21.05f, 2.95f, 21.05f),
         "Heart" to Bounds(3.4f, 20.6f, 3.9f, 20.2f),
+        // Not a bar glyph any more: the like buttons use it. Kept so the family fill box stays pinned.
         "HeartFill" to Bounds(2.95f, 21.05f, 2.95f, 21.05f),
     )
 
@@ -51,15 +49,14 @@ class SfIconsBoundsTest {
     }
 
     @Test
-    fun `all four filled marks share one box`() {
-        val source = sourceFile().readText()
-        listOf("HouseFill", "SquareGrid2x2Fill", "PersonFill", "HeartFill").forEach { name ->
-            val bounds = measure(source, name)
-            assertEquals("$name x0", 2.95f, bounds.x0, tolerance)
-            assertEquals("$name x1", 21.05f, bounds.x1, tolerance)
-            assertEquals("$name y0", 2.95f, bounds.y0, tolerance)
-            assertEquals("$name y1", 21.05f, bounds.y1, tolerance)
-        }
+    fun `the surviving filled heart keeps the family fill box`() {
+        // The bar no longer swaps glyphs, so HeartFill is only the like-button mark now; it still has
+        // to sit in the same 2.95–21.05 box as the removed bar fills did.
+        val bounds = measure(sourceFile().readText(), "HeartFill")
+        assertEquals("HeartFill x0", 2.95f, bounds.x0, tolerance)
+        assertEquals("HeartFill x1", 21.05f, bounds.x1, tolerance)
+        assertEquals("HeartFill y0", 2.95f, bounds.y0, tolerance)
+        assertEquals("HeartFill y1", 21.05f, bounds.y1, tolerance)
     }
 
     @Test
