@@ -74,4 +74,23 @@ class PlaylistSquareLayoutRulesTest {
         assertEquals(0f, PlaylistSquareLayoutRules.GRID_GAP_DP % 4f, 0.001f)
         assertEquals(0f, PlaylistSquareLayoutRules.GRID_VERTICAL_GAP_DP % 4f, 0.001f)
     }
+
+    @Test
+    fun `card text heights reserve two title lines and one full meta line`() {
+        // 15 sp title on a 20 dp line height: the tallest allowed title is two lines = 40 dp.
+        assertEquals(40f, PlaylistSquareLayoutRules.titleMinHeightDp(), 0.01f)
+        // 11 sp meta on a 16 dp line height: the previous 14 dp fixed box clipped the glyphs.
+        assertEquals(16f, PlaylistSquareLayoutRules.metaMinHeightDp(), 0.01f)
+        assertTrue(PlaylistSquareLayoutRules.metaMinHeightDp() / 11f >= 1.4f)
+    }
+
+    @Test
+    fun `the skeleton and real cards use the same reserved text height`() {
+        assertEquals(
+            PlaylistSquareLayoutRules.titleMinHeightDp(),
+            PlaylistSquareLayoutRules.TITLE_LINE_HEIGHT_DP * PlaylistSquareLayoutRules.TITLE_MAX_LINES,
+            0.01f,
+        )
+        assertTrue(PlaylistSquareLayoutRules.TITLE_MAX_LINES == 2)
+    }
 }

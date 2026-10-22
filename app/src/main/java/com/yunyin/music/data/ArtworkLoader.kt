@@ -44,9 +44,16 @@ class ArtworkLoader(context: Context) {
     private val inFlight = mutableMapOf<String, Deferred<Bitmap?>>()
     private val ioScope = CoroutineScope(Dispatchers.IO)
 
-    /** NetEase serves several sizes; `?param=WxH` returns a resized JPEG. */
-    fun sized(url: String?, size: Int): String? =
-        url?.let { if (it.contains("?")) it else "$it?param=${size}y$size" }
+    /**
+     * Resolves an artwork URL to the requested square size.
+     *
+     * NetEase serves several sizes with `?param=WxH`, but some endpoints hand back URLs that already
+     * carry an image-processing chain (`?imageView=1&thumbnail=800y800&…&thumbnail=140y140`). The
+     * old rule ("if it already has a query, leave it alone") therefore asked the CDN for that chain —
+     * 140×140 on category pages — and the card upscaled it into a blurry tile. The rule is delegated
+     * to [ArtworkUrlRules] so it is pure and unit-tested.
+     */
+    fun sized(url: String?, size: Int): String? = ArtworkUrlRules.sized(url, size)
 
     suspend fun load(url: String?, size: Int = 600): Bitmap? {
         val target = sized(url, size) ?: return null
@@ -169,5 +176,32 @@ class ArtworkLoader(context: Context) {
 
         /** Disk budget for cached artwork. */
         const val DISK_BUDGET_BYTES = 120L * 1024 * 1024
+    }
+}
+
+/**
+ * Pure URL rule for artwork sizing.
+ *
+ * NetEase's CDN serves `?param=WxH` on the bare `.jpg`; the API sometimes adds its own processing
+ * chain, whose final `thumbnail=…` wins. For NetEase hosts the query is therefore replaced with the
+ * requested `param`, so every surface gets the same resolution no matter which endpoint produced the
+ * URL. Non-NetEase URLs (signed/processing URLs owned by other hosts) are left exactly as given.
+ */
+internal object ArtworkUrlRules {
+
+    fun sized(url: String?, size: Int): String? {
+        val raw = url?.trim().orEmpty()
+        if (raw.isEmpty() || size <= 0) return null
+        if (raw.startsWith("data:") || raw.startsWith("file:")) return raw
+        val base = raw.substringBefore('?')
+        if (isNeteaseHost(base)) return "$base?param=${size}y$size"
+        return if (raw.contains('?')) raw else "$raw?param=${size}y$size"
+    }
+
+    private fun isNeteaseHost(url: String): Boolean {
+        val host = url.substringAfter("://", "").substringBefore('/').substringBefore(' ').lowercase()
+        return host == "126.net" || host.endsWith(".126.net") ||
+            host == "163.com" || host.endsWith(".163.com") ||
+            host == "netease.com" || host.endsWith(".netease.com")
     }
 }

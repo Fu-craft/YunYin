@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -102,6 +103,21 @@ internal object PlaylistSquareLayoutRules {
 
     /** A chip's visual capsule is 32 dp; its touch target is the row's 44 dp. */
     const val CHIP_TOUCH_HEIGHT_DP = 44f
+
+    /** Card type metrics. These are the line heights the reserved space is computed from. */
+    const val TITLE_LINE_HEIGHT_DP = 20f
+    const val TITLE_MAX_LINES = 2
+    const val META_LINE_HEIGHT_DP = 16f
+
+    /**
+     * Minimum height of the title block: the tallest allowed title (two lines) at its real line
+     * height. Applied as `heightIn(min = …)`, never as a fixed height, so a two-line title is not
+     * clamped and a one-line title still reserves the same tile height.
+     */
+    fun titleMinHeightDp(): Float = TITLE_LINE_HEIGHT_DP * TITLE_MAX_LINES
+
+    /** Minimum height of the secondary line: one real line of the 11 pt meta text. */
+    fun metaMinHeightDp(): Float = META_LINE_HEIGHT_DP
 
     /** Horizontal inset that caps the grid at [MAX_CONTENT_WIDTH_DP] and never drops below 20 dp. */
     fun horizontalPaddingForWidthDp(widthDp: Float): Float =
@@ -449,30 +465,28 @@ private fun PlaylistSquareCard(
             fontFamily = SFPro,
             fontWeight = FontWeight.SemiBold,
             fontSize = 15.sp,
-            lineHeight = 20.sp,
+            lineHeight = PlaylistSquareLayoutRules.TITLE_LINE_HEIGHT_DP.sp,
             color = AppTheme.palette.label,
-            // Two lines are always reserved: a one-line title and a two-line title then leave their
-            // rows' baselines aligned instead of making the grid ragged.
-            minLines = 2,
-            maxLines = 2,
+            // Equal-height grid: the height is reserved through heightIn (minimum only), so one-line
+            // and two-line titles produce the same tile height without clamping the text itself.
+            modifier = Modifier.heightIn(min = PlaylistSquareLayoutRules.titleMinHeightDp().dp),
+            maxLines = PlaylistSquareLayoutRules.TITLE_MAX_LINES,
             overflow = TextOverflow.Ellipsis,
         )
         Spacer(Modifier.height(3.dp))
-        // The secondary row keeps its height even when the catalogue has no blurb, for the same
-        // reason: every tile is the same height whatever data it got.
-        Box(Modifier.height(14.dp)) {
-            if (meta.isNotEmpty()) {
-                Text(
-                    text = meta,
-                    fontFamily = SFPro,
-                    fontSize = 11.sp,
-                    lineHeight = 14.sp,
-                    color = AppTheme.palette.secondaryLabel,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
+        // Same rule for the secondary line: one real 16 dp line is reserved, the text keeps its
+        // natural height (an 11 pt label fits comfortably inside 16 dp), and an empty catalogue
+        // blurb still leaves the tile the same height. No fixed-height parent ever clips glyphs.
+        Text(
+            text = meta,
+            fontFamily = SFPro,
+            fontSize = 11.sp,
+            lineHeight = PlaylistSquareLayoutRules.META_LINE_HEIGHT_DP.sp,
+            color = AppTheme.palette.secondaryLabel,
+            modifier = Modifier.heightIn(min = PlaylistSquareLayoutRules.metaMinHeightDp().dp),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -631,7 +645,7 @@ private fun SkeletonCard() {
         Box(
             Modifier
                 .fillMaxWidth(0.42f)
-                .height(14.dp)
+                .height(PlaylistSquareLayoutRules.META_LINE_HEIGHT_DP.dp)
                 .clip(ContinuousRoundedRectangle(AppleShapes.control))
                 .background(AppTheme.palette.secondaryBackground),
         )
