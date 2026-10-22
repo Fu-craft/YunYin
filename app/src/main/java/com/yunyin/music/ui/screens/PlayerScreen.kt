@@ -166,8 +166,6 @@ fun PlayerScreen(
     onCycleRepeat: () -> Unit,
     onToggleShuffle: () -> Unit,
     onShowQueue: () -> Unit,
-    /** Fallback 私人 FM entry in the ⋯ sheet; null hides it. */
-    onStartFm: (() -> Unit)? = null,
     onPlayNext: (() -> Unit)? = null,
     onShowSettings: () -> Unit,
     /** Whether the lyrics page may auto-hide the chrome after the idle delay. */
@@ -1155,19 +1153,12 @@ fun PlayerScreen(
             TrackActionsSheet(
                 track = track,
                 onPlayNext = onPlayNext,
-                hasLyrics = lyrics != null,
                 onDismiss = { showActions = false },
-                onSaveCover = onSaveCover,
                 onShare = onShareTrack,
-                onCalibrateLyrics = {
-                    interaction++
-                    showLyricOffset = true
-                },
                 onShowQueue = {
                     interaction++
                     onShowQueue()
                 },
-                onStartFm = onStartFm,
             )
         }
 
@@ -1784,7 +1775,7 @@ private fun LyricsHeader(
  * A plain iOS action sheet: a list of rows in a rounded card over a scrim. Deliberately not a
  * platform `DropdownMenu` — the player is full-bleed and a floating menu anchored to a small circle
  * reads as an Android artefact, whereas a sheet from the bottom is what the rest of this app already
- * does (the queue, lyric calibration).
+ * does (the queue).
  *
  * Every row performs a real action; none is decorative. Rows that cannot work in the current state
  * (no lyrics to calibrate) are shown disabled rather than hidden, so the sheet's shape does not
@@ -1793,14 +1784,10 @@ private fun LyricsHeader(
 @Composable
 private fun TrackActionsSheet(
     track: Track?,
-    hasLyrics: Boolean,
     onPlayNext: (() -> Unit)? = null,
     onDismiss: () -> Unit,
-    onSaveCover: () -> Unit,
     onShare: () -> Unit,
-    onCalibrateLyrics: () -> Unit,
     onShowQueue: () -> Unit,
-    onStartFm: (() -> Unit)? = null,
 ) {
     AnimatedSheet(
         onDismissed = onDismiss,
@@ -1830,15 +1817,14 @@ private fun TrackActionsSheet(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
         )
-        ActionRow(SfIcons.SquareAndArrowDown, "保存封面", true) {
-            close { onSaveCover() }
-        }
         val beatModeActions = LocalBeatModeActions.current
         if (beatModeActions != null) {
             // A guest is known without a round trip: the row says 请先登录 and is inert. The host owns the
             // request, the queue replacement and the messages.
+            // Outline heart to match the bar's other outline glyphs; the filled heart stays where it
+            // means "liked" (the heart toggle and the comment like count).
             ActionRow(
-                SfIcons.HeartFill,
+                SfIcons.Heart,
                 if (beatModeActions.signedIn) "心动模式" else "心动模式（请先登录）",
                 enabled = track != null && beatModeActions.signedIn,
             ) {
@@ -1871,14 +1857,6 @@ private fun TrackActionsSheet(
                 close { commentActions.onOpen() }
             }
         }
-        ActionRow(SfIcons.Clock, "歌词校准", hasLyrics) {
-            close { onCalibrateLyrics() }
-        }
-        if (onStartFm != null) {
-            ActionRow(SfIcons.SpeakerWave, "私人 FM", true) {
-                close { onStartFm() }
-            }
-        }
         ActionRow(SfIcons.ListBullet, "播放队列", true) {
             close { onShowQueue() }
         }
@@ -1906,7 +1884,7 @@ private fun TrackActionsSheet(
 private fun downloadIcon(state: TrackDownloadState?) = when (state?.phase) {
     DownloadPhase.DONE -> SfIcons.Checkmark
     DownloadPhase.FAILED -> SfIcons.ArrowClockwise
-    else -> SfIcons.ArrowDownCircle
+    else -> SfIcons.SquareAndArrowDown
 }
 
 /** Action-sheet label, including the honest state (the sheet has no subtitle row). */

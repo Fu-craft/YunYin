@@ -137,10 +137,19 @@ fun PlayerProgressBar(
             size = Size(size.width, thickness),
             cornerRadius = radius,
         )
+        // A rounded rect shorter than 2·radius has its corners clamped by the backend, which made the
+        // leading end a square sliver for the first seconds of a track. Keep the drawn fill at least one
+        // thickness wide (width ≥ 2·radius) so the capsule's end stays round at every progress; 0 draws
+        // nothing at all.
+        val fillWidth = ProgressCapsuleRules.drawnFillWidth(
+            fillPx = size.width * fraction,
+            thicknessPx = thickness,
+            fullWidthPx = size.width,
+        )
         drawRoundRect(
             color = activeColor,
             topLeft = Offset(0f, top),
-            size = Size(size.width * fraction, thickness),
+            size = Size(fillWidth, thickness),
             cornerRadius = radius,
         )
     }

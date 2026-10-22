@@ -1560,15 +1560,14 @@ class MainActivity : ComponentActivity() {
                     onCycleRepeat = { container.player.cycleRepeat() },
                     onToggleShuffle = { container.player.toggleShuffle() },
                     onShowQueue = { showQueue = true },
-                    // Fallback entry for 私人 FM beside the Home row: discoverable from the player's
-                    // ⋯ sheet even if the Home shelf is scrolled away or the feed is degraded.
-                    onStartFm = { appViewModel.startFm() },
                     onShowSettings = { showSettings = true; showPlayer = false },
                     onArtistClick = { name ->
                         // The artist page sits above the player: closing it returns to where the tap
                         // happened, which is the least surprising layering for a page reached mid-play.
                         appViewModel.openArtistByName(name)
                     },
+                    // The offset itself is still applied to the lyrics; only the ⋯ sheet's
+                    // calibration entry was removed.
                     lyricOffsetMs = playerViewModel.lyricOffsetMs,
                     onLyricOffsetChange = playerViewModel::setLyricOffset,
                     autoImmersiveLyrics = autoImmersiveLyrics,
