@@ -320,6 +320,46 @@ class PlayerController(
         playQueue(if (queue.isEmpty()) listOf(track) else queue, index, autoPlay = autoPlay)
     }
 
+    /**
+     * 下一首播放: inserts [tracks] immediately after the current item without touching playback. Existing queue
+     * entries are moved (not duplicated); an empty queue becomes a normal [playQueue]. Stream URLs are resolved by
+     * the media source at load time like any other item, so provider/trial/crossfade behaviour is identical.
+     */
+    fun enqueueNext(tracks: List<Track>): Boolean {
+        val mediaController = controller ?: return false
+        if (tracks.isEmpty()) return false
+        return runCatching {
+            if (currentQueue.isEmpty() || mediaController.mediaItemCount == 0) {
+                playQueue(tracks, 0)
+                return@runCatching true
+            }
+            for (track in tracks) {
+                val existing = QueueInsertRules.existingIndex(currentQueue.map { it.id }, track.id)
+                if (existing >= 0 && QueueInsertRules.alreadyNext(existing, mediaController.currentMediaItemIndex)) {
+                    continue
+                }
+                if (existing >= 0) {
+                    val to = (mediaController.currentMediaItemIndex + 1)
+                        .coerceIn(0, (mediaController.mediaItemCount - 1).coerceAtLeast(0))
+                    mediaController.moveMediaItem(existing, to)
+                    val mutable = currentQueue.toMutableList()
+                    val moved = mutable.removeAt(existing)
+                    mutable.add(to.coerceIn(0, mutable.size), moved)
+                    currentQueue = mutable
+                } else {
+                    val at = QueueInsertRules.insertIndex(mediaController.currentMediaItemIndex, mediaController.mediaItemCount)
+                    mediaController.addMediaItem(at, TrackMediaItem.mediaItem(track))
+                    currentQueue = currentQueue.toMutableList().apply { add(at.coerceIn(0, size), track) }
+                }
+            }
+            publish()
+            true
+        }.getOrElse {
+            runCatching { Log.w(TAG, "Could not insert play-next", it) }
+            false
+        }
+    }
+
     fun next() = controller?.let { it.seekToNextMediaItem(); publish() }
     fun previous() = controller?.let { it.seekToPreviousMediaItem(); publish() }
 

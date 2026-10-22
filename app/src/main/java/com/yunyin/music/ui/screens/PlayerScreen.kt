@@ -166,6 +166,7 @@ fun PlayerScreen(
     onCycleRepeat: () -> Unit,
     onToggleShuffle: () -> Unit,
     onShowQueue: () -> Unit,
+    onPlayNext: (() -> Unit)? = null,
     onShowSettings: () -> Unit,
     /** Whether the lyrics page may auto-hide the chrome after the idle delay. */
     autoImmersiveLyrics: Boolean = false,
@@ -1151,6 +1152,7 @@ fun PlayerScreen(
         if (showActions) {
             TrackActionsSheet(
                 track = track,
+                onPlayNext = onPlayNext,
                 hasLyrics = lyrics != null,
                 onDismiss = { showActions = false },
                 onSaveCover = onSaveCover,
@@ -1789,6 +1791,7 @@ private fun LyricsHeader(
 private fun TrackActionsSheet(
     track: Track?,
     hasLyrics: Boolean,
+    onPlayNext: (() -> Unit)? = null,
     onDismiss: () -> Unit,
     onSaveCover: () -> Unit,
     onShare: () -> Unit,
@@ -1810,6 +1813,9 @@ private fun TrackActionsSheet(
             .clickable(enabled = false, indication = null, interactionSource = null) { }
             .padding(vertical = 6.dp),
     ) { close ->
+        if (onPlayNext != null) {
+            ActionRow(SfIcons.Forward, "下一首播放", track != null) { close { onPlayNext() } }
+        }
         Text(
             text = track?.name ?: "未在播放",
             fontFamily = SFPro,

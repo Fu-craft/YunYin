@@ -141,6 +141,8 @@ fun CollectionScreen(
     onDeletePlaylist: (() -> Unit)? = null,
     /** Present only when owned; host confirms then removes the track and refreshes the page. */
     onRemoveTrack: ((Track) -> Unit)? = null,
+    /** 下一首播放 for a row; null hides the entry. */
+    onPlayNext: ((Track) -> Unit)? = null,
     /** Row ⋯ menu: open the artist page for a name printed on the row. */
     onOpenArtist: ((String) -> Unit)? = null,
     /** Row ⋯ menu: open the album page for a track with a real album id. */
@@ -392,6 +394,9 @@ fun CollectionScreen(
                     .background(AppTheme.palette.background)
                     .padding(vertical = 6.dp),
             ) { close ->
+                if (onPlayNext != null) {
+                    CollectionMenuRow(SfIcons.Forward, "下一首播放") { close { onPlayNext(track) } }
+                }
                 if (onOpenArtist != null && track.artists.isNotEmpty()) {
                     CollectionMenuRow(SfIcons.Person, "查看歌手") { close { onOpenArtist(track.artists.first()) } }
                 }

@@ -1157,6 +1157,13 @@ class MainActivity : ComponentActivity() {
                             } else {
                                 null
                             },
+                            onPlayNext = { track ->
+                                if (container.player.enqueueNext(listOf(track))) {
+                                    Toast.makeText(context, "已设为下一首", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(context, "设置下一首失败", Toast.LENGTH_SHORT).show()
+                                }
+                            },
                             onRemoveTrack = if (state.owned) {
                                 { track -> pendingRemoveTrack = track }
                             } else {

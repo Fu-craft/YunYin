@@ -1,0 +1,80 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+    html,body{margin:0;padding:0;background:#ffffff;}
+    .icon{width:1024px;height:1024px;display:block;}
+    svg{display:block;width:1024px;height:1024px;}
+  </style></head><body>
+<svg class="icon" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg1" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="#7ed6ff"/>
+      <stop offset="0.45" stop-color="#22b3f5"/>
+      <stop offset="1" stop-color="#0072c9"/>
+    </linearGradient>
+    <radialGradient id="glow1" cx="0.26" cy="0.12" r="0.75">
+      <stop offset="0" stop-color="#dff6ff" stop-opacity="0.95"/>
+      <stop offset="1" stop-color="#dff6ff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="note1" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.55" stop-color="#f4fbff"/>
+      <stop offset="1" stop-color="#d8ecfb"/>
+    </linearGradient>
+    <filter id="soft1" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="26" stdDeviation="22" flood-color="#00335c" flood-opacity="0.45"/>
+    </filter>
+    <filter id="rim1" x="-30%" y="-30%" width="160%" height="160%">
+      <feMorphology operator="dilate" radius="10" in="SourceAlpha" result="d"/>
+      <feFlood flood-color="#ffffff" flood-opacity="0.95" result="c"/>
+      <feComposite in="c" in2="d" operator="in" result="rim"/>
+      <feMerge><feMergeNode in="rim"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect width="1024" height="1024" rx="232" fill="url(#bg1)"/>
+  <rect width="1024" height="1024" rx="232" fill="url(#glow1)"/>
+  <rect x="6" y="6" width="1012" height="1012" rx="228" fill="none"
+        stroke="#ffffff" stroke-opacity="0.55" stroke-width="6"/>
+  <g transform="translate(0,16)">
+    <path d="
+  M 300 250
+  L 720 250
+  Q 750 250 750 280
+  L 750 700
+  Q 750 760 690 760
+  L 660 760
+  Q 600 760 600 700
+  Q 600 640 660 640
+  L 690 640
+  L 690 380
+  L 380 380
+  L 380 720
+  Q 380 780 320 780
+  L 290 780
+  Q 230 780 230 720
+  Q 230 660 290 660
+  L 320 660
+  L 320 300
+  Q 320 250 380 250
+  Z" fill="url(#note1)" filter="url(#soft1)"/>
+    <path d="
+  M 300 250
+  L 720 250
+  Q 750 250 750 280
+  L 750 700
+  Q 750 760 690 760
+  L 660 760
+  Q 600 760 600 700
+  Q 600 640 660 640
+  L 690 640
+  L 690 380
+  L 380 380
+  L 380 720
+  Q 380 780 320 780
+  L 290 780
+  Q 230 780 230 720
+  Q 230 660 290 660
+  L 320 660
+  L 320 300
+  Q 320 250 380 250
+  Z" fill="url(#note1)" filter="url(#rim1)"/>
+  </g>
+</svg></body></html>
