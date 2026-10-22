@@ -133,10 +133,6 @@ fun HomeScreen(
                         }
                     }
                 }
-                // Always present, even while the feed is loading or in an error state: the FM radio
-                // is a core listen action, so it must not disappear with the shelves (discoverability).
-                item("fm") { HomeFmRow(onClick = onStartFm) }
-
                 if (feed.featuredPlaylists.isNotEmpty()) {
             item("featured-header") {
                 SectionHeader(
@@ -154,6 +150,13 @@ fun HomeScreen(
                     modifier = shelfAppear(),
                 )
             }
+        }
+
+        // 私人 FM sits inside the shelf rhythm, after the first content shelf: content leads, the entry
+        // follows it (hierarchy), and because it only exists once the feed has content it never pushes
+        // the cold-start loading state down.
+        if (feed.featuredPlaylists.isNotEmpty() || feed.dailySongs.isNotEmpty()) {
+            item("fm") { HomeFmRow(onClick = onStartFm, modifier = shelfAppear()) }
         }
 
         if (feed.dailySongs.isNotEmpty()) {
@@ -311,39 +314,41 @@ fun SearchBar(
 }
 
 /**
- * 私人 FM entry. A single 64 dp card with the action's own icon, title and one-line explanation:
- * 44 dp+ target, a chevron for "this navigates", and the same card surface as the shelves.
+ * 私人 FM entry, integrated with the shelves rather than pinned above them.
+ *
+ * Reads as a shelf row (20 dp gutter, 56 dp height, 15 sp title + 12 sp subtitle) instead of a
+ * banner: no filled card, no competing full-width block — just an icon, the action's name, one line
+ * of what it does, and the chevron that says it navigates. Unbounded ripple so the press feedback is
+ * a water ripple rather than a rectangle (design skill: shelf typography/rhythm, 44 dp+ target,
+ * visible feedback without a filled surface).
  */
 @Composable
-private fun HomeFmRow(onClick: () -> Unit) {
+private fun HomeFmRow(onClick: () -> Unit, modifier: Modifier = Modifier) {
     val palette = AppTheme.palette
     Row(
-        Modifier
+        modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 6.dp)
-            .height(64.dp)
-            .clip(ContinuousRoundedRectangle(AppleShapes.card))
-            .background(palette.secondaryBackground)
+            .padding(horizontal = 20.dp, vertical = 4.dp)
+            .height(56.dp)
             .clickable(
-                indication = rememberControlRipple(bounded = true),
+                indication = rememberControlRipple(bounded = false),
                 interactionSource = null,
                 onClick = onClick,
-            )
-            .padding(horizontal = 14.dp),
+            ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
             Modifier
-                .size(36.dp)
+                .size(34.dp)
                 .clip(ContinuousRoundedRectangle(AppleShapes.pill))
-                .background(palette.accent.copy(alpha = 0.16f)),
+                .background(palette.accent.copy(alpha = 0.14f)),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 SfIcons.SpeakerWave,
                 contentDescription = null,
                 tint = palette.accent,
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(19.dp),
             )
         }
         Spacer(Modifier.width(12.dp))
@@ -356,7 +361,7 @@ private fun HomeFmRow(onClick: () -> Unit) {
                 color = palette.label,
                 maxLines = 1,
             )
-            Spacer(Modifier.height(2.dp))
+            Spacer(Modifier.height(1.dp))
             Text(
                 text = "根据你的口味持续播放",
                 fontFamily = SFPro,

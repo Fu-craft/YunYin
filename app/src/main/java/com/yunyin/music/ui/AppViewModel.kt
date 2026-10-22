@@ -185,6 +185,9 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
 
     /** Surfaced once per failed tap by the host (Toast); local UI state is reverted. */
     var onSubscribeFailure: ((String) -> Unit)? = null
+
+    /** Surfaced once per successful toggle: the host shows 已收藏/已取消收藏 (stage=sub success). */
+    var onSubscribeSuccess: ((kind: String, active: Boolean) -> Unit)? = null
     private var suggestJob: Job? = null
     private var artistJob: Job? = null
     private var artistRequestId = 0L
@@ -527,7 +530,19 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
                 "stage=sub action=$kind id=$id t=${if (target) 1 else 0} " +
                     "result=" + if (ok) "ok" else "fail reason=${(result as? com.yunyin.music.core.NetResult.Err)?.message ?: "exception"}",
             )
-            if (!ok) {
+            if (ok) {
+                // The library's 收藏歌单 list is cached by uid, so the optimistic toggle alone left a
+                // newly favourited playlist invisible until the next app start. Update the cached row
+                // immediately, then force the list to refetch so the server order/count is authoritative.
+                if (kind == "playlist") {
+                    userPlaylists = userPlaylists.map { item ->
+                        if (item.id == id) item.copy(subscribed = target) else item
+                    }
+                    loadedForUid = 0L
+                    loadUserPlaylists(container.settings.account)
+                }
+                runCatching { onSubscribeSuccess?.invoke(kind, target) }
+            } else {
                 revert()
                 runCatching { onSubscribeFailure?.invoke(if (kind == "artist") "关注失败" else "收藏失败") }
             }

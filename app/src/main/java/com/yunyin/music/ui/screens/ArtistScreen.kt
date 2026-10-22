@@ -636,7 +636,17 @@ private fun AlbumCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier.width(124.dp).clickable(onClick = onClick)) {
+    Column(
+        modifier
+            .width(124.dp)
+            // No filled surface and no default bounded indication: the press/long-press feedback is the
+            // app's water ripple, so the card never flashes a grey rectangle under the artwork.
+            .clickable(
+                indication = rememberControlRipple(bounded = false),
+                interactionSource = null,
+                onClick = onClick,
+            ),
+    ) {
         Artwork(
             url = album.coverUrl,
             loader = loader,

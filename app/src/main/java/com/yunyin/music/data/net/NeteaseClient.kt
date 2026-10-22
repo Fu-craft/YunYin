@@ -963,7 +963,7 @@ class NeteaseClient(
     suspend fun personalFm(): NetResult<List<Track>> = request(
         "/personal_fm",
         query = RequestCacheBust.withCacheBust(emptyMap(), System.currentTimeMillis()),
-    ).map { json -> json.optJSONArray("data")?.mapDetailTracks().orEmpty() }
+    ).map { json -> json.optJSONArray("data")?.mapFmTracks().orEmpty() }
 
     suspend fun likeSong(id: Long, like: Boolean): NetResult<Unit> = request(
         "/like",
@@ -992,6 +992,28 @@ class NeteaseClient(
             coverUrl = null,
             durationMs = o.optLong("duration"),
             fee = o.optInt("fee"),
+        )
+    }
+
+    /**
+     * `/personal_fm` uses the **search** field names (`artists`, `album.picUrl`, `duration`), not the
+     * `/song/detail` ones (`ar` / `al` / `dt`). Mapping it through [mapDetailTracks] dropped the cover,
+     * the artist and the duration from every FM track.
+     */
+    private fun JSONArray.mapFmTracks(): List<Track> = (0 until length()).mapNotNull { i ->
+        val o = optJSONObject(i) ?: return@mapNotNull null
+        val album = o.optJSONObject("album")
+        com.yunyin.music.data.FmTrackMapping.toTrack(
+            com.yunyin.music.data.FmTrackMapping.Fields(
+                id = o.optLong("id"),
+                name = o.text("name").orEmpty(),
+                artists = o.optJSONArray("artists")?.mapNames().orEmpty(),
+                albumName = album?.text("name").orEmpty(),
+                albumId = album?.optLong("id") ?: 0L,
+                coverUrl = album?.optString("picUrl")?.ifBlank { null },
+                durationMs = o.optLong("duration"),
+                fee = o.optInt("fee"),
+            ),
         )
     }
 

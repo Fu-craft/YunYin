@@ -663,6 +663,13 @@ class MainActivity : ComponentActivity() {
             appViewModel.onSubscribeFailure = { message ->
                 Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
             }
+            appViewModel.onSubscribeSuccess = { kind, active ->
+                val message = when (kind) {
+                    "artist" -> if (active) "已关注" else "已取消关注"
+                    else -> if (active) "已收藏" else "已取消收藏"
+                }
+                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+            }
         }
         val darkTheme = androidx.compose.foundation.isSystemInDarkTheme()
         DisposableEffect(darkTheme) {
@@ -1118,117 +1125,6 @@ class MainActivity : ComponentActivity() {
                 )
             }
 
-            // ------------------------------------------------ overlays
-            // The last non-null collection, kept for the duration of the exit animation.
-            //
-            // This is what makes the exit visible at all. The content was gated on `collectionState`
-            // directly, and closing sets it to null — so the exit transition ran on an *empty* box and the
-            // page appeared to vanish instantly, while the enter (which has a non-null state) slid in
-            // normally. Holding the previous value means the outgoing page still has something to slide.
-            var lastCollection by remember { mutableStateOf<CollectionUiState?>(null) }
-            SideEffect { collectionState?.let { lastCollection = it } }
-
-            AnimatedVisibility(
-                visible = collectionState != null,
-                enter = slideInVertically(tween(Motion.SheetEnterDuration, easing = Motion.EaseOut)) { it } +
-                    fadeIn(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
-                exit = slideOutVertically(tween(Motion.SheetExitDuration, easing = Motion.EaseOut)) { it } +
-                    fadeOut(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
-            ) {
-                val state = lastCollection
-                if (state != null) {
-                    // Stripped to just what the list marks: collecting the full state here would
-                    // recompose all 500 rows four times a second while music plays.
-                    val nowPlaying by remember {
-                        playerState
-                            .map { it.current?.id to it.isPlaying }
-                            .distinctUntilChanged()
-                    }.collectAsState(initial = null to false)
-
-                    Surface(Modifier.fillMaxSize(), color = AppTheme.palette.background) {
-                        CompositionLocalProvider(LocalBeatModeActions provides beatModeActions) {
-                        CollectionScreen(
-                            state = state,
-                            loader = container.artwork,
-                            onBack = appViewModel::closeCollection,
-                            // Error state and the count row's refresh both replay the request that
-                            // opened the page (playlist / liked / chart / album).
-                            onRefresh = appViewModel::retryCollection,
-                            onTrackClick = { track, index ->
-                                play(track, state.tracks, state.id.takeIf { state.canBeatMode })
-                            },
-                            onPlayAll = {
-                                state.tracks.firstOrNull()?.let {
-                                    play(it, state.tracks, state.id.takeIf { state.canBeatMode })
-                                }
-                            },
-                            onShufflePlay = {
-                                // Shuffle is a player mode, not a one-off ordering: enabling it and
-                                // then starting anywhere is what makes "next" stay random, whereas
-                                // playing a shuffled copy would drift back to the list order.
-                                container.player.toggleShuffle()
-                                state.tracks.randomOrNull()?.let {
-                                    play(it, state.tracks, state.id.takeIf { state.canBeatMode })
-                                }
-                            },
-                            onShare = {
-                                shareText(ShareText.playlist(state.title, state.id), "分享歌单")
-                            },
-                            nowPlayingId = nowPlaying.first,
-                            isPlaying = nowPlaying.second,
-                            onEditPlaylist = if (state.owned) {
-                                {
-                                    openPlaylistEdit(
-                                        com.yunyin.music.core.Playlist(
-                                            id = state.id,
-                                            name = state.title,
-                                            coverUrl = state.coverUrl,
-                                            trackCount = state.tracks.size,
-                                            description = state.description,
-                                            creatorUserId = account?.userId ?: 0L,
-                                        ),
-                                    )
-                                }
-                            } else {
-                                null
-                            },
-                            onDeletePlaylist = if (state.owned) {
-                                {
-                                    pendingDeletePlaylist = com.yunyin.music.core.Playlist(
-                                        id = state.id,
-                                        name = state.title,
-                                        coverUrl = state.coverUrl,
-                                        trackCount = state.tracks.size,
-                                        description = state.description,
-                                        creatorUserId = account?.userId ?: 0L,
-                                    )
-                                }
-                            } else {
-                                null
-                            },
-                            subscribed = state.subscribed,
-                            onToggleSubscribe = if (state.subscribeAvailable) appViewModel::toggleCollectionSubscribe else null,
-                            onPlayNext = { track ->
-                                if (container.player.enqueueNext(listOf(track))) {
-                                    Toast.makeText(context, "已设为下一首", Toast.LENGTH_SHORT).show()
-                                } else {
-                                    Toast.makeText(context, "设置下一首失败", Toast.LENGTH_SHORT).show()
-                                }
-                            },
-                            onRemoveTrack = when {
-                                state.kind == com.yunyin.music.ui.CollectionKind.Liked -> {
-                                    { track -> pendingUnlikeTrack = track }
-                                }
-                                state.owned -> {
-                                    { track -> pendingRemoveTrack = track }
-                                }
-                                else -> null
-                            },
-                        )
-                        }
-                    }
-                }
-            }
 
             AnimatedVisibility(
                 visible = showSettings,
@@ -1766,16 +1662,127 @@ class MainActivity : ComponentActivity() {
                             onLoadMoreSongs = { appViewModel.loadMoreArtistSongs() },
                             onLoadMoreAlbums = { appViewModel.loadMoreArtistAlbums() },
                             onAlbumClick = { album ->
-                                // The artist page is layered ABOVE the collection page, so opening the
-                                // album without closing the artist left it rendering underneath an
-                                // opaque page — the tap looked like a no-op. id is the album's, not the
-                                // artist's, so openAlbum lands on the right detail page.
-                                appViewModel.closeArtist()
+                                // The album page is now layered ABOVE the artist page, so it opens on
+                                // top immediately while the artist page stays composed underneath: back
+                                // returns to the artist instead of waiting for an exit animation.
+                                // The id is the album's own, not the artist's.
                                 appViewModel.openAlbum(album.id, album.name, album.coverUrl)
                             },
                             nowPlayingId = nowPlaying.first,
                             isPlaying = nowPlaying.second,
                         )
+                    }
+                }
+            }
+
+            // ------------------------------------------------ overlays
+            // The last non-null collection, kept for the duration of the exit animation.
+            //
+            // This is what makes the exit visible at all. The content was gated on `collectionState`
+            // directly, and closing sets it to null — so the exit transition ran on an *empty* box and the
+            // page appeared to vanish instantly, while the enter (which has a non-null state) slid in
+            // normally. Holding the previous value means the outgoing page still has something to slide.
+            var lastCollection by remember { mutableStateOf<CollectionUiState?>(null) }
+            SideEffect { collectionState?.let { lastCollection = it } }
+
+            AnimatedVisibility(
+                visible = collectionState != null,
+                enter = slideInVertically(tween(Motion.SheetEnterDuration, easing = Motion.EaseOut)) { it } +
+                    fadeIn(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
+                exit = slideOutVertically(tween(Motion.SheetExitDuration, easing = Motion.EaseOut)) { it } +
+                    fadeOut(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
+            ) {
+                val state = lastCollection
+                if (state != null) {
+                    // Stripped to just what the list marks: collecting the full state here would
+                    // recompose all 500 rows four times a second while music plays.
+                    val nowPlaying by remember {
+                        playerState
+                            .map { it.current?.id to it.isPlaying }
+                            .distinctUntilChanged()
+                    }.collectAsState(initial = null to false)
+
+                    Surface(Modifier.fillMaxSize(), color = AppTheme.palette.background) {
+                        CompositionLocalProvider(LocalBeatModeActions provides beatModeActions) {
+                        CollectionScreen(
+                            state = state,
+                            loader = container.artwork,
+                            onBack = appViewModel::closeCollection,
+                            // Error state and the count row's refresh both replay the request that
+                            // opened the page (playlist / liked / chart / album).
+                            onRefresh = appViewModel::retryCollection,
+                            onTrackClick = { track, index ->
+                                play(track, state.tracks, state.id.takeIf { state.canBeatMode })
+                            },
+                            onPlayAll = {
+                                state.tracks.firstOrNull()?.let {
+                                    play(it, state.tracks, state.id.takeIf { state.canBeatMode })
+                                }
+                            },
+                            onShufflePlay = {
+                                // Shuffle is a player mode, not a one-off ordering: enabling it and
+                                // then starting anywhere is what makes "next" stay random, whereas
+                                // playing a shuffled copy would drift back to the list order.
+                                container.player.toggleShuffle()
+                                state.tracks.randomOrNull()?.let {
+                                    play(it, state.tracks, state.id.takeIf { state.canBeatMode })
+                                }
+                            },
+                            onShare = {
+                                shareText(ShareText.playlist(state.title, state.id), "分享歌单")
+                            },
+                            nowPlayingId = nowPlaying.first,
+                            isPlaying = nowPlaying.second,
+                            onEditPlaylist = if (state.owned) {
+                                {
+                                    openPlaylistEdit(
+                                        com.yunyin.music.core.Playlist(
+                                            id = state.id,
+                                            name = state.title,
+                                            coverUrl = state.coverUrl,
+                                            trackCount = state.tracks.size,
+                                            description = state.description,
+                                            creatorUserId = account?.userId ?: 0L,
+                                        ),
+                                    )
+                                }
+                            } else {
+                                null
+                            },
+                            onDeletePlaylist = if (state.owned) {
+                                {
+                                    pendingDeletePlaylist = com.yunyin.music.core.Playlist(
+                                        id = state.id,
+                                        name = state.title,
+                                        coverUrl = state.coverUrl,
+                                        trackCount = state.tracks.size,
+                                        description = state.description,
+                                        creatorUserId = account?.userId ?: 0L,
+                                    )
+                                }
+                            } else {
+                                null
+                            },
+                            subscribed = state.subscribed,
+                            onToggleSubscribe = if (state.subscribeAvailable) appViewModel::toggleCollectionSubscribe else null,
+                            onPlayNext = { track ->
+                                if (container.player.enqueueNext(listOf(track))) {
+                                    Toast.makeText(context, "已设为下一首", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(context, "设置下一首失败", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            onRemoveTrack = when {
+                                state.kind == com.yunyin.music.ui.CollectionKind.Liked -> {
+                                    { track -> pendingUnlikeTrack = track }
+                                }
+                                state.owned -> {
+                                    { track -> pendingRemoveTrack = track }
+                                }
+                                else -> null
+                            },
+                        )
+                        }
                     }
                 }
             }
@@ -1896,9 +1903,9 @@ class MainActivity : ComponentActivity() {
         // composed last wins, so this unwinds overlays in the reverse order they opened
         // (queue, then login/settings, then the player, then a detail page, then the tab).
         BackHandler(enabled = tab != PlayerTab.Home) { tab = PlayerTab.Home }
-        BackHandler(enabled = collectionState != null) { appViewModel.closeCollection() }
-        BackHandler(enabled = artistState != null) { appViewModel.closeArtist() }
         BackHandler(enabled = showPlayer) { showPlayer = false }
+        BackHandler(enabled = artistState != null) { appViewModel.closeArtist() }
+        BackHandler(enabled = collectionState != null) { appViewModel.closeCollection() }
         BackHandler(enabled = commentsState.visible) { appViewModel.closeComments() }
         BackHandler(enabled = showSettings) { showSettings = false }
         BackHandler(enabled = showLogin) { showLogin = false }

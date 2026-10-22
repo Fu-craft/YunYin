@@ -9,4 +9,7 @@ package com.yunyin.music.ui.screens
  */
 internal object CollectionSubscribeRules {
     fun label(subscribed: Boolean): String = if (subscribed) "取消收藏" else "收藏"
+
+    /** The optimistic state after one tap; the server confirms it (or the host reverts on failure). */
+    fun next(subscribed: Boolean): Boolean = !subscribed
 }
