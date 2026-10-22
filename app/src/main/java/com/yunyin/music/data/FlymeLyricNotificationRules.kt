@@ -3,33 +3,42 @@ package com.yunyin.music.data
 import android.app.Notification
 
 /**
- * Constants and flag arithmetic for the Flyme status-bar lyric notification (official 适配说明).
+ * Constants/arithmetic for the doc-literal Flyme lyric notification.
  *
- * The doc's sample: a **standalone** notification with its own channel, `PRIORITY_MAX`, a 60 dp-class small icon,
- * `FLAG_NO_CLEAR`, and both private flags only while a lyric is active. Pure so the flag transitions (apply/clear),
- * the stable id and the channel name are unit-tested.
+ * The implementation is deliberately tiny: every lyric line is one `notify(sameId, …)`. The only suppression is an
+ * identical line re-delivered; a *different* line is never dropped — if Android's ~1 s notification rate limit is
+ * still in effect, the newest line is coalesced and posted at the next allowed instant (latest-wins).
  */
 object FlymeLyricNotificationRules {
 
-    /** Same id on every update; deliberately different from Media3's media notification (1001). */
     const val NOTIFICATION_ID = 2001
-
-    /** Own channel, as the doc's `createNotificationChannel()` requires. */
     const val CHANNEL_ID = "flyme_status_bar_lyrics"
 
-    /** Flyme's private flags (fallbacks when reflection is blocked on a Meizu device). */
     const val FLAG_ALWAYS_SHOW_TICKER = 0x01000000
     const val FLAG_ONLY_UPDATE_TICKER = 0x02000000
 
-    /** Flags for an active ticker post: resident + both Flyme flags. */
+    /** Android's notification update rate limit; only used to coalesce, never to drop a different line. */
+    const val MIN_POST_INTERVAL_MS = 1_000L
+
+    /** An unchanged line must not be reposted. */
+    fun isSameText(previous: String?, next: String?): Boolean =
+        next != null && previous == next
+
+    /** Flags for a lyric post: resident + both Flyme flags. */
     fun activeFlags(showTicker: Int, updateTicker: Int): Int =
         Notification.FLAG_NO_CLEAR or showTicker or updateTicker
 
-    /** Flags for the clearing post: resident, but both Flyme flags removed (stops the scroll). */
+    /** Flags for the stop post: resident only, both Flyme flags removed. */
     fun clearedFlags(showTicker: Int, updateTicker: Int): Int =
         Notification.FLAG_NO_CLEAR and (showTicker or updateTicker).inv()
 
+    /** 0 when a post may happen now; otherwise how long the newest line must wait (latest-wins). */
+    fun nextPostDelayMs(nowMs: Long, lastPostMs: Long): Long {
+        if (lastPostMs <= 0L) return 0L
+        return (lastPostMs + MIN_POST_INTERVAL_MS - nowMs).coerceAtLeast(0L)
+    }
+
     val isFlymeManufacturer: (String?, String?) -> Boolean = { manufacturer, brand ->
-        listOf(manufacturer, brand).any { value -> value?.trim()?.equals("meizu", ignoreCase = true) == true }
+        listOf(manufacturer, brand).any { it?.trim()?.equals("meizu", ignoreCase = true) == true }
     }
 }

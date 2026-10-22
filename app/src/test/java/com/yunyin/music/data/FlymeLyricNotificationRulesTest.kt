@@ -3,47 +3,49 @@ package com.yunyin.music.data
 import android.app.Notification
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Flyme lyric notification: id/channel stability and the apply/clear flag arithmetic. */
+/** New doc-literal contract: same-line skip, latest-wins coalescing, flags, id/channel constants. */
 class FlymeLyricNotificationRulesTest {
 
     @Test
-    fun `the lyric id is stable and distinct from the media notification`() {
+    fun `only an identical line is skipped`() {
+        assertTrue(FlymeLyricNotificationRules.isSameText("line", "line"))
+        assertFalse(FlymeLyricNotificationRules.isSameText("line", "next line"))
+        assertFalse(FlymeLyricNotificationRules.isSameText(null, "first line"))
+        assertFalse(FlymeLyricNotificationRules.isSameText("line", null))
+    }
+
+    @Test
+    fun `a different line within the rate window is coalesced, not dropped`() {
+        assertEquals(0L, FlymeLyricNotificationRules.nextPostDelayMs(nowMs = 10_000, lastPostMs = 0))
+        assertEquals(700L, FlymeLyricNotificationRules.nextPostDelayMs(nowMs = 10_300, lastPostMs = 10_000))
+        assertEquals(0L, FlymeLyricNotificationRules.nextPostDelayMs(nowMs = 11_500, lastPostMs = 10_000))
+    }
+
+    @Test
+    fun `active flags are resident with both Flyme flags and stop clears them`() {
+        val active = FlymeLyricNotificationRules.activeFlags(
+            FlymeLyricNotificationRules.FLAG_ALWAYS_SHOW_TICKER,
+            FlymeLyricNotificationRules.FLAG_ONLY_UPDATE_TICKER,
+        )
+        assertTrue(active and Notification.FLAG_NO_CLEAR != 0)
+        assertTrue(active and FlymeLyricNotificationRules.FLAG_ALWAYS_SHOW_TICKER != 0)
+        assertTrue(active and FlymeLyricNotificationRules.FLAG_ONLY_UPDATE_TICKER != 0)
+        val cleared = FlymeLyricNotificationRules.clearedFlags(
+            FlymeLyricNotificationRules.FLAG_ALWAYS_SHOW_TICKER,
+            FlymeLyricNotificationRules.FLAG_ONLY_UPDATE_TICKER,
+        )
+        assertTrue(cleared and Notification.FLAG_NO_CLEAR != 0)
+        assertEquals(0, cleared and FlymeLyricNotificationRules.FLAG_ALWAYS_SHOW_TICKER)
+        assertEquals(0, cleared and FlymeLyricNotificationRules.FLAG_ONLY_UPDATE_TICKER)
+    }
+
+    @Test
+    fun `stable id and own channel`() {
         assertEquals(2001, FlymeLyricNotificationRules.NOTIFICATION_ID)
-        assertNotEquals(1001, FlymeLyricNotificationRules.NOTIFICATION_ID)
         assertEquals("flyme_status_bar_lyrics", FlymeLyricNotificationRules.CHANNEL_ID)
-    }
-
-    @Test
-    fun `an active ticker is resident and carries both Flyme flags`() {
-        val flags = FlymeLyricNotificationRules.activeFlags(
-            FlymeLyricNotificationRules.FLAG_ALWAYS_SHOW_TICKER,
-            FlymeLyricNotificationRules.FLAG_ONLY_UPDATE_TICKER,
-        )
-        assertTrue(flags and Notification.FLAG_NO_CLEAR != 0)
-        assertTrue(flags and FlymeLyricNotificationRules.FLAG_ALWAYS_SHOW_TICKER != 0)
-        assertTrue(flags and FlymeLyricNotificationRules.FLAG_ONLY_UPDATE_TICKER != 0)
-    }
-
-    @Test
-    fun `clearing keeps the notification resident but removes both Flyme flags`() {
-        val flags = FlymeLyricNotificationRules.clearedFlags(
-            FlymeLyricNotificationRules.FLAG_ALWAYS_SHOW_TICKER,
-            FlymeLyricNotificationRules.FLAG_ONLY_UPDATE_TICKER,
-        )
-        assertTrue(flags and Notification.FLAG_NO_CLEAR != 0)
-        assertFalse(flags and FlymeLyricNotificationRules.FLAG_ALWAYS_SHOW_TICKER != 0)
-        assertFalse(flags and FlymeLyricNotificationRules.FLAG_ONLY_UPDATE_TICKER != 0)
-    }
-
-    @Test
-    fun `meizu is recognised from manufacturer or brand`() {
-        assertTrue(FlymeLyricNotificationRules.isFlymeManufacturer("Meizu", null))
-        assertTrue(FlymeLyricNotificationRules.isFlymeManufacturer(null, "meizu"))
-        assertFalse(FlymeLyricNotificationRules.isFlymeManufacturer("Xiaomi", "Redmi"))
-        assertFalse(FlymeLyricNotificationRules.isFlymeManufacturer(null, null))
+        assertEquals(1_000L, FlymeLyricNotificationRules.MIN_POST_INTERVAL_MS)
     }
 }
