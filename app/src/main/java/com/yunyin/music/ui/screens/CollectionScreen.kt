@@ -141,6 +141,9 @@ fun CollectionScreen(
     onDeletePlaylist: (() -> Unit)? = null,
     /** Present on owned playlists and the liked list; the host confirms and removes by collection kind. */
     onRemoveTrack: ((Track) -> Unit)? = null,
+    subscribed: Boolean = false,
+    onToggleSubscribe: (() -> Unit)? = null,
+    subscribeAvailable: Boolean = false,
     /** 下一首播放 for a row; null hides the entry. */
     onPlayNext: ((Track) -> Unit)? = null,
     /** Manual refresh: still used by the first-page error state's retry. */
@@ -211,6 +214,8 @@ fun CollectionScreen(
                     inverseOnCover = inverseOnCover,
                     onPlayAll = onPlayAll,
                     onMoreClick = { showMenu = true },
+                    subscribed = state.subscribed,
+                    onToggleSubscribe = if (subscribeAvailable) onToggleSubscribe else null,
                     onHeightChanged = { headerHeightPx = it },
                 )
             }
@@ -485,6 +490,8 @@ private fun Header(
     onPlayAll: () -> Unit,
     /** Opens the header's 更多 sheet: 随机播放 / 分享 / 编辑 / 删除. */
     onMoreClick: () -> Unit,
+    subscribed: Boolean = false,
+    onToggleSubscribe: (() -> Unit)? = null,
     /** Reports the measured height so the pinned bar can time its surface to the ramp. */
     onHeightChanged: (Int) -> Unit,
 ) {
@@ -594,6 +601,17 @@ private fun Header(
                     onClick = onMoreClick,
                     modifier = Modifier.weight(1f),
                 )
+                if (onToggleSubscribe != null) {
+                    HeaderAction(
+                        icon = SfIcons.StarFill,
+                        label = if (subscribed) "已收藏" else "收藏",
+                        fill = onCover.copy(alpha = 0.16f),
+                        content = onCover,
+                        border = onCover.copy(alpha = 0.22f),
+                        onClick = onToggleSubscribe,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
             }
 
             // The band the fade completes in. Text-free by construction, and given a margin above it

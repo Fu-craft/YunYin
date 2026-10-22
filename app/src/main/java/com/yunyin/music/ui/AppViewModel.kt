@@ -12,6 +12,8 @@ import com.yunyin.music.core.Account
 import com.yunyin.music.core.HomeFeed
 import com.yunyin.music.core.Playlist
 import com.yunyin.music.core.Track
+import com.yunyin.music.data.SubscribeRules
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -49,6 +51,9 @@ data class CollectionUiState(
     val kind: CollectionKind = CollectionKind.Playlist,
     /** Set when the load failed; distinct from a successful playlist that happens to be empty. */
     val error: String? = null,
+    val subscribed: Boolean = false,
+    val subscribedCount: Long = 0L,
+    val subscribeAvailable: Boolean = false,
 )
 
 /** The source of a collection page, so an error retry can replay the right request. */
@@ -141,6 +146,9 @@ data class ArtistUiState(
     val loading: Boolean = true,
     /** Header/profile failure; sections still render independently. */
     val error: String? = null,
+    /** Account-level follow; available only for a real session. */
+    val followed: Boolean = false,
+    val followAvailable: Boolean = false,
 ) {
     /** Kept for the existing play-all/queue call sites: the hot list is the page's headline list. */
     val tracks: List<Track> get() = hotSongs
@@ -173,6 +181,10 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
     private val _comments = MutableStateFlow(CommentsUiState())
     val comments: StateFlow<CommentsUiState> = _comments.asStateFlow()
     private var commentsJob: kotlinx.coroutines.Job? = null
+    private val subscribeJobs = HashMap<String, Job>()
+
+    /** Surfaced once per failed tap by the host (Toast); local UI state is reverted. */
+    var onSubscribeFailure: ((String) -> Unit)? = null
     private var suggestJob: Job? = null
     private var artistJob: Job? = null
     private var artistRequestId = 0L
@@ -478,6 +490,51 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    private fun realSession(): Boolean = container.settings.account?.let {
+        SubscribeRules.canSubscribe(container.settings.cookie, it.userId, it.isAnonymous)
+    } ?: false
+
+    fun toggleArtistFollow() {
+        val current = _artist.value ?: return
+        if (!current.followAvailable || current.id <= 0L) return
+        val target = !current.followed
+        _artist.value = current.copy(followed = target)
+        syncSubscription("artist", current.id, target) {
+            _artist.value = _artist.value?.copy(followed = !target)
+        }
+    }
+
+    fun toggleCollectionSubscribe() {
+        val current = _collection.value ?: return
+        if (!current.subscribeAvailable || current.id <= 0L) return
+        val kind = if (current.kind == CollectionKind.Album) "album" else "playlist"
+        val target = !current.subscribed
+        _collection.value = current.copy(subscribed = target)
+        syncSubscription(kind, current.id, target) {
+            _collection.value = _collection.value?.copy(subscribed = !target)
+        }
+    }
+
+    private fun syncSubscription(kind: String, id: Long, target: Boolean, revert: () -> Unit) {
+        val key = "$kind:$id"
+        subscribeJobs.remove(key)?.cancel()
+        subscribeJobs[key] = viewModelScope.launch {
+            delay(SubscribeRules.DEBOUNCE_MS)
+            val result = runCatching { container.music.subscribe(kind, id, target) }.getOrNull()
+            val ok = result is com.yunyin.music.core.NetResult.Ok
+            container.lxLog.record(
+                "解析",
+                "stage=sub action=$kind id=$id t=${if (target) 1 else 0} " +
+                    "result=" + if (ok) "ok" else "fail reason=${(result as? com.yunyin.music.core.NetResult.Err)?.message ?: "exception"}",
+            )
+            if (!ok) {
+                revert()
+                runCatching { onSubscribeFailure?.invoke(if (kind == "artist") "关注失败" else "收藏失败") }
+            }
+            subscribeJobs.remove(key)
+        }
+    }
+
     // ---------------------------------------------------------------- detail
 
     fun openPlaylist(playlist: Playlist, uid: Long = 0L) {
@@ -493,6 +550,9 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
             owned = com.yunyin.music.data.playlist.PlaylistOwnership.canEdit(playlist, uid),
             canBeatMode = true,
             kind = CollectionKind.Playlist,
+            subscribed = playlist.subscribed,
+            subscribedCount = playlist.subscribedCount,
+            subscribeAvailable = realSession(),
         )
         collectionJob = viewModelScope.launch {
             // Progressive: the first batch renders immediately, later batches append in order. A 566/1267-track
@@ -762,6 +822,8 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
                             albumSize = info.albumSize,
                             musicSize = info.musicSize,
                             loading = false,
+                            followed = info.followed,
+                            followAvailable = realSession(),
                         )
                     }
                 }
@@ -867,6 +929,7 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
             coverUrl = coverUrl,
             loading = true,
             kind = CollectionKind.Album,
+            subscribeAvailable = realSession(),
         )
         collectionJob = viewModelScope.launch {
             val result = runCatching { container.music.albumTracks(albumId) }

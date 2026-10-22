@@ -87,6 +87,8 @@ fun ArtistScreen(
     onPlayAll: () -> Unit,
     modifier: Modifier = Modifier,
     onShufflePlay: () -> Unit = {},
+    followed: Boolean = false,
+    onToggleFollow: (() -> Unit)? = null,
     onAllTrackClick: (Track, Int) -> Unit = { _, _ -> },
     onLoadMoreSongs: () -> Unit = {},
     onLoadMoreAlbums: () -> Unit = {},
@@ -121,6 +123,8 @@ fun ArtistScreen(
                     bioExpanded = bioExpanded,
                     onToggleBio = { bioExpanded = !bioExpanded },
                     onPlayAll = onPlayAll,
+                    followed = followed,
+                    onToggleFollow = onToggleFollow,
                 )
             }
 
@@ -408,6 +412,8 @@ private fun ArtistHeaderBlock(
     bioExpanded: Boolean,
     onToggleBio: () -> Unit,
     onPlayAll: () -> Unit,
+    followed: Boolean,
+    onToggleFollow: (() -> Unit)?,
 ) {
     val palette = AppTheme.palette
     Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -485,6 +491,16 @@ private fun ArtistHeaderBlock(
         if (state.error != null) {
             Spacer(Modifier.height(6.dp))
             Text(state.error, fontFamily = SFPro, fontSize = 12.sp, color = palette.accent)
+        }
+        if (onToggleFollow != null) {
+            Spacer(Modifier.height(10.dp))
+            PillAction(
+                label = if (followed) "已关注" else "关注",
+                icon = SfIcons.Person,
+                primary = false,
+                onClick = onToggleFollow,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
         Spacer(Modifier.height(14.dp))
         // The header keeps the one primary action, full width so it stays the page's most prominent

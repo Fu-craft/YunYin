@@ -660,6 +660,9 @@ class MainActivity : ComponentActivity() {
             container.liked.onSyncFailure = {
                 Toast.makeText(context, "同步失败，已保存在本地", Toast.LENGTH_SHORT).show()
             }
+            appViewModel.onSubscribeFailure = { message ->
+                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+            }
         }
         val darkTheme = androidx.compose.foundation.isSystemInDarkTheme()
         DisposableEffect(darkTheme) {
@@ -1196,6 +1199,8 @@ class MainActivity : ComponentActivity() {
                             } else {
                                 null
                             },
+                            subscribed = state.subscribed,
+                            onToggleSubscribe = if (state.subscribeAvailable) appViewModel::toggleCollectionSubscribe else null,
                             onPlayNext = { track ->
                                 if (container.player.enqueueNext(listOf(track))) {
                                     Toast.makeText(context, "已设为下一首", Toast.LENGTH_SHORT).show()
@@ -1746,6 +1751,8 @@ class MainActivity : ComponentActivity() {
                                 container.player.toggleShuffle()
                                 list.randomOrNull()?.let { play(it, list) }
                             },
+                            followed = artist.followed,
+                            onToggleFollow = if (artist.followAvailable) appViewModel::toggleArtistFollow else null,
                             onLoadMoreSongs = { appViewModel.loadMoreArtistSongs() },
                             onLoadMoreAlbums = { appViewModel.loadMoreArtistAlbums() },
                             onAlbumClick = { album -> appViewModel.openAlbum(album.id, album.name, album.coverUrl) },

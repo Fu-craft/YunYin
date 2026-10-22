@@ -41,6 +41,9 @@ data class Playlist(
      * playlist. Zero means "unknown", and unknown is never treated as owned.
      */
     val creatorUserId: Long = 0L,
+    /** Account-level subscribe state when the response carried it. */
+    val subscribed: Boolean = false,
+    val subscribedCount: Long = 0L,
 )
 
 /** A chart / toplist entry. */

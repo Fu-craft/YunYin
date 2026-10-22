@@ -507,6 +507,8 @@ class NeteaseClient(
             playCount = p.optLong("playCount"),
             description = p.optString("description").ifBlank { null },
             creatorUserId = p.optJSONObject("creator")?.optLong("userId") ?: 0L,
+            subscribed = p.optBoolean("subscribed"),
+            subscribedCount = p.optLong("subscribedCount"),
         )
     }
 
@@ -930,6 +932,27 @@ class NeteaseClient(
      * need one. Without it the API server's two-minute URL cache can swallow the request and the
      * toggle silently does nothing.
      */
+    /** Account-level subscribe: kind = artist | album | playlist; t=1 follow, t=0 unfollow. */
+    suspend fun subscribe(kind: String, id: Long, follow: Boolean): NetResult<Unit> {
+        val path = when (kind) {
+            "artist" -> "/artist/sub"
+            "album" -> "/album/sub"
+            "playlist" -> "/playlist/subscribe"
+            else -> return NetResult.Err("未知收藏类型")
+        }
+        return when (val result = request(
+            path,
+            query = RequestCacheBust.withCacheBust(
+                mapOf("id" to "$id", "t" to if (follow) "1" else "0"),
+                System.currentTimeMillis(),
+            ),
+        )) {
+            is NetResult.Err -> result
+            is NetResult.Ok -> if (result.value.optInt("code") == 200) NetResult.Ok(Unit)
+            else NetResult.Err(result.value.optString("message").ifBlank { "code=${result.value.optInt("code")}" })
+        }
+    }
+
     suspend fun likeSong(id: Long, like: Boolean): NetResult<Unit> = request(
         "/like",
         query = mapOf(

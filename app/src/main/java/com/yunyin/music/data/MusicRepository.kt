@@ -574,6 +574,9 @@ class MusicRepository(
 
     suspend fun likeSong(id: Long, like: Boolean): NetResult<Unit> = client.likeSong(id, like)
 
+    suspend fun subscribe(kind: String, id: Long, follow: Boolean): NetResult<Unit> =
+        client.subscribe(kind, id, follow)
+
     suspend fun hotComments(songId: Long): NetResult<List<com.yunyin.music.core.Comment>> =
         client.hotComments(songId)
 
