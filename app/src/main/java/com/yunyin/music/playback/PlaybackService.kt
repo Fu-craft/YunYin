@@ -9,9 +9,11 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.yunyin.music.AppContainer
+import com.yunyin.music.R
 import kotlinx.coroutines.runBlocking
 
 /**
@@ -33,6 +35,15 @@ class PlaybackService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
         val container = AppContainer.from(this)
+
+        // The standard media notification had Media3's generic white small icon. Use our
+        // white-on-transparent note silhouette instead: it is the platform convention (alpha-masked,
+        // tinted by the system) and matches the Flyme ticker mark.
+        setMediaNotificationProvider(
+            DefaultMediaNotificationProvider(this).apply {
+                setSmallIcon(R.drawable.ic_ticker_note_white)
+            },
+        )
 
         val httpFactory = DefaultHttpDataSource.Factory()
             .setUserAgent(USER_AGENT)

@@ -81,9 +81,15 @@ class FlymeLyricNotifier(private val context: Context) {
         runCatching {
             ensureChannel()
 
-            val icon = if (playing) R.drawable.ic_ticker_play else R.drawable.ic_ticker_pause
+            // The leading ticker icon: our note mark, brand blue on transparency. Flyme loads the
+            // resource and may render it in colour; on ROMs that tint it, the alpha shape still
+            // reads as the same mark.
+            val tickerIcon = if (playing) R.drawable.ic_ticker_note else R.drawable.ic_ticker_note_paused
+            // Notification small icons are masked by alpha, so this one is the white silhouette;
+            // the platform supplies the final tint.
+            val smallIcon = if (playing) R.drawable.ic_ticker_note_white else R.drawable.ic_ticker_note_white_paused
             val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-                .setSmallIcon(icon)
+                .setSmallIcon(smallIcon)
                 .setContentTitle(context.getString(R.string.app_name))
                 .setContentText(line ?: "")
                 .setTicker(text)
@@ -104,7 +110,7 @@ class FlymeLyricNotifier(private val context: Context) {
             // The leading icon is the play/pause indicator. `ticker_icon_switch = false` tells Flyme
             // to use the notification's own small icon rather than swapping in its default.
             notification.extras.putBoolean("ticker_icon_switch", false)
-            notification.extras.putInt("ticker_icon", icon)
+            notification.extras.putInt("ticker_icon", tickerIcon)
 
             NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
         }.onFailure { error ->
