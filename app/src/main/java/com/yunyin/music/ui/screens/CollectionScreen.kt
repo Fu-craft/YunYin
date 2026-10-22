@@ -214,8 +214,6 @@ fun CollectionScreen(
                     inverseOnCover = inverseOnCover,
                     onPlayAll = onPlayAll,
                     onMoreClick = { showMenu = true },
-                    subscribed = state.subscribed,
-                    onToggleSubscribe = onToggleSubscribe,
                     onHeightChanged = { headerHeightPx = it },
                 )
             }
@@ -332,6 +330,14 @@ fun CollectionScreen(
                     ) { close { beatModeActions.start(state.id) } }
                 }
                 CollectionMenuRow(SfIcons.SquareAndArrowUp, "分享歌单") { close { onShare() } }
+                // Photo-album and playlist pages share this sheet; the label states the action for the
+                // current state and the row is simply absent without a real session (guest gate).
+                if (onToggleSubscribe != null) {
+                    CollectionMenuRow(
+                        icon = SfIcons.StarFill,
+                        label = CollectionSubscribeRules.label(state.subscribed),
+                    ) { close { onToggleSubscribe() } }
+                }
                 if (onEditPlaylist != null) {
                     CollectionMenuRow(SfIcons.Pencil, "编辑歌单") { close { onEditPlaylist() } }
                 }
@@ -490,8 +496,6 @@ private fun Header(
     onPlayAll: () -> Unit,
     /** Opens the header's 更多 sheet: 随机播放 / 分享 / 编辑 / 删除. */
     onMoreClick: () -> Unit,
-    subscribed: Boolean = false,
-    onToggleSubscribe: (() -> Unit)? = null,
     /** Reports the measured height so the pinned bar can time its surface to the ramp. */
     onHeightChanged: (Int) -> Unit,
 ) {
@@ -582,8 +586,9 @@ private fun Header(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                // Play all leads: it is the action people come here for, so it takes the solid fill
-                // and shuffle takes the glass one. Both are pills, as in iOS's media headers.
+                // Two controls only: play all leads (solid fill) and 更多 (glass). 收藏 lives inside
+                // 更多 — a third equal-weight pill made the header read as a button bar rather than a
+                // pair of actions (skill: hierarchy / one primary per band).
                 HeaderAction(
                     icon = SfIcons.Play,
                     label = "播放全部",
@@ -601,17 +606,6 @@ private fun Header(
                     onClick = onMoreClick,
                     modifier = Modifier.weight(1f),
                 )
-                if (onToggleSubscribe != null) {
-                    HeaderAction(
-                        icon = SfIcons.StarFill,
-                        label = if (subscribed) "已收藏" else "收藏",
-                        fill = onCover.copy(alpha = 0.16f),
-                        content = onCover,
-                        border = onCover.copy(alpha = 0.22f),
-                        onClick = onToggleSubscribe,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
             }
 
             // The band the fade completes in. Text-free by construction, and given a margin above it

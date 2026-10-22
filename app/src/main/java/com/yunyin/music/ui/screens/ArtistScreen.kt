@@ -4,6 +4,7 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -492,27 +493,33 @@ private fun ArtistHeaderBlock(
             Spacer(Modifier.height(6.dp))
             Text(state.error, fontFamily = SFPro, fontSize = 12.sp, color = palette.accent)
         }
-        if (onToggleFollow != null) {
-            Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(12.dp))
+        // One row, follow left / play all right (skill: related secondary + primary actions share a
+        // band; 46 dp keeps both above the 44 dp target and gives the two labels equal height). The
+        // weights split the width evenly, so 已关注 cannot wrap — the text ellipsizes in the worst
+        // case instead of pushing 播放全部 to a second line.
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (onToggleFollow != null) {
+                PillAction(
+                    label = if (followed) "已关注" else "关注",
+                    icon = SfIcons.Person,
+                    primary = false,
+                    onClick = onToggleFollow,
+                    modifier = Modifier.weight(1f),
+                )
+            }
             PillAction(
-                label = if (followed) "已关注" else "关注",
-                icon = SfIcons.Person,
-                primary = false,
-                onClick = onToggleFollow,
-                modifier = Modifier.fillMaxWidth(),
+                label = "播放全部",
+                icon = SfIcons.Play,
+                primary = true,
+                onClick = onPlayAll,
+                modifier = Modifier.weight(1f),
             )
         }
-        Spacer(Modifier.height(14.dp))
-        // The header keeps the one primary action, full width so it stays the page's most prominent
-        // control. The secondary action (shuffle) moved to the pinned bar as a glass disc: it is
-        // needed at any scroll depth, and the bar is where the glass controls live.
-        PillAction(
-            label = "播放全部",
-            icon = SfIcons.Play,
-            primary = true,
-            onClick = onPlayAll,
-            modifier = Modifier.fillMaxWidth(),
-        )
         Spacer(Modifier.height(8.dp))
     }
 }
@@ -526,18 +533,41 @@ private fun PillAction(
     modifier: Modifier = Modifier,
 ) {
     val palette = AppTheme.palette
+    val shape = ContinuousRoundedRectangle(AppleShapes.pill)
     Row(
         modifier
-            .height(44.dp)
-            .clip(ContinuousRoundedRectangle(AppleShapes.pill))
-            .background(if (primary) palette.accent else palette.secondaryBackground)
-            .clickable(onClick = onClick),
+            .height(46.dp)
+            .clip(shape)
+            // No opaque fill behind the secondary action: a hairline glass border is enough contrast
+            // on the page background, and the press feedback is the app's unbounded ripple (skill:
+            // 44 dp+ target, visible press feedback, no flat colour block).
+            .then(
+                if (primary) {
+                    Modifier.background(palette.accent)
+                } else {
+                    Modifier.border(1.dp, palette.separator, shape)
+                },
+            )
+            .clickable(
+                indication = rememberControlRipple(bounded = false),
+                interactionSource = null,
+                onClick = onClick,
+            )
+            .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
     ) {
         Icon(icon, contentDescription = null, tint = if (primary) Color.White else palette.label, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(8.dp))
-        Text(label, fontFamily = SFPro, fontWeight = FontWeight.Medium, fontSize = 15.sp, color = if (primary) Color.White else palette.label)
+        Text(
+            label,
+            fontFamily = SFPro,
+            fontWeight = FontWeight.Medium,
+            fontSize = 15.sp,
+            color = if (primary) Color.White else palette.label,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 

@@ -1,6 +1,7 @@
 package com.yunyin.music.ui.screens
 
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,11 +28,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kyant.backdrop.Backdrop
+import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
 import com.yunyin.music.core.Playlist
 import com.yunyin.music.core.Track
 import com.yunyin.music.data.ArtworkLoader
@@ -49,8 +52,10 @@ import com.yunyin.music.ui.components.chromeContentBottomPadding
 import com.yunyin.music.ui.components.formatCount
 import com.yunyin.music.ui.components.glassTopBarTopPadding
 import com.yunyin.music.ui.components.liquidGlassControl
+import com.yunyin.music.ui.components.rememberControlRipple
 import com.yunyin.music.ui.components.rememberGlassTopBarBackdrop
 import com.yunyin.music.ui.icons.SfIcons
+import com.yunyin.music.ui.theme.AppleShapes
 import com.yunyin.music.ui.theme.AppTheme
 import com.yunyin.music.ui.theme.Motion
 import com.yunyin.music.ui.theme.SFPro
@@ -88,6 +93,8 @@ fun HomeScreen(
     onTrackClick: (Track, List<Track>) -> Unit,
     onPlaylistClick: (Playlist) -> Unit,
     onChartClick: (Long, String, String?) -> Unit,
+    /** Starts 私人 FM; the host replaces the queue and opens the player on the first batch. */
+    onStartFm: () -> Unit = {},
     /** Retries the feed after the error state; the host owns the request. */
     onRetry: () -> Unit = {},
     modifier: Modifier = Modifier,
@@ -126,6 +133,10 @@ fun HomeScreen(
                         }
                     }
                 }
+                // Always present, even while the feed is loading or in an error state: the FM radio
+                // is a core listen action, so it must not disappear with the shelves (discoverability).
+                item("fm") { HomeFmRow(onClick = onStartFm) }
+
                 if (feed.featuredPlaylists.isNotEmpty()) {
             item("featured-header") {
                 SectionHeader(
@@ -295,6 +306,71 @@ fun SearchBar(
             fontFamily = SFPro,
             fontSize = 17.sp,
             color = AppTheme.palette.secondaryLabel,
+        )
+    }
+}
+
+/**
+ * 私人 FM entry. A single 64 dp card with the action's own icon, title and one-line explanation:
+ * 44 dp+ target, a chevron for "this navigates", and the same card surface as the shelves.
+ */
+@Composable
+private fun HomeFmRow(onClick: () -> Unit) {
+    val palette = AppTheme.palette
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 6.dp)
+            .height(64.dp)
+            .clip(ContinuousRoundedRectangle(AppleShapes.card))
+            .background(palette.secondaryBackground)
+            .clickable(
+                indication = rememberControlRipple(bounded = true),
+                interactionSource = null,
+                onClick = onClick,
+            )
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier
+                .size(36.dp)
+                .clip(ContinuousRoundedRectangle(AppleShapes.pill))
+                .background(palette.accent.copy(alpha = 0.16f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                SfIcons.SpeakerWave,
+                contentDescription = null,
+                tint = palette.accent,
+                modifier = Modifier.size(20.dp),
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = "私人 FM",
+                fontFamily = SFPro,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 15.sp,
+                color = palette.label,
+                maxLines = 1,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = "根据你的口味持续播放",
+                fontFamily = SFPro,
+                fontSize = 12.sp,
+                color = palette.secondaryLabel,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            )
+        }
+        Icon(
+            SfIcons.ChevronRight,
+            contentDescription = null,
+            tint = palette.tertiaryLabel,
+            modifier = Modifier.size(18.dp),
         )
     }
 }

@@ -166,6 +166,8 @@ fun PlayerScreen(
     onCycleRepeat: () -> Unit,
     onToggleShuffle: () -> Unit,
     onShowQueue: () -> Unit,
+    /** Fallback 私人 FM entry in the ⋯ sheet; null hides it. */
+    onStartFm: (() -> Unit)? = null,
     onPlayNext: (() -> Unit)? = null,
     onShowSettings: () -> Unit,
     /** Whether the lyrics page may auto-hide the chrome after the idle delay. */
@@ -1165,6 +1167,7 @@ fun PlayerScreen(
                     interaction++
                     onShowQueue()
                 },
+                onStartFm = onStartFm,
             )
         }
 
@@ -1797,6 +1800,7 @@ private fun TrackActionsSheet(
     onShare: () -> Unit,
     onCalibrateLyrics: () -> Unit,
     onShowQueue: () -> Unit,
+    onStartFm: (() -> Unit)? = null,
 ) {
     AnimatedSheet(
         onDismissed = onDismiss,
@@ -1869,6 +1873,11 @@ private fun TrackActionsSheet(
         }
         ActionRow(SfIcons.Clock, "歌词校准", hasLyrics) {
             close { onCalibrateLyrics() }
+        }
+        if (onStartFm != null) {
+            ActionRow(SfIcons.SpeakerWave, "私人 FM", true) {
+                close { onStartFm() }
+            }
         }
         ActionRow(SfIcons.ListBullet, "播放队列", true) {
             close { onShowQueue() }

@@ -966,6 +966,12 @@ class MainActivity : ComponentActivity() {
                                 appViewModel.openChart(id, title, cover)
                             },
                             onRetry = appViewModel::refreshHome,
+                            // 私人 FM is a first-class listen action, not a settings toggle: the row sits
+                            // at the top of Home and the player opens on the first batch.
+                            onStartFm = {
+                                appViewModel.startFm()
+                                showPlayer = true
+                            },
                         )
 
                         PlayerTab.Search -> SearchScreen(
@@ -1658,6 +1664,9 @@ class MainActivity : ComponentActivity() {
                     onCycleRepeat = { container.player.cycleRepeat() },
                     onToggleShuffle = { container.player.toggleShuffle() },
                     onShowQueue = { showQueue = true },
+                    // Fallback entry for 私人 FM beside the Home row: discoverable from the player's
+                    // ⋯ sheet even if the Home shelf is scrolled away or the feed is degraded.
+                    onStartFm = { appViewModel.startFm() },
                     onShowSettings = { showSettings = true; showPlayer = false },
                     onArtistClick = { name ->
                         // The artist page sits above the player: closing it returns to where the tap
@@ -1756,7 +1765,14 @@ class MainActivity : ComponentActivity() {
                             onToggleFollow = if (artist.followAvailable) appViewModel::toggleArtistFollow else null,
                             onLoadMoreSongs = { appViewModel.loadMoreArtistSongs() },
                             onLoadMoreAlbums = { appViewModel.loadMoreArtistAlbums() },
-                            onAlbumClick = { album -> appViewModel.openAlbum(album.id, album.name, album.coverUrl) },
+                            onAlbumClick = { album ->
+                                // The artist page is layered ABOVE the collection page, so opening the
+                                // album without closing the artist left it rendering underneath an
+                                // opaque page — the tap looked like a no-op. id is the album's, not the
+                                // artist's, so openAlbum lands on the right detail page.
+                                appViewModel.closeArtist()
+                                appViewModel.openAlbum(album.id, album.name, album.coverUrl)
+                            },
                             nowPlayingId = nowPlaying.first,
                             isPlaying = nowPlaying.second,
                         )
