@@ -139,15 +139,11 @@ fun CollectionScreen(
     onEditPlaylist: (() -> Unit)? = null,
     /** Present only when owned; host confirms then deletes and closes the page. */
     onDeletePlaylist: (() -> Unit)? = null,
-    /** Present only when owned; host confirms then removes the track and refreshes the page. */
+    /** Present on owned playlists and the liked list; the host confirms and removes by collection kind. */
     onRemoveTrack: ((Track) -> Unit)? = null,
     /** 下一首播放 for a row; null hides the entry. */
     onPlayNext: ((Track) -> Unit)? = null,
-    /** Row ⋯ menu: open the artist page for a name printed on the row. */
-    onOpenArtist: ((String) -> Unit)? = null,
-    /** Row ⋯ menu: open the album page for a track with a real album id. */
-    onOpenAlbum: ((Track) -> Unit)? = null,
-    /** Manual refresh: always bypasses the playlist cache and goes to the network. */
+    /** Manual refresh: still used by the first-page error state's retry. */
     onRefresh: (() -> Unit)? = null,
 ) {
     var showMenu by remember { mutableStateOf(false) }
@@ -263,38 +259,6 @@ fun CollectionScreen(
             } else if (state.tracks.isEmpty()) {
                 item("empty") { EmptyState("这个歌单还没有歌曲") }
             } else {
-                item("count") {
-                    Column(Modifier.fillMaxWidth()) {
-                        CountRow(
-                            count = state.tracks.size,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(start = PageInset, end = PageInset, top = 14.dp, bottom = 2.dp),
-                        )
-                        if (onRefresh != null) {
-                            Box(
-                                Modifier
-                                    .padding(start = PageInset)
-                                    .height(44.dp)
-                                    .clip(ContinuousRoundedRectangle(AppleShapes.pill))
-                                    .clickable(
-                                        indication = rememberControlRipple(bounded = true),
-                                        interactionSource = null,
-                                        onClick = onRefresh,
-                                    )
-                                    .padding(horizontal = 4.dp),
-                                contentAlignment = Alignment.CenterStart,
-                            ) {
-                                Text(
-                                    text = "刷新",
-                                    fontFamily = SFPro,
-                                    fontSize = 12.sp,
-                                    color = AppTheme.palette.accent,
-                                )
-                            }
-                        }
-                    }
-                }
                 // Index-based so duplicate songs in a playlist still resolve to the row that was
                 // tapped (`indexOf` would always return the first duplicate).
                 itemsIndexed(
@@ -397,17 +361,11 @@ fun CollectionScreen(
                 if (onPlayNext != null) {
                     CollectionMenuRow(SfIcons.Forward, "下一首播放") { close { onPlayNext(track) } }
                 }
-                if (onOpenArtist != null && track.artists.isNotEmpty()) {
-                    CollectionMenuRow(SfIcons.Person, "查看歌手") { close { onOpenArtist(track.artists.first()) } }
-                }
-                if (onOpenAlbum != null && track.albumId > 0L) {
-                    CollectionMenuRow(SfIcons.MusicNote, "查看专辑") { close { onOpenAlbum(track) } }
-                }
                 if (onRemoveTrack != null) {
                     Spacer(Modifier.height(6.dp))
                     Box(Modifier.fillMaxWidth().height(1.dp).background(AppTheme.palette.separator))
                     // Same host confirmation as before: the menu only opens it.
-                    CollectionMenuRow(SfIcons.Trash, "移除", destructive = true) {
+                    CollectionMenuRow(SfIcons.Trash, "移除音乐", destructive = true) {
                         close { onRemoveTrack(track) }
                     }
                 }
@@ -888,19 +846,6 @@ private fun BarIconButton(
     ) {
         Icon(icon, contentDescription = description, tint = ink, modifier = Modifier.size(19.dp))
     }
-}
-
-/** "N 首歌曲" section header above the list. */
-@Composable
-private fun CountRow(count: Int, modifier: Modifier = Modifier) {
-    Text(
-        text = "$count 首歌曲",
-        fontFamily = SFPro,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 16.sp,
-        color = AppTheme.palette.label,
-        modifier = modifier,
-    )
 }
 
 /**

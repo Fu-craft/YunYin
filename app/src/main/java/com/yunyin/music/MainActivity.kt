@@ -264,6 +264,7 @@ class MainActivity : ComponentActivity() {
         var playlistPickerError by remember { mutableStateOf<String?>(null) }
         var pendingDeletePlaylist by remember { mutableStateOf<com.yunyin.music.core.Playlist?>(null) }
         var pendingRemoveTrack by remember { mutableStateOf<com.yunyin.music.core.Track?>(null) }
+        var pendingUnlikeTrack by remember { mutableStateOf<com.yunyin.music.core.Track?>(null) }
         var playlistWriteBusy by remember { mutableStateOf(false) }
         var showSleepTimer by remember { mutableStateOf(false) }
         val sleepTimerEnd by container.player.sleepTimerEnd.collectAsState()
@@ -438,6 +439,25 @@ class MainActivity : ComponentActivity() {
                     playlistWriteBusy = false
                 }
             }
+        }
+
+        /** 取消喜欢 from the liked list: the same local-first toggle the player's heart uses. */
+        fun removeLikedNow() {
+            val track = pendingUnlikeTrack ?: return
+            runCatching {
+                if (playerViewModel.currentTrack()?.id == track.id) {
+                    // The player's own toggle updates its visible heart and notifies the library count.
+                    playerViewModel.toggleLike()
+                } else {
+                    container.liked.toggle(track)
+                }
+                appViewModel.refreshLikedCount()
+                appViewModel.refreshCollection()
+                toast("已取消喜欢")
+            }.onFailure { t ->
+                toast("取消喜欢失败：${(t.message ?: t.javaClass.simpleName).take(120)}")
+            }
+            pendingUnlikeTrack = null
         }
 
         fun pickSleepTimer(option: Int?) {
@@ -1164,14 +1184,14 @@ class MainActivity : ComponentActivity() {
                                     Toast.makeText(context, "设置下一首失败", Toast.LENGTH_SHORT).show()
                                 }
                             },
-                            onRemoveTrack = if (state.owned) {
-                                { track -> pendingRemoveTrack = track }
-                            } else {
-                                null
-                            },
-                            onOpenArtist = { name -> appViewModel.openArtistByName(name) },
-                            onOpenAlbum = { track ->
-                                appViewModel.openAlbum(track.albumId, track.albumName, track.coverUrl)
+                            onRemoveTrack = when {
+                                state.kind == com.yunyin.music.ui.CollectionKind.Liked -> {
+                                    { track -> pendingUnlikeTrack = track }
+                                }
+                                state.owned -> {
+                                    { track -> pendingRemoveTrack = track }
+                                }
+                                else -> null
                             },
                         )
                         }
@@ -1411,6 +1431,16 @@ class MainActivity : ComponentActivity() {
                     busy = playlistWriteBusy,
                     onConfirm = { removeTrackNow() },
                     onDismiss = { if (!playlistWriteBusy) pendingRemoveTrack = null },
+                )
+            }
+            pendingUnlikeTrack?.let { track ->
+                PlaylistConfirmSheet(
+                    title = "取消喜欢",
+                    message = "取消喜欢「${track.name}」？",
+                    confirmLabel = "取消喜欢",
+                    busy = false,
+                    onConfirm = { removeLikedNow() },
+                    onDismiss = { pendingUnlikeTrack = null },
                 )
             }
             if (showSleepTimer) {
