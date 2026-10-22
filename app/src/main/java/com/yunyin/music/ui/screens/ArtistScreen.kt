@@ -510,7 +510,9 @@ private fun SectionTitle(text: String) {
 @Composable
 private fun SectionMessage(text: String, isError: Boolean) {
     Text(
-        text = if (isError) "$text（下拉重试）" else text,
+        // There is no pull-to-refresh on this page, so the old "（下拉重试）" promised a gesture
+        // that does not exist; the sections reload with the page, and re-entering retries.
+        text = if (isError) "$text，请稍后重试" else text,
         fontFamily = SFPro,
         fontSize = 13.sp,
         color = if (isError) AppTheme.palette.accent else AppTheme.palette.secondaryLabel,

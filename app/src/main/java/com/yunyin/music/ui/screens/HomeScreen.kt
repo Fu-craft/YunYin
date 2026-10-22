@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -40,6 +41,7 @@ import com.yunyin.music.ui.components.ChartRow
 import com.yunyin.music.ui.components.GlassTopBar
 import com.yunyin.music.ui.components.InsetSeparator
 import com.yunyin.music.ui.components.PlaylistCarousel
+import com.yunyin.music.ui.components.ProminentButton
 import com.yunyin.music.ui.components.SectionHeader
 import com.yunyin.music.ui.components.TrackCarousel
 import com.yunyin.music.ui.components.TrackRow
@@ -86,6 +88,8 @@ fun HomeScreen(
     onTrackClick: (Track, List<Track>) -> Unit,
     onPlaylistClick: (Playlist) -> Unit,
     onChartClick: (Long, String, String?) -> Unit,
+    /** Retries the feed after the error state; the host owns the request. */
+    onRetry: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val feed = state.feed
@@ -105,6 +109,23 @@ fun HomeScreen(
                     bottom = chromeContentBottomPadding(),
                 ),
             ) {
+                // Cold start: the feed is requested when Home first appears, so the shelves are all
+                // empty for a moment. Without this the page was a blank field under the search strip
+                // with no sign that anything was loading.
+                if (state.loading && feed.featuredPlaylists.isEmpty()) {
+                    item("loading") {
+                        Box(
+                            Modifier.fillMaxWidth().padding(vertical = 28.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            CircularProgressIndicator(
+                                color = AppTheme.palette.accent,
+                                strokeWidth = 2.5.dp,
+                                modifier = Modifier.size(26.dp),
+                            )
+                        }
+                    }
+                }
                 if (feed.featuredPlaylists.isNotEmpty()) {
             item("featured-header") {
                 SectionHeader(
@@ -183,14 +204,8 @@ fun HomeScreen(
                     track = track,
                     loader = loader,
                     onClick = { onTrackClick(track, feed.dailySongs) },
-                    trailing = {
-                        Icon(
-                            SfIcons.Ellipsis,
-                            contentDescription = "更多",
-                            tint = AppTheme.palette.tertiaryLabel,
-                            modifier = Modifier.size(20.dp),
-                        )
-                    },
+                    // No trailing ellipsis: it looked like a working "more" affordance but there is
+                    // no per-row action here, so the row is simply a song.
                 )
                 InsetSeparator()
             }
@@ -222,6 +237,9 @@ fun HomeScreen(
                         fontSize = 13.sp,
                         color = AppTheme.palette.secondaryLabel,
                     )
+                    Spacer(Modifier.height(6.dp))
+                    // The error block used to be a dead end: a message and no way to ask again.
+                    ProminentButton(text = "重新加载", onClick = onRetry)
                 }
             }
         }

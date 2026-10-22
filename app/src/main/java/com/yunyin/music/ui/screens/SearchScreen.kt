@@ -253,7 +253,7 @@ fun SearchScreen(
                                     Modifier
                                         .fillMaxWidth()
                                         .clickable { onSubmit(keyword) }
-                                        .padding(horizontal = 20.dp, vertical = 12.dp),
+                                        .padding(horizontal = 20.dp, vertical = 2.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Icon(
@@ -274,8 +274,10 @@ fun SearchScreen(
                                     )
                                     // Separate tap target from the row: deletes rather than searches.
                                     Box(
+                                        // 44 dp target, 14 dp glyph: deleting a history row is a
+                                        // destructive action that must not be a 28 dp bullseye.
                                         Modifier
-                                            .size(28.dp)
+                                            .size(44.dp)
                                             .clip(CircleShape)
                                             .clickable { onRemoveHistory(keyword) },
                                         contentAlignment = Alignment.Center,

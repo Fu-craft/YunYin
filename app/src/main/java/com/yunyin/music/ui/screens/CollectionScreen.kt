@@ -232,16 +232,26 @@ fun CollectionScreen(
                                 .padding(start = PageInset, end = PageInset, top = 14.dp, bottom = 2.dp),
                         )
                         if (onRefresh != null) {
-                            Text(
-                                text = "刷新",
-                                fontFamily = SFPro,
-                                fontSize = 12.sp,
-                                color = AppTheme.palette.accent,
-                                modifier = Modifier
-                                    .padding(horizontal = PageInset, vertical = 4.dp)
-                                    .clickable(onClick = onRefresh)
-                                    .padding(4.dp),
-                            )
+                            Box(
+                                Modifier
+                                    .padding(start = PageInset)
+                                    .height(44.dp)
+                                    .clip(ContinuousRoundedRectangle(AppleShapes.pill))
+                                    .clickable(
+                                        indication = rememberControlRipple(bounded = true),
+                                        interactionSource = null,
+                                        onClick = onRefresh,
+                                    )
+                                    .padding(horizontal = 4.dp),
+                                contentAlignment = Alignment.CenterStart,
+                            ) {
+                                Text(
+                                    text = "刷新",
+                                    fontFamily = SFPro,
+                                    fontSize = 12.sp,
+                                    color = AppTheme.palette.accent,
+                                )
+                            }
                         }
                     }
                 }

@@ -612,21 +612,27 @@ private fun CommentRow(comment: Comment, loader: ArtworkLoader) {
                         ) { expanded = !expanded },
                     )
                     if (overflowed) {
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = if (expanded) "收起" else "展开",
-                            fontFamily = SFPro,
-                            fontWeight = FontWeight.Medium,
-                            fontSize = 12.sp,
-                            color = AppTheme.palette.accent,
-                            modifier = Modifier
+                        Spacer(Modifier.height(2.dp))
+                        // A 44 dp row around the 12 pt label: the affordance used to be a ~20 dp
+                        // text target inside a scrolling list.
+                        Box(
+                            Modifier
+                                .height(44.dp)
                                 .clip(ContinuousRoundedRectangle(AppleShapes.pill))
                                 .clickable(
                                     indication = rememberControlRipple(bounded = true),
                                     interactionSource = null,
-                                ) { expanded = !expanded }
-                                .padding(vertical = 2.dp),
-                        )
+                                ) { expanded = !expanded },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = if (expanded) "收起" else "展开",
+                                fontFamily = SFPro,
+                                fontWeight = FontWeight.Medium,
+                                fontSize = 12.sp,
+                                color = AppTheme.palette.accent,
+                            )
+                        }
                     }
                 }
                 Spacer(Modifier.width(10.dp))

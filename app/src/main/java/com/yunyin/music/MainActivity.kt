@@ -921,6 +921,7 @@ class MainActivity : ComponentActivity() {
                             onChartClick = { id, title, cover ->
                                 appViewModel.openChart(id, title, cover)
                             },
+                            onRetry = appViewModel::refreshHome,
                         )
 
                         PlayerTab.Search -> SearchScreen(
