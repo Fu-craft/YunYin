@@ -128,7 +128,11 @@ class FlymeLyricNotifier(
             .setDefaults(0)
             .setShowWhen(false)
             .setOngoing(true)
-        if (activeLine == null) builder.setContentTitle(context.getString(R.string.app_name))
+            // Every line carries content: a content-less notification is ticked only once by Flyme, which
+            // is exactly why the 2nd..Nth lyric line never scrolled (the test post, which had no
+            // activeLine yet, did carry a title and did scroll). The ticker still drives the status bar.
+            .setContentTitle(context.getString(R.string.app_name))
+            .setContentText(text)
         val notification = builder.build()
         notification.flags = FlymeLyricNotificationRules.activeFlags(resolved.showTicker, resolved.updateTicker)
         notification.extras.putBoolean("ticker_icon_switch", false)
