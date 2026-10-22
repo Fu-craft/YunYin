@@ -120,7 +120,11 @@ class AppContainer(val appContext: Context) {
      * One object rather than the store being read from three places: the three views have to agree, and
      * keeping the rule here is what makes that structural instead of coincidental.
      */
-    val liked: LikedSongsRepository by lazy { LikedSongsRepository(likedSongs, music) }
+    val liked: LikedSongsRepository by lazy {
+        LikedSongsRepository(
+            likedSongs, music, settings, lxLog, CoroutineScope(SupervisorJob() + Dispatchers.IO),
+        )
+    }
 
     /** The user's own avatar/background/signature for the profile header. */
     val profile: ProfileStore by lazy { ProfileStore(appContext, settings) }

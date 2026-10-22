@@ -572,6 +572,8 @@ class MusicRepository(
     suspend fun topPlaylists(cat: String, offset: Int): NetResult<com.yunyin.music.data.net.PlaylistSquarePage> =
         client.topPlaylists(cat, offset)
 
+    suspend fun likeSong(id: Long, like: Boolean): NetResult<Unit> = client.likeSong(id, like)
+
     suspend fun hotComments(songId: Long): NetResult<List<com.yunyin.music.core.Comment>> =
         client.hotComments(songId)
 

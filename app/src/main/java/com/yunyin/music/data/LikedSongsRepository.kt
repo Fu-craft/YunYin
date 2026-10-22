@@ -2,6 +2,11 @@ package com.yunyin.music.data
 
 import com.yunyin.music.core.NetResult
 import com.yunyin.music.core.Track
+import com.yunyin.music.data.lxsource.LxSourceLog
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * The liked songs, as one state shared by everything that shows them.
@@ -34,7 +39,17 @@ import com.yunyin.music.core.Track
 class LikedSongsRepository(
     private val store: LikedSongsStore,
     private val music: MusicRepository,
+    /** Account/session + diagnostics for the optional cloud write; null keeps the repository local-only (tests). */
+    private val settings: SettingsStore? = null,
+    private val log: LxSourceLog? = null,
+    private val scope: CoroutineScope? = null,
 ) {
+
+    private val pendingSync = HashMap<Long, Job>()
+    private var warnedSyncFailure = false
+
+    /** Invoked at most once per session when a cloud write fails. */
+    var onSyncFailure: (() -> Unit)? = null
 
     private var cloudTracksCache: List<Track>? = null
     private var cloudUid: Long? = null
@@ -80,6 +95,39 @@ class LikedSongsRepository(
     fun toggle(track: Track) {
         if (track.id == 0L) return
         if (isLiked(track.id)) store.remove(track.id) else store.add(track)
+    }
+
+    /**
+     * The single like entry point used by every heart: flips locally first (optimistic UI), then — only for a real
+     * session — syncs the resulting state to `/like` after a per-track debounce. Anonymous/logged-out stay local and
+     * silent; a failed write is logged and reported at most once per session (local state is never reverted).
+     */
+    fun toggleAndSync(track: Track) {
+        toggle(track)
+        val cfg = settings ?: return
+        val runningScope = scope ?: return
+        val session = LikeSyncRules.sessionOf(
+            cookie = cfg.cookie,
+            userId = cfg.account?.userId ?: 0L,
+            anonymous = cfg.account?.isAnonymous == true,
+        )
+        if (!LikeSyncRules.shouldSync(session)) return
+        pendingSync.remove(track.id)?.cancel()
+        pendingSync[track.id] = runningScope.launch {
+            delay(LikeSyncRules.DEBOUNCE_MS)
+            val target = isLiked(track.id)
+            when (val result = music.likeSong(track.id, target)) {
+                is NetResult.Ok -> log?.record("解析", "stage=like-sync action=${if (target) "like" else "unlike"} id=${track.id} result=ok")
+                is NetResult.Err -> {
+                    log?.record("解析", "stage=like-sync action=${if (target) "like" else "unlike"} id=${track.id} result=fail reason=${result.message}")
+                    if (!warnedSyncFailure) {
+                        warnedSyncFailure = true
+                        runCatching { onSyncFailure?.invoke() }
+                    }
+                }
+            }
+            pendingSync.remove(track.id)
+        }
     }
 
     /**

@@ -135,7 +135,7 @@ class PlayerViewModel(private val container: AppContainer) : ViewModel() {
      */
     fun toggleLike() {
         val track = container.player.state.value.current ?: return
-        container.liked.toggle(track)
+        container.liked.toggleAndSync(track)
         liked = container.liked.isLiked(track.id)
         onLikedChanged?.invoke()
     }

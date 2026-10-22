@@ -27,6 +27,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -106,6 +107,18 @@ fun SearchScreen(
     val resultsListState = rememberLazyListState()
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
+    fun dismissForNavigation(action: () -> Unit) {
+        focusManager.clearFocus(force = true)
+        keyboard?.hide()
+        action()
+    }
+    // Leaving the search surface (tab switch, back) must never leave the caret/IME behind.
+    DisposableEffect(Unit) {
+        onDispose {
+            focusManager.clearFocus(force = true)
+            keyboard?.hide()
+        }
+    }
 
     Box(modifier = modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().layerBackdrop(topBarBackdrop)) {
@@ -189,7 +202,7 @@ fun SearchScreen(
                             TrackRow(
                                 track = track,
                                 loader = loader,
-                                onClick = { onTrackClick(track) },
+                                onClick = { dismissForNavigation { onTrackClick(track) } },
                             )
                             InsetSeparator()
                         }
@@ -200,7 +213,7 @@ fun SearchScreen(
                                 TrackRow(
                                     track = track,
                                     loader = loader,
-                                    onClick = { onTrackClick(track) },
+                                    onClick = { dismissForNavigation { onTrackClick(track) } },
                                 )
                                 InsetSeparator()
                             }
@@ -271,12 +284,12 @@ fun SearchScreen(
                         if (!suggestions.isEmpty) {
                             item("suggest-header") { SectionHeader(title = "搜索建议") }
                             items(suggestions.songs, key = { "sg-song-${it.id}" }) { track ->
-                                TrackRow(track = track, loader = loader, onClick = { onSuggestionSong(track) })
+                                TrackRow(track = track, loader = loader, onClick = { dismissForNavigation { onSuggestionSong(track) } })
                                 InsetSeparator()
                             }
                             items(suggestions.artists, key = { "sg-artist-${it.id}" }) { artist ->
                                 Row(
-                                    Modifier.fillMaxWidth().clickable { onSuggestionArtist(artist.id, artist.name) }
+                                    Modifier.fillMaxWidth().clickable { dismissForNavigation { onSuggestionArtist(artist.id, artist.name) } }
                                         .padding(horizontal = 20.dp, vertical = 12.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
@@ -288,7 +301,7 @@ fun SearchScreen(
                             }
                             items(suggestions.albums, key = { "sg-album-${it.id}" }) { album ->
                                 Row(
-                                    Modifier.fillMaxWidth().clickable { onSuggestionAlbum(album.id, album.name) }
+                                    Modifier.fillMaxWidth().clickable { dismissForNavigation { onSuggestionAlbum(album.id, album.name) } }
                                         .padding(horizontal = 20.dp, vertical = 12.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
@@ -492,7 +505,7 @@ fun SearchScreen(
                                 SearchCancelAction.ReturnHome -> {
                                     keyboard?.hide()
                                     focusManager.clearFocus()
-                                    onCancel()
+                                    dismissForNavigation { onCancel() }
                                 }
                             }
                         }

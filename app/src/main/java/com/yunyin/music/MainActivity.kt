@@ -656,6 +656,11 @@ class MainActivity : ComponentActivity() {
         // first Compose frame, which is already the real UI. The status bar therefore has to match
         // the theme from that first frame; `isAppearanceLightStatusBars = true` means DARK icons (a
         // light bar appearance), which is the right choice for the white window background.
+        LaunchedEffect(Unit) {
+            container.liked.onSyncFailure = {
+                Toast.makeText(context, "同步失败，已保存在本地", Toast.LENGTH_SHORT).show()
+            }
+        }
         val darkTheme = androidx.compose.foundation.isSystemInDarkTheme()
         DisposableEffect(darkTheme) {
             val window = (context as? android.app.Activity)?.window
