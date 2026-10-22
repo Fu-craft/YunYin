@@ -3,9 +3,8 @@ package com.yunyin.music.data
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.Context
-import android.content.Intent
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -62,6 +61,9 @@ class FlymeLyricNotifier(private val context: Context) {
 
     private val manager get() = context.getSystemService(NotificationManager::class.java)
 
+    /** Rate limit + post-track-change delay (pure rules in [FlymeLyricThrottle]). */
+    private var throttle = FlymeLyricThrottle.State()
+
     /**
      * Posts or updates the resident lyric notification.
      *
@@ -78,6 +80,12 @@ class FlymeLyricNotifier(private val context: Context) {
             return
         }
 
+        // At most one post per second, and nothing for the first second after a track change: reposting faster
+        // makes the ticker stutter, and an immediate post can leave the previous track's line on screen.
+        val now = SystemClock.elapsedRealtime()
+        throttle = FlymeLyricThrottle.onTrackChanged(throttle, fallback, now)
+        if (!FlymeLyricThrottle.canPost(throttle, now)) return
+
         runCatching {
             ensureChannel()
 
@@ -88,17 +96,15 @@ class FlymeLyricNotifier(private val context: Context) {
             // Notification small icons are masked by alpha, so this one is the white silhouette;
             // the platform supplies the final tint.
             val smallIcon = if (playing) R.drawable.ic_ticker_note_white else R.drawable.ic_ticker_note_white_paused
-            val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+            // Minimal on purpose: a ticker-only notification. Title/text/intent/actions are what turn it into a
+            // user-facing shade entry, so none of them are set. The media transport notification is untouched.
+            val notification = NotificationCompat.Builder(context, MEDIA_CHANNEL_ID)
                 .setSmallIcon(smallIcon)
-                .setContentTitle(context.getString(R.string.app_name))
-                .setContentText(line ?: "")
                 .setTicker(text)
-                .setContentIntent(openAppIntent())
-                // Every line change reposts this notification, so it must never make a sound or
-                // vibrate; the channel is silent too, and this is the belt to that braces.
                 .setOnlyAlertOnce(true)
                 .setSilent(true)
                 .setShowWhen(false)
+                .setOngoing(true)
                 .build()
 
             // Must be permanent, or Flyme drops the ticker and the system may clear it.
@@ -113,6 +119,7 @@ class FlymeLyricNotifier(private val context: Context) {
             notification.extras.putInt("ticker_icon", tickerIcon)
 
             NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
+            throttle = FlymeLyricThrottle.markPosted(throttle, now)
         }.onFailure { error ->
             Log.w(TAG, "Failed to post status-bar lyric", error)
         }
@@ -121,17 +128,21 @@ class FlymeLyricNotifier(private val context: Context) {
     /** Removes the lyric notification (feature disabled, or nothing to show). */
     fun clear() {
         if (flags == null) return
+        throttle = FlymeLyricThrottle.State()
         runCatching { NotificationManagerCompat.from(context).cancel(NOTIFICATION_ID) }
     }
 
     private fun ensureChannel() {
-        val existing = manager?.getNotificationChannel(CHANNEL_ID)
+        // Same channel as the media notification, as the Flyme 适配说明 recommends: the system then treats the
+        // ticker as part of the ongoing media notification instead of a new user-facing entry.
+        // Media3's DefaultMediaNotificationProvider uses DEFAULT_CHANNEL_ID = "default_channel_id".
+        val existing = manager?.getNotificationChannel(MEDIA_CHANNEL_ID)
         if (existing != null) return
         manager?.createNotificationChannel(
             NotificationChannel(
-                CHANNEL_ID,
+                MEDIA_CHANNEL_ID,
                 context.getString(R.string.ticker_channel_name),
-                // LOW: it must be visible and silent. Default importance would buzz on every line.
+                // LOW, silent, no badge: a lyric ticker must never buzz or badge.
                 NotificationManager.IMPORTANCE_LOW,
             ).apply {
                 setShowBadge(false)
@@ -141,23 +152,12 @@ class FlymeLyricNotifier(private val context: Context) {
         )
     }
 
-    private fun openAppIntent(): PendingIntent {
-        val intent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
-        return PendingIntent.getActivity(
-            context,
-            0,
-            intent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
-    }
-
     private class Flags(val showTicker: Int, val updateTicker: Int)
 
     private companion object {
         const val TAG = "YunYin/TickerLyrics"
-        const val CHANNEL_ID = "status_bar_lyrics"
+        /** Media3's DefaultMediaNotificationProvider default channel id. */
+        const val MEDIA_CHANNEL_ID = "default_channel_id"
 
         /**
          * Fixed id, reused for every update as Flyme requires.
