@@ -64,6 +64,9 @@ class FlymeLyricNotifier(private val context: Context) {
     /** Rate limit + post-track-change delay (pure rules in [FlymeLyricThrottle]). */
     private var throttle = FlymeLyricThrottle.State()
 
+    /** Whether an ordinary post has established the notification id (ONLY_UPDATE needs a target). */
+    private var established = false
+
     /**
      * Posts or updates the resident lyric notification.
      *
@@ -98,20 +101,31 @@ class FlymeLyricNotifier(private val context: Context) {
             val smallIcon = if (playing) R.drawable.ic_ticker_note_white else R.drawable.ic_ticker_note_white_paused
             // Minimal on purpose: a ticker-only notification. Title/text/intent/actions are what turn it into a
             // user-facing shade entry, so none of them are set. The media transport notification is untouched.
-            val notification = NotificationCompat.Builder(context, MEDIA_CHANNEL_ID)
+            // The first post must be a *normal* notification: Flyme's FLAG_ONLY_UPDATE_TICKER means "update the
+            // ticker of an existing notification", so setting it while nothing exists lets the ticker be dropped
+            // (the 4.15.2 regression). Gramophone's provider does the same split: the initial media notification
+            // carries only ALWAYS_SHOW_TICKER, manual lyric updates carry both flags.
+            val firstPost = !established
+            val builder = NotificationCompat.Builder(context, MEDIA_CHANNEL_ID)
                 .setSmallIcon(smallIcon)
                 .setTicker(text)
                 .setOnlyAlertOnce(true)
                 .setSilent(true)
                 .setShowWhen(false)
                 .setOngoing(true)
-                .build()
+            if (firstPost) {
+                // Establish the notification. Title only — no text/intent/actions, so it stays as small as
+                // possible in the shade while giving ONLY_UPDATE a real target.
+                builder.setContentTitle(context.getString(R.string.app_name))
+            }
+            val notification = builder.build()
 
             // Must be permanent, or Flyme drops the ticker and the system may clear it.
             notification.flags = notification.flags or Notification.FLAG_NO_CLEAR
-            // The two flags that make Flyme render it as a status-bar lyric. Both are required; with
-            // only one set the text is treated as an ordinary ticker and animates once.
-            notification.flags = notification.flags or resolved.showTicker or resolved.updateTicker
+            // First post: establish with ALWAYS_SHOW_TICKER only. Updates: add ONLY_UPDATE_TICKER so only the
+            // lyric line is touched (cover/actions stay as the media notification's).
+            notification.flags = notification.flags or
+                FlymeLyricThrottle.flags(firstPost, resolved.showTicker, resolved.updateTicker)
 
             // The leading icon is the play/pause indicator. `ticker_icon_switch = false` tells Flyme
             // to use the notification's own small icon rather than swapping in its default.
@@ -119,6 +133,7 @@ class FlymeLyricNotifier(private val context: Context) {
             notification.extras.putInt("ticker_icon", tickerIcon)
 
             NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
+            established = true
             throttle = FlymeLyricThrottle.markPosted(throttle, now)
         }.onFailure { error ->
             Log.w(TAG, "Failed to post status-bar lyric", error)
@@ -129,6 +144,7 @@ class FlymeLyricNotifier(private val context: Context) {
     fun clear() {
         if (flags == null) return
         throttle = FlymeLyricThrottle.State()
+        established = false
         runCatching { NotificationManagerCompat.from(context).cancel(NOTIFICATION_ID) }
     }
 

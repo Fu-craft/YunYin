@@ -37,4 +37,11 @@ object FlymeLyricThrottle {
     }
 
     fun markPosted(state: State, nowMs: Long): State = state.copy(lastPostMs = nowMs)
+
+    /**
+     * Flyme flags for a post: the first (establishing) post carries ALWAYS_SHOW_TICKER only; only subsequent
+     * posts add ONLY_UPDATE_TICKER (which means "update an existing notification's ticker").
+     */
+    fun flags(firstPost: Boolean, alwaysShowTicker: Int, onlyUpdateTicker: Int): Int =
+        if (firstPost) alwaysShowTicker else alwaysShowTicker or onlyUpdateTicker
 }

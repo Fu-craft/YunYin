@@ -1,5 +1,6 @@
 package com.yunyin.music.data
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -34,6 +35,12 @@ class FlymeLyricThrottleTest {
         val changed = FlymeLyricThrottle.onTrackChanged(state, "B", start + 1_200)
         assertFalse(FlymeLyricThrottle.canPost(changed, start + 1_500))
         assertTrue(FlymeLyricThrottle.canPost(changed, start + 2_200))
+    }
+
+    @Test
+    fun `the establishing post omits only-update and later posts include it`() {
+        assertEquals(0x1000000, FlymeLyricThrottle.flags(firstPost = true, alwaysShowTicker = 0x1000000, onlyUpdateTicker = 0x2000000))
+        assertEquals(0x3000000, FlymeLyricThrottle.flags(firstPost = false, alwaysShowTicker = 0x1000000, onlyUpdateTicker = 0x2000000))
     }
 
     @Test
