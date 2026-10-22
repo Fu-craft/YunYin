@@ -141,10 +141,16 @@ fun CollectionScreen(
     onDeletePlaylist: (() -> Unit)? = null,
     /** Present only when owned; host confirms then removes the track and refreshes the page. */
     onRemoveTrack: ((Track) -> Unit)? = null,
+    /** Row ⋯ menu: open the artist page for a name printed on the row. */
+    onOpenArtist: ((String) -> Unit)? = null,
+    /** Row ⋯ menu: open the album page for a track with a real album id. */
+    onOpenAlbum: ((Track) -> Unit)? = null,
     /** Manual refresh: always bypasses the playlist cache and goes to the network. */
     onRefresh: (() -> Unit)? = null,
 ) {
     var showMenu by remember { mutableStateOf(false) }
+    // The per-row ⋯ menu: which track's actions are open, or null when no row menu is showing.
+    var trackMenu by remember { mutableStateOf<Track?>(null) }
     // A small decode is plenty — it is blurred heavily, so detail would be discarded anyway.
     var backdrop by remember(state.coverUrl) { mutableStateOf<ImageBitmap?>(null) }
     // Defaults to "dark cover" so the first frame (before the image lands) already has white ink:
@@ -300,7 +306,7 @@ fun CollectionScreen(
                         isCurrent = track.id == nowPlayingId,
                         isPlaying = isPlaying && track.id == nowPlayingId,
                         onClick = { onTrackClick(track, index) },
-                        onRemove = onRemoveTrack?.let { remove -> { remove(track) } },
+                        onMore = { trackMenu = track },
                     )
                 }
             }
@@ -362,6 +368,43 @@ fun CollectionScreen(
                     Spacer(Modifier.height(6.dp))
                     Box(Modifier.fillMaxWidth().height(1.dp).background(AppTheme.palette.separator))
                     CollectionMenuRow(SfIcons.Trash, "删除歌单", destructive = true) { close { onDeletePlaylist() } }
+                }
+            }
+        }
+
+        // Per-row actions. A compact bottom sheet, not an anchored popup: this codebase's menu idiom is
+        // AnimatedSheet (the player's ⋯ and this page's own menu both use it), and the project avoids
+        // the platform DropdownMenu because it cannot match the app's motion/material language.
+        trackMenu?.let { track ->
+            AnimatedSheet(
+                onDismissed = { trackMenu = null },
+                properties = androidx.compose.ui.window.DialogProperties(
+                    usePlatformDefaultWidth = false,
+                    decorFitsSystemWindows = false,
+                ),
+                placement = SheetPlacement.Bottom,
+                scrim = true,
+                sheetModifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 12.dp, vertical = 12.dp)
+                    .clip(ContinuousRoundedRectangle(AppleShapes.sheet))
+                    .background(AppTheme.palette.background)
+                    .padding(vertical = 6.dp),
+            ) { close ->
+                if (onOpenArtist != null && track.artists.isNotEmpty()) {
+                    CollectionMenuRow(SfIcons.Person, "查看歌手") { close { onOpenArtist(track.artists.first()) } }
+                }
+                if (onOpenAlbum != null && track.albumId > 0L) {
+                    CollectionMenuRow(SfIcons.MusicNote, "查看专辑") { close { onOpenAlbum(track) } }
+                }
+                if (onRemoveTrack != null) {
+                    Spacer(Modifier.height(6.dp))
+                    Box(Modifier.fillMaxWidth().height(1.dp).background(AppTheme.palette.separator))
+                    // Same host confirmation as before: the menu only opens it.
+                    CollectionMenuRow(SfIcons.Trash, "移除", destructive = true) {
+                        close { onRemoveTrack(track) }
+                    }
                 }
             }
         }
@@ -870,8 +913,8 @@ internal fun CollectionTrackRow(
     isCurrent: Boolean,
     isPlaying: Boolean,
     onClick: () -> Unit,
-    /** Owner-only "移除" affordance; null everywhere else. */
-    onRemove: (() -> Unit)? = null,
+    /** Row ⋯ affordance: opens the per-track actions menu. Null keeps the row without one. */
+    onMore: (() -> Unit)? = null,
     /** Item-level modifier (e.g. `animateItem` in a lazy list); default keeps every existing call site unchanged. */
     modifier: Modifier = Modifier,
 ) {
@@ -933,19 +976,6 @@ internal fun CollectionTrackRow(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        if (onRemove != null) {
-            Spacer(Modifier.width(10.dp))
-            Text(
-                text = "移除",
-                fontFamily = SFPro,
-                fontSize = 13.sp,
-                color = palette.accent,
-                modifier = Modifier
-                    .clip(ContinuousRoundedRectangle(AppleShapes.control))
-                    .clickable(onClick = onRemove)
-                    .padding(horizontal = 8.dp, vertical = 6.dp),
-            )
-        }
         if (track.durationMs > 0) {
             Spacer(Modifier.width(10.dp))
             Text(
@@ -955,6 +985,27 @@ internal fun CollectionTrackRow(
                 color = palette.tertiaryLabel,
                 maxLines = 1,
             )
+        }
+        if (onMore != null) {
+            Spacer(Modifier.width(2.dp))
+            Box(
+                Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .clickable(
+                        indication = rememberControlRipple(bounded = false),
+                        interactionSource = null,
+                        onClick = onMore,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = SfIcons.Ellipsis,
+                    contentDescription = "更多操作",
+                    tint = palette.secondaryLabel,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
         }
     }
 }

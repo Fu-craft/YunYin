@@ -1162,6 +1162,10 @@ class MainActivity : ComponentActivity() {
                             } else {
                                 null
                             },
+                            onOpenArtist = { name -> appViewModel.openArtistByName(name) },
+                            onOpenAlbum = { track ->
+                                appViewModel.openAlbum(track.albumId, track.albumName, track.coverUrl)
+                            },
                         )
                         }
                     }
