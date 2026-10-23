@@ -34,7 +34,7 @@ fun TogetherSheet(session: TogetherSession, onDismiss: () -> Unit) {
         title = { Text("一起听") },
         text = {
             Column(Modifier.fillMaxWidth()) {
-                Text("需要两个已登录账号 · 房间通过网易云官方协议同步")
+                Text("需要两个已登录账号 · 房间内由创建者控制播放")
                 if (state.inRoom) {
                     Text("房间：${state.roomId}")
                     if (state.inviteLink.isNotEmpty()) {

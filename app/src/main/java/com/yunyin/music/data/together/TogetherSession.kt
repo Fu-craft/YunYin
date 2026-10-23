@@ -75,6 +75,10 @@ class TogetherSession(
     private var expectedPositionMs = 0L
     private var expectedSampledAt = 0L
     private var progressSettleUntil = 0L
+    private var role: TogetherRole = TogetherRole.FOLLOWER
+    private var traceAction = "none"
+    private var traceWhy = "idle"
+    private var traceCommand: TogetherCommand? = null
 
     private val accountId: Long get() = settings.account?.userId ?: 0L
 
@@ -179,6 +183,7 @@ class TogetherSession(
 
     private fun enter(value: TogetherRoom, versionSeed: Long, action: String) {
         room = value
+        role = TogetherRoleRules.roleFor(action)
         leaderId = value.creatorId.ifBlank { accountId.toString() }
         lastRemoteSignature = ""
         lastRemoteSequence = 0L
@@ -238,7 +243,7 @@ class TogetherSession(
                 // A client that could not follow stays silent; the next snapshot is applied below instead of
                 // reporting a divergent local state back into the room.
                 log.record("解析", "stage=together report skipped reason=apply-failed")
-            } else if (!applyingRemote && local.queue.isNotEmpty()) {
+            } else if (role == TogetherRole.HOST && !applyingRemote && local.queue.isNotEmpty()) {
                 val queueIds = local.queue.map { it.id.toString() }
                 val currentId = local.current?.id?.toString().orEmpty()
                 val seqNow = maxOf(seq + 1, now())
@@ -261,6 +266,7 @@ class TogetherSession(
                     version = ++lastVersion,
                     clientSeq = seqNow,
                 )
+                if (action != null) { traceAction = "report"; traceWhy = action::class.simpleName.orEmpty() }
                 if (action is TogetherAction.ReplaceQueue) {
                     api.reportPlaylist(currentRoom.roomId, action.songIds, accountId, action.version)
                     recordOk("report")
@@ -322,7 +328,20 @@ class TogetherSession(
             _state.value = _state.value.copy(error = "", tick = ticks)
         } catch (t: Throwable) {
             registerFailure("tick", t)
+            val traceState = player.state.value
+            log.record(
+                "解析",
+                "stage=together trace role=${if (role == TogetherRole.HOST) "host" else "follower"} t=$ticks " +
+                    "song=${traceState.current?.id?.toString() ?: "none"} pos=${traceState.positionMs} " +
+                    "playing=${traceState.isPlaying} buffering=${traceState.isBuffering} q=${traceState.queue.size} | " +
+                    "cmd=${traceCommand?.type ?: "none"} seq=${traceCommand?.sequence ?: 0} " +
+                    "author=${if (traceCommand?.accountId == accountId.toString()) "me" else if (traceCommand != null) "peer" else "none"} | " +
+                    "act=$traceAction why=$traceWhy",
+            )
         } finally {
+            traceAction = "none"
+            traceWhy = "idle"
+            traceCommand = null
             busy.set(false)
         }
     }
@@ -343,6 +362,9 @@ class TogetherSession(
             return
         }
         applyingRemote = true
+        traceAction = "apply"
+        traceWhy = command?.type ?: "snapshot"
+        traceCommand = command
         val remoteIds = snapshot.songIds
         val local = player.state.value
         val localIds = local.queue.map { it.id.toString() }

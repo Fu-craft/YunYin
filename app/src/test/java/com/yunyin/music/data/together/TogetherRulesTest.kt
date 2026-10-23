@@ -11,6 +11,23 @@ class TogetherRulesTest {
         id = id, name = "t$id", artists = listOf("a"), albumName = "", albumId = 0L, coverUrl = null, durationMs = 1000L,
     )
 
+    @Test fun `host reports follower never does and converges`() {
+        assertTrue(TogetherRoleRules.mayReport(TogetherRole.HOST, "PLAY"))
+        assertFalse(TogetherRoleRules.mayReport(TogetherRole.FOLLOWER, "PLAY"))
+        assertFalse(TogetherRoleRules.mayReport(TogetherRole.FOLLOWER, "PROGRESS"))
+        assertFalse(TogetherRoleRules.mayReport(TogetherRole.FOLLOWER, "REPLACE"))
+        assertEquals(TogetherRole.HOST, TogetherRoleRules.roleFor("create"))
+        val host = TogetherClientState("42", 30_000, playing = false)
+        val follower = TogetherClientState("1", 5_000, playing = true)
+        assertTrue(TogetherRoleRules.shouldApply(TogetherRole.FOLLOWER, host, follower))
+        assertFalse(TogetherRoleRules.shouldApply(TogetherRole.HOST, host, follower))
+        val (after, reports) = TogetherRoleRules.simulateFollowerConvergence(host, follower, ticks = 5)
+        assertEquals(host, after)
+        assertEquals(0, reports)
+        assertTrue(TogetherRoleRules.shouldReapply(TogetherRole.FOLLOWER, applyFailed = true))
+        assertFalse(TogetherRoleRules.shouldReapply(TogetherRole.HOST, applyFailed = true))
+    }
+
     @Test fun `expected position and seek detection ignore natural advance`() {
         val expected = TogetherProgressRules.expectedPosition(10_000, 1_000_000, 1_005_000, playing = true, buffering = false)
         assertEquals(15_000L, expected)
