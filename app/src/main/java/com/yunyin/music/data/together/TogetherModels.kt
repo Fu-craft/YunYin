@@ -168,6 +168,13 @@ object TogetherRules {
     /** A negative status does not override a snapshot that actually contains songs. */
     fun preferSnapshot(snapshotSongs: Int, statusInRoom: Boolean?): Boolean = snapshotSongs > 0 && statusInRoom == false
 
+    /** Creator enters as soon as the id is known; a joiner still needs a real snapshot. */
+    fun creatorEnters(roomId: String): Boolean = roomId.isNotBlank()
+    fun joinerEnters(roomId: String, playlist: Int): Boolean = roomId.isNotBlank() && playlist > 0
+
+    /** Seed retry: one retry when the seeded snapshot is still empty. */
+    fun shouldRetrySeed(playlist: Int, attempts: Int): Boolean = playlist <= 0 && attempts < 2
+
     /**
      * QPlayer's `checkTokenFor` returns "" unless `options.checkToken`; listenTogether calls do not pass it, so
      * QPlayer sends no X-antiCheatToken for together either. A token is only attached when one is present.

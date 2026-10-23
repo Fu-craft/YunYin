@@ -7,6 +7,28 @@ class TogetherRulesTest {
     private fun cmd(type: String, target: String = "42", seq: Long = 7, account: String = "9") =
         TogetherCommand(account, type, "1", target, 1000, true, seq)
 
+    @Test fun `seed payloads and creator-joiner entry rules`() {
+        val playlist = TogetherSeedRules.playlistParam(listOf("11", "22"), userId = 7L, version = 3L)
+        assertEquals("REPLACE", playlist.getString("commandType"))
+        assertEquals(-1, playlist.getInt("anchorPosition"))
+        assertEquals("", playlist.getString("anchorSongId"))
+        assertEquals(2, playlist.getJSONArray("displayList").length())
+        assertEquals(2, playlist.getJSONArray("randomList").length())
+        assertEquals(7L, playlist.getJSONArray("version").getJSONObject(0).getLong("userId"))
+        val command = TogetherSeedRules.commandInfo("GOTO", 1234L, true, "0", "22", 99L)
+        assertEquals("GOTO", command.getString("commandType"))
+        assertEquals("PLAY", command.getString("playStatus"))
+        assertEquals("22", command.getString("targetSongId"))
+        assertEquals(99L, command.getLong("clientSeq"))
+        assertTrue(TogetherRules.creatorEnters("r1"))
+        assertFalse(TogetherRules.creatorEnters(""))
+        assertFalse(TogetherRules.joinerEnters("r1", 0))
+        assertTrue(TogetherRules.joinerEnters("r1", 30))
+        assertTrue(TogetherRules.shouldRetrySeed(0, 1))
+        assertFalse(TogetherRules.shouldRetrySeed(0, 2))
+        assertFalse(TogetherRules.shouldRetrySeed(30, 1))
+    }
+
     @Test fun `room id extraction recurses into nested, string and patterned values`() {
         val nested = org.json.JSONObject("{\"data\":{\"room\":{\"roomInfo\":{\"roomId\":\"abc123\"}}}}")
         assertEquals("abc123", TogetherRoomParser.extract(nested).roomId)

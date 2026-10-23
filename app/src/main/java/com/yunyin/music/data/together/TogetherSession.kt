@@ -70,21 +70,53 @@ class TogetherSession(
         get() = TogetherRules.available(settings.cookie, settings.account?.isAnonymous)
 
     fun create() = runOp("create") {
+        if (player.state.value.queue.isEmpty()) error("请先播放一首网易云歌曲")
         val created = api.create().getOrThrow()
         val status = api.status().getOrNull()
         val statusRoomId = status?.room?.roomId.orEmpty()
         val roomId = TogetherRules.adoptRoomId(created.roomId, statusRoomId, snapshotSongs = 0)
-        if (!TogetherRules.canEnter(roomId)) {
+        if (!TogetherRules.creatorEnters(roomId)) {
             error("房间创建失败（未返回房间号）：create=${created.roomId} status=${statusRoomId.ifBlank { "none" }}")
         }
-        // Create's body is validated by a real snapshot before we claim the session is in a room.
-        val snapshot = api.snapshot(roomId).getOrElse { error("创建后未获取到房间数据：${it.message}") }
-        if (!TogetherRules.joinedFromSnapshot(snapshot.songIds)) {
-            error("创建后未获取到房间数据：playlist=0 code=snapshot-empty")
-        }
+        // The creator owns the room as soon as the id exists; seed it so joiners have a playlist to snapshot.
         enter(TogetherRoom(roomId, created.creatorId.ifBlank { status?.room?.creatorId.orEmpty() }), 0L, "create")
-        reportPlaylist()
-        applySnapshot(snapshot)
+        val seeded = seedRoom(roomId, attempt = 0)
+        if (!seeded) {
+            _state.value = _state.value.copy(error = "房间已创建但队列发布失败：playlist=0 code=snapshot-empty")
+        }
+    }
+
+    /** create → reportPlaylist → reportCommand(GOTO) → snapshot, retried once; mirrors together.js createRoom. */
+    private suspend fun seedRoom(roomId: String, attempt: Int): Boolean {
+        val local = player.state.value
+        val ids = local.queue.map { it.id.toString() }
+        val currentId = local.current?.id?.toString().orEmpty()
+        if (ids.isEmpty() || currentId.isBlank()) {
+            log.record("解析", "stage=together seed step=playlist result=fail reason=empty-local-queue")
+            return false
+        }
+        val version = ++lastVersion
+        api.reportPlaylist(roomId, ids, accountId, version)
+            .onSuccess { log.record("解析", "stage=together seed step=playlist result=ok songs=${ids.size}") }
+            .onFailure { log.record("解析", "stage=together seed step=playlist result=fail reason=${it.message} songs=${ids.size}") }
+        var first = api.snapshot(roomId).getOrNull()
+        log.record("解析", "stage=together seed snapshot=playlist songs=${first?.songIds?.size ?: 0} attempt=$attempt")
+        val clientSeq = maxOf(seq + 1, now())
+        api.reportCommand(roomId, "GOTO", local.positionMs, local.isPlaying, "0", currentId, clientSeq)
+            .onSuccess { seq = clientSeq; log.record("解析", "stage=together seed step=command result=ok song=$currentId") }
+            .onFailure { log.record("解析", "stage=together seed step=command result=fail reason=${it.message}") }
+        first = api.snapshot(roomId).getOrNull()
+        val songs = first?.songIds?.size ?: 0
+        log.record("解析", "stage=together seed snapshot=playlist songs=$songs attempt=$attempt")
+        if (songs > 0) {
+            first?.let { applySnapshot(it) }
+            return true
+        }
+        if (TogetherRules.shouldRetrySeed(songs, attempt + 1)) {
+            kotlinx.coroutines.delay(500L)
+            return seedRoom(roomId, attempt + 1)
+        }
+        return false
     }
 
     fun join(invite: String) = runOp("join") {
@@ -341,7 +373,7 @@ class TogetherSession(
             .onSuccess { recordOk("report") }.onFailure { registerFailure("report", it) }
     }
 
-    private fun runOp(action: String, block: () -> Unit) {
+    private fun runOp(action: String, block: suspend () -> Unit) {
         if (!available) {
             _state.value = _state.value.copy(error = "请先登录网易云账号")
             return

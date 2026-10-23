@@ -119,14 +119,7 @@ class TogetherApi(
         }
 
     fun reportPlaylist(roomId: String, songIds: List<String>, accountId: Long, version: Long): Result<Unit> {
-        val ids = JSONArray().apply { songIds.forEach { put(it) } }
-        val playlist = JSONObject()
-            .put("commandType", "REPLACE")
-            .put("version", JSONArray().put(JSONObject().put("userId", accountId).put("version", version)))
-            .put("anchorSongId", "")
-            .put("anchorPosition", -1)
-            .put("randomList", ids)
-            .put("displayList", ids)
+        val playlist = TogetherSeedRules.playlistParam(songIds, accountId, version)
         return transport.eapiPost(
             "/api/listen/together/sync/list/command/report",
             JSONObject().put("roomId", roomId).put("playlistParam", playlist.toString()),
@@ -142,13 +135,7 @@ class TogetherApi(
         targetSongId: String,
         clientSeq: Long,
     ): Result<Unit> {
-        val info = JSONObject()
-            .put("commandType", type)
-            .put("progress", progressMs.coerceAtLeast(0L))
-            .put("playStatus", if (playing) "PLAY" else "PAUSE")
-            .put("formerSongId", formerSongId.ifBlank { "0" })
-            .put("targetSongId", targetSongId.ifBlank { "0" })
-            .put("clientSeq", clientSeq)
+        val info = TogetherSeedRules.commandInfo(type, progressMs, playing, formerSongId, targetSongId, clientSeq)
         return transport.eapiPost(
             "/api/listen/together/play/command/report",
             JSONObject().put("roomId", roomId).put("commandInfo", info.toString()),
