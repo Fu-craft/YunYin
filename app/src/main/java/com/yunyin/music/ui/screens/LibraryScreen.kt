@@ -9,6 +9,8 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.core.content.ContextCompat
 import com.yunyin.music.AppContainer
@@ -171,7 +173,8 @@ fun LibraryScreen(
 
     // ------------------------------------------------------------ 本地音乐
     var showLocalMusic by remember { mutableStateOf(false) }
-    var localTracks by remember { mutableStateOf<List<Track>>(emptyList()) }
+    var localSongs by remember { mutableStateOf<List<com.yunyin.music.data.local.LocalSong>>(emptyList()) }
+    var localSkipped by remember { mutableStateOf(0) }
     var localLoading by remember { mutableStateOf(false) }
     var localError by remember { mutableStateOf<String?>(null) }
     val localContext = androidx.compose.ui.platform.LocalContext.current
@@ -182,14 +185,17 @@ fun LibraryScreen(
             Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", localContext.packageName, null)),
         )
     }
-    fun scanLocal() {
+    fun scanLocal(openSheet: Boolean = true) {
         if (localLoading) return
         localLoading = true
         localError = null
-        showLocalMusic = true
+        if (openSheet) showLocalMusic = true
         localScope.launch {
             localContainer.localMusicScanner.scan()
-                .onSuccess { localTracks = it }
+                .onSuccess {
+                    localSongs = it.songs
+                    localSkipped = it.skipped
+                }
                 .onFailure {
                     localError = if (it is SecurityException) {
                         "需要音频读取权限才能显示本地音乐"
@@ -199,6 +205,13 @@ fun LibraryScreen(
                 }
             localLoading = false
         }
+    }
+
+    // A download finishing triggers a background scan in the container; when the sheet is open its list must
+    // follow that index instead of showing a snapshot from when the sheet was opened.
+    val localRevision by localContainer.localMusicRevision.collectAsState()
+    LaunchedEffect(localRevision) {
+        if (showLocalMusic && localRevision > 0) scanLocal(openSheet = false)
     }
     val localPermissionRequest = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
@@ -253,16 +266,18 @@ fun LibraryScreen(
     // never an empty list.
     if (showLocalMusic) {
         LocalMusicSheet(
-            tracks = localTracks,
+            songs = localSongs,
             loading = localLoading,
             error = localError,
+            skipped = localSkipped,
             loader = loader,
-            onPlayTrack = { index ->
-                if (index in localTracks.indices) onPlayLocalTracks(localTracks, index)
+            onPlayTracks = { list, index ->
+                if (list.isNotEmpty()) onPlayLocalTracks(list.map { it.toTrack() }, index)
                 showLocalMusic = false
             },
             onPlayAll = {
-                if (localTracks.isNotEmpty()) onPlayLocalTracks(localTracks, 0)
+                val list = localSongs
+                if (list.isNotEmpty()) onPlayLocalTracks(list.map { it.toTrack() }, 0)
                 showLocalMusic = false
             },
             onOpenSettings = { openLocalSettings() },

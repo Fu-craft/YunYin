@@ -35,8 +35,8 @@ android {
         // versionCode must increase for Android to accept a build as an update over a previous one;
         // versionName is what the user sees. Bumped together — a version name change with an unchanged
         // code would install as a downgrade and be rejected.
-        versionCode = 179
-        versionName = "4.23.0"
+        versionCode = 180
+        versionName = "4.24.0"
         vectorDrawables { useSupportLibrary = true }
 
         // The API endpoint is injected at build time rather than baked into the sources, so the
@@ -78,6 +78,18 @@ android {
                 enableV1Signing = true
                 enableV2Signing = true
             }
+        }
+    }
+
+    // Per-ABI release APKs: the app's size is dominated by Media3/Compose native code, so shipping both ABIs
+    // in every download wasted roughly the size of one ABI. arm64 is the primary published asset (what the
+    // updater downloads); the 32-bit and universal APKs stay attached for older devices and manual installs.
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a")
+            isUniversalApk = true
         }
     }
 

@@ -53,6 +53,9 @@ class TrackDownloadManager(
     private val _notices = MutableSharedFlow<String>(extraBufferCapacity = 32)
     val notices: SharedFlow<String> = _notices.asSharedFlow()
 
+    /** Invoked after a file lands in MediaStore, so the local library can re-index it without a page visit. */
+    var onCompleted: ((com.yunyin.music.core.Track) -> Unit)? = null
+
     init {
         records?.all()?.forEach { record ->
             tracks[record.track.id] = record.track
@@ -369,6 +372,8 @@ class TrackDownloadManager(
                     ),
                 )
                 notice("已保存到 ${saved.folder}：${saved.displayName}")
+                // Never let a local-index refresh turn a successful download into a failure.
+                runCatching { onCompleted?.invoke(track) }
                 logAction(track.id, "done", doneState.downloadedBytes, doneState.totalBytes, "quality=$quality file=${saved.displayName}")
                 return
             } catch (e: CancellationException) {

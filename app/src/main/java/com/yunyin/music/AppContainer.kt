@@ -55,6 +55,29 @@ class AppContainer(val appContext: Context) {
         com.yunyin.music.data.local.LocalMusicScanner(appContext, localMusic)
     }
 
+    /** Bumped after a background local-music scan so an open 本地音乐 sheet can refresh itself. */
+    val localMusicRevision = kotlinx.coroutines.flow.MutableStateFlow(0)
+
+    private val localMusicRefreshScope =
+        CoroutineScope(SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
+
+    /**
+     * Re-indexes local audio after a download finishes. Best effort: no permission or a failed scan only means the
+     * file appears next time the user opens 本地音乐, never a crash in the download path.
+     */
+    fun refreshLocalMusicInBackground() {
+        val granted = android.content.pm.PackageManager.PERMISSION_GRANTED ==
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                appContext, android.Manifest.permission.READ_MEDIA_AUDIO,
+            )
+        if (!granted) return
+        localMusicRefreshScope.launch {
+            runCatching { localMusicScanner.scan() }.onSuccess {
+                localMusicRevision.value = localMusicRevision.value + 1
+            }
+        }
+    }
+
     /** Memory + 10-minute disk cache of playlist track lists (re-entering a playlist is instant). */
     val playlistTrackCache: com.yunyin.music.data.playlist.PlaylistTrackCache by lazy {
         com.yunyin.music.data.playlist.PlaylistTrackCache(
@@ -129,7 +152,11 @@ class AppContainer(val appContext: Context) {
                 runCatching { appContext.contentResolver.delete(Uri.parse(uri), null, null) > 0 }
                     .getOrDefault(false)
             },
-        )
+        ).also { manager ->
+            // The completion hook lives here rather than in a screen: downloads continue while the user is
+            // elsewhere, and the local index must still pick the new file up.
+            manager.onCompleted = { runCatching { refreshLocalMusicInBackground() } }
+        }
     }
 
     /**
