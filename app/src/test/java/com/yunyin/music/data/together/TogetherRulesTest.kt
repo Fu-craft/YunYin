@@ -7,6 +7,25 @@ class TogetherRulesTest {
     private fun cmd(type: String, target: String = "42", seq: Long = 7, account: String = "9") =
         TogetherCommand(account, type, "1", target, 1000, true, seq)
 
+    @Test fun `eapi payload carries e_r and the identity header`() {
+        val payload = TogetherTransport.eapiPayload(
+            "/api/listen/together/room/create",
+            org.json.JSONObject("{\"refer\":\"songplay_more\"}"),
+            "MUSIC_U=abc; __csrf=tok; os=android",
+        )
+        assertFalse(payload.getBoolean("e_r"))
+        val header = payload.getJSONObject("header")
+        assertEquals("android", header.getString("os"))
+        assertEquals("abc", header.getString("MUSIC_U"))
+        assertTrue(header.getString("requestId").contains("_"))
+        assertTrue(header.has("deviceId") && header.has("appver") && header.has("channel"))
+    }
+
+    @Test fun `joined only when the snapshot carries room data`() {
+        assertFalse(TogetherRules.joinedFromSnapshot(emptyList()))
+        assertTrue(TogetherRules.joinedFromSnapshot(listOf("1")))
+    }
+
     @Test fun `room parser reads roomInfo roomId and creatorId and falls back`() {
         val nested = org.json.JSONObject(
             "{\"code\":200,\"data\":{\"roomInfo\":{\"roomId\":\"r123\",\"creatorId\":\"456\"}}}",

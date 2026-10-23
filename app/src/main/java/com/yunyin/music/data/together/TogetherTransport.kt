@@ -30,14 +30,17 @@ class TogetherTransport(
 
     /** `eapiPost`: form field `params` = hex-uppercase AES-128-ECB(PKCS5) of the classic eapi payload. */
     fun eapiPost(path: String, payload: JSONObject): Result<JSONObject> = runCatching {
-        val json = payload.toString()
+        val cookie = settings.cookie
+        val enriched = eapiPayload(path, payload, cookie)
+        val json = enriched.toString()
         val params = eapiParams(path, json)
         val body = FormBody.Builder().add("params", params).build()
         val request = Request.Builder()
-            .url("https://interface3.music.163.com/eapi$path")
+            // main.js: (domain || EAPI_HOST) + "/eapi/" + path.slice(5) — strip our leading "/api/".
+            .url("https://interface3.music.163.com/eapi/" + path.removePrefix("/api/").removePrefix("/"))
             .header("User-Agent", EAPI_UA)
             .header("Referer", "https://music.163.com/")
-            .header("Cookie", settings.cookie)
+            .header("Cookie", headerCookie(enriched.optJSONObject("header"), cookie))
             .post(body)
             .build()
         http.newCall(request).execute().use { response ->
@@ -86,6 +89,48 @@ class TogetherTransport(
             .readTimeout(10, TimeUnit.SECONDS)
             .callTimeout(12, TimeUnit.SECONDS)
             .build()
+
+        /** QPlayer `eapiClientHeader`: the inner identity header nested into every eapi payload. */
+        fun eapiHeader(cookie: String, now: Long = System.currentTimeMillis()): JSONObject {
+            fun cookieValue(name: String): String =
+                cookie.split(';').map { it.trim() }.firstOrNull { it.startsWith("$name=") }
+                    ?.substringAfter('=').orEmpty()
+            val header = JSONObject()
+                .put("osver", cookieValue("osver").ifBlank { "14" })
+                .put("deviceId", cookieValue("deviceId").ifBlank { "yunyin" + (100000..999999).random() })
+                .put("os", cookieValue("os").ifBlank { "android" })
+                .put("appver", cookieValue("appver").ifBlank { "9.1.0" })
+                .put("versioncode", cookieValue("versioncode").ifBlank { "140" })
+                .put("mobilename", cookieValue("mobilename"))
+                .put("buildver", cookieValue("buildver").ifBlank { now.toString().take(10) })
+                .put("resolution", cookieValue("resolution").ifBlank { "1920x1080" })
+                .put("__csrf", cookieValue("__csrf"))
+                .put("channel", cookieValue("channel").ifBlank { "xiaomi" })
+                .put("requestId", "${now}_${(0..999).random().toString().padStart(3, '0')}")
+            cookieValue("MUSIC_U").takeIf { it.isNotBlank() }?.let { header.put("MUSIC_U", it) }
+            cookieValue("MUSIC_A").takeIf { it.isNotBlank() }?.let { header.put("MUSIC_A", it) }
+            cookieValue("NMTID").takeIf { it.isNotBlank() }?.let { header.put("NMTID", it) }
+            return header
+        }
+
+        /** data + {e_r:false, header} exactly as main.js `eapi()` builds before encryption. */
+        fun eapiPayload(path: String, data: JSONObject, cookie: String): JSONObject =
+            JSONObject(data.toString())
+                .put("e_r", false)
+                .put("header", eapiHeader(cookie))
+
+        /** Cookie = the account jar plus the identity fields mirrored from the header (main.js headerCookie). */
+        fun headerCookie(header: JSONObject?, base: String): String {
+            if (header == null) return base
+            val parts = base.split(';').map { it.trim() }.filter { it.isNotBlank() }.toMutableList()
+            val keys = listOf("os", "osver", "appver", "channel", "deviceId", "versioncode", "buildver", "resolution", "mobilename", "NMTID", "MUSIC_U", "MUSIC_A")
+            keys.forEach { key ->
+                val value = header.optString(key)
+                if (value.isNotBlank()) parts.removeAll { it.startsWith("$key=") }
+                if (value.isNotBlank()) parts.add("$key=$value")
+            }
+            return parts.joinToString("; ")
+        }
 
         fun md5Hex(value: String): String =
             MessageDigest.getInstance("MD5").digest(value.toByteArray()).joinToString("") { "%02x".format(it) }

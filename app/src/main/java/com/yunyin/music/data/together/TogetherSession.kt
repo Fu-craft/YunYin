@@ -70,7 +70,7 @@ class TogetherSession(
 
     fun create() = runOp("create") {
         val result = api.create().getOrThrow()
-        enter(result, versionSeed = 0L)
+        enter(result, versionSeed = 0L, action = "create")
         reportPlaylist()
     }
 
@@ -80,7 +80,14 @@ class TogetherSession(
         // together.js joinRoom calls `accept` directly; `check` is diagnostic only (it can report false for a
         // valid invitation until the server has registered it, which used to block every join).
         api.check(roomId)
-        enter(api.join(roomId, inviterId).getOrThrow(), versionSeed = 0L)
+        val joined = api.join(roomId, inviterId).getOrThrow()
+        // together.js applies the snapshot right after accept; without room data the "join" is an empty shell.
+        val snapshot = api.snapshot(joined.roomId).getOrElse { error("加入后未获取到房间数据：${it.message}") }
+        if (!TogetherRules.joinedFromSnapshot(snapshot.songIds)) {
+            error("加入后未获取到房间数据：playlist=0 code=snapshot-empty")
+        }
+        enter(joined, versionSeed = 0L, action = "join")
+        applySnapshot(snapshot)
     }
 
     fun leave() {
@@ -93,7 +100,7 @@ class TogetherSession(
         logLine("end", "ok")
     }
 
-    private fun enter(value: TogetherRoom, versionSeed: Long) {
+    private fun enter(value: TogetherRoom, versionSeed: Long, action: String) {
         room = value
         leaderId = value.creatorId.ifBlank { accountId.toString() }
         lastRemoteSignature = ""
@@ -109,7 +116,12 @@ class TogetherSession(
             inviteLink = inviteLink(value.roomId, value.creatorId.ifBlank { accountId.toString() }),
         )
         player.setAutoAdvanceBlocked(true)
-        logLine("create", "ok")
+        logLine(action, "ok")
+        log.record(
+            "解析",
+            "stage=together parsed action=$action roomId=${value.roomId} creatorId=${value.creatorId} " +
+                "members=${value.memberCount}",
+        )
         startLoop()
     }
 
@@ -178,7 +190,15 @@ class TogetherSession(
                 registerFailure("snapshot", error)
                 null
             }
-            if (snapshot != null) applySnapshot(snapshot)
+            if (snapshot != null) {
+                log.record(
+                    "解析",
+                    "stage=together parsed action=snapshot playlist=${snapshot.songIds.size} " +
+                        "commandType=${snapshot.command?.type.orEmpty()} " +
+                        "serverSeq=${snapshot.command?.sequence ?: 0} playing=${snapshot.command?.playing ?: false}",
+                )
+                applySnapshot(snapshot)
+            }
             if (ticks - lastHeartbeat >= TogetherRules.HEARTBEAT_TICKS) {
                 lastHeartbeat = ticks
                 val local = player.state.value
@@ -187,7 +207,14 @@ class TogetherSession(
                     local.current?.id?.toString().orEmpty(),
                     local.isPlaying,
                     local.positionMs,
-                ).onSuccess { recordOk("heartbeat") }.onFailure { registerFailure("heartbeat", it) }
+                ).onSuccess { inRoom ->
+                    log.record("解析", "stage=together parsed action=heartbeat inRoom=${inRoom ?: "unknown"}")
+                    if (inRoom == false) {
+                        leave()
+                        return
+                    }
+                    recordOk("heartbeat")
+                }.onFailure { registerFailure("heartbeat", it) }
             }
             if (ticks - lastStatus >= TogetherRules.STATUS_TICKS) {
                 lastStatus = ticks
@@ -327,6 +354,11 @@ class TogetherSession(
             log.record("解析", "stage=together crypto ok=true")
         }
     }
+
+    /** Last together lines from the shared diagnostics file, for a dedicated copy action. */
+    fun logDump(): String = log.readLast().orEmpty().lineSequence()
+        .filter { it.contains("stage=together") }
+        .toList().takeLast(200).joinToString("\n")
 
     private fun inviteLink(roomId: String, inviterId: String): String =
         "qplayer://listen-together?provider=netease&roomId=$roomId&inviterId=$inviterId"

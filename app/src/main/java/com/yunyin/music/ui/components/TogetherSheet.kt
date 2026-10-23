@@ -1,6 +1,7 @@
 package com.yunyin.music.ui.components
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
@@ -60,7 +61,14 @@ fun TogetherSheet(session: TogetherSession, onDismiss: () -> Unit) {
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("关闭") } },
+        confirmButton = {
+            Row {
+                TextButton(onClick = { clipboard.setText(AnnotatedString(session.logDump())) }) {
+                    Text("复制一起听日志")
+                }
+                TextButton(onClick = onDismiss) { Text("关闭") }
+            }
+        },
     )
     // Keep the ported entry discoverable even if the dialog is dismissed during a reconnect.
     if (state.error.contains("过于频繁")) Text(state.error)

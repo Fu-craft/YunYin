@@ -19,7 +19,7 @@ class TogetherApi(
         log?.record(
             "解析",
             "stage=together raw action=$action${if (detail.isBlank()) "" else " $detail"} code=$code " +
-                "body=${body.toString().take(400)}",
+                "body=${body.toString().take(1200)}",
         )
     }
 
@@ -94,6 +94,7 @@ class TogetherApi(
                     sequence = it.optLong("serverSeq"),
                 )
             }
+            raw("snapshot", "roomId=$roomId playlist=${ids.size}", body)
             TogetherSnapshot(ids, command)
         }
 
@@ -134,13 +135,17 @@ class TogetherApi(
         ).map { }
     }
 
-    fun heartbeat(roomId: String, songId: String, playing: Boolean, progressMs: Long): Result<Unit> =
+    fun heartbeat(roomId: String, songId: String, playing: Boolean, progressMs: Long): Result<Boolean?> =
         transport.eapiPost(
             "/api/listen/together/heartbeat",
             JSONObject().put("roomId", roomId).put("songId", songId.ifBlank { "0" })
                 .put("playStatus", if (playing) "PLAY" else "PAUSE")
                 .put("progress", progressMs.coerceAtLeast(0L)),
-        ).map { }
+        ).map { body ->
+            raw("heartbeat", "roomId=$roomId", body)
+            val data = body.optJSONObject("data")
+            data?.optBoolean("inRoom") ?: body.optBoolean("inRoom", true)
+        }
 
     fun end(roomId: String): Result<Unit> =
         transport.eapiPost("/api/listen/together/end/v2", JSONObject().put("roomId", roomId)).map { }

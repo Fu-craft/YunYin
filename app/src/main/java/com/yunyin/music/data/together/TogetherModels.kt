@@ -114,6 +114,9 @@ object TogetherRules {
         return memberIds.filter { it.toLongOrNull() != null }.minByOrNull { it.toLong() } ?: ownAccountId
     }
 
+    /** A room is real only when the snapshot actually carries room data (playlist), not merely accept=200. */
+    fun joinedFromSnapshot(songIds: List<String>): Boolean = songIds.isNotEmpty()
+
     fun idsSignature(ids: List<String>): String = ids.joinToString(",")
 
     /** Same real-session rule as subscribe/like-sync: cookie + non-anonymous. No numeric id is required. */
