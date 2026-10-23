@@ -10,6 +10,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -18,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import com.yunyin.music.data.together.TogetherSession
 
 /** 一起听 sheet (ported interaction from QPlayer; two logged-in accounts are required). */
@@ -26,6 +28,7 @@ fun TogetherSheet(session: TogetherSession, onDismiss: () -> Unit) {
     val state by session.state.collectAsState()
     val clipboard = LocalClipboardManager.current
     var invite by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("一起听") },
@@ -65,6 +68,13 @@ fun TogetherSheet(session: TogetherSession, onDismiss: () -> Unit) {
             Row {
                 TextButton(onClick = { clipboard.setText(AnnotatedString(session.logDump())) }) {
                     Text("复制一起听日志")
+                }
+                TextButton(onClick = {
+                    scope.launch {
+                        clipboard.setText(AnnotatedString(session.runDiagnostics()))
+                    }
+                }) {
+                    Text("一起听诊断")
                 }
                 TextButton(onClick = onDismiss) { Text("关闭") }
             }

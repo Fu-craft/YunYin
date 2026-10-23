@@ -7,6 +7,16 @@ class TogetherRulesTest {
     private fun cmd(type: String, target: String = "42", seq: Long = 7, account: String = "9") =
         TogetherCommand(account, type, "1", target, 1000, true, seq)
 
+    @Test fun `create requires a room id and room labels are explicit`() {
+        assertFalse(TogetherRules.canEnter(""))
+        assertTrue(TogetherRules.canEnter("r1"))
+        assertEquals("none", TogetherRules.roomLabel(null))
+        assertEquals("none", TogetherRules.roomLabel(""))
+        assertEquals("r1", TogetherRules.roomLabel("r1"))
+        assertNull(TogetherRules.antiCheatHeader(""))
+        assertEquals("tok", TogetherRules.antiCheatHeader("tok"))
+    }
+
     @Test fun `eapi payload carries e_r and the identity header`() {
         val payload = TogetherTransport.eapiPayload(
             "/api/listen/together/room/create",

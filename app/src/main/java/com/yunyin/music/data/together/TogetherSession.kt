@@ -70,6 +70,9 @@ class TogetherSession(
 
     fun create() = runOp("create") {
         val result = api.create().getOrThrow()
+        if (!TogetherRules.canEnter(result.roomId)) {
+            error("房间创建失败（未返回房间号）：roomId=none")
+        }
         enter(result, versionSeed = 0L, action = "create")
         reportPlaylist()
     }
@@ -347,12 +350,34 @@ class TogetherSession(
         val suffix = if (reason.isBlank()) "" else " reason=$reason"
         log.record(
             "解析",
-            "stage=together room=${room?.roomId.orEmpty()} tick=$ticks action=$action result=$result$suffix",
+            "stage=together room=${TogetherRules.roomLabel(room?.roomId)} tick=$ticks action=$action result=$result$suffix",
         )
         if (!cryptoChecked) {
             cryptoChecked = true
             log.record("解析", "stage=together crypto ok=true")
         }
+    }
+
+    /** One-tap diagnostics: checkToken (not used by QPlayer for together), create, status, snapshot. */
+    suspend fun runDiagnostics(): String {
+        val block = StringBuilder()
+        block.appendLine("together diagnostics room=${TogetherRules.roomLabel(room?.roomId)} available=$available")
+        block.appendLine("checkToken: not sent (QPlayer checkTokenFor returns empty unless options.checkToken; listenTogether does not pass it)")
+        api.create().onSuccess { created ->
+            block.appendLine("create: roomId=${created.roomId.ifBlank { "none" }} creatorId=${created.creatorId.ifBlank { "none" }}")
+            if (created.roomId.isNotBlank()) {
+                api.status().onSuccess { value ->
+                    block.appendLine("status: inRoom=${value.inRoom} status=${value.status} roomId=${value.room?.roomId ?: "none"}")
+                }.onFailure { block.appendLine("status: error=${it.message}") }
+                api.snapshot(created.roomId).onSuccess { snap ->
+                    block.appendLine("snapshot: playlist=${snap.songIds.size} commandType=${snap.command?.type ?: "none"} serverSeq=${snap.command?.sequence ?: 0}")
+                }.onFailure { block.appendLine("snapshot: error=${it.message}") }
+            }
+        }.onFailure { block.appendLine("create: error=${it.message}") }
+        block.appendLine("--- last together log ---")
+        block.append(logDump())
+        log.record("解析", "stage=together diagnostic captured chars=${block.length}")
+        return block.toString()
     }
 
     /** Last together lines from the shared diagnostics file, for a dedicated copy action. */

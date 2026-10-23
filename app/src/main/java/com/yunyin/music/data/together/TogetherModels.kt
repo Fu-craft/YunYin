@@ -117,6 +117,17 @@ object TogetherRules {
     /** A room is real only when the snapshot actually carries room data (playlist), not merely accept=200. */
     fun joinedFromSnapshot(songIds: List<String>): Boolean = songIds.isNotEmpty()
 
+    /** A blank room id means create/accept failed: never enter, never report/end. */
+    fun canEnter(roomId: String): Boolean = roomId.isNotBlank()
+
+    fun roomLabel(roomId: String?): String = roomId?.takeIf { it.isNotBlank() } ?: "none"
+
+    /**
+     * QPlayer's `checkTokenFor` returns "" unless `options.checkToken`; listenTogether calls do not pass it, so
+     * QPlayer sends no X-antiCheatToken for together either. A token is only attached when one is present.
+     */
+    fun antiCheatHeader(token: String?): String? = token?.takeIf { it.isNotBlank() }
+
     fun idsSignature(ids: List<String>): String = ids.joinToString(",")
 
     /** Same real-session rule as subscribe/like-sync: cookie + non-anonymous. No numeric id is required. */

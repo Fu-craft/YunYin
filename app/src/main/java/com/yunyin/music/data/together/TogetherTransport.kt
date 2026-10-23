@@ -28,16 +28,20 @@ class TogetherTransport(
     private val http: OkHttpClient = defaultClient(),
 ) {
 
+    @Volatile var lastUrl: String = ""
+    @Volatile var lastPlainPayload: String = ""
+
     /** `eapiPost`: form field `params` = hex-uppercase AES-128-ECB(PKCS5) of the classic eapi payload. */
     fun eapiPost(path: String, payload: JSONObject): Result<JSONObject> = runCatching {
         val cookie = settings.cookie
         val enriched = eapiPayload(path, payload, cookie)
         val json = enriched.toString()
+        lastPlainPayload = mask(json)
         val params = eapiParams(path, json)
         val body = FormBody.Builder().add("params", params).build()
         val request = Request.Builder()
             // main.js: (domain || EAPI_HOST) + "/eapi/" + path.slice(5) — strip our leading "/api/".
-            .url("https://interface3.music.163.com/eapi/" + path.removePrefix("/api/").removePrefix("/"))
+            .url("https://interface3.music.163.com/eapi/" + path.removePrefix("/api/").removePrefix("/").also { lastUrl = it })
             .header("User-Agent", EAPI_UA)
             .header("Referer", "https://music.163.com/")
             .header("Cookie", headerCookie(enriched.optJSONObject("header"), cookie))
@@ -131,6 +135,10 @@ class TogetherTransport(
             }
             return parts.joinToString("; ")
         }
+
+        fun mask(value: String): String = value
+            .replace(Regex("(MUSIC_U|MUSIC_A)=([^;\"&]+)"), "$1=<masked>")
+            .replace(Regex("(__csrf)[\"=:]+([^\",]+)"), "$1=<masked>")
 
         fun md5Hex(value: String): String =
             MessageDigest.getInstance("MD5").digest(value.toByteArray()).joinToString("") { "%02x".format(it) }

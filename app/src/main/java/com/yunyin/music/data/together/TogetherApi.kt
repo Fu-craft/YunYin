@@ -26,9 +26,18 @@ class TogetherApi(
     fun create(): Result<TogetherRoom> = transport
         .eapiPost("/api/listen/together/room/create", JSONObject().put("refer", "songplay_more"))
         .mapCatching { body ->
-            raw("create", "", body)
+            log?.record(
+                "解析",
+                "stage=together create url=${transport.lastUrl} payload=${transport.lastPlainPayload.take(1000)} " +
+                    "code=${body.optInt("code", -1)} body=${body.toString().take(4000)}",
+            )
             val room = TogetherRoomParser.parse(body)
-            if (room.roomId.isBlank()) error("房间创建失败：${TogetherRoomParser.reason(body)}")
+            log?.record(
+                "解析",
+                "stage=together create roomId=${room.roomId.ifBlank { "none" }} " +
+                    "rawKeys=${body.keys().asSequence().joinToString(",")}",
+            )
+            if (room.roomId.isBlank()) error("房间创建失败（未返回房间号）：${TogetherRoomParser.reason(body)}")
             room
         }
 
