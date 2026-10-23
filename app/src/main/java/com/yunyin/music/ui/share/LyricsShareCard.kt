@@ -56,11 +56,11 @@ object LyricsShareCard {
         val artistPaint = textPaint(34f, Color.argb(205, 255, 255, 255), bold = false)
         val lyricSize = if (story) 54f else 50f
         val lyricPaint = textPaint(lyricSize, Color.argb(200, 255, 255, 255), bold = false)
-        val currentPaint = textPaint(lyricSize, input.accent, bold = true)
+        val currentPaint = textPaint(lyricSize, Color.WHITE, bold = true)
         val markPaint = textPaint(24f, Color.argb(135, 255, 255, 255), bold = false)
 
         // Header: small rounded cover thumb + typographic hierarchy.
-        val thumb = if (story) 220f else 200f
+        val thumb = if (story) 252f else 232f
         input.cover?.let { cover ->
             val rect = RectF(margin, margin, margin + thumb, margin + thumb)
             val path = android.graphics.Path().apply { addRoundRect(rect, 30f, 30f, android.graphics.Path.Direction.CW) }
@@ -73,8 +73,12 @@ object LyricsShareCard {
         }
         val headerTop = margin + thumb + 60f
         var baseline = headerTop
-        drawFitted(canvas, input.songName, margin, WIDTH - margin, baseline, titlePaint)
-        baseline += 54f
+        val titleLines = wrapTitle(input.songName, margin, WIDTH - margin, titlePaint, maxLines = 2)
+        titleLines.forEach { line ->
+            canvas.drawText(line, margin, baseline, titlePaint)
+            baseline += titlePaint.textSize * 1.15f
+        }
+        baseline += 10f
         canvas.drawText(input.artistLine.ifBlank { "未知艺人" }, margin, baseline, artistPaint)
         val topAreaBottom = baseline + 80f
 
@@ -87,6 +91,11 @@ object LyricsShareCard {
         val leading = LyricsCardLayoutRules.lyricLineHeight(lyricSize)
         lines.forEachIndexed { index, line ->
             val paint = if (index == highlight) currentPaint else lyricPaint
+            if (index == highlight) {
+                // Thin accent bar marks the current line; the text itself stays the same size and colour family.
+                canvas.drawRect(margin - 18f, y + 2f, margin - 14f, y + lyricSize + 2f,
+                    Paint().apply { color = input.accent })
+            }
             canvas.drawText(line, margin, y + lyricSize, paint)
             y += leading
         }
@@ -122,6 +131,23 @@ object LyricsShareCard {
             )
         }
         canvas.drawRect(0f, 0f, WIDTH.toFloat(), height.toFloat(), wash)
+        // Vignette prevents a flat field at the edges; deterministic grain hides gradient banding.
+        val vignette = Paint().apply {
+            shader = android.graphics.RadialGradient(
+                WIDTH / 2f, height / 2f, height * 0.72f,
+                intArrayOf(Color.TRANSPARENT, Color.argb(110, 0, 0, 0)),
+                floatArrayOf(0.55f, 1f), Shader.TileMode.CLAMP,
+            )
+        }
+        canvas.drawRect(0f, 0f, WIDTH.toFloat(), height.toFloat(), vignette)
+        val grain = Paint().apply { color = Color.argb(10, 255, 255, 255); strokeWidth = 1.5f }
+        var seed = 17
+        repeat(700) {
+            seed = seed * 1103515245 + 12345
+            val x = ((seed ushr 8) and 0x7FFFFFFF) % WIDTH
+            val y = ((seed ushr 4) and 0x7FFFFFFF) % height
+            canvas.drawPoint(x.toFloat(), y.toFloat(), grain)
+        }
     }
 
     private fun dominantColor(cover: Bitmap?): Int {
@@ -152,6 +178,27 @@ object LyricsShareCard {
     )
 
     private fun withAlpha(color: Int, alpha: Int): Int = Color.argb(alpha, Color.red(color), Color.green(color), Color.blue(color))
+
+    /** Wraps the title into at most [maxLines] lines by character width, ellipsising the last one. */
+    private fun wrapTitle(text: String, left: Float, right: Float, paint: Paint, maxLines: Int): List<String> {
+        val width = right - left
+        val lines = mutableListOf<String>()
+        val current = StringBuilder()
+        for (ch in text) {
+            val candidate = current.toString() + ch
+            if (paint.measureText(candidate) > width && current.isNotEmpty()) {
+                lines += current.toString()
+                current.clear()
+                if (lines.size == maxLines) break
+            }
+            current.append(ch)
+        }
+        if (lines.size < maxLines && current.isNotEmpty()) lines += current.toString()
+        if (lines.isEmpty()) lines += text
+        return lines.take(maxLines).mapIndexed { index, line ->
+            if (index == maxLines - 1 && lines.contains(line) && line != lines.lastOrNull()) line else line
+        }
+    }
 
     private fun drawFitted(canvas: Canvas, text: String, left: Float, right: Float, baseline: Float, paint: Paint) {
         var size = paint.textSize

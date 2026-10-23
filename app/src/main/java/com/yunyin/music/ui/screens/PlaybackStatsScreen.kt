@@ -17,10 +17,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -51,6 +52,7 @@ import com.yunyin.music.ui.theme.AppleShapes
 import com.yunyin.music.ui.theme.Motion
 import com.yunyin.music.ui.theme.SFPro
 import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
+import kotlinx.coroutines.delay
 
 private enum class StatsTab(val label: String) { Songs("歌曲"), Artists("艺人"), Albums("专辑") }
 
@@ -64,8 +66,19 @@ private enum class StatsTab(val label: String) { Songs("歌曲"), Artists("艺�
  */
 @Composable
 fun PlaybackStatsScreen(recorder: PlaybackStatsRecorder, onBack: () -> Unit) {
-    val snapshot by recorder.state.collectAsState()
+    // The store is defensive, but the screen must also survive a recorder/state failure instead of taking the
+    // app down: read through runCatching and surface a retry / clear action.
+    var snapshot by remember { mutableStateOf<PlaybackStatsSnapshot?>(null) }
+    var loadError by remember { mutableStateOf<String?>(null) }
     var tab by remember { mutableStateOf(StatsTab.Songs) }
+    LaunchedEffect(recorder) {
+        while (true) {
+            runCatching { recorder.state.value }
+                .onSuccess { snapshot = it; loadError = null }
+                .onFailure { loadError = it.message ?: it.javaClass.simpleName }
+            delay(1_000L)
+        }
+    }
 
     // Full-window opaque background first: the page previously spent the status-bar area on transparency,
     // letting the home wallpaper show through. The frosted bar now owns the inset.
@@ -75,21 +88,35 @@ fun PlaybackStatsScreen(recorder: PlaybackStatsRecorder, onBack: () -> Unit) {
         Box(Modifier.fillMaxSize().layerBackdrop(topBarBackdrop)) {
             Column(Modifier.fillMaxSize().padding(top = topInset).navigationBarsPadding()) {
 
-        val empty = snapshot.totals.plays == 0 && snapshot.totals.totalMs == 0L
-        CrossfadeContent(
-            targetState = if (empty) "empty" else "stats",
-            modifier = Modifier.fillMaxWidth().weight(1f),
-            durationMillis = Motion.CrossfadeDuration,
-            label = "stats-phase",
-        ) { phase ->
-            if (phase == "empty") {
-                EmptyState(
-                    text = "还没有播放记录",
-                    icon = SfIcons.ChartBar,
-                    iconSize = 52.dp,
-                )
-            } else {
-                StatsContent(snapshot = snapshot, tab = tab, onSelectTab = { tab = it })
+        val errorNow = loadError
+        val current = snapshot
+        when {
+            errorNow != null -> StatsLoadError(
+                message = errorNow,
+                onRetry = { loadError = null },
+                onClear = { runCatching { recorder.clear() }; loadError = null; snapshot = null },
+            )
+            current == null -> Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = AppTheme.palette.accent, strokeWidth = 2.5.dp, modifier = Modifier.size(24.dp))
+            }
+            else -> {
+                val empty = current.totals.plays == 0 && current.totals.totalMs == 0L
+                CrossfadeContent(
+                    targetState = if (empty) "empty" else "stats",
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    durationMillis = Motion.CrossfadeDuration,
+                    label = "stats-phase",
+                ) { phase ->
+                    if (phase == "empty") {
+                        EmptyState(
+                            text = "还没有播放记录",
+                            icon = SfIcons.ChartBar,
+                            iconSize = 52.dp,
+                        )
+                    } else {
+                        StatsContent(snapshot = current, tab = tab, onSelectTab = { tab = it })
+                    }
+                }
             }
         }
             }
@@ -115,6 +142,28 @@ fun PlaybackStatsScreen(recorder: PlaybackStatsRecorder, onBack: () -> Unit) {
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun StatsLoadError(message: String, onRetry: () -> Unit, onClear: () -> Unit) {
+    Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center) {
+        Text("播放统计读取失败", fontFamily = SFPro, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = AppTheme.palette.label)
+        Spacer(Modifier.height(6.dp))
+        Text(message, fontFamily = SFPro, fontSize = 13.sp, color = AppTheme.palette.secondaryLabel)
+        Spacer(Modifier.height(14.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(
+                Modifier.height(44.dp).clip(ContinuousRoundedRectangle(AppleShapes.pill)).background(AppTheme.palette.accent)
+                    .clickable(indication = rememberControlRipple(bounded = true), interactionSource = null, onClick = onRetry)
+                    .padding(horizontal = 16.dp), contentAlignment = Alignment.Center,
+            ) { Text("重试", fontFamily = SFPro, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Color.White) }
+            Box(
+                Modifier.height(44.dp).clip(ContinuousRoundedRectangle(AppleShapes.pill)).background(AppTheme.palette.secondaryBackground)
+                    .clickable(indication = rememberControlRipple(bounded = true), interactionSource = null, onClick = onClear)
+                    .padding(horizontal = 16.dp), contentAlignment = Alignment.Center,
+            ) { Text("清空统计数据", fontFamily = SFPro, fontSize = 14.sp, color = AppTheme.palette.secondaryLabel) }
         }
     }
 }

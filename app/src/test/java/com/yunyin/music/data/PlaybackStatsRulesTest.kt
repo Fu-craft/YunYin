@@ -1,5 +1,6 @@
 package com.yunyin.music.data
 
+import com.yunyin.music.data.stats.PlaybackStatsDataRules
 import com.yunyin.music.data.stats.PlaybackStatsRules
 import com.yunyin.music.data.stats.SongStats
 import com.yunyin.music.data.stats.StatsBucket
@@ -75,6 +76,41 @@ class PlaybackStatsRulesTest {
         assertFalse(StatsFlushRules.shouldFlush(dirty = false, nowMs = 100_000L, lastFlushMs = 0L))
         assertFalse(StatsFlushRules.shouldFlush(dirty = true, nowMs = 5_000L, lastFlushMs = 0L))
         assertTrue(StatsFlushRules.shouldFlush(dirty = true, nowMs = 20_000L, lastFlushMs = 0L))
+    }
+
+    @Test
+    fun `corrupt or legacy fields fall back to safe defaults`() {
+        assertEquals(0L, PlaybackStatsDataRules.sanitizeMs(null))
+        assertEquals(0L, PlaybackStatsDataRules.sanitizeMs(-5_000L))
+        assertEquals(0, PlaybackStatsDataRules.sanitizePlays(null))
+        assertEquals(0, PlaybackStatsDataRules.sanitizePlays(-2))
+        val days = PlaybackStatsDataRules.sanitizeDays(
+            mapOf(
+                "2026-10-23" to (1_000L to 2),
+                "legacy-day" to (5_000L to 1),
+                "" to (9_999L to 9),
+                "negative" to (-1L to -1),
+            ),
+        )
+        assertEquals(setOf("2026-10-23", "legacy-day", "negative"), days.keys)
+        assertEquals(0L to 0, days["negative"])
+        assertEquals(0, PlaybackStatsDataRules.emptySnapshot().totals.plays)
+        assertEquals(0L, PlaybackStatsDataRules.emptySnapshot().totals.totalMs)
+    }
+
+    @Test
+    fun `zero aggregates do not divide by zero and empty buckets stay safe`() {
+        val emptyDays = PlaybackStatsRules.lastDays(emptyMap(), 7, LocalDate.of(2026, 10, 23))
+        assertEquals(7, emptyDays.size)
+        assertTrue(emptyDays.all { it.totalMs == 0L && it.plays == 0 })
+        assertTrue(PlaybackStatsRules.barFractions(emptyDays).all { it == 0f })
+        assertEquals(0f, PlaybackStatsRules.barFractions(emptyList()).size.toFloat())
+        assertEquals("0 分钟", PlaybackStatsRules.formatDuration(-100L))
+    }
+
+    @Test
+    fun `invalid legacy day keys cannot crash week bucketing`() {
+        assertEquals("not-a-day", PlaybackStatsRules.weekKeyOfDay("not-a-day"))
     }
 
     @Test

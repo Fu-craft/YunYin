@@ -134,3 +134,21 @@ object StatsFlushRules {
     fun shouldFlush(dirty: Boolean, nowMs: Long, lastFlushMs: Long): Boolean =
         PlaybackStatsRules.shouldFlush(dirty, nowMs, lastFlushMs)
 }
+
+
+/**
+ * Field-level sanitisation for the persisted statistics document.
+ *
+ * Legacy or corrupt JSON can carry nulls, negative values or blank day keys; these pure helpers give every field a
+ * safe default and clamp negatives, so the store's loader cannot produce a snapshot that crashes the UI.
+ */
+object PlaybackStatsDataRules {
+    fun sanitizeMs(value: Long?): Long = (value ?: 0L).coerceAtLeast(0L)
+    fun sanitizePlays(value: Int?): Int = (value ?: 0).coerceAtLeast(0)
+    fun sanitizeDays(raw: Map<String, Pair<Long?, Int?>>): Map<String, Pair<Long, Int>> =
+        raw.filterKeys { it.isNotBlank() }
+            .mapValues { (_, value) -> sanitizeMs(value.first) to sanitizePlays(value.second) }
+
+    /** Empty snapshot used when a file cannot be read or parsed at all. */
+    fun emptySnapshot(): PlaybackStatsSnapshot = PlaybackStatsSnapshot()
+}

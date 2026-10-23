@@ -60,7 +60,7 @@ class AppContainer(val appContext: Context) {
     val playbackStatsRecorder by lazy {
         com.yunyin.music.data.stats.PlaybackStatsRecorder(playbackStatsStore)
     }
-    private val statsScope = CoroutineScope(SupervisorJob() + kotlinx.coroutines.Dispatchers.Default)
+    private val statsScope = CoroutineScope(SupervisorJob() + kotlinx.coroutines.Dispatchers.Main.immediate)
     private var statsStarted = false
 
     /** Slow sampler: statistics need real forward listening, not frame precision. */
@@ -71,21 +71,33 @@ class AppContainer(val appContext: Context) {
             while (true) {
                 kotlinx.coroutines.delay(1_000L)
                 runCatching {
+                    // Player state must be read on the main thread (MediaController construction is main-thread
+                    // bound). Only the arithmetic + persistence is moved to a background dispatcher.
                     val state = player.state.value
                     val track = state.current
                     val recorder = playbackStatsRecorder
                     if (track == null) {
-                        recorder.flush(System.currentTimeMillis())
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                            recorder.flush(System.currentTimeMillis())
+                        }
                     } else {
-                        recorder.tick(
-                            trackId = track.id,
-                            title = track.name,
-                            artist = track.artistLine,
-                            album = track.albumName,
-                            positionMs = state.positionMs,
-                            playing = state.isPlaying,
-                            nowMs = System.currentTimeMillis(),
-                        )
+                        val trackId = track.id
+                        val trackName = track.name
+                        val trackArtist = track.artistLine
+                        val trackAlbum = track.albumName
+                        val positionMs = state.positionMs
+                        val playing = state.isPlaying
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                            recorder.tick(
+                                trackId = trackId,
+                                title = trackName,
+                                artist = trackArtist,
+                                album = trackAlbum,
+                                positionMs = positionMs,
+                                playing = playing,
+                                nowMs = System.currentTimeMillis(),
+                            )
+                        }
                     }
                 }
             }

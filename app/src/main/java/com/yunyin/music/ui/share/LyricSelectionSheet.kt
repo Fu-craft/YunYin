@@ -105,7 +105,10 @@ fun LyricSelectionSheet(
                         Text("这首歌没有可选的歌词", fontFamily = SFPro, fontSize = 13.sp, color = AppTheme.palette.secondaryLabel)
                     }
                 } else {
-                    LazyColumn(Modifier.fillMaxSize()) {
+                    LazyColumn(
+                        Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
                         itemsIndexed(lines, key = { index, _ -> "line-$index" }) { index, line ->
                             val at = selected.indexOf(index)
                             val chosen = at >= 0
@@ -113,7 +116,7 @@ fun LyricSelectionSheet(
                                 Modifier
                                     .fillMaxWidth()
                                     .height(48.dp)
-                                    .clip(ContinuousRoundedRectangle(AppleShapes.control))
+                                    .clip(ContinuousRoundedRectangle(12.dp))
                                     .background(if (chosen) AppTheme.palette.accent.copy(alpha = 0.12f) else Color.Transparent)
                                     .clickable(
                                         indication = rememberControlRipple(bounded = true),

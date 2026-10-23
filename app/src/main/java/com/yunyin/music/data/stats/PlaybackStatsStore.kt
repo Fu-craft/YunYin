@@ -40,7 +40,9 @@ class PlaybackStatsStore(context: Context) {
 
     init { load() }
 
-    fun snapshot(): PlaybackStatsSnapshot = synchronized(lock) {
+    fun snapshot(): PlaybackStatsSnapshot = synchronized(lock) { runCatching { snapshotUnsafe() }.getOrElse { PlaybackStatsSnapshot() } }
+
+    private fun snapshotUnsafe(): PlaybackStatsSnapshot = synchronized(lock) {
         val songRows = songs.map { (id, value) ->
             SongStats(id, value.title, value.artist, value.album, value.plays, value.ms)
         }
@@ -87,6 +89,16 @@ class PlaybackStatsStore(context: Context) {
         }
     }
 
+    /** Removes the persisted statistics; used by the error state's "清空统计数据". */
+    fun clear() {
+        synchronized(lock) {
+            totalMs = 0L; plays = 0
+            days.clear(); songs.clear(); artists.clear(); albums.clear()
+            dirty = false; lastFlushMs = 0L
+            runCatching { file.delete() }
+        }
+    }
+
     /** Writes when dirty and the debounce interval has elapsed (or [force]). Returns whether it wrote. */
     fun flushIfDue(nowMs: Long, force: Boolean = false): Boolean = synchronized(lock) {
         if (!dirty) return false
@@ -104,12 +116,12 @@ class PlaybackStatsStore(context: Context) {
         runCatching {
             if (!file.isFile) return
             val root = JSONObject(file.readText())
-            totalMs = root.optLong("totalMs")
-            plays = root.optInt("plays")
+            totalMs = root.optLong("totalMs").coerceAtLeast(0L)
+            plays = root.optInt("plays").coerceAtLeast(0)
             root.optJSONObject("days")?.let { obj ->
                 obj.keys().forEach { key ->
                     val row = obj.optJSONArray(key) ?: return@forEach
-                    days[key] = longArrayOf(row.optLong(0), row.optLong(1))
+                    days[key.takeIf { it.isNotBlank() } ?: return@forEach] = longArrayOf(row.optLong(0).coerceAtLeast(0L), row.optLong(1).coerceAtLeast(0L))
                 }
             }
             root.optJSONObject("songs")?.let { obj ->
@@ -119,21 +131,21 @@ class PlaybackStatsStore(context: Context) {
                         title = row.optString("title"),
                         artist = row.optString("artist"),
                         album = row.optString("album"),
-                        plays = row.optInt("plays"),
-                        ms = row.optLong("ms"),
+                        plays = row.optInt("plays").coerceAtLeast(0),
+                        ms = row.optLong("ms").coerceAtLeast(0L),
                     )
                 }
             }
             root.optJSONObject("artists")?.let { obj ->
                 obj.keys().forEach { key ->
                     val row = obj.optJSONArray(key) ?: return@forEach
-                    artists[key] = Agg(row.optInt(0), row.optLong(1))
+                    artists[key] = Agg(row.optInt(0).coerceAtLeast(0), row.optLong(1).coerceAtLeast(0L))
                 }
             }
             root.optJSONObject("albums")?.let { obj ->
                 obj.keys().forEach { key ->
                     val row = obj.optJSONArray(key) ?: return@forEach
-                    albums[key] = Agg(row.optInt(0), row.optLong(1))
+                    albums[key] = Agg(row.optInt(0).coerceAtLeast(0), row.optLong(1).coerceAtLeast(0L))
                 }
             }
         }
@@ -225,6 +237,12 @@ class PlaybackStatsRecorder(private val store: PlaybackStatsStore) {
     fun flush(nowMs: Long) {
         store.flushIfDue(nowMs, force = true)
         lastFlushAt = nowMs
+        _state.value = store.snapshot()
+    }
+
+    /** Clears persisted statistics after a corrupt/illegible file was detected. */
+    fun clear() {
+        store.clear()
         _state.value = store.snapshot()
     }
 }
