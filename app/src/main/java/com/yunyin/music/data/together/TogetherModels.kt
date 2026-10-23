@@ -99,6 +99,22 @@ sealed interface TogetherAction {
 }
 
 /** Pure port of together.js decisions; all time values are milliseconds. */
+/** Threading guard for MediaController/PlayerController access (Media3 requires the app main thread). */
+object TogetherThreading {
+    fun isMainThread(): Boolean =
+        android.os.Looper.myLooper() == android.os.Looper.getMainLooper()
+
+    /** Distinct classification so a wrong-thread failure is never mistaken for a network error. */
+    fun classify(message: String?): String? {
+        val value = message?.lowercase().orEmpty()
+        return if (value.contains("wrong thread") || value.contains("mediacontroller") ||
+            value.contains("main thread") || value.contains("main looper")
+        ) "threading" else null
+    }
+
+    fun shouldWarnOffMain(isMainThread: Boolean): Boolean = !isMainThread
+}
+
 object TogetherRules {
     const val HEARTBEAT_TICKS = 8
     const val STATUS_TICKS = 12

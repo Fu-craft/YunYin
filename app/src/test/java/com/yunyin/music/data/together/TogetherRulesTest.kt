@@ -11,6 +11,15 @@ class TogetherRulesTest {
         id = id, name = "t$id", artists = listOf("a"), albumName = "", albumId = 0L, coverUrl = null, durationMs = 1000L,
     )
 
+    @Test fun `threading failures are classified distinctly`() {
+        assertEquals("threading", TogetherThreading.classify("MediaController method is called from a wrong thread. See javadoc"))
+        assertEquals("threading", TogetherThreading.classify("must run on main thread"))
+        assertNull(TogetherThreading.classify("HTTP 500"))
+        assertNull(TogetherThreading.classify("room not found"))
+        assertTrue(TogetherThreading.shouldWarnOffMain(isMainThread = false))
+        assertFalse(TogetherThreading.shouldWarnOffMain(isMainThread = true))
+    }
+
     @Test fun `fake snapshot hydrates 30 remote ids in remote order with the command target`() {
         val remote = (1..30).map { it.toString() }
         val local = (1..3).map { track(it.toLong()) }.associateBy { it.id.toString() }

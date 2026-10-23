@@ -9,6 +9,7 @@ import com.yunyin.music.data.SettingsStore
 import com.yunyin.music.data.lxsource.LxSourceLog
 import com.yunyin.music.playback.PlayerController
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -64,6 +65,7 @@ class TogetherSession(
     private var lastDiscover = 0L
     private var cryptoChecked = false
     private var lastSnapshotSongs = 0
+    private var threadWarned = false
 
     private val accountId: Long get() = settings.account?.userId ?: 0L
 
@@ -144,16 +146,14 @@ class TogetherSession(
                 "解析",
                 "stage=together end skipped reason=${if (current?.roomId.isNullOrBlank()) "no-room" else "not-explicit"}",
             )
-            if (current == null) {
-                clearRoomLocally()
-                return
-            }
             clearRoomLocally()
             return
         }
-        runCatching { api.end(current!!.roomId, explicit = true) }
         clearRoomLocally()
-        logLine("end", "ok")
+        scope.launch(Dispatchers.Main.immediate) {
+            runCatching { api.end(current!!.roomId, explicit = true) }
+            logLine("end", "ok")
+        }
     }
 
     private fun clearRoomLocally() {
@@ -191,7 +191,7 @@ class TogetherSession(
 
     private fun startLoop() {
         job?.cancel()
-        job = scope.launch {
+        job = scope.launch(Dispatchers.Main.immediate) {
             while (isActive) {
                 delay(1_000L)
                 tick()
@@ -395,7 +395,7 @@ class TogetherSession(
         }
     }
 
-    private fun reportPlaylist() {
+    private suspend fun reportPlaylist() {
         val currentRoom = room ?: return
         val ids = player.state.value.queue.map { it.id.toString() }
         api.reportPlaylist(currentRoom.roomId, ids, accountId, 0L)
@@ -408,7 +408,7 @@ class TogetherSession(
             return
         }
         _state.value = _state.value.copy(busy = true, error = "")
-        scope.launch {
+        scope.launch(Dispatchers.Main.immediate) {
             try {
                 block()
             } catch (t: Throwable) {
@@ -421,7 +421,15 @@ class TogetherSession(
 
     private fun registerFailure(action: String, error: Throwable) {
         val message = error.message ?: error.javaClass.simpleName
-        logLine(action, "fail", message)
+        val threading = TogetherThreading.classify(message)
+        if (threading != null) {
+            log.record("解析", "stage=together tick result=fail reason=$threading action=$action detail=$message")
+        }
+        if (TogetherThreading.shouldWarnOffMain(TogetherThreading.isMainThread()) && !threadWarned) {
+            threadWarned = true
+            log.record("解析", "stage=together threading warning action=$action offMain=true")
+        }
+        logLine(action, "fail", "${threading ?: "error"}: $message")
         lastSnapshotError = message
         if (!TogetherRules.isRateLimited(message)) {
             _state.value = _state.value.copy(error = message)
