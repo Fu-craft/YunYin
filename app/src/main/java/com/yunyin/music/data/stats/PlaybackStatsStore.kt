@@ -38,7 +38,11 @@ class PlaybackStatsStore(context: Context) {
 
     private class Agg(var plays: Int = 0, var ms: Long = 0L)
 
-    init { load() }
+
+    /** Reads and parses the JSON. Never call from composition: AppContainer runs this on IO. */
+    fun loadNow() {
+        synchronized(lock) { load() }
+    }
 
     fun snapshot(): PlaybackStatsSnapshot = synchronized(lock) { runCatching { snapshotUnsafe() }.getOrElse { PlaybackStatsSnapshot() } }
 
@@ -55,6 +59,7 @@ class PlaybackStatsStore(context: Context) {
             .map { (key, rows) -> StatsBucket(key, key, rows.sumOf { it.totalMs }, rows.sumOf { it.plays }) }
             .sortedBy { it.key }
         PlaybackStatsSnapshot(
+            loaded = loaded,
             totals = PlaybackStatsRules.totals(songRows, dayRows),
             songs = PlaybackStatsRules.topSongs(songRows, 20),
             artists = PlaybackStatsRules.topGroups(artistRows, 20),
@@ -112,7 +117,6 @@ class PlaybackStatsStore(context: Context) {
 
     private fun load() {
         if (loaded) return
-        loaded = true
         runCatching {
             if (!file.isFile) return
             val root = JSONObject(file.readText())
@@ -149,6 +153,7 @@ class PlaybackStatsStore(context: Context) {
                 }
             }
         }
+        loaded = true
     }
 
     private fun save() {
@@ -237,6 +242,12 @@ class PlaybackStatsRecorder(private val store: PlaybackStatsStore) {
     fun flush(nowMs: Long) {
         store.flushIfDue(nowMs, force = true)
         lastFlushAt = nowMs
+        _state.value = store.snapshot()
+    }
+
+    /** Loads the persisted document off the main thread; idempotent. */
+    suspend fun loadNow() {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { store.loadNow() }
         _state.value = store.snapshot()
     }
 

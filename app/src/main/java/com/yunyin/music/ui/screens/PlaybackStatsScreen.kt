@@ -96,7 +96,7 @@ fun PlaybackStatsScreen(recorder: PlaybackStatsRecorder, onBack: () -> Unit) {
                 onRetry = { loadError = null },
                 onClear = { runCatching { recorder.clear() }; loadError = null; snapshot = null },
             )
-            current == null -> Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+            current == null || !current.loaded -> Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = AppTheme.palette.accent, strokeWidth = 2.5.dp, modifier = Modifier.size(24.dp))
             }
             else -> {

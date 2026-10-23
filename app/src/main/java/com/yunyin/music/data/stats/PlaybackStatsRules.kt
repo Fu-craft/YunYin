@@ -26,6 +26,8 @@ data class StatsTotals(val totalMs: Long, val plays: Int, val activeDays: Int)
 
 /** Immutable view of the statistics store, for the page and tests. */
 data class PlaybackStatsSnapshot(
+    /** False until the asynchronous first read has completed; the page renders a loading state until then. */
+    val loaded: Boolean = false,
     val totals: StatsTotals = StatsTotals(0, 0, 0),
     val songs: List<SongStats> = emptyList(),
     val artists: List<GroupStats> = emptyList(),

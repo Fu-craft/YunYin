@@ -27,13 +27,40 @@ import java.util.Locale
 object CrashLogger {
 
     private const val FILE_NAME = "crash-last.txt"
+    private const val MAX_DIAGNOSTICS_BYTES = 64L * 1024L
+    private const val MAX_DIAGNOSTICS_KEEP = (64 * 1024 * 3) / 4
 
     fun install(context: Context) {
         val appContext = context.applicationContext
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            // Two sinks: the dedicated crash-last.txt, and an append-only FATAL block in the diagnostics file
+            // that 设置 → 复制错误日志 already reads. The latter is what makes the next user report conclusive.
             runCatching { write(appContext, thread, throwable) }
+            runCatching { appendToDiagnostics(appContext, thread, throwable) }
             previous?.uncaughtException(thread, throwable)
+        }
+    }
+
+    /**
+     * Appends `FATAL <time> thread=<name> <class>: <message>` plus the full stack to
+     * `filesDir/lxsource/diagnostics.log`, capped like the normal diagnostics trail. Never throws.
+     */
+    private fun appendToDiagnostics(context: Context, thread: Thread, throwable: Throwable) {
+        runCatching {
+            val file = File(context.filesDir, "lxsource/diagnostics.log")
+            file.parentFile?.mkdirs()
+            val stack = StringWriter().also { sw ->
+                PrintWriter(sw).use { throwable.printStackTrace(it) }
+            }.toString()
+            val header = "FATAL " + timestamp() + " thread=" + thread.name + " " +
+                throwable.javaClass.name + ": " + (throwable.message ?: "")
+            file.appendText(header + "\n" + stack + "\n")
+            if (file.length() > MAX_DIAGNOSTICS_BYTES) {
+                val keep = file.readText().takeLast(MAX_DIAGNOSTICS_KEEP)
+                val firstLineBreak = keep.indexOf('\n')
+                file.writeText(if (firstLineBreak >= 0) keep.substring(firstLineBreak + 1) else keep)
+            }
         }
     }
 

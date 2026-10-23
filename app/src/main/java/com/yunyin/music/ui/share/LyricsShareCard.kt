@@ -13,7 +13,10 @@ import android.graphics.Shader
 import android.graphics.Typeface
 import android.net.Uri
 import android.provider.MediaStore
+import android.text.TextPaint
+import android.text.TextUtils
 import com.yunyin.music.data.share.LyricsCardLayoutRules
+import com.yunyin.music.data.share.LyricsTitleFitRules
 
 /** Everything the lyric share card needs, already resolved by the caller. */
 data class LyricsShareInput(
@@ -72,15 +75,33 @@ object LyricsShareCard {
             })
         }
         val headerTop = margin + thumb + 60f
-        var baseline = headerTop
-        val titleLines = wrapTitle(input.songName, margin, WIDTH - margin, titlePaint, maxLines = 2)
-        titleLines.forEach { line ->
-            canvas.drawText(line, margin, baseline, titlePaint)
-            baseline += titlePaint.textSize * 1.15f
+        // Single-line title: auto-shrink from the design size, then ellipsise at the floor. The title block
+        // height is a constant (base size * 1.2), so lyric-block centring never shifts with title length.
+        val titleWidth = (WIDTH - margin) - margin
+        val fittedSize = LyricsTitleFitRules.fitSize(
+            text = input.songName,
+            maxWidth = titleWidth,
+            baseSize = titleSize,
+            measure = { value, size -> titlePaint.textSize = size; titlePaint.measureText(value) },
+        )
+        titlePaint.textSize = fittedSize
+        val titleText = if (LyricsTitleFitRules.needsEllipsis(
+                input.songName, titleWidth, titleSize.coerceAtMost(LyricsTitleFitRules.MIN_SIZE),
+                measure = { value, size -> titlePaint.textSize = size; titlePaint.measureText(value) },
+            )
+        ) {
+            TextUtils.ellipsize(input.songName, TextPaint(titlePaint), titleWidth, TextUtils.TruncateAt.END).toString()
+        } else {
+            input.songName
         }
-        baseline += 10f
-        canvas.drawText(input.artistLine.ifBlank { "未知艺人" }, margin, baseline, artistPaint)
-        val topAreaBottom = baseline + 80f
+        val titleBlockHeight = titleSize * 1.2f
+        canvas.drawText(titleText, margin, headerTop + titleSize * 0.95f, titlePaint)
+        val artistTop = headerTop + titleBlockHeight + 34f
+        val artistText = TextUtils.ellipsize(
+            input.artistLine.ifBlank { "未知艺人" }, TextPaint(artistPaint), titleWidth, TextUtils.TruncateAt.END,
+        ).toString()
+        canvas.drawText(artistText, margin, artistTop, artistPaint)
+        val topAreaBottom = artistTop + 80f
 
         // Lyric hero: centred in the space above the bottom mark, one type scale.
         val lines = if (input.lyricLines.isEmpty()) listOf("愿这首歌陪你此刻") else input.lyricLines.take(4)
@@ -178,27 +199,6 @@ object LyricsShareCard {
     )
 
     private fun withAlpha(color: Int, alpha: Int): Int = Color.argb(alpha, Color.red(color), Color.green(color), Color.blue(color))
-
-    /** Wraps the title into at most [maxLines] lines by character width, ellipsising the last one. */
-    private fun wrapTitle(text: String, left: Float, right: Float, paint: Paint, maxLines: Int): List<String> {
-        val width = right - left
-        val lines = mutableListOf<String>()
-        val current = StringBuilder()
-        for (ch in text) {
-            val candidate = current.toString() + ch
-            if (paint.measureText(candidate) > width && current.isNotEmpty()) {
-                lines += current.toString()
-                current.clear()
-                if (lines.size == maxLines) break
-            }
-            current.append(ch)
-        }
-        if (lines.size < maxLines && current.isNotEmpty()) lines += current.toString()
-        if (lines.isEmpty()) lines += text
-        return lines.take(maxLines).mapIndexed { index, line ->
-            if (index == maxLines - 1 && lines.contains(line) && line != lines.lastOrNull()) line else line
-        }
-    }
 
     private fun drawFitted(canvas: Canvas, text: String, left: Float, right: Float, baseline: Float, paint: Paint) {
         var size = paint.textSize

@@ -68,6 +68,8 @@ class AppContainer(val appContext: Context) {
         if (statsStarted) return
         statsStarted = true
         statsScope.launch {
+            // First read is asynchronous: no disk/JSON work during composition or Application init.
+            runCatching { playbackStatsRecorder.loadNow() }
             while (true) {
                 kotlinx.coroutines.delay(1_000L)
                 runCatching {
