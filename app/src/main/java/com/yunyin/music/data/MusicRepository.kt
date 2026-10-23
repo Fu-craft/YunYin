@@ -574,6 +574,12 @@ class MusicRepository(
 
     suspend fun likeSong(id: Long, like: Boolean): NetResult<Unit> = client.likeSong(id, like)
 
+    /** Batch track hydration for together rooms (`/song/detail?ids=`), ordered by the request. */
+    suspend fun songsByIds(ids: List<Long>): List<Track> =
+        client.songDetail(ids).let { result ->
+            if (result is NetResult.Ok) result.value else emptyList()
+        }
+
     suspend fun subscribe(kind: String, id: Long, follow: Boolean): NetResult<Unit> =
         client.subscribe(kind, id, follow)
 

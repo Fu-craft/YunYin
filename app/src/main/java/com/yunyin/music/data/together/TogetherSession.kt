@@ -34,6 +34,7 @@ data class TogetherUiState(
 class TogetherSession(
     private val player: PlayerController,
     private val api: TogetherApi,
+    private val music: com.yunyin.music.data.MusicRepository,
     private val settings: SettingsStore,
     private val log: LxSourceLog,
     private val scope: CoroutineScope,
@@ -132,7 +133,7 @@ class TogetherSession(
             error("加入后未获取到房间数据：playlist=0 code=snapshot-empty")
         }
         enter(joined, versionSeed = 0L, action = "join")
-        applySnapshot(snapshot)
+        applySnapshot(snapshot, initial = true)
     }
 
     /** Only the sheet's 退出房间 calls this with explicit=true; every implicit path clears locally. */
@@ -198,7 +199,7 @@ class TogetherSession(
         }
     }
 
-    private fun tick() {
+    private suspend fun tick() {
         val currentRoom = room ?: return
         if (!busy.compareAndSet(false, true)) return
         ticks++
@@ -298,7 +299,7 @@ class TogetherSession(
         }
     }
 
-    private fun applySnapshot(snapshot: TogetherSnapshot) {
+    private suspend fun applySnapshot(snapshot: TogetherSnapshot, initial: Boolean = false) {
         lastSnapshotSongs = snapshot.songIds.size
         val command = snapshot.command
         val fresh = TogetherRules.isFresh(command, lastRemoteSignature, lastRemoteSequence, accountId.toString())
@@ -311,26 +312,23 @@ class TogetherSession(
             val selected = command?.targetSongId?.takeIf { it.isNotBlank() && it in remoteIds }
                 ?: local.current?.id?.toString()?.takeIf { it in remoteIds }
                 ?: remoteIds.first()
-            val tracks = remoteIds.mapNotNull { id -> local.queue.firstOrNull { it.id.toString() == id } }
-            if (tracks.isNotEmpty()) {
-                val index = tracks.indexOfFirst { it.id.toString() == selected }.coerceAtLeast(0)
-                player.playQueue(tracks, index, autoPlay = fresh && (command?.playing ?: false))
-                if (fresh && command != null) player.seekTo(command.progressMs.coerceAtLeast(0L))
-                lastQueueSignature = TogetherRules.idsSignature(remoteIds)
-                lastSongId = selected
-            }
+            val position = if (initial) command?.progressMs ?: 0L else 0L
+            if (!hydrateAndReplace(remoteIds, selected, position, fresh && command?.playing == true)) return
         } else if (fresh && command != null) {
             val type = command.type.uppercase()
             if (type == "GOTO" || type == "NEXT" || type == "PREV") {
                 val target = command.targetSongId
                 val index = local.queue.indexOfFirst { it.id.toString() == target }
+                val position = if (!initial) 0L else command.progressMs.coerceAtLeast(0L)
                 if (index >= 0) {
                     leaderId = command.accountId.ifBlank { leaderId }
                     pendingEndAt = 0L
                     player.playQueue(local.queue, index, autoPlay = command.playing)
-                    player.seekTo(if (ticks <= 1L) command.progressMs.coerceAtLeast(0L) else 0L)
+                    player.seekTo(position)
+                } else if (remoteIds.isNotEmpty()) {
+                    if (!hydrateAndReplace(remoteIds, target, position, command.playing)) return
+                    leaderId = command.accountId.ifBlank { leaderId }
                 } else {
-                    // Queue update has not reached us yet; wait for the matching REPLACE.
                     return
                 }
             } else if (type == "PROGRESS") {
@@ -344,6 +342,37 @@ class TogetherSession(
             lastRemoteSequence = maxOf(lastRemoteSequence, command.sequence)
         }
         handleNaturalEnd(snapshot, local)
+    }
+
+    /** together.js: api.songs(ids) then queue.replace(remote order, target, position, playing). */
+    private suspend fun hydrateAndReplace(
+        remoteIds: List<String>,
+        targetId: String,
+        positionMs: Long,
+        playing: Boolean,
+    ): Boolean {
+        val local = player.state.value.queue.associateBy { it.id.toString() }
+        val missing = TogetherHydration.missingIds(remoteIds, local.keys)
+        var fetched = emptyMap<String, com.yunyin.music.core.Track>()
+        if (missing.isNotEmpty()) {
+            log.record("解析", "stage=together hydrate requested=${missing.size}")
+            fetched = runCatching { music.songsByIds(missing) }.getOrNull().orEmpty()
+                .associateBy { it.id.toString() }
+            log.record("解析", "stage=together hydrate result=${fetched.size}/${missing.size}")
+        }
+        val tracks = TogetherHydration.ordered(remoteIds, local, fetched)
+        if (tracks.size != remoteIds.size) {
+            log.record(
+                "解析",
+                "stage=together hydrate failed expected=${remoteIds.size} got=${tracks.size}; keeping local playback",
+            )
+            return false
+        }
+        val index = TogetherHydration.targetIndex(remoteIds, targetId)
+        player.playQueue(tracks, index, autoPlay = playing)
+        player.seekTo(positionMs.coerceAtLeast(0L))
+        log.record("解析", "stage=together hydrate applied songs=${tracks.size} target=$targetId index=$index")
+        return true
     }
 
     /** Natural-end leader fallback: creator (or lowest account id) advances; others self-promote after 3.5 s. */

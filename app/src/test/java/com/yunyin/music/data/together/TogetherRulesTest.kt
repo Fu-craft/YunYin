@@ -7,6 +7,23 @@ class TogetherRulesTest {
     private fun cmd(type: String, target: String = "42", seq: Long = 7, account: String = "9") =
         TogetherCommand(account, type, "1", target, 1000, true, seq)
 
+    private fun track(id: Long) = com.yunyin.music.core.Track(
+        id = id, name = "t$id", artists = listOf("a"), albumName = "", albumId = 0L, coverUrl = null, durationMs = 1000L,
+    )
+
+    @Test fun `fake snapshot hydrates 30 remote ids in remote order with the command target`() {
+        val remote = (1..30).map { it.toString() }
+        val local = (1..3).map { track(it.toLong()) }.associateBy { it.id.toString() }
+        val fetched = (4..30).map { track(it.toLong()) }.associateBy { it.id.toString() }
+        assertEquals(27, TogetherHydration.missingIds(remote, local.keys).size)
+        val tracks = TogetherHydration.ordered(remote, local, fetched)
+        assertEquals(30, tracks.size)
+        assertEquals(remote.map { it.toLong() }, tracks.map { it.id })
+        assertEquals(12, TogetherHydration.targetIndex(remote, "13"))
+        assertEquals(0, TogetherHydration.targetIndex(remote, "999"))
+        assertTrue(TogetherHydration.ordered(remote, local, fetched - "7").size < 30)
+    }
+
     @Test fun `seed payloads and creator-joiner entry rules`() {
         val playlist = TogetherSeedRules.playlistParam(listOf("11", "22"), userId = 7L, version = 3L)
         assertEquals("REPLACE", playlist.getString("commandType"))
