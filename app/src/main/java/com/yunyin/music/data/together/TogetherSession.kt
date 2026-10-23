@@ -72,6 +72,9 @@ class TogetherSession(
     private var applyingRemote = false
     private var applyFailed = false
     private val applyTimes = HashMap<String, MutableList<Long>>()
+    private var expectedPositionMs = 0L
+    private var expectedSampledAt = 0L
+    private var progressSettleUntil = 0L
 
     private val accountId: Long get() = settings.account?.userId ?: 0L
 
@@ -239,12 +242,18 @@ class TogetherSession(
                 val queueIds = local.queue.map { it.id.toString() }
                 val currentId = local.current?.id?.toString().orEmpty()
                 val seqNow = maxOf(seq + 1, now())
+                val expected = TogetherProgressRules.expectedPosition(
+                    expectedPositionMs, expectedSampledAt, now(), local.isPlaying, local.isBuffering,
+                )
+                val progressBaseline = if (TogetherProgressRules.inSettleWindow(now(), progressSettleUntil)) {
+                    local.positionMs
+                } else expected
                 val action = TogetherRules.planLocalChange(
                     baselineQueue = lastQueueSignature.split(',').filter { it.isNotBlank() },
                     currentQueue = queueIds,
                     baselineSongId = lastSongId,
                     currentSongId = currentId,
-                    baselinePositionMs = lastPosition.coerceAtLeast(0L),
+                    baselinePositionMs = progressBaseline,
                     currentPositionMs = local.positionMs,
                     baselinePlaying = lastPlaying,
                     currentPlaying = local.isPlaying,
@@ -261,7 +270,12 @@ class TogetherSession(
                     api.reportCommand(
                         currentRoom.roomId, action.type, action.progressMs, action.playing,
                         action.formerSongId, action.targetSongId, action.clientSeq,
-                    ).onSuccess { recordSent(action.type, action.playing, action.targetSongId) }
+                    ).onSuccess {
+                        recordSent(action.type, action.playing, action.targetSongId)
+                        if (action.type == "PROGRESS") {
+                            log.record("解析", "stage=together progress send expected=$progressBaseline actual=${local.positionMs} delta=${local.positionMs - progressBaseline}")
+                        }
+                    }
                     recordOk("report")
                 }
                 lastSongId = currentId
@@ -351,6 +365,9 @@ class TogetherSession(
                     pendingEndAt = 0L
                     player.playQueue(local.queue, index, autoPlay = command.playing)
                     player.seekTo(position)
+                    expectedPositionMs = player.state.value.positionMs
+                    expectedSampledAt = now()
+                    progressSettleUntil = now() + TogetherProgressRules.SETTLE_MS
                 } else if (remoteIds.isNotEmpty()) {
                     if (!hydrateAndReplace(remoteIds, target, position, command.playing)) { applyingRemote = false; return }
                     leaderId = command.accountId.ifBlank { leaderId }
@@ -358,7 +375,14 @@ class TogetherSession(
                     return
                 }
             } else if (type == "PROGRESS") {
-                player.seekTo(command.progressMs.coerceAtLeast(0L))
+                val expected = TogetherProgressRules.expectedPosition(
+                    expectedPositionMs, expectedSampledAt, now(), local.isPlaying, local.isBuffering,
+                )
+                if (TogetherProgressRules.shouldSeekRemote(command.progressMs, expected)) {
+                    log.record("解析", "stage=together progress apply expected=$expected remote=${command.progressMs} delta=${command.progressMs - expected}")
+                    player.seekTo(command.progressMs.coerceAtLeast(0L))
+                    progressSettleUntil = now() + TogetherProgressRules.SETTLE_MS
+                }
             } else if (type == "PLAY") {
                 if (!player.state.value.isPlaying) player.togglePlayPause()
             } else if (type == "PAUSE") {
@@ -368,6 +392,9 @@ class TogetherSession(
             lastRemoteSequence = maxOf(lastRemoteSequence, command.sequence)
         }
         applyingRemote = false
+        expectedPositionMs = local.positionMs
+        expectedSampledAt = now()
+        progressSettleUntil = now() + TogetherProgressRules.SETTLE_MS
         val after = player.state.value
         applyFailed = command != null && command.type.uppercase() in setOf("GOTO", "NEXT", "PREV") &&
             after.current?.id?.toString() != command.targetSongId

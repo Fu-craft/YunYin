@@ -121,7 +121,7 @@ object TogetherRules {
     const val REDISCOVER_TICKS = 10
     const val REDISCOVER_MS = 5_000L
     const val LEADER_FALLBACK_MS = 3_500L
-    const val POSITION_DELTA_MS = 1_000L
+    const val POSITION_DELTA_MS = TogetherProgressRules.TOLERANCE_MS
     const val BACKOFF_BASE_MS = 30_000L
     const val BACKOFF_MAX_MS = 120_000L
     const val HARD_STOP_FAILURES = 3

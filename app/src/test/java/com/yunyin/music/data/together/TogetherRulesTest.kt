@@ -11,6 +11,21 @@ class TogetherRulesTest {
         id = id, name = "t$id", artists = listOf("a"), albumName = "", albumId = 0L, coverUrl = null, durationMs = 1000L,
     )
 
+    @Test fun `expected position and seek detection ignore natural advance`() {
+        val expected = TogetherProgressRules.expectedPosition(10_000, 1_000_000, 1_005_000, playing = true, buffering = false)
+        assertEquals(15_000L, expected)
+        assertEquals(10_000L, TogetherProgressRules.expectedPosition(10_000, 1_000_000, 1_005_000, playing = false, buffering = false))
+        assertEquals(10_000L, TogetherProgressRules.expectedPosition(10_000, 1_000_000, 1_005_000, playing = true, buffering = true))
+        // 5 s of natural advance looks exactly like the expected position -> no report, no seek.
+        assertFalse(TogetherProgressRules.isRealSeek(15_000, expected))
+        assertFalse(TogetherProgressRules.shouldSeekRemote(15_500, expected))
+        // A 10 s jump is a real user seek.
+        assertTrue(TogetherProgressRules.isRealSeek(25_000, expected))
+        assertTrue(TogetherProgressRules.shouldSeekRemote(25_000, expected))
+        assertTrue(TogetherProgressRules.inSettleWindow(1_000, 2_000))
+        assertFalse(TogetherProgressRules.inSettleWindow(3_000, 2_000))
+    }
+
     @Test fun `local reporting is suppressed during and after apply and for own commands`() {
         assertTrue(TogetherRules.shouldReportLocal(applying = false, applyFailed = false, isOwnCommand = false))
         assertFalse(TogetherRules.shouldReportLocal(applying = true, applyFailed = false, isOwnCommand = false))
