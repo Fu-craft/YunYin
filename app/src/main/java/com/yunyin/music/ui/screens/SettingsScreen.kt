@@ -68,6 +68,11 @@ internal const val PROJECT_URL = "https://github.com/Fu-craft/YunYin"
 fun SettingsScreen(
     onClearLyricsCache: () -> Unit,
     onBack: () -> Unit,
+    /** Opens the download centre. */
+    onOpenDownloads: () -> Unit = {},
+    /** Wi-Fi-only download switch; default on in the store. */
+    downloadWifiOnly: Boolean = true,
+    onDownloadWifiOnlyChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
     /** Opens the project page in a browser; the URL is [PROJECT_URL]. */
     onOpenProject: () -> Unit = {},
@@ -300,6 +305,13 @@ fun SettingsScreen(
             Spacer(Modifier.height(28.dp))
 
             SectionLabel("存储")
+            ActionRow(text = "下载中心", onClick = onOpenDownloads)
+            ToggleRow(
+                title = "仅 Wi-Fi 下载",
+                subtitle = "默认开启，避免用移动数据开始下载",
+                enabled = downloadWifiOnly,
+                onChange = onDownloadWifiOnlyChange,
+            )
             ActionRow(text = "清除歌词缓存", onClick = onClearLyricsCache)
 
             Spacer(Modifier.height(28.dp))

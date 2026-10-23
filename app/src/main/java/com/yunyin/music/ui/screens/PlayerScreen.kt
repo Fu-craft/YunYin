@@ -1884,6 +1884,7 @@ private fun TrackActionsSheet(
 private fun downloadIcon(state: TrackDownloadState?) = when (state?.phase) {
     DownloadPhase.DONE -> SfIcons.Checkmark
     DownloadPhase.FAILED -> SfIcons.ArrowClockwise
+    DownloadPhase.PAUSED -> SfIcons.Play
     else -> SfIcons.SquareAndArrowDown
 }
 
@@ -1894,6 +1895,7 @@ private fun downloadLabel(state: TrackDownloadState?): String = when (state?.pha
     DownloadPhase.RESOLVING -> "正在解析地址…"
     DownloadPhase.DOWNLOADING -> "取消下载（${state.progress?.let { "${(it * 100).toInt()}%" } ?: "进行中"}）"
     DownloadPhase.DONE -> "已下载"
+    DownloadPhase.PAUSED -> "继续下载（已暂停）"
     DownloadPhase.FAILED -> "重试下载：${state.message ?: "下载失败"}"
 }
 

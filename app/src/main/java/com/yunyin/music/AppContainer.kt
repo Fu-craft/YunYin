@@ -1,6 +1,9 @@
 package com.yunyin.music
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.net.Uri
 import com.yunyin.music.data.ArtworkLoader
 import com.yunyin.music.data.LikedSongsRepository
 import com.yunyin.music.data.LikedSongsStore
@@ -78,6 +81,11 @@ class AppContainer(val appContext: Context) {
     /** Songs liked inside this app, plus the removals that mark cloud likes as un-liked here. */
     val likedSongs: LikedSongsStore by lazy { LikedSongsStore(appContext) }
 
+    /** Persisted download records, shared by the manager and the resumable sink. */
+    val downloadRecords: com.yunyin.music.data.download.DownloadRecordStore by lazy {
+        com.yunyin.music.data.download.DownloadRecordStore(appContext)
+    }
+
     /**
      * Single-track downloads.
      *
@@ -96,7 +104,9 @@ class AppContainer(val appContext: Context) {
         com.yunyin.music.data.download.TrackDownloadManager(
             resolve = { trackId, quality -> music.streamUrl(trackId, quality) },
             preferredQuality = { settings.quality },
-            sink = com.yunyin.music.data.download.MediaStoreAudioWriter(appContext, downloadClient, lxLog),
+            sink = com.yunyin.music.data.download.ResumableDownloadSink(
+                appContext, downloadClient, lxLog, downloadRecords,
+            ),
             log = lxLog,
             scope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
             probe = { url, duration ->
@@ -110,6 +120,14 @@ class AppContainer(val appContext: Context) {
                     com.yunyin.music.data.lxsource.LxPreviewProbe.Verdict.UNKNOWN ->
                         com.yunyin.music.data.download.DownloadProbeVerdict.UNKNOWN to length
                 }
+            },
+            records = downloadRecords,
+            wifiOnly = { settings.downloadWifiOnly },
+            onWifi = { isOnWifi(appContext) },
+            availableBytes = { appContext.filesDir.usableSpace },
+            deleteStored = { uri ->
+                runCatching { appContext.contentResolver.delete(Uri.parse(uri), null, null) > 0 }
+                    .getOrDefault(false)
             },
         )
     }
@@ -237,4 +255,12 @@ class AppContainer(val appContext: Context) {
         fun from(context: Context): AppContainer =
             (context.applicationContext as YunYinApp).container
     }
+}
+
+/** Wi-Fi/Ethernet check for the Wi-Fi-only download setting; mobile and unknown networks are refused. */
+private fun isOnWifi(context: Context): Boolean {
+    val manager = context.getSystemService(ConnectivityManager::class.java) ?: return false
+    val capabilities = manager.getNetworkCapabilities(manager.activeNetwork) ?: return false
+    return capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+        capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
 }

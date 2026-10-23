@@ -135,6 +135,10 @@ fun CollectionScreen(
     /** Id of the track the player is on, so its row can be marked. */
     nowPlayingId: Long? = null,
     isPlaying: Boolean = false,
+    /** Enqueues the whole list for download, skipping tracks already downloaded. */
+    onDownloadAll: (() -> Unit)? = null,
+    /** Live download states, so a row can show its own progress while the centre is closed. */
+    downloadStates: Map<Long, com.yunyin.music.data.download.TrackDownloadState> = emptyMap(),
     /** Owned-playlist actions are in this sheet, not beside the play button: two controls only. */
     onEditPlaylist: (() -> Unit)? = null,
     /** Present only when owned; host confirms then deletes and closes the page. */
@@ -276,6 +280,7 @@ fun CollectionScreen(
                         isPlaying = isPlaying && track.id == nowPlayingId,
                         onClick = { onTrackClick(track, index) },
                         onMore = { trackMenu = track },
+                        downloadState = downloadStates[track.id],
                     )
                 }
             }
@@ -330,6 +335,9 @@ fun CollectionScreen(
                     ) { close { beatModeActions.start(state.id) } }
                 }
                 CollectionMenuRow(SfIcons.SquareAndArrowUp, "分享歌单") { close { onShare() } }
+                if (onDownloadAll != null && state.tracks.isNotEmpty()) {
+                    CollectionMenuRow(SfIcons.ArrowDownCircle, "下载全部") { close { onDownloadAll() } }
+                }
                 // Photo-album and playlist pages share this sheet; the label states the action for the
                 // current state and the row is simply absent without a real session (guest gate).
                 if (onToggleSubscribe != null) {
@@ -877,6 +885,8 @@ internal fun CollectionTrackRow(
     onClick: () -> Unit,
     /** Row ⋯ affordance: opens the per-track actions menu. Null keeps the row without one. */
     onMore: (() -> Unit)? = null,
+    /** Active/failed download state, shown inline so a list row can report progress. */
+    downloadState: com.yunyin.music.data.download.TrackDownloadState? = null,
     /** Item-level modifier (e.g. `animateItem` in a lazy list); default keeps every existing call site unchanged. */
     modifier: Modifier = Modifier,
 ) {
@@ -936,6 +946,16 @@ internal fun CollectionTrackRow(
                 color = palette.secondaryLabel,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (downloadState != null && downloadState.phase != com.yunyin.music.data.download.DownloadPhase.IDLE) {
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = downloadState.statusLabel(),
+                fontFamily = SFPro,
+                fontSize = 11.sp,
+                color = if (downloadState.phase == com.yunyin.music.data.download.DownloadPhase.FAILED) palette.accent else palette.secondaryLabel,
+                maxLines = 1,
             )
         }
         if (track.durationMs > 0) {

@@ -3,7 +3,7 @@ package com.yunyin.music.data.download
 import com.yunyin.music.core.Track
 
 /** The phases a single track download moves through. Mirrors what the UI can honestly show. */
-enum class DownloadPhase { IDLE, WAITING, RESOLVING, DOWNLOADING, DONE, FAILED }
+enum class DownloadPhase { IDLE, WAITING, RESOLVING, DOWNLOADING, PAUSED, DONE, FAILED }
 
 /**
  * UI state of one track download.
@@ -20,9 +20,25 @@ data class TrackDownloadState(
     val fileName: String? = null,
     /** The MediaStore content:// URI once the audio is published. */
     val uri: String? = null,
+    /** Absolute bytes written so far, including bytes resumed from a previous session. */
+    val downloadedBytes: Long = 0L,
+    /** Absolute total from Content-Length/Content-Range; null when the server did not say. */
+    val totalBytes: Long? = null,
+    /** Instantaneous bytes/second, for the centre's active rows; null when unknown/not downloading. */
+    val bytesPerSecond: Long? = null,
+    /** Quality tier the current attempt resolved, when known. */
+    val quality: String? = null,
 ) {
     val isActive: Boolean
         get() = phase == DownloadPhase.WAITING || phase == DownloadPhase.RESOLVING || phase == DownloadPhase.DOWNLOADING
+
+    /** User-visible size/progress summary used by the download centre. */
+    fun sizeLabel(): String {
+        val total = totalBytes ?: downloadedBytes
+        if (total <= 0L) return "—"
+        val mb = total / (1024.0 * 1024.0)
+        return if (mb >= 1024) String.format("%.1f GB", mb / 1024) else String.format("%.1f MB", mb)
+    }
 
     /** "下载中 45%" style text for the action sheet / content description. */
     fun statusLabel(): String = when (phase) {
@@ -33,6 +49,7 @@ data class TrackDownloadState(
             val percent = progress?.let { "${(it * 100).toInt()}%" }
             if (percent == null) "下载中" else "下载中 $percent"
         }
+        DownloadPhase.PAUSED -> "已暂停"
         DownloadPhase.DONE -> "已下载"
         DownloadPhase.FAILED -> message ?: "下载失败"
     }

@@ -68,6 +68,14 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_SEAMLESS_TRANSITION, true)
         set(value) = prefs.edit().putBoolean(KEY_SEAMLESS_TRANSITION, value).apply()
 
+    /**
+     * Wi-Fi-only downloads, on by default (the user's data allowance is the thing this protects).
+     * Changing it takes effect for the next queued item; a running download is not retroactively paused.
+     */
+    var downloadWifiOnly: Boolean
+        get() = prefs.getBoolean(KEY_DOWNLOAD_WIFI_ONLY, DEFAULT_DOWNLOAD_WIFI_ONLY)
+        set(value) = prefs.edit().putBoolean(KEY_DOWNLOAD_WIFI_ONLY, value).apply()
+
     /** Overlap length for the dual-player crossfade (3/6/9/12 s, default 6). */
     var crossfadeSeconds: Int
         get() = prefs.getInt(KEY_CROSSFADE_SECONDS, 6)
@@ -287,6 +295,7 @@ class SettingsStore(context: Context) {
         private const val KEY_STATUS_BAR_LYRICS = "status_bar_lyrics"
         private const val KEY_LYRICON_ENABLED = "lyricon_enabled"
         private const val KEY_SEAMLESS_TRANSITION = "seamless_transition"
+        private const val KEY_DOWNLOAD_WIFI_ONLY = "download_wifi_only"
         private const val KEY_CROSSFADE_SECONDS = "crossfade_seconds"
         private const val KEY_AUTO_IMMERSIVE_LYRICS = "auto_immersive_lyrics"
         private const val KEY_PLAYER_STYLE = "player_style"
@@ -306,6 +315,9 @@ class SettingsStore(context: Context) {
 
 /** Default for [SettingsStore.autoImmersiveLyrics]; a plain constant so a unit test can pin it. */
 internal const val DEFAULT_AUTO_IMMERSIVE_LYRICS = true
+
+/** Wi-Fi-only downloads default on: a mobile-data download is opt-in, never a surprise. */
+internal const val DEFAULT_DOWNLOAD_WIFI_ONLY = true
 
 // Now-playing background defaults, matching NeriPlayer (GPL-3.0) exactly:
 // app/src/main/java/moe/ouom/neriplayer/ui/settings/route/AppSettingsRouteState.kt

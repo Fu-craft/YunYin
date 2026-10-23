@@ -153,6 +153,8 @@ fun LibraryScreen(
     onCreatePlaylist: () -> Unit = {},
     /** Plays the local-music list; index is the tapped row. */
     onPlayLocalTracks: (List<Track>, Int) -> Unit = { _, _ -> },
+    /** Opens the download centre: in-progress, completed and failed downloads. */
+    onOpenDownloads: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val signedIn = account != null && !account.isAnonymous
@@ -241,6 +243,7 @@ fun LibraryScreen(
         onTrackClick = onTrackClick,
         onCreatePlaylist = onCreatePlaylist,
         onLocalMusicClick = { openLocalMusic() },
+        onOpenDownloads = onOpenDownloads,
         onOpenPage = { openPage = it },
     )
 
@@ -338,6 +341,7 @@ private fun LibraryContent(
     onTrackClick: (Track) -> Unit,
     onCreatePlaylist: () -> Unit = {},
     onLocalMusicClick: () -> Unit = {},
+    onOpenDownloads: () -> Unit = {},
     onOpenPage: (LibraryPage) -> Unit,
 ) {
     val signedIn = account != null && !account.isAnonymous
@@ -407,6 +411,13 @@ private fun LibraryContent(
                     label = "本地音乐",
                     trailing = null,
                     onClick = onLocalMusicClick,
+                )
+
+                LibraryRow(
+                    icon = SfIcons.ArrowDownCircle,
+                    label = "下载中心",
+                    trailing = null,
+                    onClick = onOpenDownloads,
                 )
 
                 // 设置 is reached from the header's gear, so it is not repeated here.

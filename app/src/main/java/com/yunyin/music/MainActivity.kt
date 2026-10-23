@@ -82,6 +82,7 @@ import com.yunyin.music.ui.screens.LibraryScreen
 import com.yunyin.music.ui.screens.LoginScreen
 import com.yunyin.music.ui.screens.PROJECT_URL
 import com.yunyin.music.ui.download.DownloadController
+import com.yunyin.music.ui.download.DownloadCenterScreen
 import com.yunyin.music.ui.download.LocalDownloadController
 import com.yunyin.music.ui.screens.PlaylistConfirmSheet
 import com.yunyin.music.ui.screens.PlaylistEditorSheet
@@ -203,6 +204,7 @@ class MainActivity : ComponentActivity() {
         // "检查更新" row) is composed before the sheet, so a value read further down would not be in scope
         // where it is first needed.
         val updateState by container.update.state.collectAsState()
+        val downloadStatesAll by container.downloads.states.collectAsState()
 
         var tab by remember { mutableStateOf(PlayerTab.Home) }
         var showPlayer by remember { mutableStateOf(false) }
@@ -216,6 +218,7 @@ class MainActivity : ComponentActivity() {
         // queue that already exists instead of spending another request; any normal play clears it.
         var beatModeActive by remember { mutableStateOf(false) }
         var showSettings by remember { mutableStateOf(false) }
+        var showDownloadCenter by remember { mutableStateOf(false) }
         var showLogin by remember { mutableStateOf(false) }
         var account by remember { mutableStateOf(container.settings.account) }
 
@@ -232,6 +235,7 @@ class MainActivity : ComponentActivity() {
         // publishing, and it mirrors the stored value, so the switch cannot disagree with what is running.
         var lyriconEnabled by remember { mutableStateOf(container.lyricon.enabled) }
         var seamlessTransition by remember { mutableStateOf(container.settings.seamlessTransition) }
+        var downloadWifiOnly by remember { mutableStateOf(container.settings.downloadWifiOnly) }
         var crossfadeSeconds by remember { mutableStateOf(container.settings.crossfadeSeconds) }
         var autoImmersiveLyrics by remember { mutableStateOf(container.settings.autoImmersiveLyrics) }
         // The three now-playing background switches. Compose state + the store, same arrangement as
@@ -1046,6 +1050,7 @@ class MainActivity : ComponentActivity() {
                             onPlayLocalTracks = { list, index ->
                                 list.getOrNull(index)?.let { play(it, list) }
                             },
+                            onOpenDownloads = { showDownloadCenter = true },
                         )
                     }
                     }
@@ -1137,6 +1142,12 @@ class MainActivity : ComponentActivity() {
                         Toast.makeText(context, "歌词缓存已清除", Toast.LENGTH_SHORT).show()
                     },
                     onBack = { showSettings = false },
+                    onOpenDownloads = { showDownloadCenter = true },
+                    downloadWifiOnly = downloadWifiOnly,
+                    onDownloadWifiOnlyChange = { enabled ->
+                        downloadWifiOnly = enabled
+                        container.settings.downloadWifiOnly = enabled
+                    },
                     onOpenProject = { openUrl(PROJECT_URL) },
                     // Read on each entry into Settings rather than held as state: the connection can
                     // change while the app runs (Lyricon installed or started later), and a value
@@ -1730,6 +1741,8 @@ class MainActivity : ComponentActivity() {
                             onShare = {
                                 shareText(ShareText.playlist(state.title, state.id), "分享歌单")
                             },
+                            onDownloadAll = { container.downloads.downloadAll(state.tracks) },
+                            downloadStates = downloadStatesAll,
                             nowPlayingId = nowPlaying.first,
                             isPlaying = nowPlaying.second,
                             onEditPlaylist = if (state.owned) {
@@ -1815,6 +1828,22 @@ class MainActivity : ComponentActivity() {
 
             // Queue sheet. It animates itself inside the Dialog; an outer AnimatedVisibility would
             // be a second, redundant transition (same reason as the profile editor).
+            if (showDownloadCenter) {
+                DownloadCenterScreen(
+                    states = downloadStatesAll,
+                    records = container.downloads.savedRecords(),
+                    tracks = container.downloads.knownTracks(),
+                    loader = container.artwork,
+                    onBack = { showDownloadCenter = false },
+                    onPause = { container.downloads.pause(it) },
+                    onResume = { id -> container.downloads.trackFor(id)?.let { container.downloads.resume(it) } },
+                    onRetry = { id -> container.downloads.trackFor(id)?.let { container.downloads.retry(it) } },
+                    onDelete = { container.downloads.delete(it) },
+                    onPauseAll = { container.downloads.pauseAll() },
+                    onResumeAll = { container.downloads.resumeAll() },
+                    onClearCompleted = { container.downloads.clearCompleted() },
+                )
+            }
             if (showQueue) {
                 val playback by container.player.state.collectAsState()
                 QueueSheet(
@@ -1907,6 +1936,7 @@ class MainActivity : ComponentActivity() {
         BackHandler(enabled = collectionState != null) { appViewModel.closeCollection() }
         BackHandler(enabled = commentsState.visible) { appViewModel.closeComments() }
         BackHandler(enabled = showSettings) { showSettings = false }
+        BackHandler(enabled = showDownloadCenter) { showDownloadCenter = false }
         BackHandler(enabled = showLogin) { showLogin = false }
 
         // Surface playback errors once, then clear them.
