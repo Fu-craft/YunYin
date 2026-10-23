@@ -660,12 +660,6 @@ class MainActivity : ComponentActivity() {
             container.liked.onSyncFailure = {
                 Toast.makeText(context, "同步失败，已保存在本地", Toast.LENGTH_SHORT).show()
             }
-            container.lxLog.record(
-                "解析",
-                "stage=together gate anonymous=${container.settings.account?.isAnonymous ?: true} " +
-                    "cookie=${container.settings.cookie.isNotBlank()} " +
-                    "accountId=${container.settings.account?.userId ?: 0L} available=${container.together.available}",
-            )
             appViewModel.onSubscribeFailure = { message ->
                 Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
             }
@@ -1138,7 +1132,6 @@ class MainActivity : ComponentActivity() {
                 exit = slideOutVertically(tween(Motion.SheetExitDuration, easing = Motion.EaseOut)) { it },
             ) {
                 SettingsScreen(
-                    togetherSession = container.together,
                     onClearLyricsCache = {
                         container.lyrics.clearCache()
                         Toast.makeText(context, "歌词缓存已清除", Toast.LENGTH_SHORT).show()
@@ -1540,7 +1533,6 @@ class MainActivity : ComponentActivity() {
                         ),
                 ) {
                     PlayerScreen(
-                        togetherSession = container.together,
                     state = playback,
                     cover = playerViewModel.coverBitmap,
                     palette = playerViewModel.palette,
