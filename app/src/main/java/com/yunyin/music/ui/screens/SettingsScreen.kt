@@ -68,6 +68,7 @@ internal const val PROJECT_URL = "https://github.com/Fu-craft/YunYin"
 fun SettingsScreen(
     onClearLyricsCache: () -> Unit,
     onBack: () -> Unit,
+    togetherSession: com.yunyin.music.data.together.TogetherSession? = null,
     modifier: Modifier = Modifier,
     /** Opens the project page in a browser; the URL is [PROJECT_URL]. */
     onOpenProject: () -> Unit = {},
@@ -173,6 +174,10 @@ fun SettingsScreen(
     onToggleLxSource: (String, Boolean) -> Unit = { _, _ -> },
     onDeleteLxSource: (String) -> Unit = {},
 ) {
+    var showTogether by remember { mutableStateOf(false) }
+    if (showTogether && togetherSession != null) {
+        com.yunyin.music.ui.components.TogetherSheet(togetherSession) { showTogether = false }
+    }
     // The frosted navigation strip: the recorded page layer the bar samples, with the bar itself
     // composed outside it (after the scroll column closes, below).
     val topBarBackdrop = rememberGlassTopBarBackdrop()
@@ -241,6 +246,12 @@ fun SettingsScreen(
                 onClick = onCycleCrossfadeSeconds,
             )
             ActionRow(text = "测试状态栏歌词", onClick = onTestFlymeLyric)
+            if (togetherSession != null) {
+                ActionRow(
+                    text = if (togetherSession.available) "一起听" else "一起听 · 需要登录（非匿名）",
+                    onClick = { showTogether = true },
+                )
+            }
             ToggleRow(
                 title = "自动进入沉浸歌词",
                 subtitle = "歌词页闲置几秒后自动隐藏播放控件；默认开启",

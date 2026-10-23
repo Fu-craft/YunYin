@@ -94,6 +94,9 @@ object TogetherRules {
 
     fun idsSignature(ids: List<String>): String = ids.joinToString(",")
 
+    /** Same real-session rule as subscribe/like-sync: cookie + non-anonymous. No numeric id is required. */
+    fun available(cookie: String, anonymous: Boolean?): Boolean = cookie.isNotBlank() && anonymous != true
+
     /**
      * Local→report mapping. The queue change wins; a song change becomes GOTO (the reporter takes leadership);
      * otherwise a position jump becomes PROGRESS and a play/pause flip becomes PLAY/PAUSE.

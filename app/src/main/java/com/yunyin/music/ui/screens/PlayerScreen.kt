@@ -1155,7 +1155,8 @@ fun PlayerScreen(
         // Both sheets are rendered last so they layer over whichever presentation is showing.
         if (showActions) {
             TrackActionsSheet(
-                onOpenTogether = if (togetherSession?.available == true) {{ showTogether = true }} else null,
+                onOpenTogether = { showTogether = true },
+                togetherAvailable = togetherSession?.available == true,
                 track = track,
                 onPlayNext = onPlayNext,
                 onDismiss = { showActions = false },
@@ -1791,6 +1792,7 @@ private fun TrackActionsSheet(
     track: Track?,
     onPlayNext: (() -> Unit)? = null,
     onOpenTogether: (() -> Unit)? = null,
+    togetherAvailable: Boolean = false,
     onDismiss: () -> Unit,
     onShare: () -> Unit,
     onShowQueue: () -> Unit,
@@ -1814,7 +1816,11 @@ private fun TrackActionsSheet(
             ActionRow(SfIcons.Forward, "下一首播放", track != null) { close { onPlayNext() } }
         }
         if (onOpenTogether != null) {
-            ActionRow(SfIcons.Person, "一起听", track != null) { close { onOpenTogether() } }
+            ActionRow(
+                SfIcons.Person,
+                if (togetherAvailable) "一起听" else "一起听 · 需要登录（非匿名）",
+                enabled = track != null && togetherAvailable,
+            ) { close { onOpenTogether() } }
         }
         Text(
             text = track?.name ?: "未在播放",

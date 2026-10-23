@@ -66,7 +66,7 @@ class TogetherSession(
     private val accountId: Long get() = settings.account?.userId ?: 0L
 
     val available: Boolean
-        get() = accountId > 0L && !(settings.account?.isAnonymous ?: true) && settings.cookie.isNotBlank()
+        get() = TogetherRules.available(settings.cookie, settings.account?.isAnonymous)
 
     fun create() = runOp("create") {
         val result = api.create().getOrThrow()

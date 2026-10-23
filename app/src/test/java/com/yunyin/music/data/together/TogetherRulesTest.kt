@@ -7,6 +7,13 @@ class TogetherRulesTest {
     private fun cmd(type: String, target: String = "42", seq: Long = 7, account: String = "9") =
         TogetherCommand(account, type, "1", target, 1000, true, seq)
 
+    @Test fun `available follows the app real-session rule`() {
+        assertTrue(TogetherRules.available("MUSIC_U=x", anonymous = false))
+        assertFalse(TogetherRules.available("MUSIC_U=x", anonymous = true))
+        assertFalse(TogetherRules.available("", anonymous = false))
+        assertFalse(TogetherRules.available("", anonymous = null))
+    }
+
     @Test fun `eapi envelope is hex and deterministic`() {
         val path = "/api/listen/together/room/create"
         val json = "{\"refer\":\"songplay_more\"}"
