@@ -148,6 +148,8 @@ object TogetherRules {
     }
 
     /** Freshness: ignore our own command; require a new signature and a not-older server sequence. */
+    const val SETTLE_MS = 2_000L
+
     fun isFresh(
         command: TogetherCommand?,
         lastSignature: String,
@@ -158,6 +160,36 @@ object TogetherRules {
         if (command.accountId.isNotEmpty() && command.accountId == ownAccountId) return false
         return commandSignature(command) != lastSignature && command.sequence >= lastSequence
     }
+
+    /** Signature of the state a command would produce, for the settle window after our own send. */
+    fun stateSignature(type: String, playing: Boolean, targetSongId: String): String =
+        "${type.uppercase()}|$playing|$targetSongId"
+
+    /**
+     * A command is our own echo when (a) its account id matches a known own id, (b) its signature is exactly what
+     * we last sent, or (c) it expresses the same state we just sent inside the settle window. With an unknown own
+     * account id (our model can have userId=0), (b)/(c) are the guard that prevents the report→apply→report loop.
+     */
+    fun isOwnEcho(
+        command: TogetherCommand?,
+        ownAccountId: String,
+        lastSentSignature: String,
+        lastSentState: String,
+        lastSentAt: Long,
+        now: Long,
+    ): Boolean {
+        if (command == null) return false
+        if (ownAccountId.isNotBlank() && command.accountId.isNotBlank() && command.accountId == ownAccountId) {
+            return true
+        }
+        if (lastSentSignature.isNotBlank() && commandSignature(command) == lastSentSignature) return true
+        return lastSentState.isNotBlank() &&
+            stateSignature(command.type, command.playing, command.targetSongId) == lastSentState &&
+            now - lastSentAt in 0..SETTLE_MS
+    }
+
+    /** A status body we could not parse means "unknown", never "not in room". */
+    fun statusInRoomKnown(inRoom: Boolean?, httpOk: Boolean): Boolean = httpOk && inRoom != null
 
     /** creator → lowest numeric account id → self. */
     fun leaderId(creatorId: String, memberIds: List<String>, ownAccountId: String): String {

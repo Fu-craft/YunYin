@@ -66,6 +66,10 @@ class TogetherSession(
     private var cryptoChecked = false
     private var lastSnapshotSongs = 0
     private var threadWarned = false
+    private var lastSentSignature = ""
+    private var lastSentState = ""
+    private var lastSentAt = 0L
+    private var applyingRemote = false
 
     private val accountId: Long get() = settings.account?.userId ?: 0L
 
@@ -106,7 +110,11 @@ class TogetherSession(
         log.record("解析", "stage=together seed snapshot=playlist songs=${first?.songIds?.size ?: 0} attempt=$attempt")
         val clientSeq = maxOf(seq + 1, now())
         api.reportCommand(roomId, "GOTO", local.positionMs, local.isPlaying, "0", currentId, clientSeq)
-            .onSuccess { seq = clientSeq; log.record("解析", "stage=together seed step=command result=ok song=$currentId") }
+            .onSuccess {
+                seq = clientSeq
+                recordSent("GOTO", local.isPlaying, currentId)
+                log.record("解析", "stage=together seed step=command result=ok song=$currentId")
+            }
             .onFailure { log.record("解析", "stage=together seed step=command result=fail reason=${it.message}") }
         first = api.snapshot(roomId).getOrNull()
         val songs = first?.songIds?.size ?: 0
@@ -209,7 +217,7 @@ class TogetherSession(
             if (ticks % TogetherRules.REDISCOVER_TICKS == 0L && now() - lastDiscover > TogetherRules.REDISCOVER_MS) {
                 lastDiscover = now()
                 val status = api.status().getOrNull()
-                if (status != null && !status.inRoom && status.room == null) {
+                if (status != null && status.inRoom == false && status.room == null) {
                     if (TogetherRules.preferSnapshot(lastSnapshotSongs, status.inRoom)) {
                         log.record("解析", "stage=together status=not-in-room but snapshot songs=$lastSnapshotSongs; keeping room")
                     } else {
@@ -247,7 +255,7 @@ class TogetherSession(
                     api.reportCommand(
                         currentRoom.roomId, action.type, action.progressMs, action.playing,
                         action.formerSongId, action.targetSongId, action.clientSeq,
-                    )
+                    ).onSuccess { recordSent(action.type, action.playing, action.targetSongId) }
                     recordOk("report")
                 }
                 lastSongId = currentId
@@ -303,6 +311,11 @@ class TogetherSession(
         lastSnapshotSongs = snapshot.songIds.size
         val command = snapshot.command
         val fresh = TogetherRules.isFresh(command, lastRemoteSignature, lastRemoteSequence, accountId.toString())
+        if (TogetherRules.isOwnEcho(command, accountId.toString(), lastSentSignature, lastSentState, lastSentAt, now())) {
+            log.record("解析", "stage=together command skipped reason=own-echo type=${command?.type ?: "none"}")
+            baselineAfterApply()
+            return
+        }
         val remoteIds = snapshot.songIds
         val local = player.state.value
         val localIds = local.queue.map { it.id.toString() }
@@ -341,6 +354,7 @@ class TogetherSession(
             lastRemoteSignature = snapshot.signature
             lastRemoteSequence = maxOf(lastRemoteSequence, command.sequence)
         }
+        baselineAfterApply()
         handleNaturalEnd(snapshot, local)
     }
 
@@ -373,6 +387,23 @@ class TogetherSession(
         player.seekTo(positionMs.coerceAtLeast(0L))
         log.record("解析", "stage=together hydrate applied songs=${tracks.size} target=$targetId index=$index")
         return true
+    }
+
+    private fun recordSent(type: String, playing: Boolean, targetSongId: String) {
+        lastSentSignature = TogetherRules.commandSignature(
+            TogetherCommand(accountId.toString(), type, "", targetSongId, 0, playing, lastRemoteSequence),
+        )
+        lastSentState = TogetherRules.stateSignature(type, playing, targetSongId)
+        lastSentAt = now()
+    }
+
+    /** together.js `baseline(local)` after apply: the next tick must not report a remote-caused change back. */
+    private fun baselineAfterApply() {
+        val local = player.state.value
+        lastQueueSignature = TogetherRules.idsSignature(local.queue.map { it.id.toString() })
+        lastSongId = local.current?.id?.toString().orEmpty()
+        lastPosition = local.positionMs
+        lastPlaying = local.isPlaying
     }
 
     /** Natural-end leader fallback: creator (or lowest account id) advances; others self-promote after 3.5 s. */

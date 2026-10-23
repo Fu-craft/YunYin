@@ -11,6 +11,25 @@ class TogetherRulesTest {
         id = id, name = "t$id", artists = listOf("a"), albumName = "", albumId = 0L, coverUrl = null, durationMs = 1000L,
     )
 
+    @Test fun `own commands never produce an incoming apply even with unknown account id`() {
+        val sent = cmd("PLAY", target = "42", account = "")
+        val sentSignature = TogetherRules.commandSignature(sent)
+        val sentState = TogetherRules.stateSignature("PLAY", true, "42")
+        assertTrue(TogetherRules.isOwnEcho(sent, "", sentSignature, sentState, 1000L, 1500L))
+        assertTrue(TogetherRules.isOwnEcho(sent, "0", sentSignature, sentState, 1000L, 1500L))
+        assertTrue(TogetherRules.isOwnEcho(sent, "", "", sentState, 1000L, 1500L))
+        assertFalse(TogetherRules.isOwnEcho(sent, "", "", sentState, 1000L, 3500L))
+        val peer = cmd("PLAY", target = "99", account = "7")
+        assertFalse(TogetherRules.isOwnEcho(peer, "", "", "", 0L, 0L))
+    }
+
+    @Test fun `empty status body is unknown not not-in-room`() {
+        assertFalse(TogetherRules.statusInRoomKnown(null, httpOk = true))
+        assertFalse(TogetherRules.statusInRoomKnown(true, httpOk = false))
+        assertTrue(TogetherRules.statusInRoomKnown(true, httpOk = true))
+        assertTrue(TogetherRules.statusInRoomKnown(false, httpOk = true))
+    }
+
     @Test fun `threading failures are classified distinctly`() {
         assertEquals("threading", TogetherThreading.classify("MediaController method is called from a wrong thread. See javadoc"))
         assertEquals("threading", TogetherThreading.classify("must run on main thread"))

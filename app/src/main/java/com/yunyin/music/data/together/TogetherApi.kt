@@ -56,15 +56,26 @@ class TogetherApi(
 
     suspend fun status(): Result<TogetherStatus> = io {
         transport.weapiPost("/listen/together/status/get", JSONObject())
-    }.mapCatching { body ->
-        val data = body.optJSONObject("data") ?: JSONObject()
-        val room = data.optJSONObject("roomInfo")
-        TogetherStatus(
-            inRoom = data.optBoolean("inRoom"),
-            status = data.optString("status"),
-            room = room?.let { TogetherRoom(it.optString("roomId"), it.optString("creatorId")) },
-        )
-    }
+    }.fold(
+        onSuccess = { body ->
+            val data = body.optJSONObject("data") ?: JSONObject()
+            val room = data.optJSONObject("roomInfo")
+            val raw = data.optJSONObject("inRoom")
+            Result.success(
+                TogetherStatus(
+                    inRoom = if (data.has("inRoom")) data.optBoolean("inRoom") else null,
+                    status = data.optString("status"),
+                    room = room?.let { TogetherRoom(it.optString("roomId"), it.optString("creatorId")) },
+                ),
+            )
+        },
+        onFailure = {
+            // Some deployments answer the weapi status route with an empty body; that is "unknown", not a failure
+            // that may stop the tick or end the room. The snapshot remains the source of room truth.
+            log?.record("解析", "stage=together status=empty reason=${it.message}")
+            Result.success(TogetherStatus(inRoom = null, status = "empty", room = null))
+        },
+    )
 
     suspend fun check(roomId: String): Result<Boolean> = io {
         transport.eapiPost("/api/listen/together/room/check", JSONObject().put("roomId", roomId))
@@ -174,4 +185,4 @@ class TogetherApi(
     }
 }
 
-data class TogetherStatus(val inRoom: Boolean, val status: String, val room: TogetherRoom?)
+data class TogetherStatus(val inRoom: Boolean?, val status: String, val room: TogetherRoom?)
