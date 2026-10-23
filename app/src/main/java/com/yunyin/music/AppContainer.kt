@@ -127,6 +127,14 @@ class AppContainer(val appContext: Context) {
     }
 
     /** The user's own avatar/background/signature for the profile header. */
+    val together: com.yunyin.music.data.together.TogetherSession by lazy {
+        com.yunyin.music.data.together.TogetherSession(
+            player,
+            com.yunyin.music.data.together.TogetherApi(com.yunyin.music.data.together.TogetherTransport(settings)),
+            settings, lxLog, CoroutineScope(SupervisorJob() + Dispatchers.IO),
+        )
+    }
+
     val profile: ProfileStore by lazy { ProfileStore(appContext, settings) }
 
     /** Saves album covers into the device's picture collection. */

@@ -100,6 +100,7 @@ import com.yunyin.music.ui.background.HyperBackground
 import com.yunyin.music.ui.background.NowPlayingBackgroundRules
 import com.yunyin.music.ui.background.StaticPaletteBackdrop
 import com.yunyin.music.ui.components.AnimatedSheet
+import com.yunyin.music.ui.components.TogetherSheet
 import com.yunyin.music.ui.components.Artwork
 import com.yunyin.music.ui.components.CrossfadeContent
 import com.yunyin.music.ui.components.SheetPlacement
@@ -167,6 +168,7 @@ fun PlayerScreen(
     onToggleShuffle: () -> Unit,
     onShowQueue: () -> Unit,
     onPlayNext: (() -> Unit)? = null,
+    togetherSession: com.yunyin.music.data.together.TogetherSession? = null,
     onShowSettings: () -> Unit,
     /** Whether the lyrics page may auto-hide the chrome after the idle delay. */
     autoImmersiveLyrics: Boolean = false,
@@ -208,6 +210,8 @@ fun PlayerScreen(
     modifier: Modifier = Modifier,
 ) {
     val track = state.current
+    var showTogether by remember { mutableStateOf(false) }
+    if (showTogether && togetherSession != null) TogetherSheet(togetherSession) { showTogether = false }
 
     // Battery-saver state, observed so toggling it takes effect without leaving the screen.
     val powerSaveMode = rememberPowerSaveMode()
@@ -1151,6 +1155,7 @@ fun PlayerScreen(
         // Both sheets are rendered last so they layer over whichever presentation is showing.
         if (showActions) {
             TrackActionsSheet(
+                onOpenTogether = if (togetherSession?.available == true) {{ showTogether = true }} else null,
                 track = track,
                 onPlayNext = onPlayNext,
                 onDismiss = { showActions = false },
@@ -1785,6 +1790,7 @@ private fun LyricsHeader(
 private fun TrackActionsSheet(
     track: Track?,
     onPlayNext: (() -> Unit)? = null,
+    onOpenTogether: (() -> Unit)? = null,
     onDismiss: () -> Unit,
     onShare: () -> Unit,
     onShowQueue: () -> Unit,
@@ -1806,6 +1812,9 @@ private fun TrackActionsSheet(
     ) { close ->
         if (onPlayNext != null) {
             ActionRow(SfIcons.Forward, "下一首播放", track != null) { close { onPlayNext() } }
+        }
+        if (onOpenTogether != null) {
+            ActionRow(SfIcons.Person, "一起听", track != null) { close { onOpenTogether() } }
         }
         Text(
             text = track?.name ?: "未在播放",

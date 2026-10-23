@@ -1533,6 +1533,7 @@ class MainActivity : ComponentActivity() {
                         ),
                 ) {
                     PlayerScreen(
+                        togetherSession = container.together,
                     state = playback,
                     cover = playerViewModel.coverBitmap,
                     palette = playerViewModel.palette,

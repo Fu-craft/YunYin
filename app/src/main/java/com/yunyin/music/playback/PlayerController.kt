@@ -137,6 +137,11 @@ class PlayerController(
         override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) = publish()
 
         override fun onMediaItemTransition(mediaItem: androidx.media3.common.MediaItem?, reason: Int) {
+            if (autoAdvanceBlocked && reason == androidx.media3.common.Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
+                // together.js blocks host auto-advance; pausing here keeps audio at the room's expected item
+                // until the next authoritative snapshot re-selects (crossfade eligibility is untouched).
+                controller?.pause()
+            }
             // Clear per-track trial state immediately so the previous song's notice cannot leak across a
             // transition. The resolver below then fills in the new track's state if needed.
             _state.value = _state.value.copy(trialEndMs = null, notice = null)
@@ -450,6 +455,13 @@ class PlayerController(
     // ---------------------------------------------------------------- internals
 
     private var currentQueue: List<Track> = emptyList()
+
+    /** Together mode: the room owns advancement, so the player must not auto-advance on its own. */
+    @Volatile private var autoAdvanceBlocked = false
+
+    fun setAutoAdvanceBlocked(blocked: Boolean) {
+        autoAdvanceBlocked = blocked
+    }
 
     private fun publish() {
         val mediaController = controller ?: return
