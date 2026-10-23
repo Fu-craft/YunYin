@@ -57,6 +57,10 @@ object PlaybackStatsRules {
     /** Persist at most this often while playback keeps accumulating. */
     const val FLUSH_INTERVAL_MS = 15_000L
 
+    /** Hard caps: a corrupt or enormous statistics file must not turn into an unbounded layout/loop. */
+    const val MAX_BUCKETS = 10_000
+    const val MAX_ROWS = 100
+
     /** Real listening time in one tick: only forward progress while playing, and never a seek. */
     fun forwardDelta(previousMs: Long, currentMs: Long, playing: Boolean): Long {
         if (!playing) return 0L
@@ -87,14 +91,14 @@ object PlaybackStatsRules {
         dirty && nowMs - lastFlushMs >= intervalMs
 
     fun topSongs(songs: List<SongStats>, limit: Int = 20): List<SongStats> =
-        songs.sortedWith(
+        songs.take(MAX_ROWS).sortedWith(
             compareByDescending<SongStats> { it.plays }
                 .thenByDescending { it.totalMs }
                 .thenBy { it.title.lowercase() },
         ).take(limit)
 
     fun topGroups(groups: Collection<GroupStats>, limit: Int = 20): List<GroupStats> =
-        groups.sortedWith(
+        groups.take(MAX_ROWS).sortedWith(
             compareByDescending<GroupStats> { it.plays }
                 .thenByDescending { it.totalMs }
                 .thenBy { it.key.lowercase() },
@@ -112,7 +116,7 @@ object PlaybackStatsRules {
         daily: Map<String, StatsBucket>,
         count: Int = 7,
         today: LocalDate = LocalDate.now(),
-    ): List<StatsBucket> = (count - 1 downTo 0).map { offset ->
+    ): List<StatsBucket> = (count.coerceIn(0, MAX_BUCKETS) - 1 downTo 0).map { offset ->
         val date = today.minusDays(offset.toLong()).toString()
         daily[date] ?: StatsBucket(key = date, label = date.takeLast(5), totalMs = 0L, plays = 0)
     }

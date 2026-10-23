@@ -53,6 +53,7 @@ import com.yunyin.music.ui.theme.Motion
 import com.yunyin.music.ui.theme.SFPro
 import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeout
 
 private enum class StatsTab(val label: String) { Songs("歌曲"), Artists("艺人"), Albums("专辑") }
 
@@ -65,19 +66,48 @@ private enum class StatsTab(val label: String) { Songs("歌曲"), Artists("艺�
  * 本地音乐, and every interactive control is a 44 dp target.
  */
 @Composable
-fun PlaybackStatsScreen(recorder: PlaybackStatsRecorder, onBack: () -> Unit) {
+fun PlaybackStatsScreen(
+    recorder: PlaybackStatsRecorder,
+    onBack: () -> Unit,
+    /** Writes the page's progress markers into the same diagnostics log the copy-log action reads. */
+    diag: (String) -> Unit = {},
+) {
     // The store is defensive, but the screen must also survive a recorder/state failure instead of taking the
     // app down: read through runCatching and surface a retry / clear action.
     var snapshot by remember { mutableStateOf<PlaybackStatsSnapshot?>(null) }
     var loadError by remember { mutableStateOf<String?>(null) }
     var tab by remember { mutableStateOf(StatsTab.Songs) }
     LaunchedEffect(recorder) {
-        while (true) {
-            runCatching { recorder.state.value }
-                .onSuccess { snapshot = it; loadError = null }
-                .onFailure { loadError = it.message ?: it.javaClass.simpleName }
-            delay(1_000L)
+        diag("stage=stats open")
+        diag("stage=stats load-start")
+        val first = runCatching {
+            withTimeout(2_000L) {
+                recorder.loadNow()
+                recorder.state.value
+            }
         }
+        first.onSuccess { loaded ->
+            snapshot = loaded
+            loadError = null
+            diag(
+                "stage=stats load-done songs=${loaded.songs.size} artists=${loaded.artists.size} " +
+                    "albums=${loaded.albums.size} days=${loaded.days.size}",
+            )
+        }.onFailure {
+            val timeout = it is kotlinx.coroutines.TimeoutCancellationException
+            loadError = if (timeout) "加载统计超时" else "读取统计失败：${it.message ?: it.javaClass.simpleName}"
+            diag("stage=stats error ${loadError}")
+        }
+        // Collect rather than a hand-written while(true): the flow owns the loop, so a slow/blocked source
+        // cannot spin a recomposition path.
+        runCatching { recorder.state.collect { value -> snapshot = value; loadError = null } }
+            .onFailure {
+                loadError = it.message ?: it.javaClass.simpleName
+                diag("stage=stats error ${loadError}")
+            }
+    }
+    LaunchedEffect(snapshot?.loaded) {
+        if (snapshot?.loaded == true) diag("stage=stats render")
     }
 
     // Full-window opaque background first: the page previously spent the status-bar area on transparency,
@@ -253,13 +283,13 @@ private fun StatsContent(snapshot: PlaybackStatsSnapshot, tab: StatsTab, onSelec
             }
         }
         when (tab) {
-            StatsTab.Songs -> itemsIndexed(snapshot.songs, key = { _, item -> "s-${item.id}" }) { index, song ->
+            StatsTab.Songs -> itemsIndexed(snapshot.songs.take(PlaybackStatsRules.MAX_ROWS), key = { _, item -> "s-${item.id}" }) { index, song ->
                 SongStatsRow(index, song)
             }
-            StatsTab.Artists -> itemsIndexed(snapshot.artists, key = { _, item -> "a-${item.key}" }) { index, group ->
+            StatsTab.Artists -> itemsIndexed(snapshot.artists.take(PlaybackStatsRules.MAX_ROWS), key = { _, item -> "a-${item.key}" }) { index, group ->
                 GroupStatsRow(index, group)
             }
-            StatsTab.Albums -> itemsIndexed(snapshot.albums, key = { _, item -> "b-${item.key}" }) { index, group ->
+            StatsTab.Albums -> itemsIndexed(snapshot.albums.take(PlaybackStatsRules.MAX_ROWS), key = { _, item -> "b-${item.key}" }) { index, group ->
                 GroupStatsRow(index, group)
             }
         }

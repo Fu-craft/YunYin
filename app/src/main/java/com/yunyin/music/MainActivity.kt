@@ -2047,6 +2047,7 @@ class MainActivity : ComponentActivity() {
                 PlaybackStatsScreen(
                     recorder = container.playbackStatsRecorder,
                     onBack = { showStats = false },
+                    diag = { container.lxLog.recordDiagnostic(it) },
                 )
             }
             if (showDownloadCenter) {

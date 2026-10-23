@@ -124,12 +124,14 @@ class PlaybackStatsStore(context: Context) {
             plays = root.optInt("plays").coerceAtLeast(0)
             root.optJSONObject("days")?.let { obj ->
                 obj.keys().forEach { key ->
+                    if (days.size >= PlaybackStatsRules.MAX_BUCKETS) return@forEach
                     val row = obj.optJSONArray(key) ?: return@forEach
                     days[key.takeIf { it.isNotBlank() } ?: return@forEach] = longArrayOf(row.optLong(0).coerceAtLeast(0L), row.optLong(1).coerceAtLeast(0L))
                 }
             }
             root.optJSONObject("songs")?.let { obj ->
                 obj.keys().forEach { key ->
+                    if (songs.size >= PlaybackStatsRules.MAX_ROWS * 20) return@forEach
                     val row = obj.optJSONObject(key) ?: return@forEach
                     songs[key.toLongOrNull() ?: return@forEach] = SongAgg(
                         title = row.optString("title"),

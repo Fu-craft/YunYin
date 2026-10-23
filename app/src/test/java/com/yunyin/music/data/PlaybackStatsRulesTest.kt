@@ -114,6 +114,15 @@ class PlaybackStatsRulesTest {
     }
 
     @Test
+    fun `bucket and row generation are hard-capped against corrupt counts`() {
+        assertTrue(PlaybackStatsRules.lastDays(emptyMap(), count = 999_999).size <= PlaybackStatsRules.MAX_BUCKETS)
+        assertEquals(PlaybackStatsRules.MAX_BUCKETS, PlaybackStatsRules.lastDays(emptyMap(), count = 999_999).size)
+        assertEquals(0, PlaybackStatsRules.lastDays(emptyMap(), count = -5).size)
+        val many = (1..PlaybackStatsRules.MAX_ROWS * 3).map { SongStats(it.toLong(), "S$it", "A", "B", 1, 1) }
+        assertTrue(PlaybackStatsRules.topSongs(many, limit = 999_999).size <= PlaybackStatsRules.MAX_ROWS)
+    }
+
+    @Test
     fun `duration formatting keeps hours and minutes`() {
         assertEquals("0 分钟", PlaybackStatsRules.formatDuration(30_000L))
         assertEquals("12 分钟", PlaybackStatsRules.formatDuration(12 * 60_000L))
