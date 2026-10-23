@@ -23,22 +23,33 @@ class TogetherApi(
         )
     }
 
+    @Volatile var lastCreateUrl: String = ""
+    @Volatile var lastCreatePayload: String = ""
+    @Volatile var lastCreateBody: String = ""
+    @Volatile var lastCreateCandidates: String = ""
+    @Volatile var lastCreateKeys: String = ""
+
     fun create(): Result<TogetherRoom> = transport
         .eapiPost("/api/listen/together/room/create", JSONObject().put("refer", "songplay_more"))
         .mapCatching { body ->
+            lastCreateUrl = transport.lastUrl
+            lastCreatePayload = transport.lastPlainPayload
+            lastCreateBody = body.toString()
+            val extraction = TogetherRoomParser.extract(body)
+            lastCreateCandidates = extraction.candidates.joinToString(",")
+            lastCreateKeys = body.keys().asSequence().joinToString(",")
             log?.record(
                 "解析",
-                "stage=together create url=${transport.lastUrl} payload=${transport.lastPlainPayload.take(1000)} " +
-                    "code=${body.optInt("code", -1)} body=${body.toString().take(4000)}",
+                "stage=together create url=$lastCreateUrl payload=${lastCreatePayload.take(1000)} " +
+                    "code=${body.optInt("code", -1)} body=${lastCreateBody.take(4000)}",
             )
-            val room = TogetherRoomParser.parse(body)
             log?.record(
                 "解析",
-                "stage=together create roomId=${room.roomId.ifBlank { "none" }} " +
-                    "rawKeys=${body.keys().asSequence().joinToString(",")}",
+                "stage=together create roomId=${extraction.roomId.ifBlank { "none" }} " +
+                    "candidates=[$lastCreateCandidates] rawKeys=$lastCreateKeys",
             )
-            if (room.roomId.isBlank()) error("房间创建失败（未返回房间号）：${TogetherRoomParser.reason(body)}")
-            room
+            if (extraction.roomId.isBlank()) error("房间创建失败（未返回房间号）：${TogetherRoomParser.reason(body)}")
+            TogetherRoomParser.parse(body)
         }
 
     /** `status` is the one weapi call; it is how an app that lost its room rediscovers it. */
@@ -156,8 +167,16 @@ class TogetherApi(
             data?.optBoolean("inRoom") ?: body.optBoolean("inRoom", true)
         }
 
-    fun end(roomId: String): Result<Unit> =
-        transport.eapiPost("/api/listen/together/end/v2", JSONObject().put("roomId", roomId)).map { }
+    fun end(roomId: String, explicit: Boolean): Result<Unit> {
+        if (!TogetherRules.canEnd(explicit, roomId)) {
+            log?.record(
+                "解析",
+                "stage=together end skipped reason=${if (roomId.isBlank()) "no-room" else "not-explicit"}",
+            )
+            return Result.failure(IllegalStateException("end requires explicit user action and a room id"))
+        }
+        return transport.eapiPost("/api/listen/together/end/v2", JSONObject().put("roomId", roomId)).map { }
+    }
 
     private fun roomIdOf(body: JSONObject): String {
         val data = body.optJSONObject("data") ?: body

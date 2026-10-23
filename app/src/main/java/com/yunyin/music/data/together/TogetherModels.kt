@@ -29,17 +29,52 @@ data class TogetherRoom(
     val memberCount: Int = 0,
 )
 
-/** Port of main.js `responseRoom`/`roomDto` (data.roomInfo || data; roomId + creatorId). */
+/** Recursive room extraction: the real create body nests the id deeper than `data.roomInfo`. */
+data class RoomExtraction(val roomId: String, val creatorId: String, val candidates: List<String>)
+
 object TogetherRoomParser {
+    private val idPattern = Regex("[A-Za-z0-9_-]{8,128}_[0-9]{6,}")
+
+    fun extract(body: org.json.JSONObject): RoomExtraction {
+        val candidates = LinkedHashSet<String>()
+        var creator = ""
+        var memberCount = 0
+        fun visit(value: Any?, key: String) {
+            when (value) {
+                is org.json.JSONObject -> {
+                    value.optString("roomId").takeIf { it.isNotBlank() }?.let { candidates.add(it) }
+                    if (key.contains("room", ignoreCase = true)) {
+                        value.optString("id").takeIf { it.isNotBlank() }?.let { candidates.add(it) }
+                    }
+                    if (creator.isBlank()) {
+                        creator = listOf("creatorId", "creatorAccountId", "creatorUserId")
+                            .firstNotNullOfOrNull { value.optString(it).takeIf { v -> v.isNotBlank() } }.orEmpty()
+                    }
+                    val users = value.optJSONArray("roomUsers") ?: value.optJSONArray("users")
+                    if (users != null) memberCount = users.length()
+                    value.keys().forEach { child -> visit(value.opt(child), child) }
+                }
+                is org.json.JSONArray -> (0 until value.length()).forEach { visit(value.opt(it), key) }
+                is String -> {
+                    idPattern.find(value)?.value?.let { candidates.add(it) }
+                    if (value.trimStart().startsWith("{")) {
+                        runCatching { visit(org.json.JSONObject(value), key) }
+                    }
+                }
+            }
+        }
+        visit(body, "")
+        return RoomExtraction(candidates.firstOrNull().orEmpty(), creator, candidates.toList().also {
+            if (memberCount >= 0) Unit
+        })
+    }
+
     fun parse(body: org.json.JSONObject, fallbackId: String = ""): TogetherRoom {
+        val ex = extract(body)
         val data = body.optJSONObject("data") ?: body
         val room = data.optJSONObject("roomInfo") ?: data
-        val id = room.optString("roomId").ifBlank { fallbackId }
-        val creator = room.optString("creatorId").ifBlank {
-            room.optJSONObject("roomInfo")?.optString("creatorId").orEmpty()
-        }
         val users = room.optJSONArray("roomUsers") ?: room.optJSONArray("users")
-        return TogetherRoom(id, creator, users?.length() ?: 0)
+        return TogetherRoom(ex.roomId.ifBlank { fallbackId }, ex.creatorId, users?.length() ?: 0)
     }
 
     /** Human-readable server reason for the error message / log. */
@@ -120,7 +155,18 @@ object TogetherRules {
     /** A blank room id means create/accept failed: never enter, never report/end. */
     fun canEnter(roomId: String): Boolean = roomId.isNotBlank()
 
-    fun roomLabel(roomId: String?): String = roomId?.takeIf { it.isNotBlank() } ?: "none"
+    fun roomLabel(roomId: String?): String =
+        roomId?.takeIf { it.isNotBlank() } ?: "none reason=no-room-yet"
+
+    /** `end/v2` is only legal for an explicit user action on a confirmed room. */
+    fun canEnd(explicit: Boolean, roomId: String?): Boolean = explicit && !roomId.isNullOrBlank()
+
+    /** Room id precedence: create response, then status; a snapshot with songs proves the room is real. */
+    fun adoptRoomId(createdId: String, statusRoomId: String?, snapshotSongs: Int): String =
+        createdId.ifBlank { statusRoomId.orEmpty() }.ifBlank { if (snapshotSongs > 0) statusRoomId.orEmpty() else "" }
+
+    /** A negative status does not override a snapshot that actually contains songs. */
+    fun preferSnapshot(snapshotSongs: Int, statusInRoom: Boolean?): Boolean = snapshotSongs > 0 && statusInRoom == false
 
     /**
      * QPlayer's `checkTokenFor` returns "" unless `options.checkToken`; listenTogether calls do not pass it, so

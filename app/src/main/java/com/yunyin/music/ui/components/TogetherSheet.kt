@@ -50,7 +50,7 @@ fun TogetherSheet(session: TogetherSession, onDismiss: () -> Unit) {
                         }
                     }
                     state.error.takeIf { it.isNotBlank() }?.let { Text(it) }
-                    TextButton(onClick = { session.leave(); onDismiss() }) { Text("退出房间") }
+                    TextButton(onClick = { session.leave(explicit = true); onDismiss() }) { Text("退出房间") }
                 } else {
                     OutlinedTextField(
                         value = invite,

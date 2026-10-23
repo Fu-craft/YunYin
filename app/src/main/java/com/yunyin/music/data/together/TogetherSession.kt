@@ -62,6 +62,7 @@ class TogetherSession(
     private var lastStatus = 0L
     private var lastDiscover = 0L
     private var cryptoChecked = false
+    private var lastSnapshotSongs = 0
 
     private val accountId: Long get() = settings.account?.userId ?: 0L
 
@@ -69,12 +70,21 @@ class TogetherSession(
         get() = TogetherRules.available(settings.cookie, settings.account?.isAnonymous)
 
     fun create() = runOp("create") {
-        val result = api.create().getOrThrow()
-        if (!TogetherRules.canEnter(result.roomId)) {
-            error("房间创建失败（未返回房间号）：roomId=none")
+        val created = api.create().getOrThrow()
+        val status = api.status().getOrNull()
+        val statusRoomId = status?.room?.roomId.orEmpty()
+        val roomId = TogetherRules.adoptRoomId(created.roomId, statusRoomId, snapshotSongs = 0)
+        if (!TogetherRules.canEnter(roomId)) {
+            error("房间创建失败（未返回房间号）：create=${created.roomId} status=${statusRoomId.ifBlank { "none" }}")
         }
-        enter(result, versionSeed = 0L, action = "create")
+        // Create's body is validated by a real snapshot before we claim the session is in a room.
+        val snapshot = api.snapshot(roomId).getOrElse { error("创建后未获取到房间数据：${it.message}") }
+        if (!TogetherRules.joinedFromSnapshot(snapshot.songIds)) {
+            error("创建后未获取到房间数据：playlist=0 code=snapshot-empty")
+        }
+        enter(TogetherRoom(roomId, created.creatorId.ifBlank { status?.room?.creatorId.orEmpty() }), 0L, "create")
         reportPlaylist()
+        applySnapshot(snapshot)
     }
 
     fun join(invite: String) = runOp("join") {
@@ -93,14 +103,32 @@ class TogetherSession(
         applySnapshot(snapshot)
     }
 
-    fun leave() {
-        val current = room ?: return
-        runCatching { api.end(current.roomId) }
+    /** Only the sheet's 退出房间 calls this with explicit=true; every implicit path clears locally. */
+    fun leave(explicit: Boolean = false) {
+        val current = room
+        if (!TogetherRules.canEnd(explicit, current?.roomId)) {
+            log.record(
+                "解析",
+                "stage=together end skipped reason=${if (current?.roomId.isNullOrBlank()) "no-room" else "not-explicit"}",
+            )
+            if (current == null) {
+                clearRoomLocally()
+                return
+            }
+            clearRoomLocally()
+            return
+        }
+        runCatching { api.end(current!!.roomId, explicit = true) }
+        clearRoomLocally()
+        logLine("end", "ok")
+    }
+
+    private fun clearRoomLocally() {
         room = null
         leaderId = ""
+        lastSnapshotSongs = 0
         player.setAutoAdvanceBlocked(false)
         _state.value = TogetherUiState()
-        logLine("end", "ok")
     }
 
     private fun enter(value: TogetherRoom, versionSeed: Long, action: String) {
@@ -149,9 +177,13 @@ class TogetherSession(
                 lastDiscover = now()
                 val status = api.status().getOrNull()
                 if (status != null && !status.inRoom && status.room == null) {
-                    // Lost the room (ended elsewhere); stop cleanly rather than keep reporting into nothing.
-                    leave()
-                    return
+                    if (TogetherRules.preferSnapshot(lastSnapshotSongs, status.inRoom)) {
+                        log.record("解析", "stage=together status=not-in-room but snapshot songs=$lastSnapshotSongs; keeping room")
+                    } else {
+                        log.record("解析", "stage=together room left locally reason=status-no-room")
+                        clearRoomLocally()
+                        return
+                    }
                 }
             }
             player.setAutoAdvanceBlocked(true)
@@ -212,8 +244,9 @@ class TogetherSession(
                     local.positionMs,
                 ).onSuccess { inRoom ->
                     log.record("解析", "stage=together parsed action=heartbeat inRoom=${inRoom ?: "unknown"}")
-                    if (inRoom == false) {
-                        leave()
+                    if (inRoom == false && lastSnapshotSongs <= 0) {
+                        log.record("解析", "stage=together room left locally reason=heartbeat-not-in-room")
+                        clearRoomLocally()
                         return
                     }
                     recordOk("heartbeat")
@@ -234,6 +267,7 @@ class TogetherSession(
     }
 
     private fun applySnapshot(snapshot: TogetherSnapshot) {
+        lastSnapshotSongs = snapshot.songIds.size
         val command = snapshot.command
         val fresh = TogetherRules.isFresh(command, lastRemoteSignature, lastRemoteSequence, accountId.toString())
         val remoteIds = snapshot.songIds
@@ -365,6 +399,10 @@ class TogetherSession(
         block.appendLine("checkToken: not sent (QPlayer checkTokenFor returns empty unless options.checkToken; listenTogether does not pass it)")
         api.create().onSuccess { created ->
             block.appendLine("create: roomId=${created.roomId.ifBlank { "none" }} creatorId=${created.creatorId.ifBlank { "none" }}")
+            block.appendLine("create url=${api.lastCreateUrl}")
+            block.appendLine("create payload=${api.lastCreatePayload.take(2000)}")
+            block.appendLine("create code/body=${api.lastCreateBody.take(3000)}")
+            block.appendLine("create candidates=[${api.lastCreateCandidates}] rawKeys=${api.lastCreateKeys}")
             if (created.roomId.isNotBlank()) {
                 api.status().onSuccess { value ->
                     block.appendLine("status: inRoom=${value.inRoom} status=${value.status} roomId=${value.room?.roomId ?: "none"}")

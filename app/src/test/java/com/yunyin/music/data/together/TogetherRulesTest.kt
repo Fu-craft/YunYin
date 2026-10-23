@@ -7,11 +7,32 @@ class TogetherRulesTest {
     private fun cmd(type: String, target: String = "42", seq: Long = 7, account: String = "9") =
         TogetherCommand(account, type, "1", target, 1000, true, seq)
 
+    @Test fun `room id extraction recurses into nested, string and patterned values`() {
+        val nested = org.json.JSONObject("{\"data\":{\"room\":{\"roomInfo\":{\"roomId\":\"abc123\"}}}}")
+        assertEquals("abc123", TogetherRoomParser.extract(nested).roomId)
+        val embedded = org.json.JSONObject("{\"data\":{\"roomInfo\":\"{\\\"roomId\\\":\\\"str9\\\"}\"}}")
+        assertEquals("str9", TogetherRoomParser.extract(embedded).roomId)
+        val pattern = org.json.JSONObject("{\"data\":{\"x\":\"b3434a7f1e500c59c0b00bba75aba8f0_1792722426\"}}")
+        assertTrue(TogetherRoomParser.extract(pattern).candidates.contains("b3434a7f1e500c59c0b00bba75aba8f0_1792722426"))
+    }
+
+    @Test fun `end requires explicit action and a room id`() {
+        assertFalse(TogetherRules.canEnd(false, "r1"))
+        assertFalse(TogetherRules.canEnd(true, ""))
+        assertFalse(TogetherRules.canEnd(true, null))
+        assertTrue(TogetherRules.canEnd(true, "r1"))
+        assertEquals("s2", TogetherRules.adoptRoomId("", "s2", 0))
+        assertEquals("c1", TogetherRules.adoptRoomId("c1", "s2", 0))
+        assertTrue(TogetherRules.preferSnapshot(30, false))
+        assertFalse(TogetherRules.preferSnapshot(0, false))
+    }
+
     @Test fun `create requires a room id and room labels are explicit`() {
         assertFalse(TogetherRules.canEnter(""))
         assertTrue(TogetherRules.canEnter("r1"))
-        assertEquals("none", TogetherRules.roomLabel(null))
-        assertEquals("none", TogetherRules.roomLabel(""))
+        assertTrue(TogetherRules.roomLabel(null).startsWith("none"))
+        assertTrue(TogetherRules.roomLabel(null).contains("no-room-yet"))
+        assertTrue(TogetherRules.roomLabel("").startsWith("none"))
         assertEquals("r1", TogetherRules.roomLabel("r1"))
         assertNull(TogetherRules.antiCheatHeader(""))
         assertEquals("tok", TogetherRules.antiCheatHeader("tok"))
