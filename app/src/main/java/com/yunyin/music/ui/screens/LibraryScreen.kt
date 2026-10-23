@@ -457,12 +457,16 @@ private fun LibraryContent(
                     onClick = onOpenDownloads,
                 )
 
-                LibraryRow(
-                    icon = SfIcons.ChartBar,
-                    label = "播放统计",
-                    trailing = null,
-                    onClick = onOpenStats,
-                )
+                // 播放统计 is disabled (StatsFeature.enabled = false) after repeated unrecoverable crashes when
+                // opening it. The row and screen stay compiled behind the flag for a later, evidence-based retry.
+                if (com.yunyin.music.data.stats.StatsFeature.enabled) {
+                    LibraryRow(
+                        icon = SfIcons.ChartBar,
+                        label = "播放统计",
+                        trailing = null,
+                        onClick = onOpenStats,
+                    )
+                }
 
                 LibraryRow(
                     icon = SfIcons.Plus,

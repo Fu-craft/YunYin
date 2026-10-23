@@ -1074,7 +1074,10 @@ class MainActivity : ComponentActivity() {
                                 list.getOrNull(index)?.let { play(it, list) }
                             },
                             onOpenDownloads = { showDownloadCenter = true },
-                            onOpenStats = { showStats = true },
+                            onOpenStats = {
+                            // Gated: StatsFeature.enabled is false until the crash is understood.
+                            if (com.yunyin.music.data.stats.StatsFeature.enabled) showStats = true
+                        },
                             onOpenImport = {
                                 importPhase = com.yunyin.music.ui.screens.ImportPlaylistPhase.Input
                                 importSource = com.yunyin.music.ui.screens.ImportSource.Text
@@ -2043,7 +2046,7 @@ class MainActivity : ComponentActivity() {
                     onDismiss = { showLyricPicker = false },
                 )
             }
-            if (showStats) {
+            if (showStats && com.yunyin.music.data.stats.StatsFeature.enabled) {
                 PlaybackStatsScreen(
                     recorder = container.playbackStatsRecorder,
                     onBack = { showStats = false },

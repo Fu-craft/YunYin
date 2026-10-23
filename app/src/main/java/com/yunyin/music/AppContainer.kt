@@ -67,6 +67,9 @@ class AppContainer(val appContext: Context) {
     fun startPlaybackStats() {
         if (statsStarted) return
         statsStarted = true
+        // Playback statistics are disabled (StatsFeature.enabled = false): do not start the sampler at all, so
+        // there are no player reads, no recorder creation and no background writes from this feature.
+        if (!com.yunyin.music.data.stats.StatsFeature.enabled) return
         statsScope.launch {
             // First read is asynchronous: no disk/JSON work during composition or Application init.
             runCatching { playbackStatsRecorder.loadNow() }

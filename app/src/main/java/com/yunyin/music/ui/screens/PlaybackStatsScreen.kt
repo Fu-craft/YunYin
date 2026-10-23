@@ -72,6 +72,14 @@ fun PlaybackStatsScreen(
     /** Writes the page's progress markers into the same diagnostics log the copy-log action reads. */
     diag: (String) -> Unit = {},
 ) {
+    // Kill switch: besides the hidden 资料库 entry, no back door may compose the stats body. If something still
+    // navigates here, pop immediately and paint only the page background; never touch the recorder.
+    if (!com.yunyin.music.data.stats.StatsFeature.enabled) {
+        LaunchedEffect(Unit) { onBack() }
+        Box(Modifier.fillMaxSize().background(AppTheme.palette.background))
+        return
+    }
+
     // The store is defensive, but the screen must also survive a recorder/state failure instead of taking the
     // app down: read through runCatching and surface a retry / clear action.
     var snapshot by remember { mutableStateOf<PlaybackStatsSnapshot?>(null) }
