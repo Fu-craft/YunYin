@@ -5,15 +5,32 @@ package com.yunyin.music.data.together
  * src/together.js + src/main.js + src/xeapi.js — reimplemented in Kotlin.
  */
 
+import com.yunyin.music.data.lxsource.LxSourceLog
 import org.json.JSONArray
 import org.json.JSONObject
 
 /** Typed form of the 9 `main.js:listenTogether` operations. */
-class TogetherApi(private val transport: TogetherTransport) {
+class TogetherApi(
+    private val transport: TogetherTransport,
+    private val log: LxSourceLog? = null,
+) {
+    private fun raw(action: String, detail: String, body: JSONObject) {
+        val code = body.optInt("code", -1)
+        log?.record(
+            "解析",
+            "stage=together raw action=$action${if (detail.isBlank()) "" else " $detail"} code=$code " +
+                "body=${body.toString().take(400)}",
+        )
+    }
 
     fun create(): Result<TogetherRoom> = transport
         .eapiPost("/api/listen/together/room/create", JSONObject().put("refer", "songplay_more"))
-        .mapCatching { body -> TogetherRoom(roomIdOf(body).ifBlank { error("房间创建响应缺少 roomId") }) }
+        .mapCatching { body ->
+            raw("create", "", body)
+            val room = TogetherRoomParser.parse(body)
+            if (room.roomId.isBlank()) error("房间创建失败：${TogetherRoomParser.reason(body)}")
+            room
+        }
 
     /** `status` is the one weapi call; it is how an app that lost its room rediscovers it. */
     fun status(): Result<TogetherStatus> = transport
@@ -30,7 +47,11 @@ class TogetherApi(private val transport: TogetherTransport) {
 
     fun check(roomId: String): Result<Boolean> = transport
         .eapiPost("/api/listen/together/room/check", JSONObject().put("roomId", roomId))
-        .mapCatching { it.optJSONObject("data")?.optBoolean("joinable") == true }
+        .mapCatching { body ->
+            val joinable = body.optJSONObject("data")?.optBoolean("joinable") == true
+            raw("check", "roomId=$roomId joinablePath=data.joinable", body)
+            joinable
+        }
 
     fun join(roomId: String, inviterId: String): Result<TogetherRoom> = transport
         .eapiPost(
@@ -38,7 +59,12 @@ class TogetherApi(private val transport: TogetherTransport) {
             JSONObject().put("refer", "inbox_invite").put("roomId", roomId)
                 .put("inviterId", inviterId.ifBlank { "0" }),
         )
-        .mapCatching { TogetherRoom(roomIdOf(it).ifBlank { roomId }) }
+        .mapCatching { body ->
+            raw("accept", "roomId=$roomId inviterId=$inviterId", body)
+            val room = TogetherRoomParser.parse(body, fallbackId = roomId)
+            if (room.roomId.isBlank()) error("加入失败：${TogetherRoomParser.reason(body)}")
+            room
+        }
 
     fun snapshot(roomId: String): Result<TogetherSnapshot> = transport
         .eapiPost("/api/listen/together/sync/playlist/get", JSONObject().put("roomId", roomId))

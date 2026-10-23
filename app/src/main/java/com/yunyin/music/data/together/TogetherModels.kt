@@ -26,7 +26,29 @@ data class TogetherSnapshot(
 data class TogetherRoom(
     val roomId: String,
     val creatorId: String = "",
+    val memberCount: Int = 0,
 )
+
+/** Port of main.js `responseRoom`/`roomDto` (data.roomInfo || data; roomId + creatorId). */
+object TogetherRoomParser {
+    fun parse(body: org.json.JSONObject, fallbackId: String = ""): TogetherRoom {
+        val data = body.optJSONObject("data") ?: body
+        val room = data.optJSONObject("roomInfo") ?: data
+        val id = room.optString("roomId").ifBlank { fallbackId }
+        val creator = room.optString("creatorId").ifBlank {
+            room.optJSONObject("roomInfo")?.optString("creatorId").orEmpty()
+        }
+        val users = room.optJSONArray("roomUsers") ?: room.optJSONArray("users")
+        return TogetherRoom(id, creator, users?.length() ?: 0)
+    }
+
+    /** Human-readable server reason for the error message / log. */
+    fun reason(body: org.json.JSONObject): String {
+        val code = body.optInt("code", -1)
+        val message = body.optString("message").ifBlank { body.optString("msg") }
+        return "code=$code" + if (message.isNotBlank()) " msg=$message" else ""
+    }
+}
 
 /** One local report, derived from a baseline/local playback comparison. */
 sealed interface TogetherAction {

@@ -76,7 +76,10 @@ class TogetherSession(
 
     fun join(invite: String) = runOp("join") {
         val (roomId, inviterId) = TogetherRules.parseInvite(invite).getOrThrow()
-        if (!api.check(roomId).getOrDefault(false)) error("房间不可加入或已结束")
+        logLine("invite", "ok", "roomId=$roomId inviterId=$inviterId")
+        // together.js joinRoom calls `accept` directly; `check` is diagnostic only (it can report false for a
+        // valid invitation until the server has registered it, which used to block every join).
+        api.check(roomId)
         enter(api.join(roomId, inviterId).getOrThrow(), versionSeed = 0L)
     }
 
@@ -103,7 +106,7 @@ class TogetherSession(
         _state.value = TogetherUiState(
             inRoom = true,
             roomId = value.roomId,
-            inviteLink = inviteLink(value.roomId),
+            inviteLink = inviteLink(value.roomId, value.creatorId.ifBlank { accountId.toString() }),
         )
         player.setAutoAdvanceBlocked(true)
         logLine("create", "ok")
@@ -325,8 +328,8 @@ class TogetherSession(
         }
     }
 
-    private fun inviteLink(roomId: String): String =
-        "qplayer://listen-together?provider=netease&roomId=$roomId&inviterId=${accountId}"
+    private fun inviteLink(roomId: String, inviterId: String): String =
+        "qplayer://listen-together?provider=netease&roomId=$roomId&inviterId=$inviterId"
 
     private fun now(): Long = System.currentTimeMillis()
 }

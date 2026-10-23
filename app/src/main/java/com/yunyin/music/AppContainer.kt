@@ -130,7 +130,7 @@ class AppContainer(val appContext: Context) {
     val together: com.yunyin.music.data.together.TogetherSession by lazy {
         com.yunyin.music.data.together.TogetherSession(
             player,
-            com.yunyin.music.data.together.TogetherApi(com.yunyin.music.data.together.TogetherTransport(settings)),
+            com.yunyin.music.data.together.TogetherApi(com.yunyin.music.data.together.TogetherTransport(settings), lxLog),
             settings, lxLog, CoroutineScope(SupervisorJob() + Dispatchers.IO),
         )
     }

@@ -7,6 +7,25 @@ class TogetherRulesTest {
     private fun cmd(type: String, target: String = "42", seq: Long = 7, account: String = "9") =
         TogetherCommand(account, type, "1", target, 1000, true, seq)
 
+    @Test fun `room parser reads roomInfo roomId and creatorId and falls back`() {
+        val nested = org.json.JSONObject(
+            "{\"code\":200,\"data\":{\"roomInfo\":{\"roomId\":\"r123\",\"creatorId\":\"456\"}}}",
+        )
+        val room = TogetherRoomParser.parse(nested)
+        assertEquals("r123", room.roomId)
+        assertEquals("456", room.creatorId)
+        val flat = org.json.JSONObject("{\"code\":200,\"data\":{\"roomId\":\"r9\",\"creatorId\":\"7\"}}")
+        assertEquals("r9", TogetherRoomParser.parse(flat).roomId)
+        assertEquals("r7", TogetherRoomParser.parse(org.json.JSONObject("{\"roomId\":\"\"}"), fallbackId = "r7").roomId)
+        assertTrue(TogetherRoomParser.reason(org.json.JSONObject("{\"code\":404,\"msg\":\"已结束\"}")).contains("404"))
+    }
+
+    @Test fun `invite link round-trips the creator id from the room`() {
+        val room = TogetherRoomParser.parse(org.json.JSONObject("{\"roomId\":\"r1\",\"creatorId\":\"42\"}"))
+        val link = "qplayer://listen-together?provider=netease&roomId=${room.roomId}&inviterId=${room.creatorId}"
+        assertEquals("r1" to "42", TogetherRules.parseInvite(link).getOrThrow())
+    }
+
     @Test fun `available follows the app real-session rule`() {
         assertTrue(TogetherRules.available("MUSIC_U=x", anonymous = false))
         assertFalse(TogetherRules.available("MUSIC_U=x", anonymous = true))
