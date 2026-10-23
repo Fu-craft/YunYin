@@ -137,11 +137,8 @@ class PlayerController(
         override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) = publish()
 
         override fun onMediaItemTransition(mediaItem: androidx.media3.common.MediaItem?, reason: Int) {
-            if (autoAdvanceBlocked && reason == androidx.media3.common.Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
-                // together.js blocks host auto-advance; pausing here keeps audio at the room's expected item
-                // until the next authoritative snapshot re-selects (crossfade eligibility is untouched).
-                controller?.pause()
-            }
+            // Together mode blocks advancement (room decides) but must never pause playback. If a transition
+            // already happened, do nothing and let the room's authoritative apply correct the item.
             // Clear per-track trial state immediately so the previous song's notice cannot leak across a
             // transition. The resolver below then fills in the new track's state if needed.
             _state.value = _state.value.copy(trialEndMs = null, notice = null)
@@ -461,6 +458,8 @@ class PlayerController(
 
     fun setAutoAdvanceBlocked(blocked: Boolean) {
         autoAdvanceBlocked = blocked
+        // Suppression only: MediaController exposes no pause-at-end command, so we keep the flag and never pause.
+        // The room's next authoritative apply selects the intended item; local playback is never paused.
     }
 
     private fun publish() {

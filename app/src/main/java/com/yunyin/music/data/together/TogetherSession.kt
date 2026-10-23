@@ -70,6 +70,8 @@ class TogetherSession(
     private var lastSentState = ""
     private var lastSentAt = 0L
     private var applyingRemote = false
+    private var applyFailed = false
+    private val applyTimes = HashMap<String, MutableList<Long>>()
 
     private val accountId: Long get() = settings.account?.userId ?: 0L
 
@@ -229,7 +231,11 @@ class TogetherSession(
             }
             player.setAutoAdvanceBlocked(true)
             val local = player.state.value
-            if (local.queue.isNotEmpty()) {
+            if (applyFailed) {
+                // A client that could not follow stays silent; the next snapshot is applied below instead of
+                // reporting a divergent local state back into the room.
+                log.record("解析", "stage=together report skipped reason=apply-failed")
+            } else if (!applyingRemote && local.queue.isNotEmpty()) {
                 val queueIds = local.queue.map { it.id.toString() }
                 val currentId = local.current?.id?.toString().orEmpty()
                 val seqNow = maxOf(seq + 1, now())
@@ -316,17 +322,24 @@ class TogetherSession(
             baselineAfterApply()
             return
         }
+        val applySignature = "${snapshot.signature}|${command?.sequence ?: 0}"
+        if (TogetherRules.shouldSuppressOscillation(applyTimes[applySignature].orEmpty(), now())) {
+            log.record("解析", "stage=together oscillation type=${command?.type ?: "none"} seq=${command?.sequence ?: 0}")
+            baselineAfterApply()
+            return
+        }
+        applyingRemote = true
         val remoteIds = snapshot.songIds
         val local = player.state.value
         val localIds = local.queue.map { it.id.toString() }
         val queueChanged = remoteIds.isNotEmpty() && TogetherRules.idsSignature(remoteIds) != TogetherRules.idsSignature(localIds)
         if (queueChanged) {
-            if (!fresh && remoteIds.none { it == local.current?.id?.toString() }) return
+            if (!fresh && remoteIds.none { it == local.current?.id?.toString() }) { applyingRemote = false; return }
             val selected = command?.targetSongId?.takeIf { it.isNotBlank() && it in remoteIds }
                 ?: local.current?.id?.toString()?.takeIf { it in remoteIds }
                 ?: remoteIds.first()
             val position = if (initial) command?.progressMs ?: 0L else 0L
-            if (!hydrateAndReplace(remoteIds, selected, position, fresh && command?.playing == true)) return
+            if (!hydrateAndReplace(remoteIds, selected, position, fresh && command?.playing == true)) { applyingRemote = false; return }
         } else if (fresh && command != null) {
             val type = command.type.uppercase()
             if (type == "GOTO" || type == "NEXT" || type == "PREV") {
@@ -339,7 +352,7 @@ class TogetherSession(
                     player.playQueue(local.queue, index, autoPlay = command.playing)
                     player.seekTo(position)
                 } else if (remoteIds.isNotEmpty()) {
-                    if (!hydrateAndReplace(remoteIds, target, position, command.playing)) return
+                    if (!hydrateAndReplace(remoteIds, target, position, command.playing)) { applyingRemote = false; return }
                     leaderId = command.accountId.ifBlank { leaderId }
                 } else {
                     return
@@ -354,6 +367,11 @@ class TogetherSession(
             lastRemoteSignature = snapshot.signature
             lastRemoteSequence = maxOf(lastRemoteSequence, command.sequence)
         }
+        applyingRemote = false
+        val after = player.state.value
+        applyFailed = command != null && command.type.uppercase() in setOf("GOTO", "NEXT", "PREV") &&
+            after.current?.id?.toString() != command.targetSongId
+        if (!applyFailed) applyTimes[applySignature] = (applyTimes[applySignature] ?: mutableListOf()).also { it.add(now()) }
         baselineAfterApply()
         handleNaturalEnd(snapshot, local)
     }

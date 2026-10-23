@@ -191,6 +191,16 @@ object TogetherRules {
     /** A status body we could not parse means "unknown", never "not in room". */
     fun statusInRoomKnown(inRoom: Boolean?, httpOk: Boolean): Boolean = httpOk && inRoom != null
 
+    /** Local reporting is suppressed while an apply is running, after a failed apply, or for an author echo. */
+    fun shouldReportLocal(applying: Boolean, applyFailed: Boolean, isOwnCommand: Boolean): Boolean =
+        !applying && !applyFailed && !isOwnCommand
+
+    /** Oscillation valve: 3+ applications of one signature within 10 s suppress it for 5 s. */
+    fun shouldSuppressOscillation(times: List<Long>, now: Long): Boolean {
+        val recent = times.filter { now - it in 0..10_000L }
+        return recent.size >= 3 && now - (recent.lastOrNull() ?: now) <= 5_000L
+    }
+
     /** creator → lowest numeric account id → self. */
     fun leaderId(creatorId: String, memberIds: List<String>, ownAccountId: String): String {
         if (creatorId.isNotBlank()) return creatorId

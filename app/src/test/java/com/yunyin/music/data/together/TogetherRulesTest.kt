@@ -11,6 +11,20 @@ class TogetherRulesTest {
         id = id, name = "t$id", artists = listOf("a"), albumName = "", albumId = 0L, coverUrl = null, durationMs = 1000L,
     )
 
+    @Test fun `local reporting is suppressed during and after apply and for own commands`() {
+        assertTrue(TogetherRules.shouldReportLocal(applying = false, applyFailed = false, isOwnCommand = false))
+        assertFalse(TogetherRules.shouldReportLocal(applying = true, applyFailed = false, isOwnCommand = false))
+        assertFalse(TogetherRules.shouldReportLocal(applying = false, applyFailed = true, isOwnCommand = false))
+        assertFalse(TogetherRules.shouldReportLocal(applying = false, applyFailed = false, isOwnCommand = true))
+    }
+
+    @Test fun `oscillation valve suppresses repeated identical commands`() {
+        val now = 100_000L
+        assertFalse(TogetherRules.shouldSuppressOscillation(listOf(now - 1000, now - 500), now))
+        assertTrue(TogetherRules.shouldSuppressOscillation(listOf(now - 1000, now - 500, now - 100), now))
+        assertFalse(TogetherRules.shouldSuppressOscillation(listOf(now - 20_000, now - 19_000, now - 18_000), now))
+    }
+
     @Test fun `own commands never produce an incoming apply even with unknown account id`() {
         val sent = cmd("PLAY", target = "42", account = "")
         val sentSignature = TogetherRules.commandSignature(sent)
