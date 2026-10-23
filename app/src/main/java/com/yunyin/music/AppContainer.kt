@@ -55,6 +55,45 @@ class AppContainer(val appContext: Context) {
         com.yunyin.music.data.local.LocalMusicScanner(appContext, localMusic)
     }
 
+    /** Local playback statistics: recorded from the player's position ticks, persisted in the app's files dir. */
+    val playbackStatsStore by lazy { com.yunyin.music.data.stats.PlaybackStatsStore(appContext) }
+    val playbackStatsRecorder by lazy {
+        com.yunyin.music.data.stats.PlaybackStatsRecorder(playbackStatsStore)
+    }
+    private val statsScope = CoroutineScope(SupervisorJob() + kotlinx.coroutines.Dispatchers.Default)
+    private var statsStarted = false
+
+    /** Slow sampler: statistics need real forward listening, not frame precision. */
+    fun startPlaybackStats() {
+        if (statsStarted) return
+        statsStarted = true
+        statsScope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(1_000L)
+                runCatching {
+                    val state = player.state.value
+                    val track = state.current
+                    val recorder = playbackStatsRecorder
+                    if (track == null) {
+                        recorder.flush(System.currentTimeMillis())
+                    } else {
+                        recorder.tick(
+                            trackId = track.id,
+                            title = track.name,
+                            artist = track.artistLine,
+                            album = track.albumName,
+                            positionMs = state.positionMs,
+                            playing = state.isPlaying,
+                            nowMs = System.currentTimeMillis(),
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    init { runCatching { startPlaybackStats() } }
+
     /** Bumped after a background local-music scan so an open 本地音乐 sheet can refresh itself. */
     val localMusicRevision = kotlinx.coroutines.flow.MutableStateFlow(0)
 

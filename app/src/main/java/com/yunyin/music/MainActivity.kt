@@ -88,6 +88,14 @@ import com.yunyin.music.ui.screens.PlaylistConfirmSheet
 import com.yunyin.music.ui.screens.PlaylistEditorSheet
 import com.yunyin.music.ui.screens.PlaylistPickerSheet
 import com.yunyin.music.ui.screens.SleepTimerSheet
+import com.yunyin.music.ui.share.LyricsShareCard
+import com.yunyin.music.ui.share.LyricsShareInput
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.toArgb
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import com.yunyin.music.ui.screens.ImportPlaylistSheet
+import com.yunyin.music.ui.screens.PlaybackStatsScreen
 import com.yunyin.music.ui.screens.PlayerScreen
 import com.yunyin.music.ui.screens.LxSourceUrlSheet
 import com.yunyin.music.ui.screens.ProfileEditSheet
@@ -219,6 +227,15 @@ class MainActivity : ComponentActivity() {
         var beatModeActive by remember { mutableStateOf(false) }
         var showSettings by remember { mutableStateOf(false) }
         var showDownloadCenter by remember { mutableStateOf(false) }
+    var showStats by remember { mutableStateOf(false) }
+    var showImport by remember { mutableStateOf(false) }
+    var importPhase by remember { mutableStateOf(com.yunyin.music.ui.screens.ImportPlaylistPhase.Input) }
+    var importSource by remember { mutableStateOf(com.yunyin.music.ui.screens.ImportSource.Text) }
+    var importName by remember { mutableStateOf("") }
+    var importText by remember { mutableStateOf("") }
+    var importRows by remember { mutableStateOf<List<com.yunyin.music.ui.screens.ImportRowUi>>(emptyList()) }
+    var importStatus by remember { mutableStateOf<String?>(null) }
+    var importBusy by remember { mutableStateOf(false) }
         var showLogin by remember { mutableStateOf(false) }
         var account by remember { mutableStateOf(container.settings.account) }
 
@@ -1051,6 +1068,16 @@ class MainActivity : ComponentActivity() {
                                 list.getOrNull(index)?.let { play(it, list) }
                             },
                             onOpenDownloads = { showDownloadCenter = true },
+                            onOpenStats = { showStats = true },
+                            onOpenImport = {
+                                importPhase = com.yunyin.music.ui.screens.ImportPlaylistPhase.Input
+                                importSource = com.yunyin.music.ui.screens.ImportSource.Text
+                                importName = ""
+                                importText = ""
+                                importRows = emptyList()
+                                importStatus = null
+                                showImport = true
+                            },
                         )
                     }
                     }
@@ -1543,6 +1570,8 @@ class MainActivity : ComponentActivity() {
                             onOpen = { playback.current?.let { track -> appViewModel.openComments(track.id, track.name) } },
                         ),
                 ) {
+                    // Captured in composition: the share lambda below is not a @Composable context.
+                    val lyricShareAccent = AppTheme.palette.accent.toArgb()
                     PlayerScreen(
                     state = playback,
                     cover = playerViewModel.coverBitmap,
@@ -1592,6 +1621,39 @@ class MainActivity : ComponentActivity() {
                     onToggleLike = playerViewModel::toggleLike,
                     onShareTrack = {
                         shareText(playerViewModel.currentShareText(), "分享歌曲")
+                    },
+                    onShareLyrics = {
+                        val currentTrack = container.player.state.value.current
+                        if (currentTrack == null) {
+                            Toast.makeText(context, "当前没有在播放的歌曲", Toast.LENGTH_SHORT).show()
+                        } else {
+                            val position = container.player.positionMsNow()
+                            val pairs = playerViewModel.lyrics?.lines.orEmpty().mapNotNull { line ->
+                                com.yunyin.music.data.LyricClipboard.textFor(line)?.let { text -> text to line.start }
+                            }
+                            val current = pairs.indexOfLast { it.second <= position }.coerceAtLeast(0)
+                            val from = (current - 1).coerceAtLeast(0)
+                            val window = pairs.drop(from).take(4).map { it.first }
+                            val highlight = (current - from).coerceIn(0, (window.size - 1).coerceAtLeast(0))
+                            Toast.makeText(context, "正在生成歌词卡片…", Toast.LENGTH_SHORT).show()
+                            scope.launch {
+                                val bitmap = withContext(Dispatchers.IO) {
+                                    LyricsShareCard.render(
+                                        LyricsShareInput(
+                                            songName = currentTrack.name,
+                                            artistLine = currentTrack.artistLine,
+                                            lyricLines = window,
+                                            highlightIndex = highlight,
+                                            cover = runCatching { playerViewModel.coverBitmap?.asAndroidBitmap() }.getOrNull(),
+                                            accent = lyricShareAccent,
+                                        ),
+                                    )
+                                }
+                                LyricsShareCard.saveAndShare(context, bitmap)
+                                    .onSuccess { Toast.makeText(context, "歌词卡片已生成", Toast.LENGTH_SHORT).show() }
+                                    .onFailure { Toast.makeText(context, "生成分享卡片失败：${it.message ?: "未知原因"}", Toast.LENGTH_LONG).show() }
+                            }
+                        }
                     },
                     onCopyLyric = { text ->
                         if (text.isNullOrBlank()) {
@@ -1828,6 +1890,110 @@ class MainActivity : ComponentActivity() {
 
             // Queue sheet. It animates itself inside the Dialog; an outer AnimatedVisibility would
             // be a second, redundant transition (same reason as the profile editor).
+            fun resolveImport() {
+                if (importBusy) return
+                val raw = importText.trim()
+                if (raw.isEmpty()) { importStatus = "请先粘贴歌单内容"; return }
+                importBusy = true
+                importPhase = com.yunyin.music.ui.screens.ImportPlaylistPhase.Working
+                importStatus = null
+                scope.launch {
+                    try {
+                        val rows = withContext(Dispatchers.IO) {
+                            if (importSource == com.yunyin.music.ui.screens.ImportSource.NeteaseLink) {
+                                val id = com.yunyin.music.data.import.PlaylistImportRules.parsePlaylistId(raw)
+                                    ?: error("无法识别歌单链接或 ID")
+                                val tracks = container.music.playlistTracks(id)
+                                tracks.map { track ->
+                                    com.yunyin.music.ui.screens.ImportRowUi(
+                                        line = com.yunyin.music.data.import.ImportedLine(track.name, track.artistLine, "${track.name} - ${track.artistLine}"),
+                                        track = track,
+                                    )
+                                }
+                            } else {
+                                com.yunyin.music.data.import.PlaylistImportRules.parseText(raw).map { line ->
+                                    val result = container.music.search(listOf(line.title, line.artist).filter { it.isNotBlank() }.joinToString(" "))
+                                    val candidates = (result as? com.yunyin.music.core.NetResult.Ok)?.value?.tracks.orEmpty()
+                                    com.yunyin.music.ui.screens.ImportRowUi(
+                                        line = line,
+                                        track = com.yunyin.music.data.import.PlaylistImportRules.match(line, candidates),
+                                    )
+                                }
+                            }
+                        }
+                        importRows = rows
+                        importPhase = com.yunyin.music.ui.screens.ImportPlaylistPhase.Preview
+                        importStatus = null
+                    } catch (t: Throwable) {
+                        importStatus = "匹配失败：${(t.message ?: t.javaClass.simpleName).take(120)}"
+                        importPhase = com.yunyin.music.ui.screens.ImportPlaylistPhase.Input
+                    } finally {
+                        importBusy = false
+                    }
+                }
+            }
+
+            fun confirmImport() {
+                if (importBusy) return
+                val accountNow = account
+                if (accountNow == null || accountNow.isAnonymous) {
+                    importStatus = "请先登录后导入歌单"
+                    return
+                }
+                val matched = importRows.mapNotNull { it.track }
+                if (matched.isEmpty()) { importStatus = "没有可导入的歌曲"; return }
+                importBusy = true
+                scope.launch {
+                    try {
+                        val created = container.music.createPlaylist(
+                            importName.trim().ifBlank { "导入歌单" },
+                            "从云音导入",
+                        )
+                        when (created) {
+                            is com.yunyin.music.core.NetResult.Ok -> {
+                                val playlistId = created.value
+                                var added = 0
+                                com.yunyin.music.data.import.PlaylistImportRules.chunks(matched.map { it.id }, 100).forEach { ids ->
+                                    if (container.music.addTracksToPlaylist(playlistId, ids) is com.yunyin.music.core.NetResult.Ok) added += ids.size
+                                }
+                                appViewModel.refreshUserPlaylists(accountNow)
+                                importStatus = "导入完成：成功 $added 首，跳过 ${importRows.size - added} 首"
+                                importPhase = com.yunyin.music.ui.screens.ImportPlaylistPhase.Done
+                            }
+                            is com.yunyin.music.core.NetResult.Err -> importStatus = "创建歌单失败：${created.message}"
+                        }
+                    } catch (t: Throwable) {
+                        importStatus = "导入失败：${(t.message ?: t.javaClass.simpleName).take(120)}"
+                    } finally {
+                        importBusy = false
+                    }
+                }
+            }
+
+            if (showImport) {
+                ImportPlaylistSheet(
+                    phase = importPhase,
+                    source = importSource,
+                    name = importName,
+                    text = importText,
+                    rows = importRows,
+                    status = importStatus,
+                    matchedCount = importRows.count { it.track != null },
+                    onSourceChange = { importSource = it },
+                    onNameChange = { importName = it },
+                    onTextChange = { importText = it },
+                    onResolve = { resolveImport() },
+                    onConfirm = { confirmImport() },
+                    onBack = { importPhase = com.yunyin.music.ui.screens.ImportPlaylistPhase.Input },
+                    onDismiss = { showImport = false },
+                )
+            }
+            if (showStats) {
+                PlaybackStatsScreen(
+                    recorder = container.playbackStatsRecorder,
+                    onBack = { showStats = false },
+                )
+            }
             if (showDownloadCenter) {
                 DownloadCenterScreen(
                     states = downloadStatesAll,
@@ -1937,6 +2103,7 @@ class MainActivity : ComponentActivity() {
         BackHandler(enabled = commentsState.visible) { appViewModel.closeComments() }
         BackHandler(enabled = showSettings) { showSettings = false }
         BackHandler(enabled = showDownloadCenter) { showDownloadCenter = false }
+        BackHandler(enabled = showStats) { showStats = false }
         BackHandler(enabled = showLogin) { showLogin = false }
 
         // Surface playback errors once, then clear them.

@@ -166,6 +166,8 @@ fun PlayerScreen(
     onCycleRepeat: () -> Unit,
     onToggleShuffle: () -> Unit,
     onShowQueue: () -> Unit,
+    /** Opens the lyric-card share flow; null keeps the row hidden (e.g. no lyrics/current track). */
+    onShareLyrics: (() -> Unit)? = null,
     onPlayNext: (() -> Unit)? = null,
     onShowSettings: () -> Unit,
     /** Whether the lyrics page may auto-hide the chrome after the idle delay. */
@@ -1155,6 +1157,7 @@ fun PlayerScreen(
                 onPlayNext = onPlayNext,
                 onDismiss = { showActions = false },
                 onShare = onShareTrack,
+                onShareLyrics = onShareLyrics,
                 onShowQueue = {
                     interaction++
                     onShowQueue()
@@ -1788,6 +1791,7 @@ private fun TrackActionsSheet(
     onDismiss: () -> Unit,
     onShare: () -> Unit,
     onShowQueue: () -> Unit,
+    onShareLyrics: (() -> Unit)? = null,
 ) {
     AnimatedSheet(
         onDismissed = onDismiss,
@@ -1850,6 +1854,11 @@ private fun TrackActionsSheet(
         }
         ActionRow(SfIcons.SquareAndArrowUp, "分享歌曲", track != null) {
             close { onShare() }
+        }
+        if (onShareLyrics != null) {
+            ActionRow(SfIcons.QuoteOpening, "分享歌词", track != null) {
+                close { onShareLyrics() }
+            }
         }
         val commentActions = LocalCommentActions.current
         if (commentActions != null) {
