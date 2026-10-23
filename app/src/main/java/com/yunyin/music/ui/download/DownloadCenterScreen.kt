@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -99,7 +100,9 @@ fun DownloadCenterScreen(
         }
     }.sortedByDescending { it.state.trackId }
 
-    Column(Modifier.fillMaxSize().background(AppTheme.palette.background)) {
+    // STATUS-BAR SAFETY: the page is a full-screen overlay, so it must claim the system-bar inset itself.
+    // The title previously collided with the clock because the root started at y=0.
+    Column(Modifier.fillMaxSize().statusBarsPadding().background(AppTheme.palette.background)) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -122,17 +125,29 @@ fun DownloadCenterScreen(
                 color = AppTheme.palette.label,
                 modifier = Modifier.padding(start = 6.dp),
             )
+            Spacer(Modifier.weight(1f))
+            if (DownloadCenterRules.showBulkActions(activeCount, doneCount, failedCount)) {
+                // One inline summary instead of a summary card + three pill rows: counts are the header subtitle,
+                // the segmented control is the only persistent control, and bulk actions are one compact row.
+                Text(
+                    "$activeCount 进行中 · $doneCount 已完成 · $failedCount 失败",
+                    fontFamily = SFPro,
+                    fontSize = 12.sp,
+                    color = AppTheme.palette.secondaryLabel,
+                )
+            }
         }
 
-        SummaryCard(activeCount, doneCount, failedCount, entries)
-
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            SecondaryPill("全部暂停", onPauseAll)
-            SecondaryPill("全部继续", onResumeAll)
-            SecondaryPill("清空已完成", onClearCompleted)
+        if (DownloadCenterRules.showBulkActions(activeCount, doneCount, failedCount)) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                BulkAction("全部暂停", onPauseAll)
+                BulkAction("全部继续", onResumeAll)
+                BulkAction("清空已完成", onClearCompleted)
+            }
         }
 
         Row(
@@ -203,6 +218,18 @@ fun DownloadCenterScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun BulkAction(text: String, onClick: () -> Unit) {
+    Box(
+        Modifier.height(44.dp).padding(horizontal = 2.dp).clip(ContinuousRoundedRectangle(AppleShapes.control))
+            .clickable(indication = rememberControlRipple(bounded = false), interactionSource = null, onClick = onClick)
+            .padding(horizontal = 8.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text, fontFamily = SFPro, fontSize = 12.sp, color = AppTheme.palette.secondaryLabel)
     }
 }
 

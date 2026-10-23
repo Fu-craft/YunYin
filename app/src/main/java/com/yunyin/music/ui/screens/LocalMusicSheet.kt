@@ -41,9 +41,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.DialogProperties
 import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
 import com.yunyin.music.data.ArtworkLoader
 import com.yunyin.music.data.local.LocalAlbum
@@ -52,10 +52,8 @@ import com.yunyin.music.data.local.LocalGrouping
 import com.yunyin.music.data.local.LocalMusicCollectionRules
 import com.yunyin.music.data.local.LocalSong
 import com.yunyin.music.data.local.LocalSort
-import com.yunyin.music.ui.components.AnimatedSheet
 import com.yunyin.music.ui.components.CrossfadeContent
 import com.yunyin.music.ui.components.EmptyState
-import com.yunyin.music.ui.components.SheetPlacement
 import com.yunyin.music.ui.components.rememberControlRipple
 import com.yunyin.music.ui.icons.SfIcons
 import com.yunyin.music.ui.theme.AppTheme
@@ -76,16 +74,17 @@ import java.io.File
  * and explicit loading skeleton / empty / permission-error states so no state is a blank panel.
  */
 @Composable
-fun LocalMusicSheet(
+fun LocalMusicScreen(
     songs: List<LocalSong>,
     loading: Boolean,
     error: String?,
     skipped: Int,
     loader: ArtworkLoader,
+    topInset: Dp = 0.dp,
     onPlayTracks: (List<LocalSong>, Int) -> Unit,
     onPlayAll: () -> Unit,
     onOpenSettings: () -> Unit,
-    onDismiss: () -> Unit,
+    onBack: () -> Unit,
 ) {
     var grouping by remember { mutableStateOf(LocalGrouping.Songs) }
     var sort by remember { mutableStateOf(LocalSort.Title) }
@@ -99,41 +98,20 @@ fun LocalMusicSheet(
     val albums = remember(searched) { LocalMusicCollectionRules.albums(searched) }
     val artists = remember(searched) { LocalMusicCollectionRules.artists(searched) }
 
-    AnimatedSheet(
-        onDismissed = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
-        placement = SheetPlacement.Bottom,
-        sheetModifier = Modifier
-            .fillMaxWidth()
-            .fillMaxSize(0.92f)
-            .navigationBarsPadding()
-            .padding(horizontal = 12.dp, vertical = 12.dp)
-            .clip(ContinuousRoundedRectangle(AppleShapes.sheet))
-            .background(AppTheme.palette.background),
-    ) { close ->
+    Column(Modifier.fillMaxSize().padding(top = topInset).background(AppTheme.palette.background)) {
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column(Modifier.weight(1f)) {
-                Text(
-                    text = "本地音乐",
-                    fontFamily = SFPro,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 20.sp,
-                    color = AppTheme.palette.label,
-                )
-                if (songs.isNotEmpty()) {
-                    Text(
-                        text = "${songs.size} 首",
-                        fontFamily = SFPro,
-                        fontSize = 12.sp,
-                        color = AppTheme.palette.secondaryLabel,
-                    )
-                }
-            }
+            Text(
+                if (songs.isEmpty()) "" else "${songs.size} 首",
+                fontFamily = SFPro,
+                fontSize = 12.sp,
+                color = AppTheme.palette.secondaryLabel,
+                modifier = Modifier.weight(1f),
+            )
             if (songs.isNotEmpty()) {
-                PillButton(text = "播放全部", onClick = { close { onPlayAll() } })
+                PillButton(text = "播放全部", onClick = onPlayAll)
             }
         }
 
@@ -181,7 +159,7 @@ fun LocalMusicSheet(
                                     LocalSongRow(
                                         song = song,
                                         loader = loader,
-                                        onClick = { close { onPlayTracks(visibleSongs, index) } },
+                                        onClick = { onPlayTracks(visibleSongs, index) },
                                     )
                                 }
                             }
@@ -209,7 +187,7 @@ fun LocalMusicSheet(
                                 LocalSongRow(
                                     song = song,
                                     loader = loader,
-                                    onClick = { close { onPlayTracks(target.album.songs, index) } },
+                                    onClick = { onPlayTracks(target.album.songs, index) },
                                 )
                             }
                         }
@@ -220,7 +198,7 @@ fun LocalMusicSheet(
                                     LocalSongRow(
                                         song = song,
                                         loader = loader,
-                                        onClick = { close { onPlayTracks(album.songs, index) } },
+                                        onClick = { onPlayTracks(album.songs, index) },
                                     )
                                 }
                             }

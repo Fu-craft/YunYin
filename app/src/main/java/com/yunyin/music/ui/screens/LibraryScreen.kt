@@ -177,6 +177,7 @@ fun LibraryScreen(
 
     // ------------------------------------------------------------ 本地音乐
     var showLocalMusic by remember { mutableStateOf(false) }
+    BackHandler(enabled = showLocalMusic) { showLocalMusic = false }
     var localSongs by remember { mutableStateOf<List<com.yunyin.music.data.local.LocalSong>>(emptyList()) }
     var localSkipped by remember { mutableStateOf(0) }
     var localLoading by remember { mutableStateOf(false) }
@@ -270,25 +271,36 @@ fun LibraryScreen(
     //
     // 本地音乐 list sheet: permission/scanning states live here, so a denial is an explanation + a settings button,
     // never an empty list.
-    if (showLocalMusic) {
-        LocalMusicSheet(
-            songs = localSongs,
-            loading = localLoading,
-            error = localError,
-            skipped = localSkipped,
-            loader = loader,
-            onPlayTracks = { list, index ->
-                if (list.isNotEmpty()) onPlayLocalTracks(list.map { it.toTrack() }, index)
-                showLocalMusic = false
-            },
-            onPlayAll = {
-                val list = localSongs
-                if (list.isNotEmpty()) onPlayLocalTracks(list.map { it.toTrack() }, 0)
-                showLocalMusic = false
-            },
-            onOpenSettings = { openLocalSettings() },
-            onDismiss = { showLocalMusic = false },
-        )
+    // 本地音乐 is a full screen page, not a Dialog: it shares the subpage glass bar and the same slide
+    // transition as 我的歌单/最近播放, so the system bar inset is handled once and the list scrolls under
+    // the frosted strip.
+    AnimatedVisibility(
+        visible = showLocalMusic,
+        enter = slideInHorizontally(tween(LIB_PAGE_MS, easing = Motion.EaseOut)) { it } +
+            fadeIn(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
+        exit = slideOutHorizontally(tween(LIB_PAGE_EXIT_MS, easing = Motion.EaseOut)) { it } +
+            fadeOut(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
+    ) {
+        LibrarySubpage(title = "本地音乐", onBack = { showLocalMusic = false }) { topInset ->
+            LocalMusicScreen(
+                songs = localSongs,
+                loading = localLoading,
+                error = localError,
+                skipped = localSkipped,
+                loader = loader,
+                topInset = topInset,
+                onPlayTracks = { list, index ->
+                    if (list.isNotEmpty()) onPlayLocalTracks(list.map { it.toTrack() }, index)
+                    showLocalMusic = false
+                },
+                onPlayAll = {
+                    if (localSongs.isNotEmpty()) onPlayLocalTracks(localSongs.map { it.toTrack() }, 0)
+                    showLocalMusic = false
+                },
+                onOpenSettings = { openLocalSettings() },
+                onBack = { showLocalMusic = false },
+            )
+        }
     }
 
     // An `AnimatedVisibility` per page, so each animates its own presence: only the entering page
@@ -437,14 +449,16 @@ private fun LibraryContent(
                 )
 
                 LibraryRow(
-                    icon = SfIcons.ArrowDownCircle,
+                    // Same box-with-down-arrow glyph as the player's 下载到本地 row: the circle variant was the
+                    // only round entry glyph in this list and read as a different kind of action.
+                    icon = SfIcons.SquareAndArrowDown,
                     label = "下载中心",
                     trailing = null,
                     onClick = onOpenDownloads,
                 )
 
                 LibraryRow(
-                    icon = SfIcons.Clock,
+                    icon = SfIcons.ChartBar,
                     label = "播放统计",
                     trailing = null,
                     onClick = onOpenStats,

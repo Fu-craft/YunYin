@@ -89,7 +89,9 @@ data class LocalSong(
         artists = listOf(artist.ifBlank { "未知艺人" }),
         albumName = album,
         albumId = albumId,
-        coverUrl = null,
+        // The player's cover pipeline receives this Track; a local artwork file must travel with it or the
+        // player/mini-player has nothing to load. File URIs are handled by ArtworkLoader.
+        coverUrl = artPath?.let { runCatching { java.io.File(it).toURI().toString() }.getOrNull() },
         durationMs = durationMs,
     )
 }

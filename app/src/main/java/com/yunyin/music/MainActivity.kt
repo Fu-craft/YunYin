@@ -236,6 +236,12 @@ class MainActivity : ComponentActivity() {
     var importRows by remember { mutableStateOf<List<com.yunyin.music.ui.screens.ImportRowUi>>(emptyList()) }
     var importStatus by remember { mutableStateOf<String?>(null) }
     var importBusy by remember { mutableStateOf(false) }
+    var showLyricPicker by remember { mutableStateOf(false) }
+    var lyricShareLines by remember { mutableStateOf<List<String>>(emptyList()) }
+    var lyricShareStarts by remember { mutableStateOf<List<Int>>(emptyList()) }
+    var lyricShareSelected by remember { mutableStateOf<List<Int>>(emptyList()) }
+    var lyricShareCurrent by remember { mutableStateOf(0) }
+    var lyricShareTrack by remember { mutableStateOf<com.yunyin.music.core.Track?>(null) }
         var showLogin by remember { mutableStateOf(false) }
         var account by remember { mutableStateOf(container.settings.account) }
 
@@ -1543,6 +1549,34 @@ class MainActivity : ComponentActivity() {
             // smooth on the device. A slide is a fraction of the work — no transform, no clip path, no
             // custom gesture coupling — and the app's own presentation switch (artwork ↔ lyrics) already
             // gives the player its motion.
+            // Captured in composition: the share lambda below is not a @Composable context.
+            val lyricShareAccent = AppTheme.palette.accent.toArgb()
+
+            fun generateLyricCard(
+                track: com.yunyin.music.core.Track,
+                lines: List<String>,
+                highlight: Int,
+            ) {
+                Toast.makeText(context, "正在生成歌词卡片…", Toast.LENGTH_SHORT).show()
+                scope.launch {
+                    val pair = withContext(Dispatchers.IO) {
+                        val input = LyricsShareInput(
+                            songName = track.name,
+                            artistLine = track.artistLine,
+                            lyricLines = lines,
+                            highlightIndex = highlight,
+                            cover = runCatching { playerViewModel.coverBitmap?.asAndroidBitmap() }.getOrNull(),
+                            accent = lyricShareAccent,
+                        )
+                        LyricsShareCard.render(input, story = false) to
+                            LyricsShareCard.render(input, story = true)
+                    }
+                    LyricsShareCard.saveAndShare(context, pair.first, pair.second)
+                        .onSuccess { Toast.makeText(context, "歌词卡片已生成", Toast.LENGTH_SHORT).show() }
+                        .onFailure { Toast.makeText(context, "生成分享卡片失败：${it.message ?: "未知原因"}", Toast.LENGTH_LONG).show() }
+                }
+            }
+
             AnimatedVisibility(
                 visible = showPlayer,
                 enter = slideInVertically(tween(Motion.SheetEnterDuration, easing = Motion.EaseOut)) { it } + fadeIn(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
@@ -1570,8 +1604,6 @@ class MainActivity : ComponentActivity() {
                             onOpen = { playback.current?.let { track -> appViewModel.openComments(track.id, track.name) } },
                         ),
                 ) {
-                    // Captured in composition: the share lambda below is not a @Composable context.
-                    val lyricShareAccent = AppTheme.palette.accent.toArgb()
                     PlayerScreen(
                     state = playback,
                     cover = playerViewModel.coverBitmap,
@@ -1627,31 +1659,25 @@ class MainActivity : ComponentActivity() {
                         if (currentTrack == null) {
                             Toast.makeText(context, "当前没有在播放的歌曲", Toast.LENGTH_SHORT).show()
                         } else {
-                            val position = container.player.positionMsNow()
                             val pairs = playerViewModel.lyrics?.lines.orEmpty().mapNotNull { line ->
                                 com.yunyin.music.data.LyricClipboard.textFor(line)?.let { text -> text to line.start }
                             }
-                            val current = pairs.indexOfLast { it.second <= position }.coerceAtLeast(0)
-                            val from = (current - 1).coerceAtLeast(0)
-                            val window = pairs.drop(from).take(4).map { it.first }
-                            val highlight = (current - from).coerceIn(0, (window.size - 1).coerceAtLeast(0))
-                            Toast.makeText(context, "正在生成歌词卡片…", Toast.LENGTH_SHORT).show()
-                            scope.launch {
-                                val bitmap = withContext(Dispatchers.IO) {
-                                    LyricsShareCard.render(
-                                        LyricsShareInput(
-                                            songName = currentTrack.name,
-                                            artistLine = currentTrack.artistLine,
-                                            lyricLines = window,
-                                            highlightIndex = highlight,
-                                            cover = runCatching { playerViewModel.coverBitmap?.asAndroidBitmap() }.getOrNull(),
-                                            accent = lyricShareAccent,
-                                        ),
-                                    )
-                                }
-                                LyricsShareCard.saveAndShare(context, bitmap)
-                                    .onSuccess { Toast.makeText(context, "歌词卡片已生成", Toast.LENGTH_SHORT).show() }
-                                    .onFailure { Toast.makeText(context, "生成分享卡片失败：${it.message ?: "未知原因"}", Toast.LENGTH_LONG).show() }
+                            if (pairs.isEmpty()) {
+                                // No lyrics: the card degrades to cover + title, as specified.
+                                generateLyricCard(currentTrack, emptyList(), 0)
+                            } else {
+                                lyricShareLines = pairs.map { it.first }
+                                lyricShareStarts = pairs.map { it.second }
+                                lyricShareCurrent = com.yunyin.music.data.share.LyricSelectionRules.currentLine(
+                                    lyricShareStarts,
+                                    container.player.positionMsNow(),
+                                )
+                                lyricShareSelected = com.yunyin.music.data.share.LyricSelectionRules.defaultSelection(
+                                    lyricShareLines.size,
+                                    lyricShareCurrent,
+                                )
+                                lyricShareTrack = currentTrack
+                                showLyricPicker = true
                             }
                         }
                     },
@@ -1986,6 +2012,35 @@ class MainActivity : ComponentActivity() {
                     onConfirm = { confirmImport() },
                     onBack = { importPhase = com.yunyin.music.ui.screens.ImportPlaylistPhase.Input },
                     onDismiss = { showImport = false },
+                )
+            }
+            if (showLyricPicker) {
+                com.yunyin.music.ui.share.LyricSelectionSheet(
+                    lines = lyricShareLines,
+                    starts = lyricShareStarts,
+                    selected = lyricShareSelected,
+                    currentIndex = lyricShareCurrent,
+                    onToggle = { index ->
+                        lyricShareSelected = com.yunyin.music.data.share.LyricSelectionRules.toggle(
+                            lyricShareSelected, index, lyricShareLines.size,
+                        )
+                    },
+                    onQuickDefault = {
+                        lyricShareSelected = com.yunyin.music.data.share.LyricSelectionRules.defaultSelection(
+                            lyricShareLines.size, lyricShareCurrent,
+                        )
+                    },
+                    onGenerate = {
+                        val track = lyricShareTrack
+                        if (track != null) {
+                            val chosen = lyricShareSelected.sorted().map { lyricShareLines[it] }
+                            val highlight = lyricShareSelected.sorted().indexOf(lyricShareCurrent)
+                                .coerceAtLeast(0)
+                            showLyricPicker = false
+                            generateLyricCard(track, chosen, highlight)
+                        }
+                    },
+                    onDismiss = { showLyricPicker = false },
                 )
             }
             if (showStats) {

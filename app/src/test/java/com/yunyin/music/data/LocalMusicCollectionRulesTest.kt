@@ -109,6 +109,14 @@ class LocalMusicCollectionRulesTest {
     }
 
     @Test
+    fun `local artwork travels with the Track as a file URL so the player can load it`() {
+        val song = song(12, "Title", "Artist", "Album").copy(artPath = "/tmp/cover.jpg")
+        val track = song.toTrack()
+        assertTrue(track.coverUrl!!.startsWith("file:"))
+        assertTrue(track.coverUrl!!.endsWith("cover.jpg"))
+    }
+
+    @Test
     fun `a song converts to a playable Track with a safe artist fallback`() {
         val track = song(9, "Title", "", "").toTrack()
         assertEquals("Title", track.name)

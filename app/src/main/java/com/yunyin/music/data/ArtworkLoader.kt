@@ -56,6 +56,9 @@ class ArtworkLoader(context: Context) {
     fun sized(url: String?, size: Int): String? = ArtworkUrlRules.sized(url, size)
 
     suspend fun load(url: String?, size: Int = 600): Bitmap? {
+        // Local artwork (embedded APIC cached to a file, or a folder cover) arrives as a file URI or an
+        // absolute path. It must bypass the network pipeline, or local tracks show no cover in the player.
+        localFileFor(url)?.let { return loadLocal(it, size) }
         val target = sized(url, size) ?: return null
         memory.get(target)?.let { return it }
 
@@ -80,6 +83,18 @@ class ArtworkLoader(context: Context) {
      * last-modified time, so replacing the file with new content at the same path cannot serve a stale
      * bitmap from memory.
      */
+    /** Resolves a file URI/absolute path to an existing image file, or null for network/unknown URLs. */
+    private fun localFileFor(url: String?): File? {
+        val value = url?.trim().orEmpty()
+        if (value.isEmpty()) return null
+        val file = when {
+            value.startsWith("file:", ignoreCase = true) -> runCatching { File(java.net.URI(value)) }.getOrNull()
+            value.startsWith("/") -> File(value)
+            else -> null
+        } ?: return null
+        return file.takeIf { it.isFile }
+    }
+
     suspend fun loadLocal(file: File?, size: Int = 600): Bitmap? {
         if (file == null || !file.isFile) return null
         val key = "file:${file.absolutePath}:${file.length()}:${file.lastModified()}"

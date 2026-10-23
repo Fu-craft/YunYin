@@ -574,6 +574,22 @@ object SfIcons {
         }
     }
 
+    /** `chart.bar` — 播放统计, monoline three-bar glyph on the same 24 pt / 1.9 pt grid. */
+    val ChartBar: ImageVector = icon("chart.bar") {
+        mono("chart.bar.one", width = 1.9f) {
+            moveTo(5f, 19f)
+            verticalLineTo(13f)
+        }
+        mono("chart.bar.two", width = 1.9f) {
+            moveTo(12f, 19f)
+            verticalLineTo(8f)
+        }
+        mono("chart.bar.three", width = 1.9f) {
+            moveTo(19f, 19f)
+            verticalLineTo(4f)
+        }
+    }
+
     val ArrowDownCircle: ImageVector = icon("arrow.down.circle") {
         path(fill = SolidColor(Color.Black)) {
             moveTo(12f, 2.4f)
