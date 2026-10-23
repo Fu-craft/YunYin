@@ -3,6 +3,10 @@ package com.yunyin.music.ui.download
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.yunyin.music.ui.components.rememberGlassTopBarBackdrop
+import com.yunyin.music.ui.components.glassTopBarTopPadding
+import com.yunyin.music.ui.components.GlassTopBar
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -102,31 +106,12 @@ fun DownloadCenterScreen(
 
     // STATUS-BAR SAFETY: the page is a full-screen overlay, so it must claim the system-bar inset itself.
     // The title previously collided with the clock because the root started at y=0.
-    Column(Modifier.fillMaxSize().statusBarsPadding().background(AppTheme.palette.background)) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                Modifier.size(44.dp).clip(CircleShape).clickable(
-                    indication = rememberControlRipple(bounded = false),
-                    interactionSource = null,
-                    onClick = onBack,
-                ),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(SfIcons.ChevronLeft, contentDescription = "返回", tint = AppTheme.palette.accent, modifier = Modifier.size(22.dp))
-            }
-            Text(
-                "下载中心",
-                fontFamily = SFPro,
-                fontWeight = FontWeight.Bold,
-                fontSize = 28.sp,
-                color = AppTheme.palette.label,
-                modifier = Modifier.padding(start = 6.dp),
-            )
-            Spacer(Modifier.weight(1f))
-            if (DownloadCenterRules.showBulkActions(activeCount, doneCount, failedCount)) {
+    val topBarBackdrop = rememberGlassTopBarBackdrop()
+    val topInset = glassTopBarTopPadding()
+    Box(Modifier.fillMaxSize().background(AppTheme.palette.background)) {
+        Box(Modifier.fillMaxSize().layerBackdrop(topBarBackdrop)) {
+            Column(Modifier.fillMaxSize().padding(top = topInset)) {
+        if (DownloadCenterRules.showBulkActions(activeCount, doneCount, failedCount)) {
                 // One inline summary instead of a summary card + three pill rows: counts are the header subtitle,
                 // the segmented control is the only persistent control, and bulk actions are one compact row.
                 Text(
@@ -136,7 +121,6 @@ fun DownloadCenterScreen(
                     color = AppTheme.palette.secondaryLabel,
                 )
             }
-        }
 
         if (DownloadCenterRules.showBulkActions(activeCount, doneCount, failedCount)) {
             Row(
@@ -202,7 +186,12 @@ fun DownloadCenterScreen(
                         CenterTab.Done -> "还没有已完成的下载"
                         CenterTab.Failed -> "没有失败的下载"
                     },
-                    icon = SfIcons.ArrowDownCircle,
+                    icon = when (tab) {
+                        CenterTab.Active -> SfIcons.SquareAndArrowDown
+                        CenterTab.Done -> SfIcons.Checkmark
+                        CenterTab.Failed -> SfIcons.ArrowClockwise
+                    },
+                    iconSize = 52.dp,
                 )
                 else -> LazyColumn(Modifier.fillMaxSize()) {
                     items(visible, key = { it.track.id }) { entry ->
@@ -219,6 +208,31 @@ fun DownloadCenterScreen(
             }
         }
     }
+            }
+            GlassTopBar(backdrop = topBarBackdrop, modifier = Modifier.align(Alignment.TopCenter)) {
+                Row(Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier.size(44.dp).clip(CircleShape).clickable(
+                            indication = rememberControlRipple(bounded = false),
+                            interactionSource = null,
+                            onClick = onBack,
+                        ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(SfIcons.ChevronLeft, contentDescription = "返回", tint = AppTheme.palette.accent, modifier = Modifier.size(22.dp))
+                    }
+                    Text(
+                        "下载中心",
+                        fontFamily = SFPro,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 24.sp,
+                        color = AppTheme.palette.label,
+                        modifier = Modifier.padding(start = 6.dp),
+                    )
+                }
+            }
+        }
+
 }
 
 @Composable

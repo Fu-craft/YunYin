@@ -309,6 +309,7 @@ fun EmptyState(
     text: String,
     modifier: Modifier = Modifier,
     icon: androidx.compose.ui.graphics.vector.ImageVector = SfIcons.MusicNote,
+    iconSize: androidx.compose.ui.unit.Dp = 40.dp,
 ) {
     Column(
         modifier = modifier
@@ -317,7 +318,7 @@ fun EmptyState(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Icon(icon, contentDescription = null, tint = AppTheme.palette.tertiaryLabel, modifier = Modifier.size(40.dp))
+        Icon(icon, contentDescription = null, tint = AppTheme.palette.tertiaryLabel, modifier = Modifier.size(iconSize))
         Text(
             text = text,
             fontFamily = SFPro,

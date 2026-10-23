@@ -39,6 +39,10 @@ import com.yunyin.music.data.stats.PlaybackStatsRules
 import com.yunyin.music.data.stats.PlaybackStatsSnapshot
 import com.yunyin.music.data.stats.SongStats
 import com.yunyin.music.ui.components.CrossfadeContent
+import com.yunyin.music.ui.components.rememberGlassTopBarBackdrop
+import com.yunyin.music.ui.components.glassTopBarTopPadding
+import com.yunyin.music.ui.components.GlassTopBar
+import com.kyant.backdrop.backdrops.layerBackdrop
 import com.yunyin.music.ui.components.EmptyState
 import com.yunyin.music.ui.components.rememberControlRipple
 import com.yunyin.music.ui.icons.SfIcons
@@ -63,30 +67,13 @@ fun PlaybackStatsScreen(recorder: PlaybackStatsRecorder, onBack: () -> Unit) {
     val snapshot by recorder.state.collectAsState()
     var tab by remember { mutableStateOf(StatsTab.Songs) }
 
-    Column(Modifier.fillMaxSize().background(AppTheme.palette.background).navigationBarsPadding()) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                Modifier.size(44.dp).clip(CircleShape).clickable(
-                    indication = rememberControlRipple(bounded = false),
-                    interactionSource = null,
-                    onClick = onBack,
-                ),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(SfIcons.ChevronLeft, contentDescription = "返回", tint = AppTheme.palette.accent, modifier = Modifier.size(22.dp))
-            }
-            Text(
-                "播放统计",
-                fontFamily = SFPro,
-                fontWeight = FontWeight.Bold,
-                fontSize = 28.sp,
-                color = AppTheme.palette.label,
-                modifier = Modifier.padding(start = 6.dp),
-            )
-        }
+    // Full-window opaque background first: the page previously spent the status-bar area on transparency,
+    // letting the home wallpaper show through. The frosted bar now owns the inset.
+    val topBarBackdrop = rememberGlassTopBarBackdrop()
+    val topInset = glassTopBarTopPadding()
+    Box(Modifier.fillMaxSize().background(AppTheme.palette.background)) {
+        Box(Modifier.fillMaxSize().layerBackdrop(topBarBackdrop)) {
+            Column(Modifier.fillMaxSize().padding(top = topInset).navigationBarsPadding()) {
 
         val empty = snapshot.totals.plays == 0 && snapshot.totals.totalMs == 0L
         CrossfadeContent(
@@ -98,10 +85,35 @@ fun PlaybackStatsScreen(recorder: PlaybackStatsRecorder, onBack: () -> Unit) {
             if (phase == "empty") {
                 EmptyState(
                     text = "还没有播放记录",
-                    icon = SfIcons.Clock,
+                    icon = SfIcons.ChartBar,
+                    iconSize = 52.dp,
                 )
             } else {
                 StatsContent(snapshot = snapshot, tab = tab, onSelectTab = { tab = it })
+            }
+        }
+            }
+            GlassTopBar(backdrop = topBarBackdrop, modifier = Modifier.align(Alignment.TopCenter)) {
+                Row(Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier.size(44.dp).clip(CircleShape).clickable(
+                            indication = rememberControlRipple(bounded = false),
+                            interactionSource = null,
+                            onClick = onBack,
+                        ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(SfIcons.ChevronLeft, contentDescription = "返回", tint = AppTheme.palette.accent, modifier = Modifier.size(22.dp))
+                    }
+                    Text(
+                        "播放统计",
+                        fontFamily = SFPro,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 24.sp,
+                        color = AppTheme.palette.label,
+                        modifier = Modifier.padding(start = 6.dp),
+                    )
+                }
             }
         }
     }

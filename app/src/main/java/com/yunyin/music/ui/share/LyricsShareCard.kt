@@ -8,13 +8,12 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.LinearGradient
 import android.graphics.Paint
-import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.Typeface
 import android.net.Uri
 import android.provider.MediaStore
-import kotlin.math.max
+import com.yunyin.music.data.share.LyricsCardLayoutRules
 
 /** Everything the lyric share card needs, already resolved by the caller. */
 data class LyricsShareInput(
@@ -27,14 +26,16 @@ data class LyricsShareInput(
 )
 
 /**
- * Lyric share card rendered with the platform Canvas (no Compose off-screen measurement, no dependency).
+ * Lyric share card. Layout ideas from luzhenhua/LyricsCard (MIT): rounded cover thumb + title/artist header,
+ * cover-derived colour field, lyric block as the hero. AMLL (AGPL-3.0) informed only the blurred-cover idea;
+ * all drawing code here is ours.
  *
- * Layout ideas are borrowed from **luzhenhua/LyricsCard** (MIT, Apple Music-style lyric cards) — blurred-cover
- * backdrop replaced by a cover-derived colour wash, a large title, a muted artist line, and the lyric block as the
- * typographic hero with generous leading. AMLL (`amll-dev/applemusic-like-lyrics`, AGPL-3.0) informed only the
- * cover-band + gradient idea; no AGPL code is used. Our own drawing code follows the app's typography and accent.
+ * The cover is downscaled to a 40 px texture and blown back up, so no title/artwork detail survives: it reads as a
+ * soft background texture instead of competing with our typography. Below it a solid gradient built from the cover's
+ * dominant colour keeps contrast stable. The lyric block is vertically centred in the remaining space, one type
+ * scale, 1.55 leading, current line accent + bold, other lines at ~78 % white.
  *
- * Two sizes are supported: 1080×1440 (feed) and 1080×1920 (story); the latter only changes vertical rhythm.
+ * Two outputs share the same design system: 1080x1440 feed and 1080x1920 story.
  */
 object LyricsShareCard {
 
@@ -46,94 +47,101 @@ object LyricsShareCard {
         val height = if (story) STORY_HEIGHT else FEED_HEIGHT
         val bitmap = Bitmap.createBitmap(WIDTH, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
-
+        val margin = LyricsCardLayoutRules.marginPx(WIDTH).toFloat()
         val dominant = dominantColor(input.cover)
         drawBackdrop(canvas, input.cover, dominant, height)
 
-        val left = 96f
-        val right = WIDTH - 96f
-        val titlePaint = textPaint(if (story) 84f else 76f, Color.WHITE, bold = true)
-        val artistPaint = textPaint(34f, Color.argb(200, 255, 255, 255), bold = false)
-        val lyricPaint = textPaint(if (story) 56f else 52f, Color.argb(238, 255, 255, 255), bold = false)
-        val highlightPaint = textPaint(if (story) 58f else 54f, input.accent, bold = true)
-        val markPaint = textPaint(24f, Color.argb(120, 255, 255, 255), bold = false)
+        val titleSize = if (story) 84f else 76f
+        val titlePaint = textPaint(titleSize, Color.WHITE, bold = true)
+        val artistPaint = textPaint(34f, Color.argb(205, 255, 255, 255), bold = false)
+        val lyricSize = if (story) 54f else 50f
+        val lyricPaint = textPaint(lyricSize, Color.argb(200, 255, 255, 255), bold = false)
+        val currentPaint = textPaint(lyricSize, input.accent, bold = true)
+        val markPaint = textPaint(24f, Color.argb(135, 255, 255, 255), bold = false)
 
-        val coverSize = if (story) 220f else 200f
+        // Header: small rounded cover thumb + typographic hierarchy.
+        val thumb = if (story) 220f else 200f
         input.cover?.let { cover ->
-            val rect = RectF(left, height * 0.10f, left + coverSize, height * 0.10f + coverSize)
-            val path = android.graphics.Path().apply { addRoundRect(rect, 28f, 28f, android.graphics.Path.Direction.CW) }
-            canvas.save()
-            canvas.clipPath(path)
+            val rect = RectF(margin, margin, margin + thumb, margin + thumb)
+            val path = android.graphics.Path().apply { addRoundRect(rect, 30f, 30f, android.graphics.Path.Direction.CW) }
+            canvas.save(); canvas.clipPath(path)
             canvas.drawBitmap(cover, null, rect, Paint(Paint.FILTER_BITMAP_FLAG))
             canvas.restore()
+            canvas.drawRoundRect(rect, 30f, 30f, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.STROKE; strokeWidth = 2f; color = Color.argb(70, 255, 255, 255)
+            })
         }
+        val headerTop = margin + thumb + 60f
+        var baseline = headerTop
+        drawFitted(canvas, input.songName, margin, WIDTH - margin, baseline, titlePaint)
+        baseline += 54f
+        canvas.drawText(input.artistLine.ifBlank { "未知艺人" }, margin, baseline, artistPaint)
+        val topAreaBottom = baseline + 80f
 
-        // Title is the largest object on the card; artist is clearly subordinate.
-        var y = height * 0.10f + coverSize + 110f
-        drawFitted(canvas, input.songName, left, right, y, titlePaint)
-        y += 58f
-        canvas.drawText(input.artistLine.ifBlank { "未知艺人" }, left, y, artistPaint)
-
-        // Lyric block: the hero. Four lines max, generous leading, current line in accent.
+        // Lyric hero: centred in the space above the bottom mark, one type scale.
         val lines = if (input.lyricLines.isEmpty()) listOf("愿这首歌陪你此刻") else input.lyricLines.take(4)
-        y = height * (if (story) 0.50f else 0.48f)
-        val lineHeight = (if (story) 56f else 52f) * 1.55f
+        val blockHeight = LyricsCardLayoutRules.lyricBlockHeight(lines.size, lyricSize)
+        val bottomReserve = height * 0.12f
+        var y = LyricsCardLayoutRules.lyricBlockTop(height.toFloat().toInt(), topAreaBottom, bottomReserve, blockHeight)
+        val highlight = input.highlightIndex.coerceIn(0, lines.lastIndex)
+        val leading = LyricsCardLayoutRules.lyricLineHeight(lyricSize)
         lines.forEachIndexed { index, line ->
-            val paint = if (index == input.highlightIndex.coerceIn(0, lines.lastIndex)) highlightPaint else lyricPaint
-            canvas.drawText(line, left, y, paint)
-            y += lineHeight
+            val paint = if (index == highlight) currentPaint else lyricPaint
+            canvas.drawText(line, margin, y + lyricSize, paint)
+            y += leading
         }
 
-        // Discreet app mark at the bottom right, with a thin accent rule.
-        canvas.drawRect(left, height - 170f, left + 64f, height - 165f, Paint().apply { color = input.accent })
-        val mark = "云音 · YunYin"
+        // Bottom mark + thin accent rule, both inside the safe margin.
+        val ruleY = height - bottomReserve
+        canvas.drawRect(margin, ruleY, margin + 64f, ruleY + 3f, Paint().apply { color = input.accent })
         markPaint.textAlign = Paint.Align.RIGHT
-        canvas.drawText(mark, right, height - 110f, markPaint)
+        canvas.drawText("云音 · YunYin", WIDTH - margin, ruleY + 58f, markPaint)
         markPaint.textAlign = Paint.Align.LEFT
         return bitmap
     }
 
     private fun drawBackdrop(canvas: Canvas, cover: Bitmap?, dominant: Int, height: Int) {
-        val base = Paint().apply { shader = LinearGradient(0f, 0f, 0f, height.toFloat(), darken(dominant, 0.35f), Color.rgb(8, 8, 11), Shader.TileMode.CLAMP) }
-        canvas.drawRect(0f, 0f, WIDTH.toFloat(), height.toFloat(), base)
-        if (cover == null) return
-        // Cover band at the top; it dissolves into the colour wash through a vertical gradient.
-        val scale = max(WIDTH.toFloat() / cover.width, (height * 0.45f) / cover.height)
-        val w = cover.width * scale
-        val h = cover.height * scale
-        val src = Rect(0, 0, cover.width, cover.height)
-        val dst = RectF((WIDTH - w) / 2f, 0f, (WIDTH + w) / 2f, h)
-        canvas.drawBitmap(cover, src, dst, Paint(Paint.FILTER_BITMAP_FLAG).apply { alpha = 235 })
-        val fade = Paint().apply {
+        canvas.drawColor(Color.rgb(8, 8, 11))
+        if (cover != null) {
+            // 40 px wide source destroyed the artwork's legibility; drawn back up it is a texture.
+            val tiny = runCatching {
+                val scale = 40f / cover.width.coerceAtLeast(1)
+                Bitmap.createScaledBitmap(cover, 40, (cover.height * scale).toInt().coerceAtLeast(40), true)
+            }.getOrNull()
+            if (tiny != null) {
+                canvas.drawBitmap(tiny, null, RectF(0f, 0f, WIDTH.toFloat(), height.toFloat()),
+                    Paint(Paint.FILTER_BITMAP_FLAG).apply { alpha = 235 })
+            }
+        }
+        val wash = Paint().apply {
             shader = LinearGradient(
-                0f, 0f, 0f, height * 0.62f,
-                intArrayOf(Color.argb(20, 0, 0, 0), Color.argb(190, 8, 8, 11), Color.rgb(8, 8, 11)),
-                floatArrayOf(0f, 0.62f, 1f),
+                0f, 0f, 0f, height.toFloat(),
+                intArrayOf(withAlpha(darken(dominant, 0.55f), 225), withAlpha(darken(dominant, 0.30f), 235), Color.rgb(8, 8, 11)),
+                floatArrayOf(0f, 0.55f, 1f),
                 Shader.TileMode.CLAMP,
             )
         }
-        canvas.drawRect(0f, 0f, WIDTH.toFloat(), height * 0.62f, fade)
+        canvas.drawRect(0f, 0f, WIDTH.toFloat(), height.toFloat(), wash)
     }
 
     private fun dominantColor(cover: Bitmap?): Int {
-        if (cover == null) return Color.rgb(46, 46, 52)
-        var r = 0L
-        var g = 0L
-        var b = 0L
-        var count = 0
-        val stepX = (cover.width / 10).coerceAtLeast(1)
-        val stepY = (cover.height / 10).coerceAtLeast(1)
+        if (cover == null) return Color.rgb(44, 44, 52)
+        var r = 0L; var g = 0L; var b = 0L; var count = 0
+        val stepX = (cover.width / 12).coerceAtLeast(1)
+        val stepY = (cover.height / 12).coerceAtLeast(1)
         var x = stepX / 2
         while (x < cover.width) {
             var y = stepY / 2
             while (y < cover.height) {
-                val pixel = runCatching { cover.getPixel(x, y) }.getOrNull() ?: continue
-                r += Color.red(pixel); g += Color.green(pixel); b += Color.blue(pixel); count++
+                val pixel = runCatching { cover.getPixel(x, y) }.getOrNull()
+                if (pixel != null) {
+                    r += Color.red(pixel); g += Color.green(pixel); b += Color.blue(pixel); count++
+                }
                 y += stepY
             }
             x += stepX
         }
-        if (count == 0) return Color.rgb(46, 46, 52)
+        if (count == 0) return Color.rgb(44, 44, 52)
         return Color.rgb((r / count).toInt(), (g / count).toInt(), (b / count).toInt())
     }
 
@@ -142,6 +150,8 @@ object LyricsShareCard {
         (Color.green(color) * factor).toInt().coerceIn(0, 255),
         (Color.blue(color) * factor).toInt().coerceIn(0, 255),
     )
+
+    private fun withAlpha(color: Int, alpha: Int): Int = Color.argb(alpha, Color.red(color), Color.green(color), Color.blue(color))
 
     private fun drawFitted(canvas: Canvas, text: String, left: Float, right: Float, baseline: Float, paint: Paint) {
         var size = paint.textSize
@@ -159,10 +169,8 @@ object LyricsShareCard {
     }
 
     /**
-     * Writes the feed card (and optional story variant) into `Pictures/云音` and opens the share sheet.
-     *
-     * Scoped storage needs no runtime permission for the app's own MediaStore insert. Any failure is returned so the
-     * caller can show the concrete reason; playback is never involved.
+     * Writes the feed card (and optional story variant) into `Pictures/云音` and opens the share sheet. The app's own
+     * MediaStore insert needs no runtime permission; any failure is returned so the caller can show the reason.
      */
     fun saveAndShare(context: Context, bitmap: Bitmap, story: Bitmap? = null): Result<Unit> = runCatching {
         val uris = ArrayList<Uri>()
@@ -191,8 +199,7 @@ object LyricsShareCard {
             put(MediaStore.Images.Media.IS_PENDING, 1)
         }
         val resolver = context.contentResolver
-        val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
-            ?: error("无法创建图片文件")
+        val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: error("无法创建图片文件")
         try {
             resolver.openOutputStream(uri)?.use { out ->
                 if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)) error("图片编码失败")
