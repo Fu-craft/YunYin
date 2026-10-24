@@ -149,7 +149,7 @@ fun LocalMusicScreen(
                 "error" -> ScanError(error ?: "", onOpenSettings)
                 "empty" -> EmptyState(
                     text = if (query.isBlank()) "设备上还没有本地音乐" else "没有匹配的本地歌曲",
-                    icon = SfIcons.MusicNote,
+                    icon = SfIcons.FolderMusic,
                 )
                 else -> LazyColumn(Modifier.fillMaxSize()) {
                     when (val target = drill) {

@@ -159,8 +159,6 @@ fun LibraryScreen(
     onOpenDownloads: () -> Unit = {},
     /** Opens the local listening statistics page. */
     onOpenStats: () -> Unit = {},
-    /** Opens the import-playlist dialog. */
-    onOpenImport: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val signedIn = account != null && !account.isAnonymous
@@ -263,7 +261,6 @@ fun LibraryScreen(
         onLocalMusicClick = { openLocalMusic() },
         onOpenDownloads = onOpenDownloads,
         onOpenStats = onOpenStats,
-        onOpenImport = onOpenImport,
         onOpenPage = { openPage = it },
     )
 
@@ -376,7 +373,6 @@ private fun LibraryContent(
     onLocalMusicClick: () -> Unit = {},
     onOpenDownloads: () -> Unit = {},
     onOpenStats: () -> Unit = {},
-    onOpenImport: () -> Unit = {},
     onOpenPage: (LibraryPage) -> Unit,
 ) {
     val signedIn = account != null && !account.isAnonymous
@@ -442,7 +438,7 @@ private fun LibraryContent(
 
                 // 本地音乐 — scanned on tap; the permission is requested at that moment, never at launch.
                 LibraryRow(
-                    icon = SfIcons.MusicNote,
+                    icon = SfIcons.FolderMusic,
                     label = "本地音乐",
                     trailing = null,
                     onClick = onLocalMusicClick,
@@ -467,13 +463,6 @@ private fun LibraryContent(
                         onClick = onOpenStats,
                     )
                 }
-
-                LibraryRow(
-                    icon = SfIcons.Plus,
-                    label = "导入歌单",
-                    trailing = null,
-                    onClick = onOpenImport,
-                )
 
                 // 设置 is reached from the header's gear, so it is not repeated here.
             }

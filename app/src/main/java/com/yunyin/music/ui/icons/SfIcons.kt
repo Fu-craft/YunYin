@@ -541,6 +541,41 @@ object SfIcons {
         }
     }
 
+    /**
+     * `folder.music` — 本地音乐. A folder (local files) with a small note inside, drawn monoline on the same
+     * 24 pt grid / 1.9 pt stroke / round-cap construction as [SquareAndArrowDown] and [ListBullet]. The guide
+     * for the folder came from Lucide's `folder-music` (ISC, MIT-compatible); re-drawn here rather than imported.
+     */
+    val FolderMusic: ImageVector = icon("folder.music") {
+        mono("folder.music.body", width = 1.9f) {
+            moveTo(3f, 7.4f)
+            curveTo(3f, 6.3f, 3.9f, 5.4f, 5f, 5.4f)
+            horizontalLineTo(9.1f)
+            lineTo(11.2f, 7.4f)
+            horizontalLineTo(19f)
+            curveTo(20.1f, 7.4f, 21f, 8.3f, 21f, 9.4f)
+            verticalLineTo(17.8f)
+            curveTo(21f, 18.9f, 20.1f, 19.8f, 19f, 19.8f)
+            horizontalLineTo(5f)
+            curveTo(3.9f, 19.8f, 3f, 18.9f, 3f, 17.8f)
+            close()
+        }
+        mono("folder.music.note", width = 1.9f) {
+            moveTo(15.6f, 11.1f)
+            verticalLineTo(15.9f)
+            lineTo(18.2f, 15.3f)
+            verticalLineTo(10.6f)
+        }
+        mono("folder.music.head", width = 1.9f) {
+            moveTo(13.5f, 16.1f)
+            curveTo(13.5f, 15.3f, 14.2f, 14.7f, 15.0f, 14.7f)
+            curveTo(15.8f, 14.7f, 16.5f, 15.3f, 16.5f, 16.1f)
+            curveTo(16.5f, 16.9f, 15.8f, 17.5f, 15.0f, 17.5f)
+            curveTo(14.2f, 17.5f, 13.5f, 16.9f, 13.5f, 16.1f)
+            close()
+        }
+    }
+
     val MusicNote: ImageVector = icon("music.note") {
         path(fill = SolidColor(Color.Black)) {
             moveTo(9.2f, 18.1f)
