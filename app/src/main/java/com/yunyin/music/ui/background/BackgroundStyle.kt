@@ -73,10 +73,6 @@ object BackgroundStyleRules {
         )
     }
 
-    /** CPU-side, deterministic seed usage for the cover shader's rotation axis. */
-    fun rotationFor(seed: BackgroundSeed, timeSeconds: Float, volume: Float): Float =
-        seed.rotation + timeSeconds * CoverWarpRules.ROTATION_RATE + volume * CoverWarpRules.VOLUME_ROTATION
-
     fun sineWarp(seed: BackgroundSeed, uvX: Float, uvY: Float, timeSeconds: Float): Pair<Float, Float> {
         val x = sin(uvY * seed.coverWarpFrequency + timeSeconds * 0.7f + seed.coverWarpPhase)
         val y = cos(uvX * seed.coverWarpFrequency * 1.37f - timeSeconds * 0.53f)
@@ -85,33 +81,75 @@ object BackgroundStyleRules {
 }
 
 /**
- * Tuning exposed for tests and shared by the Kotlin/GLSL sides. The shader keeps the same
- * constants (AGSL cannot import Kotlin); changing one requires changing both and the tests
- * below will keep the numbers honest.
+ * Cover-warp tuning and the CPU pre-blur pipeline spec. These values are also mirrored in
+ * `cover_warp_background.glsl`; the pure functions below are what the tests pin.
  */
 object CoverWarpRules {
-    /** Texture upload size. 128 px leaves enough texels for a 13-tap blur to hide the grid. */
-    const val COVER_TEXTURE_SIZE = 128
+    /** Uploaded texture size. 256 px of *pre-blurred* data, so point sampling cannot show blocks. */
+    const val COVER_TEXTURE_SIZE = 256
 
-    /** Fixed 13-tap gaussian-ish blur: centre + 4 axis + 4 diagonal + 4 outer taps. */
-    const val BLUR_TAP_COUNT = 13
+    /** Source/downsample size per pre-blur cycle. */
+    const val PREBLUR_SOURCE_PX = 32
 
-    /** Outer tap offset in texels; the effective blur radius is ~2.6 texels at 128 px. */
-    const val BLUR_RADIUS_TEXELS = 2.6f
+    /** Fallback source size if a device still shows structure at 32 px. */
+    const val PREBLUR_FALLBACK_PX = 24
 
-    /** Slow rotation: 0.012 rad/s instead of the old 0.035, so the cover drifts rather than spins. */
-    const val ROTATION_RATE = 0.012f
+    /** Number of down(32)->up(256) cycles; each cycle is a cheap approximate box-gaussian. */
+    const val PREBLUR_CYCLES = 3
 
-    /** Audio can add at most 0.6 rad of rotation; it no longer whips the texture around. */
-    const val VOLUME_ROTATION = 0.6f
+    /** The in-shader blur is now a mild extra: centre + 4 axis taps. */
+    const val BLUR_TAP_COUNT = 5
+    const val BLUR_RADIUS_TEXELS = 2.0f
 
-    /** Gentle volume zoom: 1.0 → 0.65 at full level, not the old 1.0 → 0.55 at a tiny volume. */
-    const val VOLUME_ZOOM = 0.35f
+    /** AMLL parameter mapping: angle = (uTime + uVolume) * 2. */
+    const val ANGLE_MULTIPLIER = 2.0f
 
-    /** Gentle sine warp amplitudes, in UV units. */
-    const val WARP_X = 0.006f
-    const val WARP_Y = 0.004f
+    /** uVolume = low-frequency level * 1/10 (AMLL's lowFreqVolume / 10). */
+    const val VOLUME_SCALE = 0.1f
 
-    fun zoom(volume: Float): Float =
-        (1f - volume.coerceIn(0f, 1f) * VOLUME_ZOOM).coerceIn(0.65f, 1f)
+    /** volumeEffect = uVolume * 2; sampled scale = max(0.001, 1 - volumeEffect). */
+    const val VOLUME_EFFECT = 2.0f
+    const val MIN_SCALE = 0.001f
+
+    /** AMLL samples around vec2(0.2), not the visual centre. */
+    const val SAMPLE_CENTRE = 0.2f
+
+    /** Gentle seed warp after the AMLL rotation/scale. */
+    const val WARP_X = 0.004f
+    const val WARP_Y = 0.003f
+
+    /** AMLL time basis: frameTime milliseconds / 10000. */
+    fun textureTime(frameTimeMs: Long): Float = frameTimeMs / 10_000f
+
+    fun volume(lowFrequencyLevel: Float): Float = lowFrequencyLevel.coerceIn(0f, 1f) * VOLUME_SCALE
+
+    fun angle(time: Float, volume: Float): Float = (time + volume) * ANGLE_MULTIPLIER
+
+    fun sampledScale(volume: Float): Float =
+        maxOf(MIN_SCALE, 1f - volume * VOLUME_EFFECT)
+
+    /** Vignette mask bounds, replicated for the pure test. */
+    fun vignetteMask(distanceFromCentre: Float): Float {
+        val t = ((distanceFromCentre - 0.8f) / (0.3f - 0.8f)).coerceIn(0f, 1f)
+        val smooth = t * t * (3f - 2f * t)
+        return 0.6f + (1f - smooth) * 0.4f
+    }
+
+    /** Pre-blur pass sizes in order: down to 32, then [PREBLUR_CYCLES] up/down cycles, then 256. */
+    fun preblurSizes(): List<Int> {
+        val sizes = ArrayList<Int>(PREBLUR_CYCLES * 2 + 2)
+        sizes += PREBLUR_SOURCE_PX
+        repeat(PREBLUR_CYCLES) {
+            sizes += PREBLUR_SOURCE_PX
+            sizes += COVER_TEXTURE_SIZE
+        }
+        if (sizes.last() != COVER_TEXTURE_SIZE) sizes += COVER_TEXTURE_SIZE
+        return sizes
+    }
+
+    /** Rebuild only when the track, cover or palette changes; stable for the same inputs. */
+    data class CacheKey(val trackId: Long, val coverHash: Int, val paletteHash: Int)
+
+    fun cacheKey(trackId: Long, coverHash: Int, paletteHash: Int): CacheKey =
+        CacheKey(trackId, coverHash, paletteHash)
 }

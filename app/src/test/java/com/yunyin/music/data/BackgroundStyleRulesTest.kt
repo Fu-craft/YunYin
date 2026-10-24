@@ -63,18 +63,41 @@ class BackgroundStyleRulesTest {
     }
 
     @Test
-    fun `cover warp uses a 128px texture, 13 taps and a gentle zoom curve`() {
-        assertEquals(128, com.yunyin.music.ui.background.CoverWarpRules.COVER_TEXTURE_SIZE)
-        assertEquals(13, com.yunyin.music.ui.background.CoverWarpRules.BLUR_TAP_COUNT)
-        assertEquals(2.6f, com.yunyin.music.ui.background.CoverWarpRules.BLUR_RADIUS_TEXELS, 0.001f)
-        assertEquals(1f, com.yunyin.music.ui.background.CoverWarpRules.zoom(0f), 0.0001f)
-        assertEquals(0.825f, com.yunyin.music.ui.background.CoverWarpRules.zoom(0.5f), 0.0001f)
-        assertEquals(0.65f, com.yunyin.music.ui.background.CoverWarpRules.zoom(1f), 0.0001f)
-        // Old values would have been 1 - volume*0.9 (0.1 at full level); the new floor is 0.65.
-        assertTrue(com.yunyin.music.ui.background.CoverWarpRules.zoom(1f) >= 0.65f)
-        val seed = BackgroundStyleRules.seedForTrack(7L)
-        assertEquals(seed.rotation + 1f * 0.012f + 0.5f * 0.6f,
-            BackgroundStyleRules.rotationFor(seed, 1f, 0.5f), 0.0001f)
+    fun `preblur plan downsamples to 32 and upscales to a preblurred 256 texture`() {
+        val rules = com.yunyin.music.ui.background.CoverWarpRules
+        assertEquals(256, rules.COVER_TEXTURE_SIZE)
+        assertEquals(32, rules.PREBLUR_SOURCE_PX)
+        assertEquals(24, rules.PREBLUR_FALLBACK_PX)
+        assertEquals(3, rules.PREBLUR_CYCLES)
+        assertEquals(5, rules.BLUR_TAP_COUNT)
+        assertEquals(2.0f, rules.BLUR_RADIUS_TEXELS, 0.001f)
+        val plan = rules.preblurSizes()
+        assertEquals(32, plan.first())
+        assertEquals(256, plan.last())
+        assertEquals(32, plan[0])
+        assertEquals(32, plan[1])
+        assertEquals(256, plan[2])
+        val key = rules.cacheKey(trackId = 42L, coverHash = 7, paletteHash = 9)
+        assertEquals(key, rules.cacheKey(42L, 7, 9))
+        assertNotEquals(key, rules.cacheKey(43L, 7, 9))
+        assertNotEquals(key, rules.cacheKey(42L, 8, 9))
+        assertNotEquals(key, rules.cacheKey(42L, 7, 10))
+    }
+
+    @Test
+    fun `AMLL parameter mapping is encoded exactly`() {
+        val rules = com.yunyin.music.ui.background.CoverWarpRules
+        assertEquals(0.1f, rules.volume(1f), 0.0001f)
+        assertEquals(0f, rules.volume(-1f), 0.0001f)
+        assertEquals(1f, rules.textureTime(10_000L), 0.0001f)
+        assertEquals(2.2f, rules.angle(1f, 0.1f), 0.0001f) // (time + volume) * 2
+        assertEquals(1f, rules.sampledScale(0f), 0.0001f)
+        assertEquals(0.8f, rules.sampledScale(0.1f), 0.0001f) // 1 - volume*2
+        assertEquals(0.001f, rules.sampledScale(1f), 0.0001f) // clamp
+        assertEquals(0.2f, rules.SAMPLE_CENTRE, 0.0001f)
+        assertTrue(rules.vignetteMask(0f) in 0.59f..0.61f)
+        assertTrue(rules.vignetteMask(0.8f) in 0.99f..1.001f)
+        assertTrue(rules.vignetteMask(0.5f) in 0.70f..0.80f)
     }
 
     @Test

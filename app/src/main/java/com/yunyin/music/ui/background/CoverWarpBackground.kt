@@ -43,25 +43,25 @@ fun CoverWarpBackground(
     staticMotion: Boolean = false,
 ) {
     val context = LocalContext.current
-    val bitmap = remember(cover) {
-        runCatching {
-            cover?.asAndroidBitmap()?.let { source ->
-                val scale = min(1f, CoverWarpRules.COVER_TEXTURE_SIZE.toFloat() / maxOf(source.width, source.height).coerceAtLeast(1))
-                val w = (source.width * scale).toInt().coerceAtLeast(1)
-                val h = (source.height * scale).toInt().coerceAtLeast(1)
-                Bitmap.createScaledBitmap(source, w, h, true)
-            }
-        }.getOrNull()
+    val sourceBitmap = remember(cover) { runCatching { cover?.asAndroidBitmap() }.getOrNull() }
+    val cacheKey = CoverWarpRules.cacheKey(
+        trackId = trackId,
+        coverHash = sourceBitmap?.hashCode() ?: 0,
+        paletteHash = palette.colors.contentHashCode(),
+    )
+    val bitmap = remember(cacheKey) {
+        sourceBitmap?.let { source ->
+            CoverWarpTextureCache.getOrBuild(cacheKey) { preblurCover(source) }
+        }
     }
     val painter = remember(bitmap) {
         if (Build.VERSION.SDK_INT < 33 || bitmap == null) null else runCatching {
             val source = context.assets.open("shaders/cover_warp_background.glsl").bufferedReader().use { it.readText() }
             val shader = RuntimeShader(source)
             val bitmapShader = BitmapShader(bitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
-            // Bilinear sampling is essential: a 128 px texture upscaled by a warped UV must not
-            // show texel blocks. BitmapShader has no public filter-quality setter on the supported
-            // API surface, so the parent Paint carries isFilterBitmap = true (Skia's HIGH quality)
-            // and the shader's 13-tap blur below removes any remaining texel structure.
+            // The 256 px texture is already pre-blurred on the CPU; this filter flag is a mild
+            // extra only, never the mechanism that removes blocks. Point sampling the smooth
+            // texture is safe at zoom <= 1.
             shader.setInputShader("uCover", bitmapShader)
             shader.setFloatUniform("uCoverSize", bitmap.width.toFloat(), bitmap.height.toFloat())
             val paint = Paint().apply {
@@ -92,7 +92,6 @@ fun CoverWarpBackground(
         var last = latestPalette
         painter.setPaletteColors(OkLabRules.transitionPalette(from, to, 1f))
         painter.setSeed(seed)
-        painter.setRotation(seed.rotation)
         painter.setTime(0f)
         painter.setVolume(0f)
         frameTick++
@@ -114,10 +113,10 @@ fun CoverWarpBackground(
                 val settling = progress < 1f
                 val motion = animatorsOn && !latestStatic
                 if (motion) {
-                    painter.setTime((ns / 1_000_000_000f) % 62.83185f)
                     val level = if (latestAudio) AudioReactive.level.value.coerceIn(0f, 1f) else 0f
-                    painter.setRotation(BackgroundStyleRules.rotationFor(seed, (ns / 1_000_000_000f) % 62.83185f, level))
-                    painter.setVolume(level)
+                    // AMLL time basis is milliseconds / 10000; uVolume is level * 1/10.
+                    painter.setTime(CoverWarpRules.textureTime(ns / 1_000_000L))
+                    painter.setVolume(CoverWarpRules.volume(level))
                 }
                 painter.setSeed(seed)
                 advanced = motion || settling
@@ -134,6 +133,47 @@ fun CoverWarpBackground(
     }
 }
 
+/**
+ * Bounded cache of pre-blurred cover textures. Keyed by (track id, cover identity, palette) so a
+ * frame never rebuilds it; 256x256 ARGB is 256 KiB, max 3 entries (~768 KiB). Rebuild cost is a
+ * handful of bilinear scale calls, only on a track/cover/palette change.
+ */
+private object CoverWarpTextureCache {
+    private const val MAX_ENTRIES = 3
+    private val cache = object : LinkedHashMap<CoverWarpRules.CacheKey, Bitmap>(4, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<CoverWarpRules.CacheKey, Bitmap>): Boolean =
+            size > MAX_ENTRIES
+    }
+
+    fun getOrBuild(key: CoverWarpRules.CacheKey, build: () -> Bitmap): Bitmap = synchronized(cache) {
+        cache[key] ?: build().also { cache[key] = it }
+    }
+}
+
+/**
+ * CPU pre-blur: 32x32 bilinear downscale, then 3 × (32x32 down -> 256x256 up). Each cycle is an
+ * approximate box-gaussian; the resulting smooth texture has no texel grid for a point sampler
+ * to expose. If a device still shows structure, [CoverWarpRules.PREBLUR_FALLBACK_PX] can be used.
+ */
+private fun preblurCover(source: Bitmap): Bitmap {
+    var current = Bitmap.createScaledBitmap(source, CoverWarpRules.PREBLUR_SOURCE_PX, CoverWarpRules.PREBLUR_SOURCE_PX, true)
+    repeat(CoverWarpRules.PREBLUR_CYCLES) {
+        val small = Bitmap.createScaledBitmap(
+            current,
+            CoverWarpRules.PREBLUR_SOURCE_PX,
+            CoverWarpRules.PREBLUR_SOURCE_PX,
+            true,
+        )
+        current = Bitmap.createScaledBitmap(
+            small,
+            CoverWarpRules.COVER_TEXTURE_SIZE,
+            CoverWarpRules.COVER_TEXTURE_SIZE,
+            true,
+        )
+    }
+    return current
+}
+
 private class CoverWarpPainter(val shader: RuntimeShader, val paint: Paint) {
     fun setPaletteColors(colors: IntArray) {
         val accent = colors.getOrElse(1) { colors.firstOrNull() ?: 0xFF808080.toInt() }
@@ -141,8 +181,7 @@ private class CoverWarpPainter(val shader: RuntimeShader, val paint: Paint) {
     }
     fun setDim(value: Float) = shader.setFloatUniform("uDim", value.coerceIn(0f, 1f))
     fun setTime(value: Float) = shader.setFloatUniform("uTime", value)
-    fun setVolume(value: Float) = shader.setFloatUniform("uVolume", value.coerceIn(0f, 1f))
-    fun setRotation(value: Float) = shader.setFloatUniform("uRotation", value)
+    fun setVolume(value: Float) = shader.setFloatUniform("uVolume", value.coerceIn(0f, 0.1f))
     fun setSeed(seed: BackgroundSeed) {
         shader.setFloatUniform("uSeedPhase", seed.coverWarpPhase)
         shader.setFloatUniform("uSeedFrequency", seed.coverWarpFrequency)
