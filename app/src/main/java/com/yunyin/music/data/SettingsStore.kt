@@ -140,7 +140,9 @@ class SettingsStore(context: Context) {
     var nowPlayingBackgroundStyle: String
         get() = when (prefs.getString(KEY_NOW_PLAYING_BACKGROUND_STYLE, DEFAULT_NOW_PLAYING_BACKGROUND_STYLE)) {
             "oklab", "oklab_flow" -> "oklab"
-            "apple_ios" -> "apple_ios"
+            "qp_pixi" -> "qp_pixi"
+            "qp_mesh" -> "qp_mesh"
+            "qp_classic" -> "qp_classic"
             else -> DEFAULT_NOW_PLAYING_BACKGROUND_STYLE
         }
         set(value) = prefs.edit()
@@ -148,8 +150,7 @@ class SettingsStore(context: Context) {
                 KEY_NOW_PLAYING_BACKGROUND_STYLE,
                 when (value) {
                     "oklab" -> "oklab"
-                    "apple_ios" -> "apple_ios"
-                    else -> DEFAULT_NOW_PLAYING_BACKGROUND_STYLE
+                            else -> DEFAULT_NOW_PLAYING_BACKGROUND_STYLE
                 },
             )
             .apply()

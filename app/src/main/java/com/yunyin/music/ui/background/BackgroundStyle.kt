@@ -4,7 +4,7 @@ import kotlin.math.PI
 
 /**
  * The now-playing background family: 云音 (HyperBackground), 色阶流动 (OkLabFlowBackground), and
- * 苹果 iOS (a port of the Apache-2.0 Lyricify-Backgrounds Apple Music iOS material).
+ * QPlayer's portrait fluid backdrops.
  */
 enum class BackgroundStyle(
     val storageKey: String,
@@ -13,14 +13,18 @@ enum class BackgroundStyle(
 ) {
     Yunyin("yunyin", "云音（默认）", "五色流体，随音频轻轻呼吸"),
     OkLabFlow("oklab", "色阶流动", "封面取四色，在 OkLab 中流动混合"),
-    AppleIos("apple_ios", "苹果 iOS", "三层封面缓慢旋转，苹果音乐风格"),
+    QpPixi("qp_pixi", "QPlayer · 像素模糊", "多层封面精灵缓慢漂移"),
+    QpMesh("qp_mesh", "QPlayer · 网格渐变", "网格流动（清洁室近似）"),
+    QpClassic("qp_classic", "QPlayer · 经典流动", "封面波纹与旋转"),
     ;
 
     companion object {
         val default: BackgroundStyle = Yunyin
         fun fromKey(key: String?): BackgroundStyle = when (key) {
             "oklab", "oklab_flow" -> OkLabFlow // "oklab_flow" is the v4.32.0–v4.32.2 legacy key
-            "apple_ios" -> AppleIos
+            "qp_pixi" -> QpPixi
+            "qp_mesh" -> QpMesh
+            "qp_classic" -> QpClassic
             else -> default // "yunyin", and any removed/unrecognised value (incl. cover styles)
         }
     }
@@ -37,6 +41,10 @@ data class BackgroundSeed(
 
 /** Pure decisions for style dispatch, motion/audio gating and seeded composition. */
 object BackgroundStyleRules {
+
+    /** One frame pump for every animated background; QPlayer styles share this cap too. */
+    const val FRAME_RATE_LIMIT = 60
+    const val FRAME_INTERVAL_NS = 1_000_000_000L / FRAME_RATE_LIMIT
 
     /** 云音 keeps its historical behaviour when 动态背景 is off; the new styles still paint a static frame. */
     fun shouldCompose(style: BackgroundStyle, dynamicEnabled: Boolean): Boolean =

@@ -97,9 +97,11 @@ import com.yunyin.music.ui.PlayerStyle
 import com.yunyin.music.ui.background.DynamicBackgroundPalette
 import com.yunyin.music.ui.background.CoverBlurBackground
 import com.yunyin.music.ui.background.BackgroundStyle
-import com.yunyin.music.ui.background.AppleIosBackground
 import com.yunyin.music.ui.background.BackgroundStyleRules
 import com.yunyin.music.ui.background.HyperBackground
+import com.yunyin.music.ui.background.QpClassicBackground
+import com.yunyin.music.ui.background.QpMeshBackground
+import com.yunyin.music.ui.background.QpPixiBackground
 import com.yunyin.music.ui.background.OkLabFlowBackground
 import com.yunyin.music.ui.background.NowPlayingBackgroundRules
 import com.yunyin.music.ui.background.StaticPaletteBackdrop
@@ -648,14 +650,30 @@ fun PlayerScreen(
                         staticMotion = !styleMotion,
                         modifier = backgroundModifier,
                     )
-                    BackgroundStyle.AppleIos -> AppleIosBackground(
-                        palette = palette,
+                    BackgroundStyle.QpPixi -> QpPixiBackground(
                         cover = cover,
-                        isDark = true,
-                        lyricsVisible = showLyrics,
+                        trackId = state.current?.id ?: 0L,
+                        palette = palette,
                         dim = backgroundDim,
                         paused = transitioning,
-                        audioReactive = styleAudio,
+                        staticMotion = !styleMotion,
+                        modifier = backgroundModifier,
+                    )
+                    BackgroundStyle.QpMesh -> QpMeshBackground(
+                        cover = cover,
+                        trackId = state.current?.id ?: 0L,
+                        palette = palette,
+                        dim = backgroundDim,
+                        paused = transitioning,
+                        staticMotion = !styleMotion,
+                        modifier = backgroundModifier,
+                    )
+                    BackgroundStyle.QpClassic -> QpClassicBackground(
+                        cover = cover,
+                        trackId = state.current?.id ?: 0L,
+                        palette = palette,
+                        dim = backgroundDim,
+                        paused = transitioning,
                         staticMotion = !styleMotion,
                         modifier = backgroundModifier,
                     )
