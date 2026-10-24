@@ -96,4 +96,31 @@ class QpRulesTest {
         assertTrue(BackgroundStyleRules.shouldCompose(BackgroundStyle.OkLabFlow, false))
         assertFalse(BackgroundStyleRules.shouldCompose(BackgroundStyle.Yunyin, false))
     }
+
+    /**
+     * Regression: the setter persisted every non-`oklab` value as `yunyin`, so a chosen QPlayer
+     * style lived in memory only and the app relaunched into 云音. Read and write now share one
+     * normaliser, so every storage key must survive a write→read round trip unchanged.
+     */
+    @Test
+    fun `every background style survives a settings write and read`() {
+        for (style in BackgroundStyle.entries) {
+            val stored = normalizeNowPlayingBackgroundStyle(style.storageKey)
+            assertEquals(
+                "style ${style.storageKey} must round-trip through the settings store",
+                style.storageKey,
+                stored,
+            )
+            assertEquals(style, BackgroundStyle.fromKey(stored))
+        }
+    }
+
+    @Test
+    fun `background style normaliser maps legacy and unknown keys`() {
+        assertEquals("oklab", normalizeNowPlayingBackgroundStyle("oklab_flow"))
+        assertEquals(DEFAULT_NOW_PLAYING_BACKGROUND_STYLE, normalizeNowPlayingBackgroundStyle("apple_ios"))
+        assertEquals(DEFAULT_NOW_PLAYING_BACKGROUND_STYLE, normalizeNowPlayingBackgroundStyle(""))
+        assertEquals(DEFAULT_NOW_PLAYING_BACKGROUND_STYLE, normalizeNowPlayingBackgroundStyle(null))
+        assertEquals(DEFAULT_NOW_PLAYING_BACKGROUND_STYLE, BackgroundStyle.default.storageKey)
+    }
 }

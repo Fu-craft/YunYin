@@ -135,27 +135,19 @@ class SettingsStore(context: Context) {
         set(value) = prefs.edit().putBoolean(KEY_NOW_PLAYING_ANIMATED_COVER, value).apply()
 
     /**
-     * The now-playing background family. Only `yunyin` and `oklab` are accepted; `oklab_flow`
-     * (the v4.32.0–v4.32.2 legacy key) is normalised to `oklab`, and every other stored value —
-     * including the removed cover style — falls back to 云音. Default keeps existing installs
-     * visually unchanged.
+     * The now-playing background family. Every [com.yunyin.music.ui.background.BackgroundStyle]
+     * storage key round-trips; `oklab_flow` (the v4.32.0–v4.32.2 legacy key) is normalised to
+     * `oklab`, and every other stored value — including removed styles — falls back to 云音. Both
+     * the getter and the setter run through the same pure normaliser, so a value that survives a
+     * read always survives a write; they used to disagree, which reset QPlayer styles to 云音 on
+     * every relaunch. Default keeps existing installs visually unchanged.
      */
     var nowPlayingBackgroundStyle: String
-        get() = when (prefs.getString(KEY_NOW_PLAYING_BACKGROUND_STYLE, DEFAULT_NOW_PLAYING_BACKGROUND_STYLE)) {
-            "oklab", "oklab_flow" -> "oklab"
-            "qp_pixi" -> "qp_pixi"
-            "qp_mesh" -> "qp_mesh"
-            "qp_classic" -> "qp_classic"
-            else -> DEFAULT_NOW_PLAYING_BACKGROUND_STYLE
-        }
+        get() = normalizeNowPlayingBackgroundStyle(
+            prefs.getString(KEY_NOW_PLAYING_BACKGROUND_STYLE, DEFAULT_NOW_PLAYING_BACKGROUND_STYLE),
+        )
         set(value) = prefs.edit()
-            .putString(
-                KEY_NOW_PLAYING_BACKGROUND_STYLE,
-                when (value) {
-                    "oklab" -> "oklab"
-                            else -> DEFAULT_NOW_PLAYING_BACKGROUND_STYLE
-                },
-            )
+            .putString(KEY_NOW_PLAYING_BACKGROUND_STYLE, normalizeNowPlayingBackgroundStyle(value))
             .apply()
 
     // ------------------------------------------------------------ updates
@@ -361,3 +353,20 @@ internal const val DEFAULT_NOW_PLAYING_DYNAMIC = true
 
 /** Default background family: 云音, the existing HyperBackground. */
 internal const val DEFAULT_NOW_PLAYING_BACKGROUND_STYLE = "yunyin"
+
+/**
+ * Canonicalises a stored or requested background-style key.
+ *
+ * Read and write must agree: the previous setter only persisted `oklab`, so picking any QPlayer
+ * style was silently stored as `yunyin` and the app fell back to 云音 after a relaunch. Keeping one
+ * pure function for both directions makes that class of drift impossible, and lets a unit test pin
+ * every key.
+ */
+internal fun normalizeNowPlayingBackgroundStyle(value: String?): String = when (value) {
+    "yunyin" -> "yunyin"
+    "oklab", "oklab_flow" -> "oklab" // "oklab_flow" is the v4.32.0–v4.32.2 legacy key
+    "qp_pixi" -> "qp_pixi"
+    "qp_mesh" -> "qp_mesh"
+    "qp_classic" -> "qp_classic"
+    else -> DEFAULT_NOW_PLAYING_BACKGROUND_STYLE
+}

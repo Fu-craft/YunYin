@@ -1,4 +1,4 @@
-import java.util.Properties
+﻿import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
@@ -9,7 +9,7 @@ plugins {
  * Local, git-ignored configuration.
  *
  * Signing material and the API endpoint must not be committed, so both are read from files that
- * `.gitignore` excludes. See README ("构建") for the keys each file takes.
+ * `.gitignore` excludes. See README ("鏋勫缓") for the keys each file takes.
  *
  *   local.properties     -- `api.base.url` (the NeteaseCloudMusicApi endpoint to build against)
  *   keystore.properties  -- `storeFile`, `storePassword`, `keyAlias`, `keyPassword`
@@ -33,10 +33,10 @@ android {
         minSdk = 33
         targetSdk = 37
         // versionCode must increase for Android to accept a build as an update over a previous one;
-        // versionName is what the user sees. Bumped together — a version name change with an unchanged
+        // versionName is what the user sees. Bumped together 鈥?a version name change with an unchanged
         // code would install as a downgrade and be rejected.
-        versionCode = 204
-        versionName = "4.37.0"
+        versionCode = 205
+        versionName = "4.37.1"
         vectorDrawables { useSupportLibrary = true }
 
         // The API endpoint is injected at build time rather than baked into the sources, so the
@@ -179,8 +179,8 @@ dependencies {
     // iOS-style continuous (squircle) corners.
     implementation(libs.gaze.capsule)
 
-    // 词幕 (Lyricon) provider bridge: pushes song, lyrics and playback state to Lyricon so it can
-    // render a status-bar lyric. Optional at runtime — the app works unchanged when Lyricon is not
+    // 璇嶅箷 (Lyricon) provider bridge: pushes song, lyrics and playback state to Lyricon so it can
+    // render a status-bar lyric. Optional at runtime 鈥?the app works unchanged when Lyricon is not
     // installed, and the bridge reports "unavailable" rather than failing.
     implementation(libs.lyricon.provider)
 
@@ -188,7 +188,7 @@ dependencies {
     // floating tab bar and mini player are real glass rather than a translucent fill.
     implementation(libs.backdrop)
 
-    // 自定义源 engine. A source is JavaScript that builds the `globalThis.lx` host API, and every
+    // 鑷畾涔夋簮 engine. A source is JavaScript that builds the `globalThis.lx` host API, and every
     // source is written with async/await + Promises, so the engine must drain its microtask queue.
     // See `gradle/libs.versions.toml` for why this binding rather than `quickjs-android`/Rhino/J2V8.
     implementation(libs.quickjs.kt)
