@@ -26,6 +26,9 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.graphics.graphicsLayer
+import com.yunyin.music.ui.theme.Motion
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -202,8 +205,7 @@ fun SettingsScreen(
                     .padding(top = glassTopBarTopPadding())
                     .padding(horizontal = 20.dp, vertical = 8.dp),
             ) {
-            // The page's own large title. The strip is icon-only now (no repeated bar title to
-            // fight the blur for legibility), so this is the page's only "设置".
+            // Large in-content title: it scrolls under the frosted strip; the bar stays title-less.
             Text(
                 text = "设置",
                 fontFamily = SFPro,
@@ -211,100 +213,51 @@ fun SettingsScreen(
                 fontSize = 34.sp,
                 color = AppTheme.palette.label,
             )
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(20.dp))
 
-            // Order is by expected frequency: playback first (the reason people open settings),
-            // then the now-playing look, status-bar lyrics (niche but discoverable), sources,
-            // downloads/storage, and About last.
-            SettingsSection(title = "播放", subtitle = "切歌、播放页与定时行为") {
-                ToggleRow(
-                    title = "无缝衔接",
-                    subtitle = "切歌时让两首重叠淡入淡出",
-                    enabled = seamlessTransition,
-                    onChange = onSeamlessTransitionChange,
-                )
-                RowDivider()
-                LinkRow(
-                    text = "交叉淡化时长",
-                    subtitle = "切歌重叠的时长",
-                    value = "${crossfadeSeconds} 秒",
-                    onClick = onCycleCrossfadeSeconds,
-                )
-                RowDivider()
-                LinkRow(
-                    text = "定时关闭",
-                    subtitle = "到点后自动停止播放",
-                    value = sleepTimerLabel,
-                    onClick = onShowSleepTimer,
-                )
-                RowDivider()
-                LinkRow(
-                    text = "播放器界面",
-                    subtitle = "播放页展示封面或唱片",
-                    value = playerStyle.label,
-                    onClick = onShowPlayerStyle,
-                )
-                RowDivider()
-                ToggleRow(
-                    title = "自动进入沉浸歌词",
-                    subtitle = "歌词页闲置几秒后隐藏播放控件",
-                    enabled = autoImmersiveLyrics,
-                    onChange = onAutoImmersiveLyricsChange,
-                )
+            SettingsSection(title = "播放") {
+                ToggleRow("无缝衔接", "切歌时让两首重叠淡入淡出", seamlessTransition, onSeamlessTransitionChange, SfIcons.Shuffle)
+                RowDivider(64.dp)
+                LinkRow("交叉淡化时长", "${crossfadeSeconds} 秒", onCycleCrossfadeSeconds, "切歌重叠的时长", SfIcons.Clock)
+                RowDivider(64.dp)
+                LinkRow("定时关闭", sleepTimerLabel, onShowSleepTimer, "到点后自动停止播放", SfIcons.Pause)
+                RowDivider(64.dp)
+                LinkRow("播放器界面", playerStyle.label, onShowPlayerStyle, "播放页展示封面或唱片", SfIcons.SquareGrid2x2)
+                RowDivider(64.dp)
+                ToggleRow("自动进入沉浸歌词", "歌词页闲置几秒后隐藏播放控件", autoImmersiveLyrics, onAutoImmersiveLyricsChange, SfIcons.QuoteOpening)
             }
 
-            SettingsSection(title = "正在播放外观", subtitle = "播放页的背景与律动") {
-                ToggleRow(
-                    title = "模糊封面背景",
-                    subtitle = "用当前封面作为播放页背景",
-                    enabled = nowPlayingCoverBlurBackground,
-                    onChange = onNowPlayingCoverBlurBackgroundChange,
-                )
+            SettingsSection(title = "正在播放外观") {
+                ToggleRow("模糊封面背景", "用当前封面作为播放页背景", nowPlayingCoverBlurBackground, onNowPlayingCoverBlurBackgroundChange)
                 RowDivider()
-                ToggleRow(
-                    title = "音频律动",
-                    subtitle = "背景随音频节奏变化",
-                    enabled = nowPlayingAudioReactive,
-                    onChange = onNowPlayingAudioReactiveChange,
-                )
+                ToggleRow("音频律动", "背景随音频节奏变化", nowPlayingAudioReactive, onNowPlayingAudioReactiveChange)
                 RowDivider()
-                ToggleRow(
-                    title = "动态背景",
-                    subtitle = "显示随时间变化的动态背景",
-                    enabled = nowPlayingDynamicBackground,
-                    onChange = onNowPlayingDynamicBackgroundChange,
-                )
+                ToggleRow("动态背景", "显示随时间变化的动态背景", nowPlayingDynamicBackground, onNowPlayingDynamicBackgroundChange)
             }
 
-            SettingsSection(title = "状态栏歌词", subtitle = "在系统状态栏或锁屏显示歌词") {
-                ToggleRow(
-                    title = "推送到词幕",
-                    subtitle = "由「词幕」显示歌词，需已安装该应用",
-                    enabled = lyriconEnabled,
-                    onChange = onLyriconEnabledChange,
-                )
-                RowDivider()
+            SettingsSection(
+                title = "状态栏歌词",
+                footnote = "词幕需已安装并在系统中启用；Flyme 歌词只在对应系统上可用。",
+            ) {
+                ToggleRow("推送到词幕", "由「词幕」显示歌词", lyriconEnabled, onLyriconEnabledChange, SfIcons.QuoteOpening)
+                RowDivider(64.dp)
                 LyriconRow(
                     enabled = lyriconEnabled,
                     connected = lyriconConnected,
                     available = lyriconAvailable,
                     onRetry = onRetryLyricon,
                 )
-                RowDivider()
+                RowDivider(64.dp)
                 FlymeTickerRow(
                     supported = flymeSupported,
                     enabled = statusBarLyrics,
                     onChange = onStatusBarLyricsChange,
                 )
-                RowDivider()
-                ActionRow(
-                    text = "测试状态栏歌词",
-                    subtitle = "发送一条测试歌词到状态栏",
-                    onClick = onTestFlymeLyric,
-                )
+                RowDivider(64.dp)
+                ActionRow("测试状态栏歌词", onTestFlymeLyric, "发送一条测试歌词到状态栏", icon = SfIcons.Play)
             }
 
-            SettingsSection(title = "音源", subtitle = "自定义音源脚本与错误日志") {
+            SettingsSection(title = "音源") {
                 LxSourcesSection(
                     sources = lxSources,
                     importing = lxImporting,
@@ -319,45 +272,30 @@ fun SettingsScreen(
                 )
             }
 
-            SettingsSection(title = "下载与存储") {
-                LinkRow(
-                    text = "下载中心",
-                    subtitle = "查看进行中、已完成与失败的下载",
-                    value = "",
-                    onClick = onOpenDownloads,
-                )
-                RowDivider()
-                ToggleRow(
-                    title = "仅 Wi-Fi 下载",
-                    subtitle = "避免用移动数据开始下载",
-                    enabled = downloadWifiOnly,
-                    onChange = onDownloadWifiOnlyChange,
-                )
-                RowDivider()
-                ActionRow(
-                    text = "清除歌词缓存",
-                    subtitle = "删除已下载的歌词文件",
-                    onClick = onClearLyricsCache,
-                )
+            SettingsSection(
+                title = "下载与存储",
+                footnote = "清除歌词缓存不会删除本地音乐或已下载的歌曲。",
+            ) {
+                LinkRow("下载中心", "", onOpenDownloads, "查看进行中、已完成与失败的下载", SfIcons.SquareAndArrowDown)
+                RowDivider(64.dp)
+                ToggleRow("仅 Wi-Fi 下载", "避免用移动数据开始下载", downloadWifiOnly, onDownloadWifiOnlyChange, SfIcons.WifiSlash)
+                RowDivider(64.dp)
+                ActionRow("清除歌词缓存", onClearLyricsCache, "删除已下载的歌词文件", icon = SfIcons.Trash)
             }
 
             SettingsSection(title = "关于") {
-                InfoRow(text = "版本", value = com.yunyin.music.BuildConfig.VERSION_NAME)
+                InfoRow("版本", com.yunyin.music.BuildConfig.VERSION_NAME, SfIcons.Gearshape)
                 if (updateConfigured) {
-                    RowDivider()
-                    LinkRow(
-                        text = "检查更新",
-                        value = updateRowValue(updateState),
-                        onClick = onCheckUpdate,
-                    )
+                    RowDivider(64.dp)
+                    LinkRow("检查更新", updateRowValue(updateState), onCheckUpdate, icon = SfIcons.ArrowClockwise)
                 }
-                RowDivider()
-                InfoRow(text = "歌词来源", value = "AMLL 逐字歌词")
-                RowDivider()
-                LinkRow(text = "项目主页", value = "GitHub", onClick = onOpenProject)
+                RowDivider(64.dp)
+                InfoRow("歌词来源", "AMLL 逐字歌词", SfIcons.QuoteOpening)
+                RowDivider(64.dp)
+                LinkRow("项目主页", "GitHub", onOpenProject, icon = SfIcons.ArrowUpRight)
                 if (hasCrashLog) {
-                    RowDivider()
-                    ActionRow(text = "复制上次崩溃日志", onClick = onCopyCrashLog)
+                    RowDivider(64.dp)
+                    ActionRow("复制上次崩溃日志", onCopyCrashLog, icon = SfIcons.ExclamationTriangle)
                 }
             }
             Spacer(Modifier.height(24.dp))
@@ -411,101 +349,48 @@ private fun LyriconRow(
         else -> "未安装" to "需先安装「词幕」应用"
     }
     val retryable = enabled && available && !connected
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .heightIn(min = 56.dp)
-            .then(if (retryable) Modifier.clickable(onClick = onRetry) else Modifier)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
+    SettingsRow(
+        title = "连接状态",
+        subtitle = hint,
+        icon = SfIcons.Gearshape,
+        onClick = if (retryable) onRetry else null,
+        trailing = {
             Text(
-                text = "连接状态",
+                status,
                 fontFamily = SFPro,
-                fontSize = 16.sp,
-                color = AppTheme.palette.label,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                color = if (connected) AppTheme.palette.accent else AppTheme.palette.secondaryLabel,
             )
-            Text(
-                text = hint,
-                fontFamily = SFPro,
-                fontSize = 12.sp,
-                color = AppTheme.palette.secondaryLabel,
-            )
-        }
-        Text(
-            text = status,
-            fontFamily = SFPro,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Medium,
-            color = if (connected) AppTheme.palette.accent else AppTheme.palette.secondaryLabel,
-        )
-    }
+        },
+    )
 }
 
-/**
- * Flyme 状态栏歌词 toggle.
- *
- * Only interactive on a ROM that ported the feature (detected by reflection on the two private
- * notification flags Flyme requires). Elsewhere it states that plainly instead of offering a switch
- * that would do nothing — the feature is implemented by the ROM's ticker, so there is nothing the app
- * can substitute.
- *
- * The **row** owns the tap and the switch is presentational (`onCheckedChange = null`). Giving both a
- * handler means the switch and the row both act on one tap, and which of the two wins depends on hit
- * testing — so the toggle could fire twice or be swallowed. One target, one handler; the whole row is
- * the target, which is also the larger and more forgiving one.
- */
+/** Flyme 状态栏歌词: only interactive on a ROM that ported the feature. */
 @Composable
 private fun FlymeTickerRow(
     supported: Boolean,
     enabled: Boolean,
     onChange: (Boolean) -> Unit,
 ) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .heightIn(min = 56.dp)
-            .then(
-                if (supported) {
-                    Modifier.clickable { onChange(!enabled) }
-                } else {
-                    Modifier
-                },
-            )
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(
-                text = "Flyme 状态栏歌词",
-                fontFamily = SFPro,
-                fontSize = 16.sp,
-                color = AppTheme.palette.label,
-            )
-            Text(
-                text = if (supported) {
-                    "由系统通知栏显示，需保持常驻通知"
-                } else {
-                    "当前系统未内置该功能"
-                },
-                fontFamily = SFPro,
-                fontSize = 12.sp,
-                color = AppTheme.palette.secondaryLabel,
-            )
-        }
-        if (supported) {
-            Switch(
-                checked = enabled,
-                // Null so the row above is the only handler; see the note on this function.
-                onCheckedChange = null,
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = androidx.compose.ui.graphics.Color.White,
-                    checkedTrackColor = AppTheme.palette.accent,
-                ),
-            )
-        }
-    }
+    SettingsRow(
+        title = "Flyme 状态栏歌词",
+        subtitle = if (supported) "由系统通知栏显示，需保持常驻通知" else "当前系统未内置该功能",
+        icon = SfIcons.SpeakerWave,
+        onClick = if (supported) ({ onChange(!enabled) }) else null,
+        trailing = {
+            if (supported) {
+                Switch(
+                    checked = enabled,
+                    onCheckedChange = null,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = androidx.compose.ui.graphics.Color.White,
+                        checkedTrackColor = AppTheme.palette.accent,
+                    ),
+                )
+            }
+        },
+    )
 }
 
 /**
@@ -523,32 +408,23 @@ private fun updateRowValue(state: UpdateUiState): String = when (state) {
     is UpdateUiState.Failed -> "检查失败"
 }
 
-/** A titled card of settings rows. One card per group; one row component per control type. */
+/** A titled card of settings rows, plus an optional caveat footnote below it. */
 @Composable
 private fun SettingsSection(
     title: String,
-    subtitle: String? = null,
+    footnote: String? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Column(Modifier.fillMaxWidth().padding(bottom = 22.dp)) {
+    Column(Modifier.fillMaxWidth().padding(bottom = 26.dp)) {
         Text(
             title,
             fontFamily = SFPro,
             fontSize = 13.sp,
             fontWeight = FontWeight.SemiBold,
             color = AppTheme.palette.secondaryLabel,
-            modifier = Modifier.padding(start = 4.dp),
+            modifier = Modifier.padding(start = 16.dp),
         )
-        if (subtitle != null) {
-            Text(
-                subtitle,
-                fontFamily = SFPro,
-                fontSize = 11.sp,
-                color = AppTheme.palette.tertiaryLabel,
-                modifier = Modifier.padding(start = 4.dp, top = 2.dp),
-            )
-        }
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(8.dp))
         Column(
             Modifier
                 .fillMaxWidth()
@@ -556,159 +432,194 @@ private fun SettingsSection(
                 .background(AppTheme.palette.secondaryBackground),
             content = content,
         )
+        if (footnote != null) {
+            Text(
+                footnote,
+                fontFamily = SFPro,
+                fontSize = 11.sp,
+                lineHeight = 15.sp,
+                color = AppTheme.palette.tertiaryLabel,
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp),
+            )
+        }
     }
 }
 
-/** Hairline between rows inside a card; inset to the row's text, not the card edge. */
+/** 36 dp tinted tile holding a 20 dp monoline glyph. Only used where an icon adds meaning. */
 @Composable
-private fun RowDivider() {
+private fun IconTile(icon: androidx.compose.ui.graphics.vector.ImageVector) {
+    Box(
+        Modifier
+            .size(36.dp)
+            .clip(ContinuousRoundedRectangle(10.dp))
+            .background(AppTheme.palette.accent.copy(alpha = 0.12f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription = null, tint = AppTheme.palette.accent, modifier = Modifier.size(26.dp))
+    }
+}
+
+/** One settings row: optional icon tile, title/subtitle, trailing value/control. */
+@Composable
+private fun SettingsRow(
+    title: String,
+    subtitle: String? = null,
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    value: String? = null,
+    onClick: (() -> Unit)? = null,
+    trailing: (@Composable () -> Unit)? = null,
+    showChevron: Boolean = false,
+    destructive: Boolean = false,
+) {
+    val appear = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(Unit) {
+        appear.animateTo(1f, androidx.compose.animation.core.tween(Motion.ItemAppearDuration, easing = Motion.EaseOut))
+    }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 56.dp)
+            .graphicsLayer {
+                alpha = appear.value
+                translationY = (1f - appear.value) * 8f
+            }
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable(
+                        indication = com.yunyin.music.ui.components.rememberControlRipple(bounded = true),
+                        interactionSource = null,
+                        onClick = onClick,
+                    )
+                } else {
+                    Modifier
+                },
+            )
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (icon != null) {
+            IconTile(icon)
+            Spacer(Modifier.width(12.dp))
+        }
+        Column(Modifier.weight(1f)) {
+            Text(
+                title,
+                fontFamily = SFPro,
+                fontSize = 16.sp,
+                color = if (destructive) AppTheme.palette.accent else AppTheme.palette.label,
+            )
+            if (subtitle != null) {
+                Spacer(Modifier.height(1.dp))
+                Text(
+                    subtitle,
+                    fontFamily = SFPro,
+                    fontSize = 13.sp,
+                    color = AppTheme.palette.secondaryLabel,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        if (value != null) {
+            Spacer(Modifier.width(8.dp))
+            Text(value, fontFamily = SFPro, fontSize = 13.sp, color = AppTheme.palette.secondaryLabel)
+        }
+        if (showChevron) {
+            Spacer(Modifier.width(4.dp))
+            Icon(
+                SfIcons.ChevronRight,
+                contentDescription = null,
+                tint = AppTheme.palette.tertiaryLabel,
+                modifier = Modifier.size(13.dp),
+            )
+        }
+        if (trailing != null) {
+            Spacer(Modifier.width(12.dp))
+            trailing()
+        }
+    }
+}
+
+/** Hairline between rows inside a card. 64 dp inset aligns with the title when a row has an icon. */
+@Composable
+private fun RowDivider(leadingInset: androidx.compose.ui.unit.Dp = 16.dp) {
     Box(
         Modifier
             .fillMaxWidth()
-            .padding(start = 16.dp)
+            .padding(start = leadingInset)
             .height(1.dp)
             .background(AppTheme.palette.separator.copy(alpha = 0.45f)),
     )
 }
 
-/** A title/subtitle row with a switch. The whole row is the tap target. */
 @Composable
 private fun ToggleRow(
     title: String,
     subtitle: String,
     enabled: Boolean,
     onChange: (Boolean) -> Unit,
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
 ) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .heightIn(min = 64.dp)
-            .clickable { onChange(!enabled) }
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f).padding(end = 12.dp)) {
-            Text(title, fontFamily = SFPro, fontSize = 15.sp, color = AppTheme.palette.label)
-            Spacer(Modifier.height(2.dp))
-            Text(
-                subtitle,
-                fontFamily = SFPro,
-                fontSize = 12.sp,
-                color = AppTheme.palette.secondaryLabel,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
+    SettingsRow(
+        title = title,
+        subtitle = subtitle,
+        icon = icon,
+        onClick = { onChange(!enabled) },
+        trailing = {
+            Switch(
+                checked = enabled,
+                onCheckedChange = null,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = androidx.compose.ui.graphics.Color.White,
+                    checkedTrackColor = AppTheme.palette.accent,
+                ),
             )
-        }
-        Switch(
-            checked = enabled,
-            onCheckedChange = null,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = androidx.compose.ui.graphics.Color.White,
-                checkedTrackColor = AppTheme.palette.accent,
-            ),
-        )
-    }
+        },
+    )
 }
 
-/** A navigation/value row: title + optional subtitle on the left, value + chevron on the right. */
 @Composable
 private fun LinkRow(
     text: String,
     value: String,
     onClick: () -> Unit,
     subtitle: String? = null,
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
 ) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .heightIn(min = if (subtitle == null) 52.dp else 64.dp)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(text, fontFamily = SFPro, fontSize = 15.sp, color = AppTheme.palette.label)
-            if (subtitle != null) {
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    subtitle,
-                    fontFamily = SFPro,
-                    fontSize = 12.sp,
-                    color = AppTheme.palette.secondaryLabel,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-        if (value.isNotBlank()) {
-            Text(value, fontFamily = SFPro, fontSize = 14.sp, color = AppTheme.palette.secondaryLabel)
-            Spacer(Modifier.width(4.dp))
-        }
-        Icon(
-            SfIcons.ChevronRight,
-            contentDescription = null,
-            tint = AppTheme.palette.tertiaryLabel,
-            modifier = Modifier.size(15.dp),
-        )
-    }
+    SettingsRow(
+        title = text,
+        subtitle = subtitle,
+        icon = icon,
+        value = value.ifBlank { null },
+        onClick = onClick,
+        showChevron = true,
+    )
 }
 
-/** Non-interactive title/value row (version, lyric source). */
 @Composable
-private fun InfoRow(text: String, value: String) {
-    Row(
-        Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(text, fontFamily = SFPro, fontSize = 15.sp, color = AppTheme.palette.label, modifier = Modifier.weight(1f))
-        Text(value, fontFamily = SFPro, fontSize = 14.sp, color = AppTheme.palette.secondaryLabel)
-    }
+private fun InfoRow(
+    text: String,
+    value: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+) {
+    SettingsRow(title = text, icon = icon, value = value)
 }
 
-/** A neutral (or destructive) action row. */
 @Composable
 private fun ActionRow(
     text: String,
     onClick: () -> Unit,
     subtitle: String? = null,
     destructive: Boolean = false,
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
 ) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .heightIn(min = 52.dp)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(
-                text,
-                fontFamily = SFPro,
-                fontSize = 15.sp,
-                color = if (destructive) AppTheme.palette.accent else AppTheme.palette.label,
-            )
-            if (subtitle != null) {
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    subtitle,
-                    fontFamily = SFPro,
-                    fontSize = 12.sp,
-                    color = AppTheme.palette.secondaryLabel,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-        if (!destructive) {
-            Icon(
-                SfIcons.ChevronRight,
-                contentDescription = null,
-                tint = AppTheme.palette.tertiaryLabel,
-                modifier = Modifier.size(15.dp),
-            )
-        }
-    }
+    SettingsRow(
+        title = text,
+        subtitle = subtitle,
+        icon = icon,
+        onClick = onClick,
+        destructive = destructive,
+    )
 }
 
 /**
@@ -741,19 +652,9 @@ private fun LxSourcesSection(
     onToggle: (String, Boolean) -> Unit,
     onDelete: (String) -> Unit,
 ) {
-    LinkRow(
-        text = "导入自定义音源",
-        subtitle = "选择本地 .js 脚本并校验",
-        value = if (importing) "校验中…" else "",
-        onClick = { if (!importing) onImport() },
-    )
-    RowDivider()
-    LinkRow(
-        text = "从链接导入",
-        subtitle = "粘贴网络音源地址",
-        value = if (importing) "校验中…" else "",
-        onClick = { if (!importing) onImportFromUrl() },
-    )
+    LinkRow("导入自定义音源", if (importing) "校验中…" else "", { if (!importing) onImport() }, "选择本地 .js 脚本并校验", SfIcons.Plus)
+    RowDivider(64.dp)
+    LinkRow("从链接导入", if (importing) "校验中…" else "", { if (!importing) onImportFromUrl() }, "粘贴网络音源地址", SfIcons.ArrowDownCircle)
     if (importing) {
         RowDivider()
         HintRow("正在运行脚本并等待它发送 inited 事件…")
@@ -764,7 +665,7 @@ private fun LxSourcesSection(
     }
     if (errorLogAvailable) {
         RowDivider()
-        ActionRow(text = "复制音源错误日志", subtitle = "包含脚本失败时的详细调用栈", onClick = onCopyErrorLog)
+        ActionRow("复制音源错误日志", onCopyErrorLog, "包含脚本失败时的详细调用栈", icon = SfIcons.ExclamationTriangle)
     }
     if (sources.isEmpty()) {
         RowDivider()
@@ -774,7 +675,7 @@ private fun LxSourcesSection(
         return
     }
     sources.forEach { source ->
-        RowDivider()
+        RowDivider(16.dp)
         LxSourceRow(
             source = source,
             onToggle = { enabled -> onToggle(source.id, enabled) },
@@ -811,11 +712,11 @@ private fun LxSourceRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                Text(source.header.name, fontFamily = SFPro, fontSize = 15.sp, color = AppTheme.palette.label)
+                Text(source.header.name, fontFamily = SFPro, fontSize = 16.sp, color = AppTheme.palette.label)
                 Text(
                     subtitle,
                     fontFamily = SFPro,
-                    fontSize = 12.sp,
+                    fontSize = 13.sp,
                     color = AppTheme.palette.secondaryLabel,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -875,8 +776,8 @@ private fun HintRow(text: String) {
     Text(
         text = text,
         fontFamily = SFPro,
-        fontSize = 12.sp,
-        lineHeight = 17.sp,
+        fontSize = 11.sp,
+        lineHeight = 15.sp,
         color = AppTheme.palette.tertiaryLabel,
         modifier = Modifier
             .fillMaxWidth()
