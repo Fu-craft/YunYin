@@ -75,11 +75,43 @@ object BackgroundStyleRules {
 
     /** CPU-side, deterministic seed usage for the cover shader's rotation axis. */
     fun rotationFor(seed: BackgroundSeed, timeSeconds: Float, volume: Float): Float =
-        seed.rotation + timeSeconds * 0.035f + volume * 1.6f
+        seed.rotation + timeSeconds * CoverWarpRules.ROTATION_RATE + volume * CoverWarpRules.VOLUME_ROTATION
 
     fun sineWarp(seed: BackgroundSeed, uvX: Float, uvY: Float, timeSeconds: Float): Pair<Float, Float> {
         val x = sin(uvY * seed.coverWarpFrequency + timeSeconds * 0.7f + seed.coverWarpPhase)
         val y = cos(uvX * seed.coverWarpFrequency * 1.37f - timeSeconds * 0.53f)
-        return (x * 0.012f) to (y * 0.008f)
+        return (x * CoverWarpRules.WARP_X) to (y * CoverWarpRules.WARP_Y)
     }
+}
+
+/**
+ * Tuning exposed for tests and shared by the Kotlin/GLSL sides. The shader keeps the same
+ * constants (AGSL cannot import Kotlin); changing one requires changing both and the tests
+ * below will keep the numbers honest.
+ */
+object CoverWarpRules {
+    /** Texture upload size. 128 px leaves enough texels for a 13-tap blur to hide the grid. */
+    const val COVER_TEXTURE_SIZE = 128
+
+    /** Fixed 13-tap gaussian-ish blur: centre + 4 axis + 4 diagonal + 4 outer taps. */
+    const val BLUR_TAP_COUNT = 13
+
+    /** Outer tap offset in texels; the effective blur radius is ~2.6 texels at 128 px. */
+    const val BLUR_RADIUS_TEXELS = 2.6f
+
+    /** Slow rotation: 0.012 rad/s instead of the old 0.035, so the cover drifts rather than spins. */
+    const val ROTATION_RATE = 0.012f
+
+    /** Audio can add at most 0.6 rad of rotation; it no longer whips the texture around. */
+    const val VOLUME_ROTATION = 0.6f
+
+    /** Gentle volume zoom: 1.0 → 0.65 at full level, not the old 1.0 → 0.55 at a tiny volume. */
+    const val VOLUME_ZOOM = 0.35f
+
+    /** Gentle sine warp amplitudes, in UV units. */
+    const val WARP_X = 0.006f
+    const val WARP_Y = 0.004f
+
+    fun zoom(volume: Float): Float =
+        (1f - volume.coerceIn(0f, 1f) * VOLUME_ZOOM).coerceIn(0.65f, 1f)
 }

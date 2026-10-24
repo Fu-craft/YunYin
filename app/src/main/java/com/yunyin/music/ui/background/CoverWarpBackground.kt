@@ -46,7 +46,7 @@ fun CoverWarpBackground(
     val bitmap = remember(cover) {
         runCatching {
             cover?.asAndroidBitmap()?.let { source ->
-                val scale = min(1f, 48f / maxOf(source.width, source.height).coerceAtLeast(1))
+                val scale = min(1f, CoverWarpRules.COVER_TEXTURE_SIZE.toFloat() / maxOf(source.width, source.height).coerceAtLeast(1))
                 val w = (source.width * scale).toInt().coerceAtLeast(1)
                 val h = (source.height * scale).toInt().coerceAtLeast(1)
                 Bitmap.createScaledBitmap(source, w, h, true)
@@ -58,9 +58,17 @@ fun CoverWarpBackground(
             val source = context.assets.open("shaders/cover_warp_background.glsl").bufferedReader().use { it.readText() }
             val shader = RuntimeShader(source)
             val bitmapShader = BitmapShader(bitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
+            // Bilinear sampling is essential: a 128 px texture upscaled by a warped UV must not
+            // show texel blocks. BitmapShader has no public filter-quality setter on the supported
+            // API surface, so the parent Paint carries isFilterBitmap = true (Skia's HIGH quality)
+            // and the shader's 13-tap blur below removes any remaining texel structure.
             shader.setInputShader("uCover", bitmapShader)
             shader.setFloatUniform("uCoverSize", bitmap.width.toFloat(), bitmap.height.toFloat())
-            val paint = Paint().apply { this.shader = shader; isAntiAlias = false }
+            val paint = Paint().apply {
+                this.shader = shader
+                isAntiAlias = true
+                isFilterBitmap = true
+            }
             CoverWarpPainter(shader, paint)
         }.getOrNull()
     }
@@ -107,8 +115,9 @@ fun CoverWarpBackground(
                 val motion = animatorsOn && !latestStatic
                 if (motion) {
                     painter.setTime((ns / 1_000_000_000f) % 62.83185f)
-                    painter.setRotation(BackgroundStyleRules.rotationFor(seed, (ns / 1_000_000_000f) % 62.83185f, if (latestAudio) AudioReactive.level.value.coerceIn(0f, 1f) * 0.08f else 0f))
-                    painter.setVolume(if (latestAudio) AudioReactive.level.value.coerceIn(0f, 1f) * 0.08f else 0f)
+                    val level = if (latestAudio) AudioReactive.level.value.coerceIn(0f, 1f) else 0f
+                    painter.setRotation(BackgroundStyleRules.rotationFor(seed, (ns / 1_000_000_000f) % 62.83185f, level))
+                    painter.setVolume(level)
                 }
                 painter.setSeed(seed)
                 advanced = motion || settling
@@ -132,7 +141,7 @@ private class CoverWarpPainter(val shader: RuntimeShader, val paint: Paint) {
     }
     fun setDim(value: Float) = shader.setFloatUniform("uDim", value.coerceIn(0f, 1f))
     fun setTime(value: Float) = shader.setFloatUniform("uTime", value)
-    fun setVolume(value: Float) = shader.setFloatUniform("uVolume", value.coerceIn(0f, 0.2f))
+    fun setVolume(value: Float) = shader.setFloatUniform("uVolume", value.coerceIn(0f, 1f))
     fun setRotation(value: Float) = shader.setFloatUniform("uRotation", value)
     fun setSeed(seed: BackgroundSeed) {
         shader.setFloatUniform("uSeedPhase", seed.coverWarpPhase)

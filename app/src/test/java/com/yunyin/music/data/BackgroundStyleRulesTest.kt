@@ -63,6 +63,21 @@ class BackgroundStyleRulesTest {
     }
 
     @Test
+    fun `cover warp uses a 128px texture, 13 taps and a gentle zoom curve`() {
+        assertEquals(128, com.yunyin.music.ui.background.CoverWarpRules.COVER_TEXTURE_SIZE)
+        assertEquals(13, com.yunyin.music.ui.background.CoverWarpRules.BLUR_TAP_COUNT)
+        assertEquals(2.6f, com.yunyin.music.ui.background.CoverWarpRules.BLUR_RADIUS_TEXELS, 0.001f)
+        assertEquals(1f, com.yunyin.music.ui.background.CoverWarpRules.zoom(0f), 0.0001f)
+        assertEquals(0.825f, com.yunyin.music.ui.background.CoverWarpRules.zoom(0.5f), 0.0001f)
+        assertEquals(0.65f, com.yunyin.music.ui.background.CoverWarpRules.zoom(1f), 0.0001f)
+        // Old values would have been 1 - volume*0.9 (0.1 at full level); the new floor is 0.65.
+        assertTrue(com.yunyin.music.ui.background.CoverWarpRules.zoom(1f) >= 0.65f)
+        val seed = BackgroundStyleRules.seedForTrack(7L)
+        assertEquals(seed.rotation + 1f * 0.012f + 0.5f * 0.6f,
+            BackgroundStyleRules.rotationFor(seed, 1f, 0.5f), 0.0001f)
+    }
+
+    @Test
     fun `palette transition is deterministic and hits both endpoints`() {
         val from = intArrayOf(0xFF101820.toInt(), 0xFF336699.toInt())
         val to = intArrayOf(0xFFDDAA22.toInt(), 0xFF80E0C0.toInt())
