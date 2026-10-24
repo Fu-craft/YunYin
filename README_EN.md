@@ -151,16 +151,16 @@ app/src/main/java/com/yunyin/music/
 
 ## Credits
 
-[NeriPlayer](https://github.com/cwuom/NeriPlayer) (GPL-3.0) ·
-[QPlayer](https://github.com/TIMER-err/QPlayer) (Apache-2.0) ·
-[AMLL](https://github.com/amll-dev/applemusic-like-lyrics) (AGPL-3.0-only) ·
-[AMLL TTML DB](https://github.com/amll-dev/amll-ttml-db) ·
-[accompanist-lyrics-ui](https://github.com/6xingyv/accompanist-lyrics-ui) (Apache-2.0) ·
-[accompanist-lyrics-core](https://github.com/6xingyv/accompanist-lyrics-core) (Apache-2.0) ·
-[AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass) (Apache-2.0) ·
-[Lyricon](https://github.com/tomakino/lyricon) (Apache-2.0) ·
-[quickjs-kt](https://github.com/dokar3/quickjs-kt) (Apache-2.0) ·
-[Material Symbols](https://github.com/google/material-design-icons) (Apache-2.0)
+- [NeriPlayer](https://github.com/cwuom/NeriPlayer) — fluid backgrounds, cover palette, audio-reactive pipeline (GPL-3.0)
+- [QPlayer](https://github.com/TIMER-err/QPlayer) — pixi / classic fluid backgrounds (Apache-2.0)
+- [AMLL](https://github.com/amll-dev/applemusic-like-lyrics) — mesh gradient algorithm, lyric formats (AGPL-3.0-only)
+- [AMLL TTML DB](https://github.com/amll-dev/amll-ttml-db) — word-by-word lyric data
+- [accompanist-lyrics-ui](https://github.com/6xingyv/accompanist-lyrics-ui) — lyric rendering (Apache-2.0)
+- [accompanist-lyrics-core](https://github.com/6xingyv/accompanist-lyrics-core) — lyric parsing (Apache-2.0)
+- [AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass) — liquid glass material (Apache-2.0)
+- [Lyricon](https://github.com/tomakino/lyricon) — status-bar lyrics (Apache-2.0)
+- [quickjs-kt](https://github.com/dokar3/quickjs-kt) — custom source engine (Apache-2.0)
+- [Material Symbols](https://github.com/google/material-design-icons) — icons (Apache-2.0)
 
 Full list: [NOTICE](NOTICE).
 
@@ -170,5 +170,3 @@ Full list: [NOTICE](NOTICE).
 
 **AGPL-3.0-only** — see [LICENSE](LICENSE).
 
-The project includes AGPL-3.0-only code (the `QPlayer · mesh gradient` background ported from AMLL Core),
-so the whole work is distributed under AGPL-3.0-only. Source: <https://github.com/Fu-craft/YunYin>.

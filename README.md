@@ -155,16 +155,16 @@ app/src/main/java/com/yunyin/music/
 
 ## 鸣谢
 
-[NeriPlayer](https://github.com/cwuom/NeriPlayer)（GPL-3.0）·
-[QPlayer](https://github.com/TIMER-err/QPlayer)（Apache-2.0）·
-[AMLL](https://github.com/amll-dev/applemusic-like-lyrics)（AGPL-3.0-only）·
-[AMLL TTML DB](https://github.com/amll-dev/amll-ttml-db) ·
-[accompanist-lyrics-ui](https://github.com/6xingyv/accompanist-lyrics-ui)（Apache-2.0）·
-[accompanist-lyrics-core](https://github.com/6xingyv/accompanist-lyrics-core)（Apache-2.0）·
-[AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass)（Apache-2.0）·
-[Lyricon](https://github.com/tomakino/lyricon)（Apache-2.0）·
-[quickjs-kt](https://github.com/dokar3/quickjs-kt)（Apache-2.0）·
-[Material Symbols](https://github.com/google/material-design-icons)（Apache-2.0）
+- [NeriPlayer](https://github.com/cwuom/NeriPlayer) — 流动背景、封面取色、音频响应管线（GPL-3.0）
+- [QPlayer](https://github.com/TIMER-err/QPlayer) — 像素模糊 / 经典流动背景（Apache-2.0）
+- [AMLL](https://github.com/amll-dev/applemusic-like-lyrics) — 网格渐变算法与歌词格式（AGPL-3.0-only）
+- [AMLL TTML DB](https://github.com/amll-dev/amll-ttml-db) — 逐字歌词数据
+- [accompanist-lyrics-ui](https://github.com/6xingyv/accompanist-lyrics-ui) — 歌词渲染（Apache-2.0）
+- [accompanist-lyrics-core](https://github.com/6xingyv/accompanist-lyrics-core) — 歌词解析（Apache-2.0）
+- [AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass) — 液态玻璃材质（Apache-2.0）
+- [Lyricon](https://github.com/tomakino/lyricon) — 状态栏歌词（Apache-2.0）
+- [quickjs-kt](https://github.com/dokar3/quickjs-kt) — 自定义音源引擎（Apache-2.0）
+- [Material Symbols](https://github.com/google/material-design-icons) — 图标（Apache-2.0）
 
 完整清单见 [NOTICE](NOTICE)。
 
@@ -174,5 +174,3 @@ app/src/main/java/com/yunyin/music/
 
 **AGPL-3.0-only**，全文见 [LICENSE](LICENSE)。
 
-项目包含 AGPL-3.0-only 组件（`QPlayer · 网格渐变`移植自 AMLL Core），
-因此整体按 AGPL-3.0-only 分发。源码：<https://github.com/Fu-craft/YunYin>。
