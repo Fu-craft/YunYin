@@ -346,10 +346,10 @@ fun LibraryScreen(
 private enum class LibraryPage { Playlists, Recent }
 
 /** Slide-in duration for a library subpage; matches the app's other page pushes. */
-private const val LIB_PAGE_MS = 420
+private val LIB_PAGE_MS = Motion.PageEnterDuration
 
 /** Exit is slightly quicker than entry, as everywhere else in this app. */
-private const val LIB_PAGE_EXIT_MS = 340
+private val LIB_PAGE_EXIT_MS = Motion.PageExitDuration
 
 /** The profile page's own content, separated so the subpages can be layered over it. */
 @Composable

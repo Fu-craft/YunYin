@@ -16,6 +16,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.expandVertically
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.shrinkVertically
@@ -1919,6 +1921,10 @@ class MainActivity : ComponentActivity() {
 
             // Queue sheet. It animates itself inside the Dialog; an outer AnimatedVisibility would
             // be a second, redundant transition (same reason as the profile editor).
+            fun importLog(message: String) {
+                runCatching { container.lxLog.recordDiagnostic("stage=import $message") }
+            }
+
             fun resolveImport() {
                 if (importBusy) return
                 val raw = importText.trim()
@@ -1926,13 +1932,21 @@ class MainActivity : ComponentActivity() {
                 importBusy = true
                 importPhase = com.yunyin.music.ui.screens.ImportPlaylistPhase.Working
                 importStatus = null
+                importLog("step=parse-start source=${importSource.name} chars=${raw.length}")
                 scope.launch {
                     try {
                         val rows = withContext(Dispatchers.IO) {
                             if (importSource == com.yunyin.music.ui.screens.ImportSource.NeteaseLink) {
                                 val id = com.yunyin.music.data.import.PlaylistImportRules.parsePlaylistId(raw)
-                                    ?: error("无法识别歌单链接或 ID")
-                                val tracks = container.music.playlistTracks(id)
+                                    ?: error("无法识别歌单链接或 ID（可粘贴完整链接、#/playlist/… 或纯数字 ID）")
+                                importLog("step=parse source=link id=$id")
+                                val tracks = when (val result = container.music.importPlaylistTracks(id)) {
+                                    is com.yunyin.music.core.NetResult.Err ->
+                                        error("歌单读取失败：${result.message}")
+                                    is com.yunyin.music.core.NetResult.Ok -> result.value
+                                }
+                                importLog("step=match source=link id=$id count=${tracks.size}")
+                                if (tracks.isEmpty()) error("这个歌单没有可导入的歌曲")
                                 tracks.map { track ->
                                     com.yunyin.music.ui.screens.ImportRowUi(
                                         line = com.yunyin.music.data.import.ImportedLine(track.name, track.artistLine, "${track.name} - ${track.artistLine}"),
@@ -1940,22 +1954,59 @@ class MainActivity : ComponentActivity() {
                                     )
                                 }
                             } else {
-                                com.yunyin.music.data.import.PlaylistImportRules.parseText(raw).map { line ->
-                                    val result = container.music.search(listOf(line.title, line.artist).filter { it.isNotBlank() }.joinToString(" "))
-                                    val candidates = (result as? com.yunyin.music.core.NetResult.Ok)?.value?.tracks.orEmpty()
-                                    com.yunyin.music.ui.screens.ImportRowUi(
-                                        line = line,
-                                        track = com.yunyin.music.data.import.PlaylistImportRules.match(line, candidates),
-                                    )
+                                val parsed = com.yunyin.music.data.import.PlaylistImportRules.parseText(raw)
+                                importLog("step=parse source=text lines=${parsed.size}")
+                                if (parsed.isEmpty()) {
+                                    error("没有识别到歌曲行，请每行输入「歌名 - 歌手」")
                                 }
+                                var failedSearches = 0
+                                var firstSearchError: String? = null
+                                val mapped = parsed.map { line ->
+                                    val query = listOf(line.title, line.artist).filter { it.isNotBlank() }.joinToString(" ")
+                                    val result = container.music.search(query)
+                                    var candidates = (result as? com.yunyin.music.core.NetResult.Ok)?.value?.tracks.orEmpty()
+                                    if (result is com.yunyin.music.core.NetResult.Err) {
+                                        failedSearches++
+                                        if (firstSearchError == null) firstSearchError = result.message
+                                    }
+                                    var matched = com.yunyin.music.data.import.PlaylistImportRules.match(line, candidates)
+                                    // Fallback: a too-specific "title artist" query can return nothing while the
+                                    // title alone is found. A second search is cheap and only used on a miss.
+                                    if (matched == null && candidates.isEmpty()) {
+                                        val byTitle = container.music.search(line.title)
+                                        candidates = (byTitle as? com.yunyin.music.core.NetResult.Ok)?.value?.tracks.orEmpty()
+                                        if (byTitle is com.yunyin.music.core.NetResult.Err) {
+                                            failedSearches++
+                                            if (firstSearchError == null) firstSearchError = byTitle.message
+                                        }
+                                        matched = com.yunyin.music.data.import.PlaylistImportRules.match(line, candidates)
+                                    }
+                                    com.yunyin.music.ui.screens.ImportRowUi(line = line, track = matched)
+                                }
+                                importLog(
+                                    "step=match source=text lines=${mapped.size} matched=${mapped.count { it.track != null }} " +
+                                        "failedSearches=$failedSearches reason=${firstSearchError.orEmpty().take(100)}",
+                                )
+                                if (mapped.count { it.track != null } == 0 && failedSearches > 0) {
+                                    error("搜索失败：${firstSearchError ?: "网络错误"}")
+                                }
+                                mapped
                             }
                         }
                         importRows = rows
                         importPhase = com.yunyin.music.ui.screens.ImportPlaylistPhase.Preview
-                        importStatus = null
+                        val matched = rows.count { it.track != null }
+                        importStatus = when {
+                            rows.isEmpty() -> "歌单是空的"
+                            matched == 0 -> "没有匹配到歌曲，请检查「歌名 - 歌手」格式后重试"
+                            else -> "匹配 $matched 首，确认后创建新歌单"
+                        }
+                        importLog("step=preview rows=${rows.size} matched=$matched")
                     } catch (t: Throwable) {
-                        importStatus = "匹配失败：${(t.message ?: t.javaClass.simpleName).take(120)}"
+                        val reason = (t.message ?: t.javaClass.simpleName).take(160)
+                        importStatus = "匹配失败：$reason"
                         importPhase = com.yunyin.music.ui.screens.ImportPlaylistPhase.Input
+                        importLog("step=error phase=resolve reason=$reason")
                     } finally {
                         importBusy = false
                     }
@@ -1966,12 +2017,19 @@ class MainActivity : ComponentActivity() {
                 if (importBusy) return
                 val accountNow = account
                 if (accountNow == null || accountNow.isAnonymous) {
-                    importStatus = "请先登录后导入歌单"
+                    importStatus = "请先登录网易云账号后导入歌单"
+                    importLog("step=create result=no-session")
                     return
                 }
                 val matched = importRows.mapNotNull { it.track }
-                if (matched.isEmpty()) { importStatus = "没有可导入的歌曲"; return }
+                if (matched.isEmpty()) {
+                    importStatus = "没有可导入的歌曲"
+                    importLog("step=create result=no-matched")
+                    return
+                }
                 importBusy = true
+                importStatus = "正在创建歌单并添加歌曲…"
+                importLog("step=create-start count=${matched.size}")
                 scope.launch {
                     try {
                         val created = container.music.createPlaylist(
@@ -1981,18 +2039,41 @@ class MainActivity : ComponentActivity() {
                         when (created) {
                             is com.yunyin.music.core.NetResult.Ok -> {
                                 val playlistId = created.value
+                                importLog("step=create result=ok id=$playlistId")
                                 var added = 0
+                                var failedAdds = 0
+                                var firstAddError: String? = null
                                 com.yunyin.music.data.import.PlaylistImportRules.chunks(matched.map { it.id }, 100).forEach { ids ->
-                                    if (container.music.addTracksToPlaylist(playlistId, ids) is com.yunyin.music.core.NetResult.Ok) added += ids.size
+                                    when (val add = container.music.addTracksToPlaylist(playlistId, ids)) {
+                                        is com.yunyin.music.core.NetResult.Ok -> added += ids.size
+                                        is com.yunyin.music.core.NetResult.Err -> {
+                                            failedAdds += ids.size
+                                            if (firstAddError == null) firstAddError = add.message
+                                            importLog("step=add result=err count=${ids.size} reason=${add.message.take(100)}")
+                                        }
+                                    }
                                 }
+                                importLog("step=done added=$added failed=$failedAdds")
                                 appViewModel.refreshUserPlaylists(accountNow)
-                                importStatus = "导入完成：成功 $added 首，跳过 ${importRows.size - added} 首"
-                                importPhase = com.yunyin.music.ui.screens.ImportPlaylistPhase.Done
+                                importStatus = if (added > 0) {
+                                    "导入完成：成功 $added 首，跳过 ${importRows.size - added} 首" +
+                                        if (failedAdds > 0) "（部分批次失败：${firstAddError.orEmpty().take(80)}）" else ""
+                                } else {
+                                    "添加歌曲失败：${firstAddError ?: "接口未返回成功"}"
+                                }
+                                if (added > 0) {
+                                    importPhase = com.yunyin.music.ui.screens.ImportPlaylistPhase.Done
+                                }
                             }
-                            is com.yunyin.music.core.NetResult.Err -> importStatus = "创建歌单失败：${created.message}"
+                            is com.yunyin.music.core.NetResult.Err -> {
+                                importStatus = "创建歌单失败：${created.message}（可能是登录已失效）"
+                                importLog("step=create result=err reason=${created.message.take(100)}")
+                            }
                         }
                     } catch (t: Throwable) {
-                        importStatus = "导入失败：${(t.message ?: t.javaClass.simpleName).take(120)}"
+                        val reason = (t.message ?: t.javaClass.simpleName).take(160)
+                        importStatus = "导入失败：$reason"
+                        importLog("step=error phase=confirm reason=$reason")
                     } finally {
                         importBusy = false
                     }
@@ -2053,7 +2134,15 @@ class MainActivity : ComponentActivity() {
                     diag = { container.lxLog.recordDiagnostic(it) },
                 )
             }
-            if (showDownloadCenter) {
+            // 下载中心 is a pushed subpage, not a bare overlay: slide in from the trailing edge + fade with the
+            // shared page spec. AnimatedVisibility owns interruption, so back/forward mid-transition is safe.
+            AnimatedVisibility(
+                visible = showDownloadCenter,
+                enter = slideInHorizontally(tween(Motion.PageEnterDuration, easing = Motion.EaseOut)) { it } +
+                    fadeIn(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
+                exit = slideOutHorizontally(tween(Motion.PageExitDuration, easing = Motion.EaseOut)) { it } +
+                    fadeOut(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
+            ) {
                 DownloadCenterScreen(
                     states = downloadStatesAll,
                     records = container.downloads.savedRecords(),

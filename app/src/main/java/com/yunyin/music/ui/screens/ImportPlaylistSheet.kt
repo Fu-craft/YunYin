@@ -192,6 +192,15 @@ fun ImportPlaylistSheet(
                         }
                     }
                 }
+                if (status != null) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        status,
+                        fontFamily = SFPro,
+                        fontSize = 12.sp,
+                        color = if (matchedCount == 0) AppTheme.palette.secondaryLabel else AppTheme.palette.accent,
+                    )
+                }
                 Spacer(Modifier.height(14.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.End) {
                     TextButton("返回") { onBack() }

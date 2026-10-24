@@ -22,7 +22,10 @@ object PlaylistImportRules {
 
     private val SEPARATORS = listOf(" - ", " – ", " — ", " | ", "\t", "：", ":")
     private val HYPHEN = Regex("""\s+[-\u2013\u2014]\s+""")
-    private val PLAYLIST_ID = Regex("""(?:[?&]id=|/playlist/)(\d{3,})""")
+    private val PLAYLIST_ID = Regex(
+        """(?:[?&](?:id|playlistId)=|(?:^|[\s#])playlistId=|/playlist/)(\d{3,})""",
+        RegexOption.IGNORE_CASE,
+    )
 
     /** Parses `title - artist` lines; blank lines and `#` comments are ignored. */
     fun parseText(text: String): List<ImportedLine> = text

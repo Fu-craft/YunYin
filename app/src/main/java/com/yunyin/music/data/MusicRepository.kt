@@ -518,6 +518,28 @@ class MusicRepository(
 
     suspend fun playlistTracks(id: Long): List<Track> = playlistTracksProgressive(id)
 
+    /**
+     * Import-specific playlist read: returns the *cause* instead of silently degrading to an empty list.
+     *
+     * `/playlist/track/all` is paged (1000 per request) because the detail endpoint's embedded `tracks[]` is
+     * truncated. The import UI needs to tell "playlist is empty" from "request failed" so it can show a reason.
+     */
+    suspend fun importPlaylistTracks(id: Long): NetResult<List<Track>> {
+        val all = ArrayList<Track>()
+        var offset = 0
+        while (all.size < IMPORT_MAX_TRACKS) {
+            when (val page = client.playlistTracks(id, limit = IMPORT_PAGE_SIZE, offset = offset)) {
+                is NetResult.Err -> return page
+                is NetResult.Ok -> {
+                    all += page.value
+                    if (page.value.size < IMPORT_PAGE_SIZE) break
+                    offset += page.value.size
+                }
+            }
+        }
+        return NetResult.Ok(all)
+    }
+
     // ---------------------------------------------------------------- playlist management
     //
     // Thin wrappers over the mutation endpoints. UI callers get a NetResult and turn a failure into a specific
@@ -637,6 +659,10 @@ class MusicRepository(
 
         /** Bound on per-key mutexes; clearing is safe (at worst one duplicate resolution). */
         const val MAX_LOCK_ENTRIES = 64
+
+        /** Import reads are paged; 5000 tracks is a generous bound for a pasted playlist. */
+        const val IMPORT_PAGE_SIZE = 1000
+        const val IMPORT_MAX_TRACKS = 5_000
     }
 }
 

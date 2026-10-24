@@ -52,6 +52,27 @@ class PlaylistImportRulesTest {
     }
 
     @Test
+    fun `messy share text still yields the playlist id`() {
+        // Copied share text usually has a title, a URL and tracking parameters around the id.
+        assertEquals(
+            123456789L,
+            PlaylistImportRules.parsePlaylistId(
+                "分享歌单《夜晚》 https://music.163.com/playlist?id=123456789&userid=99 复制链接",
+            ),
+        )
+        assertEquals(777L, PlaylistImportRules.parsePlaylistId("https://music.163.com/m/playlist?playlistId=777"))
+        assertEquals(888L, PlaylistImportRules.parsePlaylistId("music.163.com/#/playlist/888?from=share"))
+        assertEquals(999L, PlaylistImportRules.parsePlaylistId("  playlistId=999  "))
+    }
+
+    @Test
+    fun `text parsing tolerates full-width colon and crlf`() {
+        val lines = PlaylistImportRules.parseText("夜曲：周杰伦\r\n晴天 - 周杰伦\r\n")
+        assertEquals(listOf("夜曲", "晴天"), lines.map { it.title })
+        assertEquals("周杰伦", lines[0].artist)
+    }
+
+    @Test
     fun `matching reuses the name and singer guard and rejects a different singer`() {
         val line = ImportedLine(title = "夜曲", artist = "周杰伦", raw = "夜曲 - 周杰伦")
         val correct = track(1, "夜曲", "周杰伦")

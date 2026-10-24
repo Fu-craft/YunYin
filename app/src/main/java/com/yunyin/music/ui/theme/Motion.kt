@@ -82,4 +82,16 @@ object Motion {
     /** Sheets and drawers: modals are allowed 200-500ms (was 320 / 260). */
     const val SheetEnterDuration = 420
     const val SheetExitDuration = 340
+
+    /**
+     * Pushed subpages (资料库 subpages, 本地音乐, 下载中心): the same 420/340 tempo as sheets because a
+     * full-screen page is a modal-scale surface. Enter is ease-out so the page arrives fast and settles;
+     * exit is shorter because the user has already decided to leave.
+     */
+    const val PageEnterDuration = 420
+    const val PageExitDuration = 340
+
+    /** Outgoing page parallax spec (kept as a token; applied where a shared host can scale the old page). */
+    const val PageParallaxScale = 0.98f
+    const val PageScrimAlpha = 0.06f
 }
