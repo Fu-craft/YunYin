@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 云音 / YunYin contributors
+
 // Portions ported from QPlayer (Apache-2.0), © QPlayer contributors.
 // Source: player-core/src/main/resources/shaders/fluid/classic_fade.sksl
 package com.yunyin.music.ui.background

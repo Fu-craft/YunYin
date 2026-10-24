@@ -92,7 +92,21 @@ Windows 使用 `gradlew.bat`。release APK 输出在 `app/build/outputs/apk/rele
 - [Lyricon](https://github.com/tomakino/lyricon) —— 状态栏歌词
 - [Material Symbols](https://github.com/google/material-design-icons) —— 图标
 - [quickjs-kt](https://github.com/dokar3/quickjs-kt) —— 自定义音源 JS 引擎
+- [QPlayer](https://github.com/TIMER-err/QPlayer) —— Pixi Renderer / Classic 流体背景（Apache-2.0）
+- [AMLL](https://github.com/amll-dev/applemusic-like-lyrics) —— Mesh Gradient 网格算法（AGPL-3.0-only）
 
 ## 许可证
 
-GPL-3.0，全文见 [LICENSE](LICENSE)。
+**GNU Affero General Public License v3.0 only（AGPL-3.0-only）**，全文见 [LICENSE](LICENSE)。
+
+### 为什么是 AGPL
+
+云音收录并移植了以 **AGPL-3.0-only** 发布的 AMLL Core 网格背景代码（经 QPlayer），并包含基于 AMLL 的流体背景实现。为了保持整体分发与网络使用场景下的许可证一致，项目整体采用 AGPL-3.0-only。
+
+### 源码获取
+
+本项目源码发布于 [github.com/Fu-craft/YunYin](https://github.com/Fu-craft/YunYin)。通过修改版本提供网络服务时，请按 AGPL-3.0 第 13 条向用户提供对应源码。
+
+### 第三方声明
+
+随应用分发的第三方组件、许可证与上游地址见 [NOTICE](NOTICE)。

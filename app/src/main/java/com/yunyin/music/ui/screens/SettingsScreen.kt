@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 云音 / YunYin contributors
+
 package com.yunyin.music.ui.screens
 
 import androidx.compose.foundation.background
@@ -28,6 +31,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalUriHandler
 import com.yunyin.music.ui.theme.Motion
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -316,13 +320,43 @@ fun SettingsScreen(
                 RowDivider()
                 InfoRow("歌词来源", "AMLL 逐字歌词")
                 RowDivider()
-                InfoRow("开源背景", "QPlayer · Apache-2.0")
+                LicenseRow("云音（本项目）", "AGPL-3.0-only", "$PROJECT_URL/blob/master/LICENSE")
                 RowDivider()
                 LinkRow("项目主页", "GitHub", onOpenProject)
                 if (hasCrashLog) {
                     RowDivider()
                     ActionRow("复制上次崩溃日志", onCopyCrashLog)
                 }
+            }
+            Spacer(Modifier.height(12.dp))
+
+            SettingsSection(
+                title = "开源组件",
+                footnote = "各组件许可证与上游地址；完整声明见仓库 NOTICE。",
+            ) {
+                LicenseRow("AMLL / Mesh Gradient", "AGPL-3.0-only", "https://github.com/amll-dev/applemusic-like-lyrics")
+                RowDivider()
+                LicenseRow("QPlayer", "Apache-2.0", "https://github.com/TIMER-err/QPlayer")
+                RowDivider()
+                LicenseRow("NeriPlayer", "GPL-3.0", "https://github.com/cwuom/NeriPlayer")
+                RowDivider()
+                LicenseRow("accompanist lyrics-core", "Apache-2.0", "https://github.com/6xingyv/Accompanist-Lyrics")
+                RowDivider()
+                LicenseRow("accompanist lyrics-ui（vendored）", "Apache-2.0", "https://github.com/6xingyv/Accompanist-Lyrics")
+                RowDivider()
+                LicenseRow("io.github.kyant0:backdrop", "Apache-2.0", "https://github.com/Kyant0/AndroidLiquidGlass")
+                RowDivider()
+                LicenseRow("androidx.media3", "Apache-2.0", "https://github.com/androidx/media")
+                RowDivider()
+                LicenseRow("OkHttp", "Apache-2.0", "https://github.com/square/okhttp")
+                RowDivider()
+                LicenseRow("Coil", "Apache-2.0", "https://github.com/coil-kt/coil")
+                RowDivider()
+                LicenseRow("QuickJS / quickjs-kt", "Apache-2.0", "https://github.com/dokar3/quickjs-kt")
+                RowDivider()
+                LicenseRow("Material Symbols", "Apache-2.0", "https://github.com/google/material-design-icons")
+                RowDivider()
+                LicenseRow("Lucide（FolderMusic 图标）", "ISC", "https://github.com/lucide-icons/lucide")
             }
             Spacer(Modifier.height(24.dp))
                 }
@@ -578,6 +612,12 @@ private fun ToggleRow(
             )
         },
     )
+}
+
+@Composable
+private fun LicenseRow(name: String, license: String, url: String) {
+    val uriHandler = LocalUriHandler.current
+    LinkRow(name, license, { runCatching { uriHandler.openUri(url) } })
 }
 
 @Composable

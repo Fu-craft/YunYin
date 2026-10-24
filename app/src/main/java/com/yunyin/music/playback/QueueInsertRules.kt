@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 云音 / YunYin contributors
+
 package com.yunyin.music.playback
 
 /** Pure rules for 下一首播放 (insert immediately after the current item). */

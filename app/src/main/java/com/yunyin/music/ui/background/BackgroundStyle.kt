@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 云音 / YunYin contributors
+
 package com.yunyin.music.ui.background
 
 import kotlin.math.PI
@@ -14,7 +17,7 @@ enum class BackgroundStyle(
     Yunyin("yunyin", "云音（默认）", "五色流体，随音频轻轻呼吸"),
     OkLabFlow("oklab", "色阶流动", "封面取四色，在 OkLab 中流动混合"),
     QpPixi("qp_pixi", "QPlayer · 像素模糊", "多层封面精灵缓慢漂移"),
-    QpMesh("qp_mesh", "QPlayer · 网格渐变", "网格流动（清洁室近似）"),
+    QpMesh("qp_mesh", "QPlayer · 网格渐变", "AMLL 网格扭曲的封面流动"),
     QpClassic("qp_classic", "QPlayer · 经典流动", "封面波纹与旋转"),
     ;
 

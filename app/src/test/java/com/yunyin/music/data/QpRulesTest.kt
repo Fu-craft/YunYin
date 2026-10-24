@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 云音 / YunYin contributors
+
 package com.yunyin.music.data
 
 import com.yunyin.music.ui.background.BackgroundStyle
@@ -37,6 +40,9 @@ class QpRulesTest {
         assertEquals(108f, QpRules.LUMA_CAP, 0f)
         assertEquals(60, BackgroundStyleRules.FRAME_RATE_LIMIT)
         assertEquals(16_666_666L, BackgroundStyleRules.FRAME_INTERVAL_NS)
+        assertEquals(0.2f, QpRules.MESH_ROTATION_SPEED, 0f)
+        assertEquals(0.3f, QpRules.MESH_CENTER, 0f)
+        assertEquals(256, QpRules.MESH_TEXTURE_SIZE)
     }
 
     @Test

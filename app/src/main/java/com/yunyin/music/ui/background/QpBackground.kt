@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 云音 / YunYin contributors
+
 // Portions ported from QPlayer (Apache-2.0), © QPlayer contributors.
 // Source: player-core/src/main/java/dev/t1m3/qplayer/lyric/skia/FluidBackground.java
 // and player-core/src/main/resources/shaders/fluid/*.sksl. Android Compose/AGSL adaptation.
@@ -46,6 +49,9 @@ internal object QpRules {
     const val BLUR_PASSES = 4
     const val FADE_SECONDS = 0.6f
     const val FRAME_RATE_LIMIT = BackgroundStyleRules.FRAME_RATE_LIMIT
+    const val MESH_ROTATION_SPEED = 0.2f
+    const val MESH_CENTER = 0.3f
+    const val MESH_TEXTURE_SIZE = 256
 
     // Pixi Renderer
     const val PIXI_MAIN_SCALE = 1.41421356f

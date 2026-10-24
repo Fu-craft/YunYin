@@ -1,0 +1,24 @@
+NOTICE
+======
+YunYin / 云音
+Copyright (C) 2026 云音 / YunYin contributors
+Licensed under the GNU Affero General Public License v3.0 only (AGPL-3.0-only).
+Full license text: LICENSE.
+
+Third-party components shipped in this application
+---------------------------------------------------
+AMLL / apple-music-like-lyrics (Mesh Gradient shader and mesh generator, © AMLL Contributors; ported via QPlayer) — AGPL-3.0-only — https://github.com/amll-dev/applemusic-like-lyrics
+NeriPlayer (background palette, blurred-cover and audio-reactive ideas/adaptations) — GPL-3.0 — https://github.com/cwuom/NeriPlayer
+QPlayer (Pixi Renderer and Classic shaders; © QPlayer contributors) — Apache-2.0 — https://github.com/TIMER-err/QPlayer
+com.mocharealm.accompanist:lyrics-core — Apache-2.0 — https://github.com/6xingyv/Accompanist-Lyrics
+com.mocharealm.accompanist:lyrics-ui (vendored into app/src/main/java/com/yunyin/music/lyrics, then modified) — Apache-2.0 — https://github.com/6xingyv/Accompanist-Lyrics
+io.github.kyant0:backdrop — Apache-2.0 — https://github.com/Kyant0/AndroidLiquidGlass
+androidx.media3 — Apache-2.0 — https://github.com/androidx/media
+OkHttp — Apache-2.0 — https://github.com/square/okhttp
+Coil — Apache-2.0 — https://github.com/coil-kt/coil（当前构建未在 runtime classpath 使用）
+quickjs-kt — Apache-2.0 — https://github.com/dokar3/quickjs-kt
+Material Symbols — Apache-2.0 — https://github.com/google/material-design-icons
+Lucide (FolderMusic icon idea, re-drawn) — ISC — https://github.com/lucide-icons/lucide
+io.github.proify.lyricon:provider (词幕) — Apache-2.0 — https://github.com/proify/lyricon
+JetBrains Compose Multiplatform — Apache-2.0 — https://github.com/JetBrains/compose-multiplatform
+androidx.palette — Apache-2.0 — https://developer.android.com/jetpack/androidx/releases/palette

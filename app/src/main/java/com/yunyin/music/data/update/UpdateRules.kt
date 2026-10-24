@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 云音 / YunYin contributors
+
 package com.yunyin.music.data.update
 
 /** A file attached to a release; for this app, the signed APK. */
