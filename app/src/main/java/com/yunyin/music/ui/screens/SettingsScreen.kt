@@ -215,16 +215,16 @@ fun SettingsScreen(
             )
             Spacer(Modifier.height(20.dp))
 
-            SettingsSection(title = "播放") {
-                ToggleRow("无缝衔接", "切歌时让两首重叠淡入淡出", seamlessTransition, onSeamlessTransitionChange, SfIcons.Shuffle)
-                RowDivider(64.dp)
-                LinkRow("交叉淡化时长", "${crossfadeSeconds} 秒", onCycleCrossfadeSeconds, "切歌重叠的时长", SfIcons.Clock)
-                RowDivider(64.dp)
-                LinkRow("定时关闭", sleepTimerLabel, onShowSleepTimer, "到点后自动停止播放", SfIcons.Pause)
-                RowDivider(64.dp)
-                LinkRow("播放器界面", playerStyle.label, onShowPlayerStyle, "播放页展示封面或唱片", SfIcons.SquareGrid2x2)
-                RowDivider(64.dp)
-                ToggleRow("自动进入沉浸歌词", "歌词页闲置几秒后隐藏播放控件", autoImmersiveLyrics, onAutoImmersiveLyricsChange, SfIcons.QuoteOpening)
+            SettingsSection(title = "播放", first = true) {
+                ToggleRow("无缝衔接", "切歌时让两首重叠淡入淡出", seamlessTransition, onSeamlessTransitionChange)
+                RowDivider()
+                LinkRow("交叉淡化时长", "${crossfadeSeconds} 秒", onCycleCrossfadeSeconds, "切歌重叠的时长")
+                RowDivider()
+                LinkRow("定时关闭", sleepTimerLabel, onShowSleepTimer, "到点后自动停止播放")
+                RowDivider()
+                LinkRow("播放器界面", playerStyle.label, onShowPlayerStyle, "播放页展示封面或唱片")
+                RowDivider()
+                ToggleRow("自动进入沉浸歌词", "歌词页闲置几秒后隐藏播放控件", autoImmersiveLyrics, onAutoImmersiveLyricsChange)
             }
 
             SettingsSection(title = "正在播放外观") {
@@ -239,22 +239,22 @@ fun SettingsScreen(
                 title = "状态栏歌词",
                 footnote = "词幕需已安装并在系统中启用；Flyme 歌词只在对应系统上可用。",
             ) {
-                ToggleRow("推送到词幕", "由「词幕」显示歌词", lyriconEnabled, onLyriconEnabledChange, SfIcons.QuoteOpening)
-                RowDivider(64.dp)
+                ToggleRow("推送到词幕", "由「词幕」显示歌词", lyriconEnabled, onLyriconEnabledChange)
+                RowDivider()
                 LyriconRow(
                     enabled = lyriconEnabled,
                     connected = lyriconConnected,
                     available = lyriconAvailable,
                     onRetry = onRetryLyricon,
                 )
-                RowDivider(64.dp)
+                RowDivider()
                 FlymeTickerRow(
                     supported = flymeSupported,
                     enabled = statusBarLyrics,
                     onChange = onStatusBarLyricsChange,
                 )
-                RowDivider(64.dp)
-                ActionRow("测试状态栏歌词", onTestFlymeLyric, "发送一条测试歌词到状态栏", icon = SfIcons.Play)
+                RowDivider()
+                ActionRow("测试状态栏歌词", onTestFlymeLyric, "发送一条测试歌词到状态栏")
             }
 
             SettingsSection(title = "音源") {
@@ -276,26 +276,26 @@ fun SettingsScreen(
                 title = "下载与存储",
                 footnote = "清除歌词缓存不会删除本地音乐或已下载的歌曲。",
             ) {
-                LinkRow("下载中心", "", onOpenDownloads, "查看进行中、已完成与失败的下载", SfIcons.SquareAndArrowDown)
-                RowDivider(64.dp)
-                ToggleRow("仅 Wi-Fi 下载", "避免用移动数据开始下载", downloadWifiOnly, onDownloadWifiOnlyChange, SfIcons.WifiSlash)
-                RowDivider(64.dp)
-                ActionRow("清除歌词缓存", onClearLyricsCache, "删除已下载的歌词文件", icon = SfIcons.Trash)
+                LinkRow("下载中心", "", onOpenDownloads, "查看进行中、已完成与失败的下载")
+                RowDivider()
+                ToggleRow("仅 Wi-Fi 下载", "避免用移动数据开始下载", downloadWifiOnly, onDownloadWifiOnlyChange)
+                RowDivider()
+                ActionRow("清除歌词缓存", onClearLyricsCache, "删除已下载的歌词文件")
             }
 
             SettingsSection(title = "关于") {
-                InfoRow("版本", com.yunyin.music.BuildConfig.VERSION_NAME, SfIcons.Gearshape)
+                InfoRow("版本", com.yunyin.music.BuildConfig.VERSION_NAME)
                 if (updateConfigured) {
-                    RowDivider(64.dp)
-                    LinkRow("检查更新", updateRowValue(updateState), onCheckUpdate, icon = SfIcons.ArrowClockwise)
+                    RowDivider()
+                    LinkRow("检查更新", updateRowValue(updateState), onCheckUpdate)
                 }
-                RowDivider(64.dp)
-                InfoRow("歌词来源", "AMLL 逐字歌词", SfIcons.QuoteOpening)
-                RowDivider(64.dp)
-                LinkRow("项目主页", "GitHub", onOpenProject, icon = SfIcons.ArrowUpRight)
+                RowDivider()
+                InfoRow("歌词来源", "AMLL 逐字歌词")
+                RowDivider()
+                LinkRow("项目主页", "GitHub", onOpenProject)
                 if (hasCrashLog) {
-                    RowDivider(64.dp)
-                    ActionRow("复制上次崩溃日志", onCopyCrashLog, icon = SfIcons.ExclamationTriangle)
+                    RowDivider()
+                    ActionRow("复制上次崩溃日志", onCopyCrashLog)
                 }
             }
             Spacer(Modifier.height(24.dp))
@@ -352,7 +352,6 @@ private fun LyriconRow(
     SettingsRow(
         title = "连接状态",
         subtitle = hint,
-        icon = SfIcons.Gearshape,
         onClick = if (retryable) onRetry else null,
         trailing = {
             Text(
@@ -376,7 +375,6 @@ private fun FlymeTickerRow(
     SettingsRow(
         title = "Flyme 状态栏歌词",
         subtitle = if (supported) "由系统通知栏显示，需保持常驻通知" else "当前系统未内置该功能",
-        icon = SfIcons.SpeakerWave,
         onClick = if (supported) ({ onChange(!enabled) }) else null,
         trailing = {
             if (supported) {
@@ -408,14 +406,19 @@ private fun updateRowValue(state: UpdateUiState): String = when (state) {
     is UpdateUiState.Failed -> "检查失败"
 }
 
-/** A titled card of settings rows, plus an optional caveat footnote below it. */
+/** A card-less group: header, rows directly on the page background, optional footnote. */
 @Composable
 private fun SettingsSection(
     title: String,
     footnote: String? = null,
+    first: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Column(Modifier.fillMaxWidth().padding(bottom = 26.dp)) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .then(if (first) Modifier else Modifier.padding(top = 28.dp)),
+    ) {
         Text(
             title,
             fontFamily = SFPro,
@@ -424,14 +427,8 @@ private fun SettingsSection(
             color = AppTheme.palette.secondaryLabel,
             modifier = Modifier.padding(start = 16.dp),
         )
-        Spacer(Modifier.height(8.dp))
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .clip(ContinuousRoundedRectangle(AppleShapes.card))
-                .background(AppTheme.palette.secondaryBackground),
-            content = content,
-        )
+        Spacer(Modifier.height(6.dp))
+        Column(Modifier.fillMaxWidth(), content = content)
         if (footnote != null) {
             Text(
                 footnote,
@@ -439,32 +436,17 @@ private fun SettingsSection(
                 fontSize = 11.sp,
                 lineHeight = 15.sp,
                 color = AppTheme.palette.tertiaryLabel,
-                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp),
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 6.dp),
             )
         }
     }
 }
 
-/** 36 dp tinted tile holding a 20 dp monoline glyph. Only used where an icon adds meaning. */
-@Composable
-private fun IconTile(icon: androidx.compose.ui.graphics.vector.ImageVector) {
-    Box(
-        Modifier
-            .size(36.dp)
-            .clip(ContinuousRoundedRectangle(10.dp))
-            .background(AppTheme.palette.accent.copy(alpha = 0.12f)),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(icon, contentDescription = null, tint = AppTheme.palette.accent, modifier = Modifier.size(26.dp))
-    }
-}
-
-/** One settings row: optional icon tile, title/subtitle, trailing value/control. */
+/** One settings row: title/subtitle left, trailing value/control right. No fill, no icon tile. */
 @Composable
 private fun SettingsRow(
     title: String,
     subtitle: String? = null,
-    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
     value: String? = null,
     onClick: (() -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
@@ -478,10 +460,10 @@ private fun SettingsRow(
     Row(
         Modifier
             .fillMaxWidth()
-            .heightIn(min = 56.dp)
+            .heightIn(min = if (subtitle == null) 52.dp else 64.dp)
             .graphicsLayer {
                 alpha = appear.value
-                translationY = (1f - appear.value) * 8f
+                translationY = (1f - appear.value) * 6f
             }
             .then(
                 if (onClick != null) {
@@ -497,10 +479,6 @@ private fun SettingsRow(
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (icon != null) {
-            IconTile(icon)
-            Spacer(Modifier.width(12.dp))
-        }
         Column(Modifier.weight(1f)) {
             Text(
                 title,
@@ -515,7 +493,7 @@ private fun SettingsRow(
                     fontFamily = SFPro,
                     fontSize = 13.sp,
                     color = AppTheme.palette.secondaryLabel,
-                    maxLines = 2,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
@@ -530,7 +508,7 @@ private fun SettingsRow(
                 SfIcons.ChevronRight,
                 contentDescription = null,
                 tint = AppTheme.palette.tertiaryLabel,
-                modifier = Modifier.size(13.dp),
+                modifier = Modifier.size(12.dp),
             )
         }
         if (trailing != null) {
@@ -540,13 +518,13 @@ private fun SettingsRow(
     }
 }
 
-/** Hairline between rows inside a card. 64 dp inset aligns with the title when a row has an icon. */
+/** Hairline between rows, inset to the title. Only placed between rows, never after the last. */
 @Composable
-private fun RowDivider(leadingInset: androidx.compose.ui.unit.Dp = 16.dp) {
+private fun RowDivider() {
     Box(
         Modifier
             .fillMaxWidth()
-            .padding(start = leadingInset)
+            .padding(start = 16.dp)
             .height(1.dp)
             .background(AppTheme.palette.separator.copy(alpha = 0.45f)),
     )
@@ -558,12 +536,10 @@ private fun ToggleRow(
     subtitle: String,
     enabled: Boolean,
     onChange: (Boolean) -> Unit,
-    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
 ) {
     SettingsRow(
         title = title,
         subtitle = subtitle,
-        icon = icon,
         onClick = { onChange(!enabled) },
         trailing = {
             Switch(
@@ -584,12 +560,10 @@ private fun LinkRow(
     value: String,
     onClick: () -> Unit,
     subtitle: String? = null,
-    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
 ) {
     SettingsRow(
         title = text,
         subtitle = subtitle,
-        icon = icon,
         value = value.ifBlank { null },
         onClick = onClick,
         showChevron = true,
@@ -597,12 +571,8 @@ private fun LinkRow(
 }
 
 @Composable
-private fun InfoRow(
-    text: String,
-    value: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
-) {
-    SettingsRow(title = text, icon = icon, value = value)
+private fun InfoRow(text: String, value: String) {
+    SettingsRow(title = text, value = value)
 }
 
 @Composable
@@ -611,15 +581,8 @@ private fun ActionRow(
     onClick: () -> Unit,
     subtitle: String? = null,
     destructive: Boolean = false,
-    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
 ) {
-    SettingsRow(
-        title = text,
-        subtitle = subtitle,
-        icon = icon,
-        onClick = onClick,
-        destructive = destructive,
-    )
+    SettingsRow(title = text, subtitle = subtitle, onClick = onClick, destructive = destructive)
 }
 
 /**
@@ -652,9 +615,9 @@ private fun LxSourcesSection(
     onToggle: (String, Boolean) -> Unit,
     onDelete: (String) -> Unit,
 ) {
-    LinkRow("导入自定义音源", if (importing) "校验中…" else "", { if (!importing) onImport() }, "选择本地 .js 脚本并校验", SfIcons.Plus)
-    RowDivider(64.dp)
-    LinkRow("从链接导入", if (importing) "校验中…" else "", { if (!importing) onImportFromUrl() }, "粘贴网络音源地址", SfIcons.ArrowDownCircle)
+    LinkRow("导入自定义音源", if (importing) "校验中…" else "", { if (!importing) onImport() }, "选择本地 .js 脚本并校验")
+    RowDivider()
+    LinkRow("从链接导入", if (importing) "校验中…" else "", { if (!importing) onImportFromUrl() }, "粘贴网络音源地址")
     if (importing) {
         RowDivider()
         HintRow("正在运行脚本并等待它发送 inited 事件…")
@@ -665,7 +628,7 @@ private fun LxSourcesSection(
     }
     if (errorLogAvailable) {
         RowDivider()
-        ActionRow("复制音源错误日志", onCopyErrorLog, "包含脚本失败时的详细调用栈", icon = SfIcons.ExclamationTriangle)
+        ActionRow("复制音源错误日志", onCopyErrorLog, "包含脚本失败时的详细调用栈")
     }
     if (sources.isEmpty()) {
         RowDivider()
@@ -675,7 +638,7 @@ private fun LxSourcesSection(
         return
     }
     sources.forEach { source ->
-        RowDivider(16.dp)
+        RowDivider()
         LxSourceRow(
             source = source,
             onToggle = { enabled -> onToggle(source.id, enabled) },
