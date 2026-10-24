@@ -45,6 +45,9 @@ enum class ImportSource(val label: String) { Text("文本"), NeteaseLink("网易
 /** One resolved input line: a matched track, or null when nothing acceptable was found. */
 data class ImportRowUi(val line: ImportedLine, val track: Track?)
 
+/** Live progress for the bounded-concurrency parser (resolved rows out of the total, plus the active query). */
+data class ImportProgress(val resolved: Int, val total: Int, val currentLine: String?, val label: String = "已匹配")
+
 /**
  * 导入歌单 dialog: paste text or a NetEase playlist link, then review matched/unmatched rows before writing.
  *
@@ -60,11 +63,13 @@ fun ImportPlaylistSheet(
     text: String,
     rows: List<ImportRowUi>,
     status: String?,
+    progress: ImportProgress?,
     matchedCount: Int,
     onSourceChange: (ImportSource) -> Unit,
     onNameChange: (String) -> Unit,
     onTextChange: (String) -> Unit,
     onResolve: () -> Unit,
+    onCancel: () -> Unit,
     onConfirm: () -> Unit,
     onBack: () -> Unit,
     onDismiss: () -> Unit,

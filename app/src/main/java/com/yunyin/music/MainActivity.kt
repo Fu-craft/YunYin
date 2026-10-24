@@ -94,6 +94,12 @@ import com.yunyin.music.ui.share.LyricsShareCard
 import com.yunyin.music.ui.share.LyricsShareInput
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.toArgb
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withTimeout
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.yunyin.music.ui.screens.ImportPlaylistSheet
@@ -237,6 +243,8 @@ class MainActivity : ComponentActivity() {
     var importText by remember { mutableStateOf("") }
     var importRows by remember { mutableStateOf<List<com.yunyin.music.ui.screens.ImportRowUi>>(emptyList()) }
     var importStatus by remember { mutableStateOf<String?>(null) }
+    var importProgress by remember { mutableStateOf<com.yunyin.music.ui.screens.ImportProgress?>(null) }
+    var importJob by remember { mutableStateOf<Job?>(null) }
     var importBusy by remember { mutableStateOf(false) }
     var showLyricPicker by remember { mutableStateOf(false) }
     var lyricShareLines by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -1925,90 +1933,159 @@ class MainActivity : ComponentActivity() {
                 runCatching { container.lxLog.recordDiagnostic("stage=import $message") }
             }
 
+            fun cancelImport() {
+                importJob?.cancel()
+                importJob = null
+                importBusy = false
+                importPhase = com.yunyin.music.ui.screens.ImportPlaylistPhase.Input
+                importProgress = null
+                importStatus = "已取消匹配，输入内容已保留"
+                importLog("step=cancel")
+            }
+
             fun resolveImport() {
                 if (importBusy) return
                 val raw = importText.trim()
                 if (raw.isEmpty()) { importStatus = "请先粘贴歌单内容"; return }
                 importBusy = true
                 importPhase = com.yunyin.music.ui.screens.ImportPlaylistPhase.Working
+                importRows = emptyList()
                 importStatus = null
+                importProgress = com.yunyin.music.ui.screens.ImportProgress(0, 0, null)
                 importLog("step=parse-start source=${importSource.name} chars=${raw.length}")
-                scope.launch {
+                importJob = scope.launch {
                     try {
-                        val rows = withContext(Dispatchers.IO) {
-                            if (importSource == com.yunyin.music.ui.screens.ImportSource.NeteaseLink) {
-                                val id = com.yunyin.music.data.import.PlaylistImportRules.parsePlaylistId(raw)
-                                    ?: error("无法识别歌单链接或 ID（可粘贴完整链接、#/playlist/… 或纯数字 ID）")
-                                importLog("step=parse source=link id=$id")
-                                val tracks = when (val result = container.music.importPlaylistTracks(id)) {
-                                    is com.yunyin.music.core.NetResult.Err ->
-                                        error("歌单读取失败：${result.message}")
-                                    is com.yunyin.music.core.NetResult.Ok -> result.value
-                                }
-                                importLog("step=match source=link id=$id count=${tracks.size}")
-                                if (tracks.isEmpty()) error("这个歌单没有可导入的歌曲")
-                                tracks.map { track ->
-                                    com.yunyin.music.ui.screens.ImportRowUi(
-                                        line = com.yunyin.music.data.import.ImportedLine(track.name, track.artistLine, "${track.name} - ${track.artistLine}"),
-                                        track = track,
-                                    )
-                                }
-                            } else {
-                                val parsed = com.yunyin.music.data.import.PlaylistImportRules.parseText(raw)
-                                importLog("step=parse source=text lines=${parsed.size}")
-                                if (parsed.isEmpty()) {
-                                    error("没有识别到歌曲行，请每行输入「歌名 - 歌手」")
-                                }
-                                var failedSearches = 0
-                                var firstSearchError: String? = null
-                                val mapped = parsed.map { line ->
-                                    val query = listOf(line.title, line.artist).filter { it.isNotBlank() }.joinToString(" ")
-                                    val result = container.music.search(query)
-                                    var candidates = (result as? com.yunyin.music.core.NetResult.Ok)?.value?.tracks.orEmpty()
-                                    if (result is com.yunyin.music.core.NetResult.Err) {
-                                        failedSearches++
-                                        if (firstSearchError == null) firstSearchError = result.message
-                                    }
-                                    var matched = com.yunyin.music.data.import.PlaylistImportRules.match(line, candidates)
-                                    // Fallback: a too-specific "title artist" query can return nothing while the
-                                    // title alone is found. A second search is cheap and only used on a miss.
-                                    if (matched == null && candidates.isEmpty()) {
-                                        val byTitle = container.music.search(line.title)
-                                        candidates = (byTitle as? com.yunyin.music.core.NetResult.Ok)?.value?.tracks.orEmpty()
-                                        if (byTitle is com.yunyin.music.core.NetResult.Err) {
-                                            failedSearches++
-                                            if (firstSearchError == null) firstSearchError = byTitle.message
-                                        }
-                                        matched = com.yunyin.music.data.import.PlaylistImportRules.match(line, candidates)
-                                    }
-                                    com.yunyin.music.ui.screens.ImportRowUi(line = line, track = matched)
-                                }
-                                importLog(
-                                    "step=match source=text lines=${mapped.size} matched=${mapped.count { it.track != null }} " +
-                                        "failedSearches=$failedSearches reason=${firstSearchError.orEmpty().take(100)}",
-                                )
-                                if (mapped.count { it.track != null } == 0 && failedSearches > 0) {
-                                    error("搜索失败：${firstSearchError ?: "网络错误"}")
-                                }
-                                mapped
+                        if (importSource == com.yunyin.music.ui.screens.ImportSource.NeteaseLink) {
+                            val id = com.yunyin.music.data.import.PlaylistImportRules.parsePlaylistId(raw)
+                            if (id == null) {
+                                importStatus = "无法识别歌单链接或 ID（可粘贴完整链接、#/playlist/… 或纯数字 ID）"
+                                importPhase = com.yunyin.music.ui.screens.ImportPlaylistPhase.Input
+                                importProgress = null
+                                importLog("step=parse result=invalid-id")
+                                return@launch
                             }
+                            importLog("step=parse source=link id=$id")
+                            importProgress = com.yunyin.music.ui.screens.ImportProgress(0, 0, "正在获取歌单…", label = "已获取")
+                            val result = withTimeout(com.yunyin.music.data.import.ImportBatchRules.PLAYLIST_TIMEOUT_MS) {
+                                container.music.importPlaylistTracks(id)
+                            }
+                            when (result) {
+                                is com.yunyin.music.core.NetResult.Err -> {
+                                    importStatus = "歌单读取失败：${result.message}"
+                                    importPhase = com.yunyin.music.ui.screens.ImportPlaylistPhase.Input
+                                    importProgress = null
+                                    importLog("step=fetch result=error reason=${result.message.take(100)}")
+                                }
+                                is com.yunyin.music.core.NetResult.Ok -> {
+                                    val tracks = result.value
+                                    // Direct-id path: a NetEase playlist already contains canonical NetEase ids, so
+                                    // re-searching each row would add latency and mis-match risk for no benefit.
+                                    val rows = tracks.map { track ->
+                                        com.yunyin.music.ui.screens.ImportRowUi(
+                                            line = com.yunyin.music.data.import.ImportedLine(track.name, track.artistLine, "${track.name} - ${track.artistLine}"),
+                                            track = track,
+                                        )
+                                    }
+                                    importRows = rows
+                                    importProgress = com.yunyin.music.ui.screens.ImportProgress(rows.size, rows.size, null, label = "已获取")
+                                    importPhase = com.yunyin.music.ui.screens.ImportPlaylistPhase.Preview
+                                    importStatus = if (rows.isEmpty()) "这个歌单没有可导入的歌曲" else "已获取 ${rows.size} 首（直接使用歌单内歌曲，不再搜索匹配）"
+                                    importLog("step=fetch result=ok count=${rows.size}")
+                                }
+                            }
+                        } else {
+                            val parsed = com.yunyin.music.data.import.PlaylistImportRules.parseText(raw)
+                            if (parsed.isEmpty()) {
+                                importStatus = "没有识别到歌曲行，请每行输入「歌名 - 歌手」"
+                                importPhase = com.yunyin.music.ui.screens.ImportPlaylistPhase.Input
+                                importProgress = null
+                                importLog("step=parse result=empty")
+                                return@launch
+                            }
+                            val total = parsed.size
+                            importProgress = com.yunyin.music.ui.screens.ImportProgress(0, total, null)
+                            importLog("step=parse source=text lines=$total")
+                            val results = MutableList<com.yunyin.music.ui.screens.ImportRowUi?>(total) { null }
+                            val cursor = AtomicInteger(0)
+                            coroutineScope {
+                                repeat(com.yunyin.music.data.import.ImportBatchRules.workers(total)) {
+                                    launch(Dispatchers.IO) {
+                                        while (true) {
+                                            val index = cursor.getAndIncrement()
+                                            if (index >= total) break
+                                            val line = parsed[index]
+                                            withContext(Dispatchers.Main.immediate) {
+                                                importProgress = importProgress?.copy(currentLine = line.raw)
+                                            }
+                                            val query = listOf(line.title, line.artist).filter { it.isNotBlank() }.joinToString(" ")
+                                            var kind = "miss"
+                                            var reason = ""
+                                            var matched: com.yunyin.music.core.Track? = null
+                                            try {
+                                                withTimeout(com.yunyin.music.data.import.ImportBatchRules.REQUEST_TIMEOUT_MS) {
+                                                    val first = container.music.search(query)
+                                                    var candidates = (first as? com.yunyin.music.core.NetResult.Ok)?.value?.tracks.orEmpty()
+                                                    if (first is com.yunyin.music.core.NetResult.Err) {
+                                                        kind = "error"; reason = first.message
+                                                    }
+                                                    matched = com.yunyin.music.data.import.PlaylistImportRules.match(line, candidates)
+                                                    if (matched == null && candidates.isEmpty()) {
+                                                        val byTitle = container.music.search(line.title)
+                                                        candidates = (byTitle as? com.yunyin.music.core.NetResult.Ok)?.value?.tracks.orEmpty()
+                                                        if (byTitle is com.yunyin.music.core.NetResult.Err) {
+                                                            kind = "error"; reason = byTitle.message
+                                                        }
+                                                        matched = com.yunyin.music.data.import.PlaylistImportRules.match(line, candidates)
+                                                    }
+                                                    if (matched != null) kind = "hit"
+                                                }
+                                            } catch (timeout: kotlinx.coroutines.TimeoutCancellationException) {
+                                                kind = "error"; reason = "timeout"
+                                            } catch (cancel: kotlinx.coroutines.CancellationException) {
+                                                throw cancel
+                                            } catch (t: Throwable) {
+                                                kind = "error"; reason = t.message ?: t.javaClass.simpleName
+                                            }
+                                            val row = com.yunyin.music.ui.screens.ImportRowUi(line = line, track = matched)
+                                            withContext(Dispatchers.Main.immediate) {
+                                                results[index] = row
+                                                importRows = results.filterNotNull()
+                                                importProgress = com.yunyin.music.ui.screens.ImportProgress(
+                                                    resolved = importRows.size,
+                                                    total = total,
+                                                    currentLine = null,
+                                                )
+                                                importLog(
+                                                    "line=${index + 1} query=$query result=$kind reason=${reason.take(120)}",
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            importPhase = com.yunyin.music.ui.screens.ImportPlaylistPhase.Preview
+                            val matchedCount = importRows.count { it.track != null }
+                            importProgress = null
+                            importStatus = when {
+                                matchedCount == 0 -> "没有匹配到歌曲，请检查「歌名 - 歌手」格式后重试"
+                                else -> "匹配 $matchedCount 首，确认后创建新歌单"
+                            }
+                            importLog("step=preview rows=${importRows.size} matched=$matchedCount")
                         }
-                        importRows = rows
-                        importPhase = com.yunyin.music.ui.screens.ImportPlaylistPhase.Preview
-                        val matched = rows.count { it.track != null }
-                        importStatus = when {
-                            rows.isEmpty() -> "歌单是空的"
-                            matched == 0 -> "没有匹配到歌曲，请检查「歌名 - 歌手」格式后重试"
-                            else -> "匹配 $matched 首，确认后创建新歌单"
-                        }
-                        importLog("step=preview rows=${rows.size} matched=$matched")
+                    } catch (cancel: kotlinx.coroutines.CancellationException) {
+                        importPhase = com.yunyin.music.ui.screens.ImportPlaylistPhase.Input
+                        importProgress = null
+                        importStatus = "已取消匹配，输入内容已保留"
+                        importLog("step=cancel")
                     } catch (t: Throwable) {
                         val reason = (t.message ?: t.javaClass.simpleName).take(160)
                         importStatus = "匹配失败：$reason"
                         importPhase = com.yunyin.music.ui.screens.ImportPlaylistPhase.Input
+                        importProgress = null
                         importLog("step=error phase=resolve reason=$reason")
                     } finally {
                         importBusy = false
+                        importJob = null
                     }
                 }
             }
@@ -2088,11 +2165,13 @@ class MainActivity : ComponentActivity() {
                     text = importText,
                     rows = importRows,
                     status = importStatus,
+                    progress = importProgress,
                     matchedCount = importRows.count { it.track != null },
                     onSourceChange = { importSource = it },
                     onNameChange = { importName = it },
                     onTextChange = { importText = it },
                     onResolve = { resolveImport() },
+                    onCancel = { cancelImport() },
                     onConfirm = { confirmImport() },
                     onBack = { importPhase = com.yunyin.music.ui.screens.ImportPlaylistPhase.Input },
                     onDismiss = { showImport = false },
