@@ -127,14 +127,19 @@ class SettingsStore(context: Context) {
         set(value) = prefs.edit().putBoolean(KEY_NOW_PLAYING_DYNAMIC, value).apply()
 
     /**
-     * The now-playing background family. Stored as the [com.yunyin.music.ui.background.BackgroundStyle]
-     * storage key (`yunyin` / `cover_warp` / `oklab_flow`) so a rename cannot silently change the choice;
-     * unknown values fall back to 云音. Default keeps every existing install visually unchanged.
+     * The now-playing background family. Only `yunyin` and `oklab` are accepted; `oklab_flow`
+     * (the v4.32.0–v4.32.2 legacy key) is normalised to `oklab`, and every other stored value —
+     * including the removed cover style — falls back to 云音. Default keeps existing installs
+     * visually unchanged.
      */
     var nowPlayingBackgroundStyle: String
-        get() = prefs.getString(KEY_NOW_PLAYING_BACKGROUND_STYLE, DEFAULT_NOW_PLAYING_BACKGROUND_STYLE)
-            ?: DEFAULT_NOW_PLAYING_BACKGROUND_STYLE
-        set(value) = prefs.edit().putString(KEY_NOW_PLAYING_BACKGROUND_STYLE, value).apply()
+        get() = when (prefs.getString(KEY_NOW_PLAYING_BACKGROUND_STYLE, DEFAULT_NOW_PLAYING_BACKGROUND_STYLE)) {
+            "oklab", "oklab_flow" -> "oklab"
+            else -> DEFAULT_NOW_PLAYING_BACKGROUND_STYLE
+        }
+        set(value) = prefs.edit()
+            .putString(KEY_NOW_PLAYING_BACKGROUND_STYLE, if (value == "oklab") "oklab" else DEFAULT_NOW_PLAYING_BACKGROUND_STYLE)
+            .apply()
 
     // ------------------------------------------------------------ updates
 
