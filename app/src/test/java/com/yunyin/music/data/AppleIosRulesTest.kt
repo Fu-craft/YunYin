@@ -76,6 +76,8 @@ class AppleIosRulesTest {
         assertEquals(1f, AppleIosRules.imageScale(1f, 1f, true, 0f), 0f)
         assertEquals(1f, AppleIosRules.RENDER_SCALE, 0f)
         assertEquals(1f, AppleIosRules.BASS_PULSE_SCALE, 0f)
+        assertEquals(60, AppleIosRules.FRAME_RATE_LIMIT)
+        assertEquals(16_666_666L, AppleIosRules.FRAME_INTERVAL_NS)
     }
 
     @Test

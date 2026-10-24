@@ -79,6 +79,8 @@ internal object AppleIosRules {
     /** Held at the upstream default; no setting row. */
     const val RENDER_SCALE = 1.0f
     const val BLUR_SCALE = 1.0f
+    const val FRAME_RATE_LIMIT = 60
+    const val FRAME_INTERVAL_NS = 1_000_000_000L / FRAME_RATE_LIMIT
 
     /** App-side spectrum stand-in: we have a full-band level and a beat, not five FFT bands. */
     const val BASS_LEVEL_WEIGHT = 0.65f
@@ -304,10 +306,17 @@ internal fun AppleIosBackground(
         var smoothLevel = 0f
         var smoothBeat = 0f
         var imageScale = 1f
+        var nextFrameNs = 0L
         while (isActive) {
             var advanced = false
             withFrameNanos { ns ->
                 if (latestPaused) return@withFrameNanos
+                if (nextFrameNs != 0L && ns < nextFrameNs) return@withFrameNanos
+                nextFrameNs = if (ns - nextFrameNs > AppleIosRules.FRAME_INTERVAL_NS * 2L) {
+                    ns + AppleIosRules.FRAME_INTERVAL_NS
+                } else {
+                    nextFrameNs + AppleIosRules.FRAME_INTERVAL_NS
+                }
                 val motion = animatorsOn && !latestStatic
                 if (motion) {
                     val targetLevel = if (latestAudio) AudioReactive.level.value.coerceIn(0f, 1f) else 0f
