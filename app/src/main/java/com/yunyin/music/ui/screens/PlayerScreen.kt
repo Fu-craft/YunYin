@@ -114,6 +114,8 @@ import com.yunyin.music.ui.components.Artwork
 import com.yunyin.music.ui.components.CrossfadeContent
 import com.yunyin.music.ui.components.SheetPlacement
 import com.yunyin.music.ui.components.VinylDisc
+import com.yunyin.music.ui.components.MediaVolumeSlider
+import com.yunyin.music.ui.components.rememberMediaVolume
 import com.yunyin.music.ui.components.formatDuration
 import com.yunyin.music.ui.components.pressableGestures
 import com.yunyin.music.ui.components.rememberControlRipple
@@ -176,6 +178,9 @@ fun PlayerScreen(
     onCycleRepeat: () -> Unit,
     onToggleShuffle: () -> Unit,
     onShowQueue: () -> Unit,
+    /** Whether the status-bar lyric output is enabled, for the new bottom row. */
+    statusBarLyricsEnabled: Boolean = false,
+    onToggleStatusBarLyrics: () -> Unit = {},
     /** Opens the lyric-card share flow; null keeps the row hidden (e.g. no lyrics/current track). */
     onShareLyrics: (() -> Unit)? = null,
     onPlayNext: (() -> Unit)? = null,
@@ -1101,103 +1106,47 @@ fun PlayerScreen(
                         }
                     }
                 } else {
-                    // ------------------------------------- artwork: stacked (portrait)
-                    Column(
-                        Modifier
-                            .fillMaxSize()
-                            .statusBarsPadding()
-                            .navigationBarsPadding(),
-                    ) {
-                        // Vertical rhythm: one measured rule for the whole portrait artwork stack
-                        // (see [PlayerArtworkLayoutRules]). The old fixed 56dp spacer plus a
-                        // `weight(1f)` artwork region whose size was width-capped is what put a dead
-                        // band above the cover and a second one between the cover and the title.
-                        // Both spacing values and the cover size come from the measured rule; the
-                        // available height was captured at the top of the player for this stack.
-                        Spacer(
-                            Modifier.height(
-                                PlayerArtworkLayoutRules.topInset(artworkAvailableHeight),
-                            ),
-                        )
-
-                        BoxWithConstraints(
-                            Modifier
-                                .weight(1f, fill = false)
-                                .fillMaxWidth(),
-                            contentAlignment = Alignment.TopCenter,
-                        ) {
-                            // `fill = false`: the region is measured against the height left after
-                            // the title row and the transport block, and the cover is the smaller of
-                            // the width fraction and that height — a short screen shrinks the cover
-                            // and can never clip the controls. On a tall screen the leftover height
-                            // sits below the controls, never between the cover and its title.
-                            val artSize = PlayerArtworkLayoutRules.artworkSize(maxWidth, maxHeight)
-                            ArtworkWithGestures(
-                                artSize = artSize,
-                                track = track,
-                                cover = cover,
-                                loader = loader,
-                                download = download,
-                                onToggleLyrics = { interaction++; togglePresentation() },
-                                onSaveCover = { interaction++; onSaveCover() },
-                                onDownloadDismissed = onDownloadDismissed,
-                                setDragDistance = onDrag,
-                                onDragFinished = onDragFinished,
-                                playerStyle = playerStyle,
-                                isPlaying = state.isPlaying,
-                                artworkScale = sharedCoverScale,
-                                sharedScope = this@SharedTransitionLayout,
-                                visibilityScope = this@AnimatedContent,
-                                onCoverCenter = { artworkCoverCenter = it },
-                            )
-
-                        }
-
-                        Spacer(
-                            Modifier.height(
-                                PlayerArtworkLayoutRules.coverTitleGap(artworkAvailableHeight),
-                            ),
-                        )
-
-                        TitleBlock(
-                            track = track,
-                            liked = liked,
-                            onToggleLike = { interaction++; onToggleLike() },
-                            onMoreClick = {
-                                interaction++
-                                showActions = true
-                            },
-                            onArtistClick = onArtistClick,
-                            modifier = Modifier.padding(horizontal = 24.dp),
-                        )
-                        Spacer(Modifier.height(18.dp))
-
-                        PlayerControls(
-                            state = state,
-                            displayedPosition = displayedPosition,
-                            positionProvider = positionProvider,
-                            quality = quality,
-                            onQualityClick = {
-                                interaction++
-                                showQuality = true
-                            },
-                            showLyrics = showLyrics,
-                            onSeek = { fraction ->
-                                interaction++
-                                onSeek((state.durationMs * fraction).toLong())
-                            },
-                            onTogglePlay = { interaction++; onTogglePlay() },
-                            onNext = { interaction++; onNext() },
-                            onPrevious = { interaction++; onPrevious() },
-                            onCycleRepeat = {
-                                interaction++
-                                if (state.shuffle) onToggleShuffle() else onCycleRepeat()
-                            },
-                            onToggleShuffle = { interaction++; onToggleShuffle() },
-                            onToggleLyrics = { interaction++; togglePresentation() },
-                            onShowQueue = { interaction++; onShowQueue() },
-                        )
-                    }
+                    // ------------------------------------- artwork: Apple Music stack (portrait)
+                    AppleMusicPlayerLayout(
+                        track = track,
+                        cover = cover,
+                        loader = loader,
+                        download = download,
+                        onToggleLyrics = { interaction++; togglePresentation() },
+                        onSaveCover = { interaction++; onSaveCover() },
+                        onDownloadDismissed = onDownloadDismissed,
+                        setDragDistance = onDrag,
+                        onDragFinished = onDragFinished,
+                        playerStyle = playerStyle,
+                        isPlaying = state.isPlaying,
+                        animatedCoverEnabled = animatedCoverEnabled,
+                        animatedArtwork = animatedArtwork,
+                        onAnimatedArtworkLog = onAnimatedArtworkLog,
+                        artworkScale = sharedCoverScale,
+                        sharedScope = this@SharedTransitionLayout,
+                        visibilityScope = this@AnimatedContent,
+                        onCoverCenter = { artworkCoverCenter = it },
+                        state = state,
+                        displayedPosition = displayedPosition,
+                        positionProvider = positionProvider,
+                        liked = liked,
+                        onToggleLike = { interaction++; onToggleLike() },
+                        onMore = { interaction++; showActions = true },
+                        onArtistClick = onArtistClick,
+                        onSeek = { fraction ->
+                            interaction++
+                            onSeek((state.durationMs * fraction).toLong())
+                        },
+                        onTogglePlay = { interaction++; onTogglePlay() },
+                        onNext = { interaction++; onNext() },
+                        onPrevious = { interaction++; onPrevious() },
+                        statusBarLyricsEnabled = statusBarLyricsEnabled,
+                        onToggleStatusBarLyrics = {
+                            interaction++
+                            onToggleStatusBarLyrics()
+                        },
+                        onShowQueue = { interaction++; onShowQueue() },
+                    )
                 }
             }
         }
@@ -1224,6 +1173,15 @@ fun PlayerScreen(
                     interaction++
                     onShowQueue()
                 },
+                onToggleShuffle = { interaction++; onToggleShuffle() },
+                onCycleRepeat = {
+                    interaction++
+                    if (state.shuffle) onToggleShuffle() else onCycleRepeat()
+                },
+                onQualityClick = { interaction++; showQuality = true },
+                quality = quality,
+                shuffle = state.shuffle,
+                repeatMode = state.repeatMode,
             )
         }
 
@@ -1246,6 +1204,377 @@ fun PlayerScreen(
                 onDismiss = { showQuality = false },
             )
         }
+    }
+}
+
+/**
+ * The Apple Music portrait layout: handle, square artwork, title block, progress, transport,
+ * media volume and the three-icon bottom row. No dock and no lyric block.
+ */
+@Composable
+private fun AppleMusicPlayerLayout(
+    track: Track?,
+    cover: ImageBitmap?,
+    loader: ArtworkLoader,
+    download: DownloadState,
+    onToggleLyrics: () -> Unit,
+    onSaveCover: () -> Unit,
+    onDownloadDismissed: () -> Unit,
+    setDragDistance: (Float) -> Unit,
+    onDragFinished: (distancePx: Float, elapsedMs: Long) -> Unit,
+    playerStyle: PlayerStyle,
+    isPlaying: Boolean,
+    animatedCoverEnabled: Boolean,
+    animatedArtwork: com.yunyin.music.data.AnimatedArtworkRepository?,
+    onAnimatedArtworkLog: (String) -> Unit,
+    artworkScale: () -> Float,
+    sharedScope: SharedTransitionScope,
+    visibilityScope: AnimatedVisibilityScope,
+    onCoverCenter: (Offset) -> Unit,
+    state: PlaybackUiState,
+    displayedPosition: Long,
+    positionProvider: () -> Long,
+    liked: Boolean,
+    onToggleLike: () -> Unit,
+    onMore: () -> Unit,
+    onArtistClick: (String) -> Unit,
+    onSeek: (Float) -> Unit,
+    onTogglePlay: () -> Unit,
+    onNext: () -> Unit,
+    onPrevious: () -> Unit,
+    statusBarLyricsEnabled: Boolean,
+    onToggleStatusBarLyrics: () -> Unit,
+    onShowQueue: () -> Unit,
+) {
+    val volume = rememberMediaVolume()
+    val comments = LocalCommentActions.current
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        // 434 dp is the measured non-artwork stack; this keeps the controls on tiny screens
+        // instead of clipping the bottom row.
+        val artSize = minOf(
+            maxWidth - 32.dp,
+            (maxHeight - 482.dp).coerceAtLeast(160.dp),
+        )
+        Column(
+            Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(horizontal = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Spacer(Modifier.height(8.dp))
+            Box(
+                Modifier
+                    .width(36.dp)
+                    .height(4.dp)
+                    .clip(ContinuousRoundedRectangle(AppleShapes.pill))
+                    .background(Color.White.copy(alpha = 0.28f)),
+            )
+            Spacer(Modifier.height(24.dp))
+
+            Box(Modifier.size(artSize)) {
+                ArtworkWithGestures(
+                    artSize = artSize,
+                    track = track,
+                    cover = cover,
+                    loader = loader,
+                    download = download,
+                    onToggleLyrics = onToggleLyrics,
+                    onSaveCover = onSaveCover,
+                    onDownloadDismissed = onDownloadDismissed,
+                    setDragDistance = setDragDistance,
+                    onDragFinished = onDragFinished,
+                    playerStyle = playerStyle,
+                    isPlaying = isPlaying,
+                    animatedCoverEnabled = animatedCoverEnabled,
+                    animatedArtwork = animatedArtwork,
+                    onAnimatedArtworkLog = onAnimatedArtworkLog,
+                    artworkScale = artworkScale,
+                    sharedScope = sharedScope,
+                    visibilityScope = visibilityScope,
+                    onCoverCenter = onCoverCenter,
+                    flat = true,
+                    corner = 12.dp,
+                )
+            }
+
+            Spacer(Modifier.height(20.dp))
+            AppleTitleBlock(
+                track = track,
+                liked = liked,
+                onToggleLike = onToggleLike,
+                onMore = onMore,
+                onArtistClick = onArtistClick,
+            )
+            Spacer(Modifier.height(18.dp))
+
+            PlayerProgressBar(
+                positionProvider = positionProvider,
+                durationMs = state.durationMs,
+                onSeek = onSeek,
+                modifier = Modifier.fillMaxWidth(),
+                trackHeight = 3.dp,
+                activeTrackHeight = 3.dp,
+                activeColor = Color.White.copy(alpha = 0.9f),
+                inactiveColor = Color.White.copy(alpha = 0.25f),
+            )
+            Spacer(Modifier.height(6.dp))
+
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(
+                    text = PlayerChromeRules.formatElapsed(displayedPosition),
+                    fontFamily = SFPro,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color.White.copy(alpha = 0.65f),
+                )
+                Text(
+                    text = PlayerChromeRules.formatRemaining(displayedPosition, state.durationMs),
+                    fontFamily = SFPro,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color.White.copy(alpha = 0.65f),
+                )
+            }
+
+            Spacer(Modifier.height(28.dp))
+            AppleTransportRow(
+                isPlaying = isPlaying,
+                isBuffering = state.isBuffering,
+                onPrevious = onPrevious,
+                onTogglePlay = onTogglePlay,
+                onNext = onNext,
+            )
+
+            Spacer(Modifier.height(36.dp))
+            if (volume?.visible == true) {
+                Row(
+                    Modifier.fillMaxWidth().height(44.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Icon(
+                        SfIcons.SpeakerWave,
+                        contentDescription = null,
+                        tint = Color.White.copy(alpha = 0.60f),
+                        modifier = Modifier.size(18.dp),
+                    )
+                    MediaVolumeSlider(volume, Modifier.weight(1f))
+                    Icon(
+                        SfIcons.SpeakerWave,
+                        contentDescription = null,
+                        tint = Color.White.copy(alpha = 0.85f),
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
+            }
+
+            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.height(24.dp))
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                AppleBottomAction(
+                    icon = SfIcons.BubbleLeft,
+                    description = "评论",
+                    active = false,
+                    onClick = { comments?.onOpen() },
+                )
+                AppleBottomAction(
+                    icon = SfIcons.QuoteOpening,
+                    description = if (statusBarLyricsEnabled) "状态栏歌词：已开启" else "状态栏歌词：已关闭",
+                    active = statusBarLyricsEnabled,
+                    onClick = onToggleStatusBarLyrics,
+                )
+                AppleBottomAction(
+                    icon = SfIcons.ListBullet,
+                    description = "播放队列",
+                    active = false,
+                    onClick = onShowQueue,
+                )
+            }
+            Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+@Composable
+private fun AppleTitleBlock(
+    track: Track?,
+    liked: Boolean,
+    onToggleLike: () -> Unit,
+    onMore: () -> Unit,
+    onArtistClick: (String) -> Unit,
+) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = track?.name ?: "未在播放",
+                fontFamily = SFPro,
+                fontWeight = FontWeight.Bold,
+                fontSize = 22.sp,
+                color = AppTheme.palette.label,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(2.dp))
+            ArtistLine(
+                line = track?.artistLine.orEmpty(),
+                artists = track?.artists.orEmpty(),
+                style = TextStyle(
+                    fontFamily = SFPro,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 16.sp,
+                    color = Color.White.copy(alpha = 0.65f),
+                ),
+                maxLines = 1,
+                onArtistClick = onArtistClick.takeIf { track?.artists?.isNotEmpty() == true },
+            )
+        }
+        Spacer(Modifier.width(6.dp))
+        Box(
+            Modifier
+                .size(44.dp)
+                .clickable(
+                    indication = rememberControlRipple(bounded = false),
+                    interactionSource = null,
+                    onClick = onToggleLike,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = if (liked) SfIcons.StarFill else SfIcons.Star,
+                contentDescription = if (liked) "取消收藏" else "收藏",
+                tint = Color.White,
+                modifier = Modifier.size(24.dp),
+            )
+        }
+        Box(
+            Modifier
+                .size(44.dp)
+                .clickable(
+                    indication = rememberControlRipple(bounded = false),
+                    interactionSource = null,
+                    onClick = onMore,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(Color.White.copy(alpha = 0.14f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = SfIcons.Ellipsis,
+                    contentDescription = "更多操作",
+                    tint = Color.White.copy(alpha = 0.9f),
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AppleTransportRow(
+    isPlaying: Boolean,
+    isBuffering: Boolean,
+    onPrevious: () -> Unit,
+    onTogglePlay: () -> Unit,
+    onNext: () -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AppleTransportButton(SfIcons.Backward, "上一首", 40.dp, 48.dp, onPrevious)
+        Spacer(Modifier.width(4.dp))
+        Box(
+            Modifier
+                .size(80.dp)
+                .clickable(
+                    indication = rememberControlRipple(bounded = false),
+                    interactionSource = null,
+                    onClick = onTogglePlay,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            CrossfadeContent(
+                targetState = isPlaying,
+                durationMillis = Motion.SmallDuration,
+                label = "apple-play-pause",
+            ) { playing ->
+                Icon(
+                    imageVector = if (playing) SfIcons.Pause else SfIcons.Play,
+                    contentDescription = if (playing) "暂停" else "播放",
+                    tint = Color.White,
+                    modifier = Modifier.size(64.dp),
+                )
+            }
+            if (isBuffering) {
+                CircularProgressIndicator(
+                    color = Color.White.copy(alpha = 0.55f),
+                    strokeWidth = 2.dp,
+                    modifier = Modifier.size(72.dp),
+                )
+            }
+        }
+        Spacer(Modifier.width(4.dp))
+        AppleTransportButton(SfIcons.Forward, "下一首", 40.dp, 48.dp, onNext)
+    }
+}
+
+@Composable
+private fun AppleTransportButton(
+    icon: ImageVector,
+    description: String,
+    glyphSize: androidx.compose.ui.unit.Dp,
+    touchSize: androidx.compose.ui.unit.Dp,
+    onClick: () -> Unit,
+) {
+    Box(
+        Modifier
+            .size(touchSize)
+            .clickable(
+                indication = rememberControlRipple(bounded = false),
+                interactionSource = null,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription = description, tint = Color.White, modifier = Modifier.size(glyphSize))
+    }
+}
+
+@Composable
+private fun AppleBottomAction(
+    icon: ImageVector,
+    description: String,
+    active: Boolean,
+    onClick: () -> Unit,
+) {
+    Box(
+        Modifier
+            .size(44.dp)
+            .clickable(
+                indication = rememberControlRipple(bounded = false),
+                interactionSource = null,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = description,
+            tint = if (active) AppTheme.palette.accent else Color.White.copy(alpha = 0.65f),
+            modifier = Modifier.size(24.dp),
+        )
     }
 }
 
@@ -1280,6 +1609,9 @@ private fun ArtworkWithGestures(
     playerStyle: PlayerStyle,
     /** Drives the record's rotation; ignored by the classic cover. */
     isPlaying: Boolean,
+    /** Apple Music stack: no drop shadow, and a 10-12 dp corner. */
+    flat: Boolean = false,
+    corner: androidx.compose.ui.unit.Dp = ARTWORK_CORNER,
     animatedCoverEnabled: Boolean = false,
     animatedArtwork: com.yunyin.music.data.AnimatedArtworkRepository? = null,
     onAnimatedArtworkLog: (String) -> Unit = {},
@@ -1359,7 +1691,7 @@ private fun ArtworkWithGestures(
             Artwork(
                 url = track?.coverUrl,
                 loader = loader,
-                corner = ARTWORK_CORNER,
+                corner = corner,
                 requestSize = 1000,
                 // The single decoded cover, shared with the header thumbnail: both halves of the shared
                 // element must be the same pixels, and reusing one bitmap avoids a second fetch/decode
@@ -1390,7 +1722,10 @@ private fun ArtworkWithGestures(
                         scaleY = scale
                         alpha = sharedCoverPausedAlpha(scale)
                     }
-                    .shadow(14.dp, ContinuousRoundedRectangle(ARTWORK_CORNER)),
+                    .then(
+                        if (flat) Modifier
+                        else Modifier.shadow(14.dp, ContinuousRoundedRectangle(corner)),
+                    ),
             )
             val videoUrl = animatedUrl
             if (videoUrl != null && animatedCoverEnabled && animatedArtwork != null && playerStyle == PlayerStyle.Classic) {
@@ -1398,7 +1733,7 @@ private fun ArtworkWithGestures(
                     url = videoUrl,
                     modifier = Modifier
                         .size(artSize)
-                        .clip(ContinuousRoundedRectangle(ARTWORK_CORNER))
+                        .clip(ContinuousRoundedRectangle(corner))
                         .graphicsLayer {
                             val scale = artworkScale()
                             scaleX = scale
@@ -1693,13 +2028,8 @@ private fun PlayerControls(
                 color = Color.White.copy(alpha = 0.9f),
                 modifier = Modifier.align(Alignment.CenterStart),
             )
-            QualityChip(
-                quality = quality,
-                onClick = onQualityClick,
-                modifier = Modifier.align(Alignment.Center),
-            )
             Text(
-                text = formatDuration(state.durationMs),
+                text = PlayerChromeRules.formatRemaining(displayedPosition, state.durationMs),
                 fontFamily = SFPro,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Medium,
@@ -1725,39 +2055,6 @@ private fun PlayerControls(
             TransportButton(SfIcons.Forward, "下一首", 40.dp, onNext)
         }
 
-        Spacer(Modifier.height(14.dp))
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            BottomIcon(SfIcons.QuoteOpening, "歌词", active = showLyrics, onClick = onToggleLyrics)
-            // Shuffle and repeat are two separate controls with one job each.
-            //
-            // They used to share a single button: tap cycled the loop mode, *long press* toggled
-            // shuffle, and the icon swapped between a shuffle glyph and a repeat glyph to match. That
-            // was wrong three ways. Two unrelated settings behind one control are not discoverable —
-            // a long press is not a control, it is a secret. The repeat mode disappeared from view
-            // whenever shuffle was on, because the icon had been swapped away. And there was no way to
-            // reach repeat-one at all without first turning shuffle off. One tap, one setting, and a
-            // glyph that always shows its own state.
-            BottomIcon(
-                icon = SfIcons.Shuffle,
-                description = if (state.shuffle) "随机播放：已开启" else "随机播放：已关闭",
-                active = state.shuffle,
-                onClick = onToggleShuffle,
-            )
-            BottomIcon(
-                icon = if (state.repeatMode == Player.REPEAT_MODE_ONE) SfIcons.RepeatOne
-                else SfIcons.Repeat,
-                description = repeatDescription(state.repeatMode),
-                active = state.repeatMode != Player.REPEAT_MODE_OFF,
-                onClick = onCycleRepeat,
-            )
-            BottomIcon(SfIcons.ListBullet, "播放队列", active = false, onClick = onShowQueue)
-        }
         Spacer(Modifier.height(26.dp))
     }
 }
@@ -1893,6 +2190,12 @@ private fun TrackActionsSheet(
     onShare: () -> Unit,
     onShowQueue: () -> Unit,
     onShareLyrics: (() -> Unit)? = null,
+    onToggleShuffle: (() -> Unit)? = null,
+    onCycleRepeat: (() -> Unit)? = null,
+    onQualityClick: (() -> Unit)? = null,
+    quality: AudioQuality? = null,
+    shuffle: Boolean = false,
+    repeatMode: Int = Player.REPEAT_MODE_OFF,
 ) {
     AnimatedSheet(
         onDismissed = onDismiss,
@@ -1965,6 +2268,25 @@ private fun TrackActionsSheet(
         if (commentActions != null) {
             ActionRow(SfIcons.BubbleLeft, "评论", track != null) {
                 close { commentActions.onOpen() }
+            }
+        }
+        if (onToggleShuffle != null) {
+            ActionRow(
+                SfIcons.Shuffle,
+                if (shuffle) "随机播放：已开启" else "随机播放：已关闭",
+                true,
+            ) { close { onToggleShuffle() } }
+        }
+        if (onCycleRepeat != null) {
+            ActionRow(
+                if (repeatMode == Player.REPEAT_MODE_ONE) SfIcons.RepeatOne else SfIcons.Repeat,
+                repeatDescription(repeatMode),
+                true,
+            ) { close { onCycleRepeat() } }
+        }
+        if (onQualityClick != null && quality != null) {
+            ActionRow(SfIcons.ChartBar, "音质：${quality.label}", true) {
+                close { onQualityClick() }
             }
         }
         ActionRow(SfIcons.ListBullet, "播放队列", true) {

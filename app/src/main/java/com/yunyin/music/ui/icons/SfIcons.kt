@@ -528,6 +528,23 @@ object SfIcons {
         }
     }
 
+    /** `star` 鈥?the Apple Music favourite action, monoline like the screenshot. */
+    val Star: ImageVector = icon("star") {
+        mono("star", width = 1.9f) {
+            moveTo(12f, 3.2f)
+            lineTo(14.7f, 9.0f)
+            lineTo(21.0f, 9.85f)
+            lineTo(16.4f, 14.25f)
+            lineTo(17.55f, 20.5f)
+            lineTo(12f, 17.5f)
+            lineTo(6.45f, 20.5f)
+            lineTo(7.6f, 14.25f)
+            lineTo(3.0f, 9.85f)
+            lineTo(9.3f, 9.0f)
+            close()
+        }
+    }
+
     val StarFill: ImageVector = icon("star.fill") {
         path(fill = SolidColor(Color.Black)) {
             moveTo(12f, 3.2f)

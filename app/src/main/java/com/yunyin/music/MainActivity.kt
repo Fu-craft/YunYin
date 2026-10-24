@@ -1637,6 +1637,13 @@ class MainActivity : ComponentActivity() {
                     onCycleRepeat = { container.player.cycleRepeat() },
                     onToggleShuffle = { container.player.toggleShuffle() },
                     onShowQueue = { showQueue = true },
+                    statusBarLyricsEnabled = statusBarLyricsEnabled,
+                    onToggleStatusBarLyrics = {
+                        val enabled = !statusBarLyricsEnabled
+                        statusBarLyricsEnabled = enabled
+                        container.settings.statusBarLyrics = enabled
+                        if (!enabled) container.tickerLyrics.clear()
+                    },
                     onShowSettings = { showSettings = true; showPlayer = false },
                     onArtistClick = { name ->
                         // The artist page sits above the player: closing it returns to where the tap
