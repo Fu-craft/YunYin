@@ -6,6 +6,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -209,140 +211,158 @@ fun SettingsScreen(
                 fontSize = 34.sp,
                 color = AppTheme.palette.label,
             )
-            Spacer(Modifier.height(14.dp))
-            SectionLabel("状态栏歌词")
-            // The enable switch leads, because it decides whether the two rows below have anything to
-            // say: with 词幕 publishing off there is no connection to report and no status to retry.
-            ToggleRow(
-                title = "词幕状态栏歌词",
-                subtitle = "把当前歌词推送给「词幕」，由它显示在状态栏／锁屏",
-                enabled = lyriconEnabled,
-                onChange = onLyriconEnabledChange,
-            )
-            LyriconRow(
-                enabled = lyriconEnabled,
-                connected = lyriconConnected,
-                available = lyriconAvailable,
-                onRetry = onRetryLyricon,
-            )
-            FlymeTickerRow(
-                supported = flymeSupported,
-                enabled = statusBarLyrics,
-                onChange = onStatusBarLyricsChange,
-            )
+            Spacer(Modifier.height(16.dp))
 
-            Spacer(Modifier.height(28.dp))
-
-            SectionLabel("播放")
-            ToggleRow(
-                title = "无缝衔接",
-                subtitle = "切歌时两首歌重叠淡入淡出，时长可选；下一首未及时加载时会退化为普通切换",
-                enabled = seamlessTransition,
-                onChange = onSeamlessTransitionChange,
-            )
-            LinkRow(
-                text = "交叉淡化时长",
-                value = "${crossfadeSeconds} 秒",
-                onClick = onCycleCrossfadeSeconds,
-            )
-            ActionRow(text = "测试状态栏歌词", onClick = onTestFlymeLyric)
-            ToggleRow(
-                title = "自动进入沉浸歌词",
-                subtitle = "歌词页闲置几秒后自动隐藏播放控件；默认开启",
-                enabled = autoImmersiveLyrics,
-                onChange = onAutoImmersiveLyricsChange,
-            )
-            // Now-playing background switches, ported from NeriPlayer's motion section. Labels are
-            // the user's own wording; the descriptions are NeriPlayer's one-liners.
-            ToggleRow(
-                title = "正在播放模糊封面背景",
-                subtitle = "使用当前封面作为正在播放页面背景",
-                enabled = nowPlayingCoverBlurBackground,
-                onChange = onNowPlayingCoverBlurBackgroundChange,
-            )
-            ToggleRow(
-                title = "正在播放音频律动",
-                subtitle = "控制正在播放页面的音频律动效果",
-                enabled = nowPlayingAudioReactive,
-                onChange = onNowPlayingAudioReactiveChange,
-            )
-            ToggleRow(
-                title = "正在播放动态背景",
-                subtitle = "控制正在播放页面的动态背景效果",
-                enabled = nowPlayingDynamicBackground,
-                onChange = onNowPlayingDynamicBackgroundChange,
-            )
-            LinkRow(
-                text = "定时关闭",
-                value = sleepTimerLabel,
-                onClick = onShowSleepTimer,
-            )
-            // The player's centrepiece: a rounded cover, or a rotating record. A row that opens a picker
-            // rather than an inline switch, because there are two choices and each needs a line saying what
-            // it is — the same reason the quality tier uses a sheet.
-            LinkRow(
-                text = "播放器界面",
-                value = playerStyle.label,
-                onClick = onShowPlayerStyle,
-            )
-
-            Spacer(Modifier.height(28.dp))
-
-            SectionLabel("音源")
-            LxSourcesSection(
-                sources = lxSources,
-                importing = lxImporting,
-                message = lxImportMessage,
-                errorLogAvailable = lxErrorLogAvailable,
-                onCopyErrorLog = onCopyLxErrorLog,
-                onImport = onImportLxSource,
-                onImportFromUrl = onImportLxSourceFromUrl,
-                onRefresh = onRefreshLxSource,
-                onToggle = onToggleLxSource,
-                onDelete = onDeleteLxSource,
-            )
-
-            Spacer(Modifier.height(28.dp))
-
-            SectionLabel("存储")
-            ActionRow(text = "下载中心", onClick = onOpenDownloads)
-            ToggleRow(
-                title = "仅 Wi-Fi 下载",
-                subtitle = "默认开启，避免用移动数据开始下载",
-                enabled = downloadWifiOnly,
-                onChange = onDownloadWifiOnlyChange,
-            )
-            ActionRow(text = "清除歌词缓存", onClick = onClearLyricsCache)
-
-            Spacer(Modifier.height(28.dp))
-
-            SectionLabel("关于")
-            // Read from BuildConfig rather than a literal: the previous hardcoded "1.0.0" was a
-            // second source of truth for the version and drifted from the manifest the moment the
-            // version was bumped.
-            InfoRow(text = "版本", value = com.yunyin.music.BuildConfig.VERSION_NAME)
-            // Placed immediately under the version: "检查更新" only makes sense next to the number it
-            // compares against. Hidden when the build has no update repository, so the row cannot offer
-            // something that would immediately fail.
-            if (updateConfigured) {
+            // Order is by expected frequency: playback first (the reason people open settings),
+            // then the now-playing look, status-bar lyrics (niche but discoverable), sources,
+            // downloads/storage, and About last.
+            SettingsSection(title = "播放", subtitle = "切歌、播放页与定时行为") {
+                ToggleRow(
+                    title = "无缝衔接",
+                    subtitle = "切歌时让两首重叠淡入淡出",
+                    enabled = seamlessTransition,
+                    onChange = onSeamlessTransitionChange,
+                )
+                RowDivider()
                 LinkRow(
-                    text = "检查更新",
-                    value = updateRowValue(updateState),
-                    onClick = onCheckUpdate,
+                    text = "交叉淡化时长",
+                    subtitle = "切歌重叠的时长",
+                    value = "${crossfadeSeconds} 秒",
+                    onClick = onCycleCrossfadeSeconds,
+                )
+                RowDivider()
+                LinkRow(
+                    text = "定时关闭",
+                    subtitle = "到点后自动停止播放",
+                    value = sleepTimerLabel,
+                    onClick = onShowSleepTimer,
+                )
+                RowDivider()
+                LinkRow(
+                    text = "播放器界面",
+                    subtitle = "播放页展示封面或唱片",
+                    value = playerStyle.label,
+                    onClick = onShowPlayerStyle,
+                )
+                RowDivider()
+                ToggleRow(
+                    title = "自动进入沉浸歌词",
+                    subtitle = "歌词页闲置几秒后隐藏播放控件",
+                    enabled = autoImmersiveLyrics,
+                    onChange = onAutoImmersiveLyricsChange,
                 )
             }
-            InfoRow(text = "歌词", value = "AMLL 逐字歌词")
-            LinkRow(text = "项目主页", value = "GitHub", onClick = onOpenProject)
-            // Only shown when there *is* a recorded crash. A permanently visible row would be noise for
-            // everyone who never crashes, and its presence is itself the useful signal; but without it a
-            // user who hits a crash has no way to hand over the report — which is how the launch crash
-            // in 3.8.0 had to be reproduced from a screenshot of the stack trace instead of just read.
-            if (hasCrashLog) {
-                ActionRow(text = "复制上次崩溃日志", onClick = onCopyCrashLog)
-            }
-            }
-        }
 
+            SettingsSection(title = "正在播放外观", subtitle = "播放页的背景与律动") {
+                ToggleRow(
+                    title = "模糊封面背景",
+                    subtitle = "用当前封面作为播放页背景",
+                    enabled = nowPlayingCoverBlurBackground,
+                    onChange = onNowPlayingCoverBlurBackgroundChange,
+                )
+                RowDivider()
+                ToggleRow(
+                    title = "音频律动",
+                    subtitle = "背景随音频节奏变化",
+                    enabled = nowPlayingAudioReactive,
+                    onChange = onNowPlayingAudioReactiveChange,
+                )
+                RowDivider()
+                ToggleRow(
+                    title = "动态背景",
+                    subtitle = "显示随时间变化的动态背景",
+                    enabled = nowPlayingDynamicBackground,
+                    onChange = onNowPlayingDynamicBackgroundChange,
+                )
+            }
+
+            SettingsSection(title = "状态栏歌词", subtitle = "在系统状态栏或锁屏显示歌词") {
+                ToggleRow(
+                    title = "推送到词幕",
+                    subtitle = "由「词幕」显示歌词，需已安装该应用",
+                    enabled = lyriconEnabled,
+                    onChange = onLyriconEnabledChange,
+                )
+                RowDivider()
+                LyriconRow(
+                    enabled = lyriconEnabled,
+                    connected = lyriconConnected,
+                    available = lyriconAvailable,
+                    onRetry = onRetryLyricon,
+                )
+                RowDivider()
+                FlymeTickerRow(
+                    supported = flymeSupported,
+                    enabled = statusBarLyrics,
+                    onChange = onStatusBarLyricsChange,
+                )
+                RowDivider()
+                ActionRow(
+                    text = "测试状态栏歌词",
+                    subtitle = "发送一条测试歌词到状态栏",
+                    onClick = onTestFlymeLyric,
+                )
+            }
+
+            SettingsSection(title = "音源", subtitle = "自定义音源脚本与错误日志") {
+                LxSourcesSection(
+                    sources = lxSources,
+                    importing = lxImporting,
+                    message = lxImportMessage,
+                    errorLogAvailable = lxErrorLogAvailable,
+                    onCopyErrorLog = onCopyLxErrorLog,
+                    onImport = onImportLxSource,
+                    onImportFromUrl = onImportLxSourceFromUrl,
+                    onRefresh = onRefreshLxSource,
+                    onToggle = onToggleLxSource,
+                    onDelete = onDeleteLxSource,
+                )
+            }
+
+            SettingsSection(title = "下载与存储") {
+                LinkRow(
+                    text = "下载中心",
+                    subtitle = "查看进行中、已完成与失败的下载",
+                    value = "",
+                    onClick = onOpenDownloads,
+                )
+                RowDivider()
+                ToggleRow(
+                    title = "仅 Wi-Fi 下载",
+                    subtitle = "避免用移动数据开始下载",
+                    enabled = downloadWifiOnly,
+                    onChange = onDownloadWifiOnlyChange,
+                )
+                RowDivider()
+                ActionRow(
+                    text = "清除歌词缓存",
+                    subtitle = "删除已下载的歌词文件",
+                    onClick = onClearLyricsCache,
+                )
+            }
+
+            SettingsSection(title = "关于") {
+                InfoRow(text = "版本", value = com.yunyin.music.BuildConfig.VERSION_NAME)
+                if (updateConfigured) {
+                    RowDivider()
+                    LinkRow(
+                        text = "检查更新",
+                        value = updateRowValue(updateState),
+                        onClick = onCheckUpdate,
+                    )
+                }
+                RowDivider()
+                InfoRow(text = "歌词来源", value = "AMLL 逐字歌词")
+                RowDivider()
+                LinkRow(text = "项目主页", value = "GitHub", onClick = onOpenProject)
+                if (hasCrashLog) {
+                    RowDivider()
+                    ActionRow(text = "复制上次崩溃日志", onClick = onCopyCrashLog)
+                }
+            }
+            Spacer(Modifier.height(24.dp))
+                }
+            }
         GlassTopBar(
             backdrop = topBarBackdrop,
             modifier = Modifier.align(Alignment.TopCenter),
@@ -394,9 +414,9 @@ private fun LyriconRow(
     Row(
         Modifier
             .fillMaxWidth()
-            .clip(ContinuousRoundedRectangle(10.dp))
+            .heightIn(min = 56.dp)
             .then(if (retryable) Modifier.clickable(onClick = onRetry) else Modifier)
-            .padding(horizontal = 12.dp, vertical = 12.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
@@ -445,7 +465,7 @@ private fun FlymeTickerRow(
     Row(
         Modifier
             .fillMaxWidth()
-            .clip(ContinuousRoundedRectangle(10.dp))
+            .heightIn(min = 56.dp)
             .then(
                 if (supported) {
                     Modifier.clickable { onChange(!enabled) }
@@ -453,7 +473,7 @@ private fun FlymeTickerRow(
                     Modifier
                 },
             )
-            .padding(horizontal = 12.dp, vertical = 12.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
@@ -503,25 +523,55 @@ private fun updateRowValue(state: UpdateUiState): String = when (state) {
     is UpdateUiState.Failed -> "检查失败"
 }
 
+/** A titled card of settings rows. One card per group; one row component per control type. */
 @Composable
-private fun SectionLabel(text: String) {
-    Text(
-        text = text,
-        fontFamily = SFPro,
-        fontSize = 13.sp,
-        fontWeight = FontWeight.Medium,
-        color = AppTheme.palette.secondaryLabel,
-        modifier = Modifier.padding(bottom = 6.dp),
+private fun SettingsSection(
+    title: String,
+    subtitle: String? = null,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Column(Modifier.fillMaxWidth().padding(bottom = 22.dp)) {
+        Text(
+            title,
+            fontFamily = SFPro,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = AppTheme.palette.secondaryLabel,
+            modifier = Modifier.padding(start = 4.dp),
+        )
+        if (subtitle != null) {
+            Text(
+                subtitle,
+                fontFamily = SFPro,
+                fontSize = 11.sp,
+                color = AppTheme.palette.tertiaryLabel,
+                modifier = Modifier.padding(start = 4.dp, top = 2.dp),
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .clip(ContinuousRoundedRectangle(AppleShapes.card))
+                .background(AppTheme.palette.secondaryBackground),
+            content = content,
+        )
+    }
+}
+
+/** Hairline between rows inside a card; inset to the row's text, not the card edge. */
+@Composable
+private fun RowDivider() {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp)
+            .height(1.dp)
+            .background(AppTheme.palette.separator.copy(alpha = 0.45f)),
     )
 }
 
-/**
- * A title/subtitle row with a switch.
- *
- * The whole row is the tap target and the switch takes a null handler, the same arrangement as
- * [FlymeTickerRow] and for the same reason: two handlers on one tap fire twice or get swallowed,
- * depending on hit testing.
- */
+/** A title/subtitle row with a switch. The whole row is the tap target. */
 @Composable
 private fun ToggleRow(
     title: String,
@@ -532,23 +582,21 @@ private fun ToggleRow(
     Row(
         Modifier
             .fillMaxWidth()
-            .clip(ContinuousRoundedRectangle(10.dp))
+            .heightIn(min = 64.dp)
             .clickable { onChange(!enabled) }
-            .padding(horizontal = 12.dp, vertical = 12.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(Modifier.weight(1f)) {
+        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+            Text(title, fontFamily = SFPro, fontSize = 15.sp, color = AppTheme.palette.label)
+            Spacer(Modifier.height(2.dp))
             Text(
-                text = title,
-                fontFamily = SFPro,
-                fontSize = 16.sp,
-                color = AppTheme.palette.label,
-            )
-            Text(
-                text = subtitle,
+                subtitle,
                 fontFamily = SFPro,
                 fontSize = 12.sp,
                 color = AppTheme.palette.secondaryLabel,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
             )
         }
         Switch(
@@ -562,87 +610,104 @@ private fun ToggleRow(
     }
 }
 
+/** A navigation/value row: title + optional subtitle on the left, value + chevron on the right. */
 @Composable
-private fun ActionRow(text: String, onClick: () -> Unit) {
+private fun LinkRow(
+    text: String,
+    value: String,
+    onClick: () -> Unit,
+    subtitle: String? = null,
+) {
     Row(
         Modifier
             .fillMaxWidth()
-            .clip(ContinuousRoundedRectangle(10.dp))
+            .heightIn(min = if (subtitle == null) 52.dp else 64.dp)
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 14.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text,
-            fontFamily = SFPro,
-            fontSize = 16.sp,
-            color = AppTheme.palette.accent,
-            modifier = Modifier.weight(1f),
+        Column(Modifier.weight(1f)) {
+            Text(text, fontFamily = SFPro, fontSize = 15.sp, color = AppTheme.palette.label)
+            if (subtitle != null) {
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    subtitle,
+                    fontFamily = SFPro,
+                    fontSize = 12.sp,
+                    color = AppTheme.palette.secondaryLabel,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        if (value.isNotBlank()) {
+            Text(value, fontFamily = SFPro, fontSize = 14.sp, color = AppTheme.palette.secondaryLabel)
+            Spacer(Modifier.width(4.dp))
+        }
+        Icon(
+            SfIcons.ChevronRight,
+            contentDescription = null,
+            tint = AppTheme.palette.tertiaryLabel,
+            modifier = Modifier.size(15.dp),
         )
     }
 }
 
+/** Non-interactive title/value row (version, lyric source). */
 @Composable
 private fun InfoRow(text: String, value: String) {
     Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 12.dp),
+        Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text,
-            fontFamily = SFPro,
-            fontSize = 16.sp,
-            color = AppTheme.palette.label,
-            modifier = Modifier.weight(1f),
-        )
-        Text(
-            value,
-            fontFamily = SFPro,
-            fontSize = 15.sp,
-            color = AppTheme.palette.secondaryLabel,
-        )
+        Text(text, fontFamily = SFPro, fontSize = 15.sp, color = AppTheme.palette.label, modifier = Modifier.weight(1f))
+        Text(value, fontFamily = SFPro, fontSize = 14.sp, color = AppTheme.palette.secondaryLabel)
     }
 }
 
-/**
- * An [InfoRow] that opens something.
- *
- * The value is tinted with the accent and followed by an outbound glyph, which is how a link reads in
- * a settings list: the colour says it acts, the arrow says the act leaves the app. Without either, a
- * tappable row is indistinguishable from the two informational rows above it.
- */
+/** A neutral (or destructive) action row. */
 @Composable
-private fun LinkRow(text: String, value: String, onClick: () -> Unit) {
+private fun ActionRow(
+    text: String,
+    onClick: () -> Unit,
+    subtitle: String? = null,
+    destructive: Boolean = false,
+) {
     Row(
         Modifier
             .fillMaxWidth()
-            .clip(ContinuousRoundedRectangle(10.dp))
+            .heightIn(min = 52.dp)
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 12.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text,
-            fontFamily = SFPro,
-            fontSize = 16.sp,
-            color = AppTheme.palette.label,
-            modifier = Modifier.weight(1f),
-        )
-        Text(
-            value,
-            fontFamily = SFPro,
-            fontSize = 15.sp,
-            color = AppTheme.palette.accent,
-        )
-        Spacer(Modifier.width(4.dp))
-        Icon(
-            SfIcons.ArrowUpRight,
-            contentDescription = null,
-            tint = AppTheme.palette.accent,
-            modifier = Modifier.size(13.dp),
-        )
+        Column(Modifier.weight(1f)) {
+            Text(
+                text,
+                fontFamily = SFPro,
+                fontSize = 15.sp,
+                color = if (destructive) AppTheme.palette.accent else AppTheme.palette.label,
+            )
+            if (subtitle != null) {
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    subtitle,
+                    fontFamily = SFPro,
+                    fontSize = 12.sp,
+                    color = AppTheme.palette.secondaryLabel,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        if (!destructive) {
+            Icon(
+                SfIcons.ChevronRight,
+                contentDescription = null,
+                tint = AppTheme.palette.tertiaryLabel,
+                modifier = Modifier.size(15.dp),
+            )
+        }
     }
 }
 
@@ -678,36 +743,38 @@ private fun LxSourcesSection(
 ) {
     LinkRow(
         text = "导入自定义音源",
-        value = if (importing) "校验中…" else "选择 .js 文件",
-        // A second tap while the first script is running would start a second engine; the row says what it is
-        // doing instead of silently ignoring the tap.
+        subtitle = "选择本地 .js 脚本并校验",
+        value = if (importing) "校验中…" else "",
         onClick = { if (!importing) onImport() },
     )
-    // URL import goes through exactly the same validation pipeline after the download; the row is separate
-    // because the user is choosing a *delivery method*, not a different kind of script.
+    RowDivider()
     LinkRow(
         text = "从链接导入",
-        value = if (importing) "校验中…" else "粘贴网络音源地址",
+        subtitle = "粘贴网络音源地址",
+        value = if (importing) "校验中…" else "",
         onClick = { if (!importing) onImportFromUrl() },
     )
     if (importing) {
+        RowDivider()
         HintRow("正在运行脚本并等待它发送 inited 事件…")
     }
     if (message != null) {
+        RowDivider()
         HintRow(message)
     }
-    // Only when a failure was recorded: the detail is a JS stack, and copying it is how an author gets a report
-    // they can act on. A permanently visible row would be noise for everyone whose sources work.
     if (errorLogAvailable) {
-        ActionRow(text = "复制音源错误日志", onClick = onCopyErrorLog)
+        RowDivider()
+        ActionRow(text = "复制音源错误日志", subtitle = "包含脚本失败时的详细调用栈", onClick = onCopyErrorLog)
     }
     if (sources.isEmpty()) {
+        RowDivider()
         if (!importing) {
             HintRow("尚未导入音源脚本。支持 LX Music（洛雪音乐）自定义源，导入时会校验脚本能否初始化。")
         }
         return
     }
     sources.forEach { source ->
+        RowDivider()
         LxSourceRow(
             source = source,
             onToggle = { enabled -> onToggle(source.id, enabled) },
@@ -716,9 +783,11 @@ private fun LxSourcesSection(
         )
     }
     if (sources.size > 1) {
+        RowDivider()
         HintRow("同一个音源标识（如 wy）只能启用一个脚本，避免同一个平台由两个脚本同时应答。")
     }
     if (sources.any { it.enabled && LxSourceKey.WY in it.keys }) {
+        RowDivider()
         HintRow("已启用的音源会优先解析网易云播放链接；解析失败或超时会自动回退到内置接口。")
     }
 }
@@ -736,73 +805,67 @@ private fun LxSourceRow(
         append("支持 ").append(source.keysLabel)
         source.versionAuthorLabel.takeIf { it.isNotBlank() }?.let { append(" · ").append(it) }
     }
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clip(ContinuousRoundedRectangle(10.dp))
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(
-                text = source.header.name,
-                fontFamily = SFPro,
-                fontSize = 16.sp,
-                color = AppTheme.palette.label,
-            )
-            Text(
-                text = subtitle,
-                fontFamily = SFPro,
-                fontSize = 12.sp,
-                color = AppTheme.palette.secondaryLabel,
-            )
-            // The origin is part of the source's identity: a URL script is updatable, and the user needs to know
-            // where it came from before reloading or deleting it.
-            source.originUrl?.let { origin ->
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(start = 16.dp, end = 16.dp, top = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                Text(source.header.name, fontFamily = SFPro, fontSize = 15.sp, color = AppTheme.palette.label)
                 Text(
-                    text = origin,
+                    subtitle,
                     fontFamily = SFPro,
-                    fontSize = 11.sp,
-                    color = AppTheme.palette.tertiaryLabel,
+                    fontSize = 12.sp,
+                    color = AppTheme.palette.secondaryLabel,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                source.originUrl?.let { origin ->
+                    Text(
+                        origin,
+                        fontFamily = SFPro,
+                        fontSize = 11.sp,
+                        color = AppTheme.palette.tertiaryLabel,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
-        }
-        if (onRefresh != null) {
-            Text(
-                text = "更新",
-                fontFamily = SFPro,
-                fontSize = 13.sp,
-                color = AppTheme.palette.accent,
-                modifier = Modifier
-                    .clip(ContinuousRoundedRectangle(8.dp))
-                    .clickable(onClick = onRefresh)
-                    .padding(horizontal = 8.dp, vertical = 6.dp),
+            Switch(
+                checked = source.enabled,
+                onCheckedChange = onToggle,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = androidx.compose.ui.graphics.Color.White,
+                    checkedTrackColor = AppTheme.palette.accent,
+                ),
             )
-            Spacer(Modifier.width(2.dp))
         }
-        // Delete is a word, not an icon: the switch already owns the right-hand edge, and two unlabelled
-        // glyphs next to each other would be a guessing game about which one toggles and which one removes.
-        Text(
-            text = "删除",
-            fontFamily = SFPro,
-            fontSize = 13.sp,
-            color = AppTheme.palette.accent,
-            modifier = Modifier
-                .clip(ContinuousRoundedRectangle(8.dp))
-                .clickable(onClick = onDelete)
-                .padding(horizontal = 8.dp, vertical = 6.dp),
-        )
-        Spacer(Modifier.width(4.dp))
-        Switch(
-            checked = source.enabled,
-            onCheckedChange = onToggle,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = androidx.compose.ui.graphics.Color.White,
-                checkedTrackColor = AppTheme.palette.accent,
-            ),
-        )
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.End,
+        ) {
+            if (onRefresh != null) {
+                InlineAction("更新", onRefresh)
+                Spacer(Modifier.width(6.dp))
+            }
+            InlineAction("删除", onDelete)
+        }
+        Spacer(Modifier.height(6.dp))
+    }
+}
+
+/** A 44 dp text action used inside a source row's trailing controls. */
+@Composable
+private fun InlineAction(text: String, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .height(44.dp)
+            .clip(ContinuousRoundedRectangle(8.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text, fontFamily = SFPro, fontSize = 13.sp, color = AppTheme.palette.accent)
     }
 }
 
@@ -817,7 +880,7 @@ private fun HintRow(text: String) {
         color = AppTheme.palette.tertiaryLabel,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 6.dp),
+            .padding(horizontal = 16.dp, vertical = 10.dp),
     )
 }
 
