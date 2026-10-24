@@ -71,9 +71,21 @@ internal object AppleIosRules {
     const val MESH_PERIOD_SECONDS = 5f
     const val MESH_WARP_AMPLITUDE = 0.035f
     const val MESH_RIPPLE_AMPLITUDE = 0.004f
-    const val COVER_FADE_SECONDS = 1f
+    const val COVER_FADE_SECONDS = 0.5f
+    const val LYRICS_BLUR_FADE_SECONDS = 0.25f
     const val AUDIO_ROTATION_GAIN = 0.15f
     const val AUDIO_SCRIM_BRIGHTEN = 0.05f
+
+    /** Held at the upstream default; no setting row. */
+    const val RENDER_SCALE = 1.0f
+    const val BLUR_SCALE = 1.0f
+
+    /** App-side spectrum stand-in: we have a full-band level and a beat, not five FFT bands. */
+    const val BASS_LEVEL_WEIGHT = 0.65f
+    const val BASS_BEAT_WEIGHT = 0.35f
+    const val IMAGE_PULSE_POWER_MIX = 0.1f
+    const val IMAGE_PULSE_INTENSITY = 0.33f
+    const val BASS_PULSE_SCALE = 1.0f
 
     fun scrimAlpha(isDark: Boolean): Float = if (isDark) DARK_BEHIND_LYRICS_SCRIM else LIGHT_APPEARANCE_SCRIM
 
@@ -98,7 +110,41 @@ internal object AppleIosRules {
     }
 
     /** Renderer sigma is expressed at the 300 px scale; the small surface needs sigma / 4. */
-    fun blurSigmaSmall(): Float = GAUSSIAN_SIGMA / BLUR_SURFACE_DOWNSAMPLE
+    /** The upstream picks the sharper blur behind the lyrics page, the softer one on the page. */
+    fun blurSigma(lyricsVisible: Boolean): Float =
+        (if (lyricsVisible) LYRICS_BLUR_SIGMA else ORDINARY_BLUR_SIGMA) * BLUR_SCALE
+
+    fun blurSigmaSmall(lyricsVisible: Boolean): Float = blurSigma(lyricsVisible) / BLUR_SURFACE_DOWNSAMPLE
+
+    /** Upstream `ProcessSpectrumPower`: smootherstep over the clamped 0..1 power. */
+    fun processSpectrumPower(x: Float): Float {
+        val v = x.coerceIn(0f, 1f)
+        return v * v * v * (v * (v * 6f - 15f) + 10f)
+    }
+
+    /** Full-band level + beat stand-in for the low-bass FFT bands upstream. */
+    fun bassEnergy(level: Float, beat: Float): Float =
+        (level.coerceIn(0f, 1f) * BASS_LEVEL_WEIGHT +
+            beat.coerceIn(0f, 1f) * BASS_BEAT_WEIGHT).coerceIn(0f, 1f)
+
+    /**
+     * `1 + 0.33 * processed² * BassPulseScale`, clamped by the 0..1 input and the 0..10 upstream
+     * setting range. With audio off or scale zero this is exactly 1.0; at full power it is 1.33.
+     */
+    fun imageScale(level: Float, beat: Float, audioEnabled: Boolean, bassPulseScale: Float = BASS_PULSE_SCALE): Float {
+        if (!audioEnabled || bassPulseScale <= 0f) return 1f
+        val power = processSpectrumPower(bassEnergy(level, beat))
+        val scale = bassPulseScale.coerceIn(0f, 10f)
+        return (1f + IMAGE_PULSE_INTENSITY * power * power * scale).coerceAtMost(1.33f)
+    }
+
+    /** 0.5 s when the cover changes; 0.25 s when only the blur mode changes. */
+    fun transitionSeconds(previousSourceKey: Int?, currentSourceKey: Int): Float =
+        if (previousSourceKey != null && previousSourceKey == currentSourceKey) {
+            LYRICS_BLUR_FADE_SECONDS
+        } else {
+            COVER_FADE_SECONDS
+        }
 
     /** Audio only modulates rotation when the setting is on; quiet passages stay at 1.0. */
     fun audioRotationScale(audioEnabled: Boolean, level: Float): Float =
@@ -111,7 +157,7 @@ internal object AppleIosRules {
 }
 
 /** Bitmap prepared once per cover, on a background thread. */
-internal class PreparedAppleIosCover(val bitmap: Bitmap)
+internal class PreparedAppleIosCover(val bitmap: Bitmap, val sourceKey: Int)
 
 /**
  * CPU pre-blur, cached by the caller per cover.
@@ -123,7 +169,7 @@ internal class PreparedAppleIosCover(val bitmap: Bitmap)
  * which is exactly why this pipeline exists.
  */
 internal object AppleIosBlur {
-    fun prepare(image: ImageBitmap): PreparedAppleIosCover? = runCatching {
+    fun prepare(image: ImageBitmap, lyricsVisible: Boolean, sourceKey: Int): PreparedAppleIosCover? = runCatching {
         val raw = image.asAndroidBitmap()
         val safe = if (raw.config == Bitmap.Config.HARDWARE) {
             raw.copy(Bitmap.Config.ARGB_8888, false)
@@ -134,9 +180,9 @@ internal object AppleIosBlur {
         val cover = Bitmap.createScaledBitmap(safe, coverSize[0], coverSize[1], true)
         val smallSize = AppleIosRules.blurDimensions(safe.width, safe.height)
         val small = Bitmap.createScaledBitmap(cover, smallSize[0], smallSize[1], true)
-        val blurred = gaussian(small, AppleIosRules.blurSigmaSmall())
+        val blurred = gaussian(small, AppleIosRules.blurSigmaSmall(lyricsVisible))
         val upscaled = Bitmap.createScaledBitmap(blurred, coverSize[0], coverSize[1], true)
-        PreparedAppleIosCover(upscaled)
+        PreparedAppleIosCover(upscaled, sourceKey)
     }.getOrNull()
 
     private fun gaussian(source: Bitmap, sigma: Float): Bitmap {
@@ -209,6 +255,7 @@ internal fun AppleIosBackground(
     palette: DynamicBackgroundPalette,
     cover: ImageBitmap?,
     isDark: Boolean,
+    lyricsVisible: Boolean = false,
     modifier: Modifier = Modifier,
     dim: Float = 0f,
     paused: Boolean = false,
@@ -227,9 +274,9 @@ internal fun AppleIosBackground(
         return
     }
 
-    val prepared by produceState<PreparedAppleIosCover?>(initialValue = null, cover) {
+    val prepared by produceState<PreparedAppleIosCover?>(initialValue = null, cover, lyricsVisible) {
         value = if (cover == null) null else withContext(Dispatchers.Default) {
-            AppleIosBlur.prepare(cover)
+            AppleIosBlur.prepare(cover, lyricsVisible, cover.hashCode())
         }
     }
     var current by remember { mutableStateOf<PreparedAppleIosCover?>(null) }
@@ -245,35 +292,46 @@ internal fun AppleIosBackground(
 
     LaunchedEffect(prepared, painter) {
         val next = prepared ?: return@LaunchedEffect
-        val hadPrevious = current != null
-        previous = current ?: next
+        val prior = current
+        previous = prior ?: next
         current = next
         painter.setScrim(AppleIosRules.scrimAlpha(isDark))
         painter.setDither(AppleIosRules.DITHER_STRENGTH)
-        painter.setCovers(next, previous ?: next)
-        val startNs = if (hadPrevious) System.nanoTime() else 0L
+        painter.setCovers(next, prior ?: next)
+        val transitionSeconds = AppleIosRules.transitionSeconds(prior?.sourceKey, next.sourceKey)
+        val startNs = if (prior != null) System.nanoTime() else 0L
         frameTick++
         var smoothLevel = 0f
+        var smoothBeat = 0f
+        var imageScale = 1f
         while (isActive) {
             var advanced = false
             withFrameNanos { ns ->
                 if (latestPaused) return@withFrameNanos
                 val motion = animatorsOn && !latestStatic
                 if (motion) {
-                    val target = if (latestAudio) AudioReactive.level.value.coerceIn(0f, 1f) else 0f
-                    smoothLevel += (target - smoothLevel) *
-                        (if (target > smoothLevel) 0.12f else 0.045f)
+                    val targetLevel = if (latestAudio) AudioReactive.level.value.coerceIn(0f, 1f) else 0f
+                    val targetBeat = if (latestAudio) AudioReactive.beat.value.coerceIn(0f, 1f) else 0f
+                    smoothLevel += (targetLevel - smoothLevel) *
+                        (if (targetLevel > smoothLevel) 0.12f else 0.045f)
+                    smoothBeat += (targetBeat - smoothBeat) *
+                        (if (targetBeat > smoothBeat) 0.46f else 0.12f)
+                    imageScale = AppleIosRules.imageScale(smoothLevel, smoothBeat, latestAudio)
+                    painter.setImageScale(imageScale)
                     painter.setTime((ns / 1_000_000_000f) % 62.831852f)
                     painter.setAudioLevel(smoothLevel)
                 } else {
                     smoothLevel = 0f
+                    smoothBeat = 0f
+                    imageScale = 1f
+                    painter.setImageScale(1f)
                     painter.setTime(0f)
                     painter.setAudioLevel(0f)
                 }
                 val progress = if (startNs == 0L) 1f else {
                     AppleIosRules.coverFade(
                         ((ns - startNs).coerceAtLeast(0L) / 1_000_000_000f) /
-                            AppleIosRules.COVER_FADE_SECONDS,
+                            transitionSeconds,
                     )
                 }
                 painter.setCoverMix(progress)
@@ -307,6 +365,7 @@ private class AppleIosPainter(context: android.content.Context) {
         shader = RuntimeShader(source)
         shader.setFloatUniform("uScrimAlpha", AppleIosRules.DARK_BEHIND_LYRICS_SCRIM)
         shader.setFloatUniform("uDitherStrength", AppleIosRules.DITHER_STRENGTH)
+        shader.setFloatUniform("uImageScale", 1f)
         paint = Paint().apply {
             this.shader = this@AppleIosPainter.shader
             isAntiAlias = false
@@ -321,6 +380,7 @@ private class AppleIosPainter(context: android.content.Context) {
     fun setDither(strength: Float) = shader.setFloatUniform("uDitherStrength", strength)
     fun setTime(seconds: Float) = shader.setFloatUniform("uTime", seconds)
     fun setAudioLevel(level: Float) = shader.setFloatUniform("uAudioLevel", level.coerceIn(0f, 1f))
+    fun setImageScale(scale: Float) = shader.setFloatUniform("uImageScale", scale.coerceAtLeast(1f))
     fun setCoverMix(progress: Float) = shader.setFloatUniform("uCoverMix", progress.coerceIn(0f, 1f))
 
     fun setCovers(current: PreparedAppleIosCover, previous: PreparedAppleIosCover) {

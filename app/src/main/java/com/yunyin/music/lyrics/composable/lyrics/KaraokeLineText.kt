@@ -1,7 +1,6 @@
 package com.yunyin.music.lyrics.composable.lyrics
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -52,17 +51,52 @@ import androidx.compose.ui.unit.dp
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeAlignment
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeLine
 import com.yunyin.music.lyrics.utils.LayerPaint
-import com.yunyin.music.lyrics.utils.easing.Bounce
-import com.yunyin.music.lyrics.utils.easing.DipAndRise
 import com.yunyin.music.lyrics.utils.easing.Swell
+import com.yunyin.music.lyrics.utils.isCjk
 import com.yunyin.music.lyrics.utils.isPunctuation
 import com.yunyin.music.lyrics.utils.isRtl
 import com.yunyin.music.ui.theme.Motion
 import kotlin.math.roundToInt
 
-private const val FixedSimpleAnimationDurationMs = 700f
-private const val MaxSimpleFloatOffsetY = 4f
-private val SimpleFloatEasing = CubicBezierEasing(0.0f, 0.0f, 0.2f, 1.0f)
+/**
+ * Lyricify's documented float/glow defaults, translated into a draw-time-only effect.
+ *
+ * Values: 2 dp maximum lift; 180 ms total (90 ms rise, 90 ms settle); glow max alpha 0.28 at
+ * half-fill and zero at the syllable's end; 6 dp glow radius. The closed app documents float on,
+ * height 2.0, High level, Android progress width ~100, animation speed 1.0; it does not publish an
+ * easing curve or glow radius, so those are our choices (ease-out rise -> ease-in-out settle).
+ */
+internal object LyricKaraokeMotion {
+    const val MaxFloatDp = 2f
+    const val FloatDurationMs = 180
+    const val FloatRiseMs = 90
+    const val MaxGlowAlpha = 0.28f
+    const val GlowRadiusDp = 6f
+
+    fun floatFraction(elapsedMs: Int, durationMs: Int = FloatDurationMs): Float {
+        // A short syllable shortens the whole pulse rather than snapping back at its end.
+        val duration = durationMs.coerceIn(1, FloatDurationMs)
+        if (elapsedMs <= 0 || elapsedMs >= duration) return 0f
+        val rise = duration / 2f
+        return if (elapsedMs <= rise) {
+            Motion.EaseOut.transform(elapsedMs / rise)
+        } else {
+            1f - Motion.EaseInOut.transform((elapsedMs - rise) / (duration - rise))
+        }
+    }
+
+    /** Zero at both ends of the syllable, low peak in the middle; never glows an inactive word. */
+    fun glowAlpha(fillProgress: Float): Float {
+        val p = fillProgress.coerceIn(0f, 1f)
+        return 4f * p * (1f - p) * MaxGlowAlpha
+    }
+
+    fun shouldUseWholeLineHighlight(text: String, cjkKaraokeEnabled: Boolean): Boolean =
+        !cjkKaraokeEnabled && text.any { it.isCjk() }
+
+    /** Reduced motion / system animations off means no draw-time float, but the fill remains. */
+    fun shouldFloat(animationsEnabled: Boolean): Boolean = animationsEnabled
+}
 
 /**
  * Creates a horizontal gradient brush that represents the karaoke progress.
@@ -187,11 +221,33 @@ fun DrawScope.drawLyricsLine(
     showDebugRectangles: Boolean = false,
     showPhonetic: Boolean = true,
     /** Opacity of the not-yet-sung part of a line. See [createLineGradientBrush]. */
-    unsungAlpha: Float = 0.2f
+    unsungAlpha: Float = 0.2f,
+    /** CJK karaoke disabled: one line-level highlight instead of a syllable wipe. */
+    wholeLineHighlight: Boolean = false,
+    /** False when system animations are off; the text is drawn at its layout position. */
+    floatEnabled: Boolean = true
 ) {
     rowRenderData.forEach { rowData ->
         val rowLayouts = rowData.rowLayouts
         val lastSyllableEnd = rowData.lastSyllableEnd
+
+        if (wholeLineHighlight) {
+            val rowColor = if (currentTimeMs >= rowData.firstSyllableStart) {
+                color
+            } else {
+                color.copy(alpha = unsungAlpha)
+            }
+            drawRowText(
+                rowLayouts,
+                rowColor,
+                blendMode,
+                showDebugRectangles,
+                currentTimeMs,
+                showPhonetic,
+                floatEnabled,
+            )
+            return@forEach
+        }
 
         if (currentTimeMs >= lastSyllableEnd) {
             drawRowText(
@@ -200,7 +256,8 @@ fun DrawScope.drawLyricsLine(
                 blendMode,
                 showDebugRectangles,
                 currentTimeMs,
-                showPhonetic
+                showPhonetic,
+                floatEnabled,
             )
             return@forEach
         }
@@ -215,7 +272,8 @@ fun DrawScope.drawLyricsLine(
                 blendMode,
                 showDebugRectangles,
                 currentTimeMs,
-                showPhonetic
+                showPhonetic,
+                floatEnabled,
             )
 
             val progressBrush = createLineGradientBrush(rowData, currentTimeMs, isRtl, color, unsungAlpha)
@@ -246,11 +304,40 @@ private fun DrawScope.drawRowText(
     blendMode: BlendMode,
     showDebugRectangles: Boolean,
     currentTimeMs: Int,
-    showPhonetic: Boolean = true
+    showPhonetic: Boolean = true,
+    floatEnabled: Boolean = true
 ) {
     rowLayouts.forEachIndexed { index, syllableLayout ->
         val wordAnimInfo = syllableLayout.wordAnimInfo
         val phoneticDrawColor = drawColor.copy(alpha = 0.4f)
+        val isActiveSyllable = currentTimeMs in syllableLayout.syllable.start until syllableLayout.syllable.end
+        val floatFraction = if (floatEnabled && isActiveSyllable) {
+            LyricKaraokeMotion.floatFraction(
+                currentTimeMs - syllableLayout.syllable.start,
+                syllableLayout.syllable.end - syllableLayout.syllable.start,
+            )
+        } else {
+            0f
+        }
+        val floatOffsetY = if (LyricKaraokeMotion.shouldFloat(floatEnabled) && isActiveSyllable) {
+            LyricKaraokeMotion.MaxFloatDp.dp.toPx() * floatFraction
+        } else {
+            0f
+        }
+        val glowAlpha = if (isActiveSyllable) {
+            LyricKaraokeMotion.glowAlpha(syllableLayout.syllable.progress(currentTimeMs))
+        } else {
+            0f
+        }
+        val glowShadow = if (glowAlpha > 0f) {
+            Shadow(
+                color = drawColor.copy(alpha = glowAlpha),
+                offset = Offset.Zero,
+                blurRadius = LyricKaraokeMotion.GlowRadiusDp.dp.toPx(),
+            )
+        } else {
+            null
+        }
 
         if (wordAnimInfo != null) {
             val fastCharAnimationThresholdMs = 200f
@@ -264,7 +351,6 @@ private fun DrawScope.drawRowText(
             val latestStartTime = wordAnimInfo.wordEndTime - awesomeDuration
             val animationIntensityBase =
                 ((wordAnimInfo.wordDuration - fastCharAnimationThresholdMs * numCharsInWord) / 1000)
-            val dipAndRise = DipAndRise(dip = (0.5 * animationIntensityBase).coerceIn(0.0, 0.5))
             val swell = Swell((0.1 * animationIntensityBase).coerceIn(0.0, 0.1))
 
             syllableLayout.syllable.content.forEachIndexed { charIndex, _ ->
@@ -282,23 +368,18 @@ private fun DrawScope.drawRowText(
                         0f, 1f
                     )
 
-                val floatOffset = 4f * dipAndRise.transform(1.0f - awesomeProgress)
                 val scale = 1f + swell.transform(awesomeProgress)
 
                 val centeredOffsetX = (charBox.width - singleCharLayoutResult.size.width) / 2f
                 val xPos = syllableLayout.position.x + charBox.left + centeredOffsetX
-                val yPos = syllableLayout.position.y + charBox.top + floatOffset
+                val yPos = syllableLayout.position.y + charBox.top + floatOffsetY
 
-                val blurRadius = 10f * Bounce.transform(awesomeProgress)
-                val shadow = Shadow(
-                    color = drawColor.copy(0.4f), offset = Offset(0f, 0f), blurRadius = blurRadius
-                )
                 withTransform({ scale(scale = scale, pivot = syllableLayout.wordPivot) }) {
                     drawText(
                         textLayoutResult = singleCharLayoutResult,
                         color = drawColor,
                         topLeft = Offset(xPos, yPos),
-                        shadow = shadow,
+                        shadow = glowShadow,
                     )
 
                     if (showDebugRectangles) {
@@ -325,12 +406,11 @@ private fun DrawScope.drawRowText(
                             0f, 1f
                         )
 
-                    val floatOffset = 4f * dipAndRise.transform(1.0f - awesomeProgress)
                     val scale = 1f + swell.transform(awesomeProgress)
 
                     val phoneticX = syllableLayout.position.x
                     val phoneticY =
-                        syllableLayout.position.y - phoneticLayout.size.height + 4.dp.toPx() + floatOffset
+                        syllableLayout.position.y - phoneticLayout.size.height + 4.dp.toPx() + floatOffsetY
 
                     withTransform({ scale(scale = scale, pivot = syllableLayout.wordPivot) }) {
                         drawText(
@@ -342,35 +422,15 @@ private fun DrawScope.drawRowText(
                 }
             }
         } else {
-            val driverLayout = if (syllableLayout.syllable.content.trim().isPunctuation()) {
-                var searchIndex = index - 1
-                while (searchIndex >= 0) {
-                    val candidate = rowLayouts[searchIndex]
-                    if (!candidate.syllable.content.trim().isPunctuation()) {
-                        break
-                    }
-                    searchIndex--
-                }
-                if (searchIndex < 0) syllableLayout else rowLayouts[searchIndex]
-            } else {
-                syllableLayout
-            }
-
-            val timeSinceStart = currentTimeMs - driverLayout.syllable.start
-            val animationProgress =
-                (timeSinceStart / FixedSimpleAnimationDurationMs).coerceIn(0f, 1f)
-
-            val floatCurveValue = SimpleFloatEasing.transform(1f - animationProgress)
-            val floatOffset = MaxSimpleFloatOffsetY * floatCurveValue
-
             val finalPosition = syllableLayout.position.copy(
-                y = syllableLayout.position.y + floatOffset
+                y = syllableLayout.position.y + floatOffsetY
             )
 
             drawText(
                 textLayoutResult = syllableLayout.textLayoutResult,
                 color = drawColor,
                 topLeft = finalPosition,
+                shadow = glowShadow,
             )
 
             if (showPhonetic) {
@@ -394,8 +454,8 @@ private fun DrawScope.drawRowText(
                 )
             }
         }
+        }
     }
-}
 
 /**
  * Renders a single karaoke line, capable of handling multi-row wrapping.
@@ -403,7 +463,7 @@ private fun DrawScope.drawRowText(
  * This composable pre-calculates the text layout and then
  * renders the frames using an efficient Canvas drawing strategy. It handles:
  * - Text measurement and line breaking
- * - Syllable and character-level animations (bounce, rise, swell)
+ * - Syllable-level float/glow plus the existing character swell
  * - Karaoke fill gradient application
  *
  * @param line The karaoke line data.
@@ -443,9 +503,19 @@ fun KaraokeLineText(
      * thing on screen at every point in the line rather than only on the words already sung.
      */
     unsungAlpha: Float = 0.2f,
+    cjkKaraokeEnabled: Boolean = true,
     textMeasurer: TextMeasurer = rememberTextMeasurer()
 ) {
     val isLineRtl = remember(line.syllables) { line.syllables.any { it.content.isRtl() } }
+    val animationsEnabled = remember {
+        runCatching { android.animation.ValueAnimator.areAnimatorsEnabled() }.getOrDefault(true)
+    }
+    val wholeLineHighlight = remember(line.syllables, cjkKaraokeEnabled) {
+        LyricKaraokeMotion.shouldUseWholeLineHighlight(
+            line.syllables.joinToString("") { it.content },
+            cjkKaraokeEnabled,
+        )
+    }
 
     val isRightAligned = remember(line.alignment, isLineRtl) {
         when (line.alignment) {
@@ -532,6 +602,7 @@ fun KaraokeLineText(
                         showDebugRectangles = showDebugRectangles,
                         showTranslation = showTranslation,
                         showPhonetic = showPhonetic,
+                        cjkKaraokeEnabled = cjkKaraokeEnabled,
                         textMeasurer = textMeasurer
                     )
                 }

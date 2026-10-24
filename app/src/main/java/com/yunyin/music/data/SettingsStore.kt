@@ -131,6 +131,11 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_NOW_PLAYING_ANIMATED_COVER, false)
         set(value) = prefs.edit().putBoolean(KEY_NOW_PLAYING_ANIMATED_COVER, value).apply()
 
+    /** CJK karaoke: on by default; off uses whole-line highlight for CJK lyric lines. */
+    var nowPlayingCjkKaraoke: Boolean
+        get() = prefs.getBoolean(KEY_NOW_PLAYING_CJK_KARAOKE, true)
+        set(value) = prefs.edit().putBoolean(KEY_NOW_PLAYING_CJK_KARAOKE, value).apply()
+
     /**
      * The now-playing background family. Only `yunyin` and `oklab` are accepted; `oklab_flow`
      * (the v4.32.0–v4.32.2 legacy key) is normalised to `oklab`, and every other stored value —
@@ -332,6 +337,7 @@ class SettingsStore(context: Context) {
         private const val KEY_NOW_PLAYING_DYNAMIC = "now_playing_dynamic_background"
         private const val KEY_NOW_PLAYING_BACKGROUND_STYLE = "now_playing_background_style"
         private const val KEY_NOW_PLAYING_ANIMATED_COVER = "now_playing_animated_cover"
+        private const val KEY_NOW_PLAYING_CJK_KARAOKE = "now_playing_cjk_karaoke"
         private const val KEY_PROFILE_SIGNATURE = "profile_signature"
         private const val KEY_CUSTOM_NICKNAME = "custom_nickname"
         private const val KEY_USE_NETEASE_NAME = "use_netease_name"

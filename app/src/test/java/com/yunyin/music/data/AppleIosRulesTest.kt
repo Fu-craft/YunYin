@@ -48,7 +48,10 @@ class AppleIosRulesTest {
         val blur = AppleIosRules.blurDimensions(1000, 500)
         assertEquals(75, blur[0])
         assertEquals(38, blur[1])
-        assertEquals(10.625f, AppleIosRules.blurSigmaSmall(), 0f)
+        assertEquals(10.625f, AppleIosRules.blurSigmaSmall(true), 0f)
+        assertEquals(20f, AppleIosRules.blurSigmaSmall(false), 0f)
+        assertEquals(42.5f, AppleIosRules.blurSigma(true), 0f)
+        assertEquals(80f, AppleIosRules.blurSigma(false), 0f)
         assertEquals(1, AppleIosRules.blurDimensions(1, 1)[0])
     }
 
@@ -59,6 +62,27 @@ class AppleIosRulesTest {
         assertEquals(1.075f, AppleIosRules.audioRotationScale(true, 0.5f), 0.0001f)
         assertEquals(1.15f, AppleIosRules.audioRotationScale(true, 3f), 0.0001f)
         assertEquals(1f + 0.15f * 0.25f, AppleIosRules.audioRotationScale(true, 0.25f), 0.0001f)
+    }
+
+    @Test
+    fun `bass pulse curve and image scale match upstream bounds`() {
+        assertEquals(0f, AppleIosRules.processSpectrumPower(0f), 0f)
+        assertEquals(0.5f, AppleIosRules.processSpectrumPower(0.5f), 0.00001f)
+        assertEquals(1f, AppleIosRules.processSpectrumPower(1f), 0f)
+        assertEquals(1f, AppleIosRules.imageScale(0f, 0f, true), 0f)
+        assertEquals(1f, AppleIosRules.imageScale(1f, 1f, false), 0f)
+        assertEquals(1.33f, AppleIosRules.imageScale(1f, 1f, true), 0.0001f)
+        assertEquals(1.33f, AppleIosRules.imageScale(1f, 1f, true, 10f), 0.0001f)
+        assertEquals(1f, AppleIosRules.imageScale(1f, 1f, true, 0f), 0f)
+        assertEquals(1f, AppleIosRules.RENDER_SCALE, 0f)
+        assertEquals(1f, AppleIosRules.BASS_PULSE_SCALE, 0f)
+    }
+
+    @Test
+    fun `transition durations are half and quarter second by cause`() {
+        assertEquals(0.5f, AppleIosRules.transitionSeconds(null, 7), 0f)
+        assertEquals(0.25f, AppleIosRules.transitionSeconds(7, 7), 0f)
+        assertEquals(0.5f, AppleIosRules.transitionSeconds(7, 8), 0f)
     }
 
     @Test

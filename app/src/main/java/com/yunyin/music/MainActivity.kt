@@ -266,6 +266,9 @@ class MainActivity : ComponentActivity() {
         var nowPlayingDynamicBackground by remember {
             mutableStateOf(container.settings.nowPlayingDynamicBackground)
         }
+        var cjkKaraokeEnabled by remember {
+            mutableStateOf(container.settings.nowPlayingCjkKaraoke)
+        }
         var backgroundStyle by remember {
             mutableStateOf(com.yunyin.music.ui.background.BackgroundStyle.fromKey(container.settings.nowPlayingBackgroundStyle))
         }
@@ -1221,6 +1224,11 @@ class MainActivity : ComponentActivity() {
                     onNowPlayingDynamicBackgroundChange = { enabled ->
                         nowPlayingDynamicBackground = enabled
                         container.settings.nowPlayingDynamicBackground = enabled
+                    },
+                    cjkKaraokeEnabled = cjkKaraokeEnabled,
+                    onCjkKaraokeChange = { enabled ->
+                        cjkKaraokeEnabled = enabled
+                        container.settings.nowPlayingCjkKaraoke = enabled
                     },
                     nowPlayingBackgroundStyle = backgroundStyle,
                     onShowBackgroundStyle = { showBackgroundStyle = true },

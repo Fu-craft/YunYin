@@ -100,6 +100,8 @@ fun LyricsView(
      * per-frame cost.
      */
     lowPowerRendering: Boolean = false,
+    /** CJK karaoke toggle; off falls back to whole-line highlight. */
+    cjkKaraokeEnabled: Boolean = true,
     /**
      * Manual timing offset in milliseconds; positive shows the lyrics later.
      *
@@ -288,6 +290,7 @@ fun LyricsView(
                         inactiveLineAlpha = 0.28f,
                         showTranslation = true,
                         showPhonetic = true,
+                        cjkKaraokeEnabled = cjkKaraokeEnabled,
                         centerPadding = centerPadding,
                         layoutCache = layoutCache,
                     )

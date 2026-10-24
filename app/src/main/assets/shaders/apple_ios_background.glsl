@@ -7,6 +7,7 @@ uniform float uTime;
 uniform float uScrimAlpha;
 uniform float uDitherStrength;
 uniform float uAudioLevel;
+uniform float uImageScale;
 uniform float uCoverMix;
 uniform shader uCoverCurrent;
 uniform shader uCoverPrevious;
@@ -80,10 +81,12 @@ vec4 main(float2 fragCoord) {
     float mixValue = smoothstep(0.0, 1.0, phase);
     float2 view = viewScale(resolution);
 
+    // ImageScale is applied after every layer transform upstream; invert it around the view origin.
+    float2 layerP = p / max(uImageScale, 0.001);
     // Invert the vertex transform in reverse order: view -> translation -> scale -> rotation.
-    float2 layerLocal0 = rotate(p / view / 1.4, -angle0);
-    float2 layerLocal1 = rotate((p / view - float2(-0.25, 0.15)) / 0.7, -angle1);
-    float2 layerLocal2 = rotate((rotate(p, -angle0) / view - float2(0.7, 0.7)) / 0.7, -angle2);
+    float2 layerLocal0 = rotate(layerP / view / 1.4, -angle0);
+    float2 layerLocal1 = rotate((layerP / view - float2(-0.25, 0.15)) / 0.7, -angle1);
+    float2 layerLocal2 = rotate((rotate(layerP, -angle0) / view - float2(0.7, 0.7)) / 0.7, -angle2);
 
     float cov0 = coverage(layerLocal0);
     float cov1 = coverage(layerLocal1);

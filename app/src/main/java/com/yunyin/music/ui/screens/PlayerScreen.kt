@@ -188,6 +188,8 @@ fun PlayerScreen(
     nowPlayingCoverBlurBackground: Boolean = false,
     nowPlayingAudioReactive: Boolean = true,
     nowPlayingDynamicBackground: Boolean = true,
+    /** CJK karaoke; off uses whole-line highlight for CJK lines. */
+    cjkKaraokeEnabled: Boolean = true,
     /** 云音 / 色阶流动. */
     backgroundStyle: BackgroundStyle = BackgroundStyle.default,
     /** Animated cover is opt-in and only active when an operator endpoint is configured. */
@@ -652,6 +654,7 @@ fun PlayerScreen(
                         palette = palette,
                         cover = cover,
                         isDark = true,
+                        lyricsVisible = showLyrics,
                         dim = backgroundDim,
                         paused = transitioning,
                         audioReactive = styleAudio,
@@ -781,6 +784,7 @@ fun PlayerScreen(
                                     offsetMs = lyricOffsetMs,
                                     layoutCache = lyricLayoutCache,
                                     lyricStyles = lyricsStyles,
+                                    cjkKaraokeEnabled = cjkKaraokeEnabled,
                                 )
                             }
                         } else {
@@ -981,6 +985,7 @@ fun PlayerScreen(
                                 offsetMs = lyricOffsetMs,
                                 layoutCache = lyricLayoutCache,
                                 lyricStyles = lyricsStyles,
+                                cjkKaraokeEnabled = cjkKaraokeEnabled,
                             )
                             // While immersed the first tap only wakes the UI (so it cannot also seek).
                             if (immersive) {
