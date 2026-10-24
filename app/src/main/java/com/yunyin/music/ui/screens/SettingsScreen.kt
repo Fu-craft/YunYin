@@ -134,6 +134,10 @@ fun SettingsScreen(
     /** 云音 / 封面流动 / 色阶流动; changing it applies immediately through the host state. */
     nowPlayingBackgroundStyle: BackgroundStyle = BackgroundStyle.default,
     onShowBackgroundStyle: () -> Unit = {},
+    /** Hidden entirely when no operator endpoint is configured. */
+    animatedCoverAvailable: Boolean = false,
+    animatedCoverEnabled: Boolean = false,
+    onAnimatedCoverChange: (Boolean) -> Unit = {},
     /** Remaining sleep-timer label ("关闭" / "还有约 12 分钟" / "播完当前歌"). */
     sleepTimerLabel: String = "关闭",
     onShowSleepTimer: () -> Unit = {},
@@ -237,6 +241,15 @@ fun SettingsScreen(
                 ToggleRow("音频律动", "背景随音频节奏变化", nowPlayingAudioReactive, onNowPlayingAudioReactiveChange)
                 RowDivider()
                 ToggleRow("动态背景", "显示随时间变化的动态背景", nowPlayingDynamicBackground, onNowPlayingDynamicBackgroundChange)
+                if (animatedCoverAvailable) {
+                    RowDivider()
+                    ToggleRow(
+                        "动态封面",
+                        "为当前歌曲显示服务端动态封面",
+                        animatedCoverEnabled,
+                        onAnimatedCoverChange,
+                    )
+                }
                 RowDivider()
                 LinkRow(
                     "背景样式",

@@ -35,8 +35,8 @@ android {
         // versionCode must increase for Android to accept a build as an update over a previous one;
         // versionName is what the user sees. Bumped together — a version name change with an unchanged
         // code would install as a downgrade and be rejected.
-        versionCode = 198
-        versionName = "4.32.3"
+        versionCode = 199
+        versionName = "4.33.0"
         vectorDrawables { useSupportLibrary = true }
 
         // The API endpoint is injected at build time rather than baked into the sources, so the
@@ -53,6 +53,15 @@ android {
         // at the repository that actually publishes *its* updates: a fork that hardcoded the upstream
         // coordinates would offer users builds signed by someone else. Blank disables the feature, and the
         // Settings row then explains that rather than failing a check.
+        // Animated artwork lookup. The operator supplies their own endpoint in local.properties as
+        // `artwork.api.base.url`; there is deliberately no default or third-party fallback. Blank
+        // keeps the feature completely inert (no network, no player, settings row hidden).
+        buildConfigField(
+            "String",
+            "ANIMATED_ARTWORK_BASE_URL",
+            "\"${localProps.getProperty("artwork.api.base.url") ?: ""}\"",
+        )
+
         buildConfigField(
             "String",
             "UPDATE_REPO_OWNER",
@@ -155,6 +164,7 @@ dependencies {
     implementation(libs.compose.material3)
 
     implementation(libs.media3.exoplayer)
+    implementation(libs.media3.exoplayer.hls)
     implementation(libs.media3.session)
 
     implementation(libs.okhttp)

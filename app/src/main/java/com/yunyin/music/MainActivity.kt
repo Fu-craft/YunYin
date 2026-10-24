@@ -270,6 +270,9 @@ class MainActivity : ComponentActivity() {
             mutableStateOf(com.yunyin.music.ui.background.BackgroundStyle.fromKey(container.settings.nowPlayingBackgroundStyle))
         }
         var showBackgroundStyle by remember { mutableStateOf(false) }
+        var animatedCoverEnabled by remember {
+            mutableStateOf(container.settings.nowPlayingAnimatedCover && container.hasAnimatedArtwork)
+        }
         // The player's centrepiece. Held as Compose state as well as persisted, for the same reason as the
         // settings above: a SharedPreferences write does not invalidate composition, so a value read
         // straight from the store would change only on the next launch.
@@ -1221,6 +1224,12 @@ class MainActivity : ComponentActivity() {
                     },
                     nowPlayingBackgroundStyle = backgroundStyle,
                     onShowBackgroundStyle = { showBackgroundStyle = true },
+                    animatedCoverAvailable = container.hasAnimatedArtwork,
+                    animatedCoverEnabled = animatedCoverEnabled,
+                    onAnimatedCoverChange = { enabled ->
+                        animatedCoverEnabled = enabled
+                        container.settings.nowPlayingAnimatedCover = enabled
+                    },
                     sleepTimerLabel = when {
                         sleepTimerEndOfTrack -> "播完当前歌"
                         sleepTimerEnd != null -> {
@@ -1640,6 +1649,9 @@ class MainActivity : ComponentActivity() {
                     nowPlayingAudioReactive = nowPlayingAudioReactive,
                     nowPlayingDynamicBackground = nowPlayingDynamicBackground,
                     backgroundStyle = backgroundStyle,
+                    animatedCoverEnabled = animatedCoverEnabled && container.hasAnimatedArtwork,
+                    animatedArtwork = container.animatedArtwork,
+                    onAnimatedArtworkLog = { container.lxLog.recordDiagnostic(it) },
                     download = playerViewModel.download,
                     onSaveCover = playerViewModel::saveCover,
                     onDownloadDismissed = playerViewModel::clearDownloadState,

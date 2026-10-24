@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
+import com.yunyin.music.data.AnimatedArtworkRepository
 import com.yunyin.music.data.ArtworkLoader
 import com.yunyin.music.data.LikedSongsRepository
 import com.yunyin.music.data.LikedSongsStore
@@ -19,6 +20,7 @@ import com.yunyin.music.data.LyriconBridge
 import com.yunyin.music.data.lxsource.LxSourceLog
 import com.yunyin.music.data.lxsource.LxSourceManager
 import com.yunyin.music.data.lxsource.LxSourcePlayback
+import com.yunyin.music.data.net.AnimatedArtworkClient
 import com.yunyin.music.data.net.NeteaseClient
 import com.yunyin.music.data.providers.ProviderLyrics
 import com.yunyin.music.data.providers.ProviderPlayback
@@ -152,6 +154,23 @@ class AppContainer(val appContext: Context) {
     }
 
     val artwork: ArtworkLoader by lazy { ArtworkLoader(appContext) }
+
+    /**
+     * Animated cover lookup. Null when this build has no `artwork.api.base.url`: the feature is
+     * inert, so there is no client, no cache and no player. The operator supplies their own host.
+     */
+    val animatedArtwork: AnimatedArtworkRepository? by lazy {
+        val base = BuildConfig.ANIMATED_ARTWORK_BASE_URL
+        if (!com.yunyin.music.data.net.AnimatedArtworkRules.isAvailable(base)) null
+        else runCatching {
+            AnimatedArtworkRepository(
+                source = AnimatedArtworkClient(base, diag = { lxLog.recordDiagnostic(it) }),
+                diag = { lxLog.recordDiagnostic(it) },
+            )
+        }.getOrNull()
+    }
+
+    val hasAnimatedArtwork: Boolean get() = animatedArtwork != null
 
     val searchHistory: SearchHistoryStore by lazy { SearchHistoryStore(appContext) }
 

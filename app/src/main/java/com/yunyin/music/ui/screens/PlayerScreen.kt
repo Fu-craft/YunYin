@@ -103,6 +103,7 @@ import com.yunyin.music.ui.background.OkLabFlowBackground
 import com.yunyin.music.ui.background.NowPlayingBackgroundRules
 import com.yunyin.music.ui.background.StaticPaletteBackdrop
 import com.yunyin.music.ui.components.AnimatedSheet
+import com.yunyin.music.ui.components.AnimatedArtworkPlayer
 import com.yunyin.music.ui.components.Artwork
 import com.yunyin.music.ui.components.CrossfadeContent
 import com.yunyin.music.ui.components.SheetPlacement
@@ -186,8 +187,12 @@ fun PlayerScreen(
     nowPlayingCoverBlurBackground: Boolean = false,
     nowPlayingAudioReactive: Boolean = true,
     nowPlayingDynamicBackground: Boolean = true,
-    /** 云音 / 封面流动 / 色阶流动; the two new ones are clean-room additions. */
+    /** 云音 / 色阶流动. */
     backgroundStyle: BackgroundStyle = BackgroundStyle.default,
+    /** Animated cover is opt-in and only active when an operator endpoint is configured. */
+    animatedCoverEnabled: Boolean = false,
+    animatedArtwork: com.yunyin.music.data.AnimatedArtworkRepository? = null,
+    onAnimatedArtworkLog: (String) -> Unit = {},
     /** Current per-track lyric offset, and its setter, for the manual timing control. */
     lyricOffsetMs: Long = 0L,
     onLyricOffsetChange: (Long) -> Unit = {},
@@ -799,6 +804,11 @@ fun PlayerScreen(
                                         onDragFinished = onDragFinished,
                                         playerStyle = playerStyle,
                                         isPlaying = state.isPlaying,
+                                        // Hide the video layer while the two presentations cross-fade: the static
+                                        // Artwork is the shared element, and a TextureView cannot participate in it.
+                                        animatedCoverEnabled = animatedCoverEnabled && !transitioning,
+                                        animatedArtwork = animatedArtwork,
+                                        onAnimatedArtworkLog = onAnimatedArtworkLog,
                                         artworkScale = sharedCoverScale,
                                         sharedScope = this@SharedTransitionLayout,
                                         visibilityScope = this@AnimatedContent,
@@ -1237,6 +1247,9 @@ private fun ArtworkWithGestures(
     playerStyle: PlayerStyle,
     /** Drives the record's rotation; ignored by the classic cover. */
     isPlaying: Boolean,
+    animatedCoverEnabled: Boolean = false,
+    animatedArtwork: com.yunyin.music.data.AnimatedArtworkRepository? = null,
+    onAnimatedArtworkLog: (String) -> Unit = {},
     /**
      * The paused settle, as a **lambda**: read inside a `graphicsLayer`, so the spring animates in
      * the layer phase instead of recomposing the player once per frame. The layer also derives its
@@ -1250,6 +1263,20 @@ private fun ArtworkWithGestures(
     /** Reports the cover area's centre in root coordinates; the warp dollies around it. */
     onCoverCenter: ((Offset) -> Unit)? = null,
 ) {
+    var animatedUrl by remember(track?.id, playerStyle, animatedCoverEnabled, animatedArtwork) {
+        mutableStateOf<String?>(null)
+    }
+    LaunchedEffect(track?.id, playerStyle, animatedCoverEnabled, animatedArtwork) {
+        animatedUrl = null
+        if (playerStyle != PlayerStyle.Classic || !animatedCoverEnabled || animatedArtwork == null || track == null) {
+            return@LaunchedEffect
+        }
+        val resolved = animatedArtwork.resolve(track.artistLine, track.albumName, track.name)
+        if (resolved != null && resolved.url.isNotBlank()) {
+            animatedUrl = resolved.url
+        }
+    }
+
     Box(
         Modifier
             .fillMaxSize()
@@ -1332,6 +1359,28 @@ private fun ArtworkWithGestures(
                     }
                     .shadow(14.dp, ContinuousRoundedRectangle(ARTWORK_CORNER)),
             )
+            val videoUrl = animatedUrl
+            if (videoUrl != null && animatedCoverEnabled && animatedArtwork != null && playerStyle == PlayerStyle.Classic) {
+                AnimatedArtworkPlayer(
+                    url = videoUrl,
+                    modifier = Modifier
+                        .size(artSize)
+                        .clip(ContinuousRoundedRectangle(ARTWORK_CORNER))
+                        .graphicsLayer {
+                            val scale = artworkScale()
+                            scaleX = scale
+                            scaleY = scale
+                            alpha = sharedCoverPausedAlpha(scale)
+                        },
+                    onError = { reason ->
+                        if (reason.startsWith("play error")) {
+                            onAnimatedArtworkLog("stage=animated-artwork play error reason=$reason")
+                        }
+                        animatedUrl = null
+                        onAnimatedArtworkLog("stage=animated-artwork fallback reason=$reason")
+                    },
+                )
+            }
         }
 
         // Download feedback, drawn over the cover so the gesture's result appears exactly where the
