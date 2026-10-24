@@ -140,10 +140,18 @@ class SettingsStore(context: Context) {
     var nowPlayingBackgroundStyle: String
         get() = when (prefs.getString(KEY_NOW_PLAYING_BACKGROUND_STYLE, DEFAULT_NOW_PLAYING_BACKGROUND_STYLE)) {
             "oklab", "oklab_flow" -> "oklab"
+            "apple_ios" -> "apple_ios"
             else -> DEFAULT_NOW_PLAYING_BACKGROUND_STYLE
         }
         set(value) = prefs.edit()
-            .putString(KEY_NOW_PLAYING_BACKGROUND_STYLE, if (value == "oklab") "oklab" else DEFAULT_NOW_PLAYING_BACKGROUND_STYLE)
+            .putString(
+                KEY_NOW_PLAYING_BACKGROUND_STYLE,
+                when (value) {
+                    "oklab" -> "oklab"
+                    "apple_ios" -> "apple_ios"
+                    else -> DEFAULT_NOW_PLAYING_BACKGROUND_STYLE
+                },
+            )
             .apply()
 
     // ------------------------------------------------------------ updates

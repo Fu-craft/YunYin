@@ -316,6 +316,8 @@ fun SettingsScreen(
                 RowDivider()
                 InfoRow("歌词来源", "AMLL 逐字歌词")
                 RowDivider()
+                InfoRow("开源背景", "Lyricify-Backgrounds · Apache-2.0")
+                RowDivider()
                 LinkRow("项目主页", "GitHub", onOpenProject)
                 if (hasCrashLog) {
                     RowDivider()

@@ -97,6 +97,7 @@ import com.yunyin.music.ui.PlayerStyle
 import com.yunyin.music.ui.background.DynamicBackgroundPalette
 import com.yunyin.music.ui.background.CoverBlurBackground
 import com.yunyin.music.ui.background.BackgroundStyle
+import com.yunyin.music.ui.background.AppleIosBackground
 import com.yunyin.music.ui.background.BackgroundStyleRules
 import com.yunyin.music.ui.background.HyperBackground
 import com.yunyin.music.ui.background.OkLabFlowBackground
@@ -640,6 +641,16 @@ fun PlayerScreen(
                     BackgroundStyle.OkLabFlow -> OkLabFlowBackground(
                         palette = palette,
                         trackId = state.current?.id ?: 0L,
+                        isDark = true,
+                        dim = backgroundDim,
+                        paused = transitioning,
+                        audioReactive = styleAudio,
+                        staticMotion = !styleMotion,
+                        modifier = backgroundModifier,
+                    )
+                    BackgroundStyle.AppleIos -> AppleIosBackground(
+                        palette = palette,
+                        cover = cover,
                         isDark = true,
                         dim = backgroundDim,
                         paused = transitioning,

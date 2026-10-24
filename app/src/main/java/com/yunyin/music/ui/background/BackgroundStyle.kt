@@ -3,9 +3,8 @@ package com.yunyin.music.ui.background
 import kotlin.math.PI
 
 /**
- * The now-playing background family. 云音 is the existing HyperBackground; 色阶流动 is a
- * clean-room, independent implementation inspired by AMLL's background *ideas* only (AGPL-3.0
- * reference; no code, shader source, assets or constants copied).
+ * The now-playing background family: 云音 (HyperBackground), 色阶流动 (OkLabFlowBackground), and
+ * 苹果 iOS (a port of the Apache-2.0 Lyricify-Backgrounds Apple Music iOS material).
  */
 enum class BackgroundStyle(
     val storageKey: String,
@@ -14,12 +13,14 @@ enum class BackgroundStyle(
 ) {
     Yunyin("yunyin", "云音（默认）", "五色流体，随音频轻轻呼吸"),
     OkLabFlow("oklab", "色阶流动", "封面取四色，在 OkLab 中流动混合"),
+    AppleIos("apple_ios", "苹果 iOS", "三层封面缓慢旋转，苹果音乐风格"),
     ;
 
     companion object {
         val default: BackgroundStyle = Yunyin
         fun fromKey(key: String?): BackgroundStyle = when (key) {
             "oklab", "oklab_flow" -> OkLabFlow // "oklab_flow" is the v4.32.0–v4.32.2 legacy key
+            "apple_ios" -> AppleIos
             else -> default // "yunyin", and any removed/unrecognised value (incl. cover styles)
         }
     }
