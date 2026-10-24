@@ -126,6 +126,16 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_NOW_PLAYING_DYNAMIC, DEFAULT_NOW_PLAYING_DYNAMIC)
         set(value) = prefs.edit().putBoolean(KEY_NOW_PLAYING_DYNAMIC, value).apply()
 
+    /**
+     * The now-playing background family. Stored as the [com.yunyin.music.ui.background.BackgroundStyle]
+     * storage key (`yunyin` / `cover_warp` / `oklab_flow`) so a rename cannot silently change the choice;
+     * unknown values fall back to 云音. Default keeps every existing install visually unchanged.
+     */
+    var nowPlayingBackgroundStyle: String
+        get() = prefs.getString(KEY_NOW_PLAYING_BACKGROUND_STYLE, DEFAULT_NOW_PLAYING_BACKGROUND_STYLE)
+            ?: DEFAULT_NOW_PLAYING_BACKGROUND_STYLE
+        set(value) = prefs.edit().putString(KEY_NOW_PLAYING_BACKGROUND_STYLE, value).apply()
+
     // ------------------------------------------------------------ updates
 
     /**
@@ -302,6 +312,7 @@ class SettingsStore(context: Context) {
         private const val KEY_NOW_PLAYING_COVER_BLUR = "now_playing_cover_blur_background"
         private const val KEY_NOW_PLAYING_AUDIO_REACTIVE = "now_playing_audio_reactive"
         private const val KEY_NOW_PLAYING_DYNAMIC = "now_playing_dynamic_background"
+        private const val KEY_NOW_PLAYING_BACKGROUND_STYLE = "now_playing_background_style"
         private const val KEY_PROFILE_SIGNATURE = "profile_signature"
         private const val KEY_CUSTOM_NICKNAME = "custom_nickname"
         private const val KEY_USE_NETEASE_NAME = "use_netease_name"
@@ -324,3 +335,6 @@ internal const val DEFAULT_DOWNLOAD_WIFI_ONLY = true
 internal const val DEFAULT_NOW_PLAYING_COVER_BLUR = false
 internal const val DEFAULT_NOW_PLAYING_AUDIO_REACTIVE = true
 internal const val DEFAULT_NOW_PLAYING_DYNAMIC = true
+
+/** Default background family: 云音, the existing HyperBackground. */
+internal const val DEFAULT_NOW_PLAYING_BACKGROUND_STYLE = "yunyin"

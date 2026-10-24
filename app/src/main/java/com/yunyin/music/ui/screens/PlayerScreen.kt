@@ -96,7 +96,11 @@ import com.yunyin.music.ui.LYRIC_OFFSET_LIMIT_MS
 import com.yunyin.music.ui.PlayerStyle
 import com.yunyin.music.ui.background.DynamicBackgroundPalette
 import com.yunyin.music.ui.background.CoverBlurBackground
+import com.yunyin.music.ui.background.BackgroundStyle
+import com.yunyin.music.ui.background.BackgroundStyleRules
+import com.yunyin.music.ui.background.CoverWarpBackground
 import com.yunyin.music.ui.background.HyperBackground
+import com.yunyin.music.ui.background.OkLabFlowBackground
 import com.yunyin.music.ui.background.NowPlayingBackgroundRules
 import com.yunyin.music.ui.background.StaticPaletteBackdrop
 import com.yunyin.music.ui.components.AnimatedSheet
@@ -183,6 +187,8 @@ fun PlayerScreen(
     nowPlayingCoverBlurBackground: Boolean = false,
     nowPlayingAudioReactive: Boolean = true,
     nowPlayingDynamicBackground: Boolean = true,
+    /** 云音 / 封面流动 / 色阶流动; the two new ones are clean-room additions. */
+    backgroundStyle: BackgroundStyle = BackgroundStyle.default,
     /** Current per-track lyric offset, and its setter, for the manual timing control. */
     lyricOffsetMs: Long = 0L,
     onLyricOffsetChange: (Long) -> Unit = {},
@@ -609,21 +615,46 @@ fun PlayerScreen(
                     modifier = Modifier.fillMaxSize(),
                 )
             }
-            if (nowPlayingDynamicBackground) {
-                // Dynamic shader, drawn over the cover at 80 % so the artwork still shows through.
-                // One full-screen copy, so the field is identical from the top of the page to the
-                // bottom; there is no masked or separately-blurred copy to disagree with it.
-                HyperBackground(
-                    palette = palette,
-                    isDark = true,
-                    dim = backgroundDim,
-                    paused = transitioning,
-                    audioReactive = audioReactiveEnabled,
-                    staticMotion = !dynamicMotionEnabled,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .graphicsLayer { alpha = NowPlayingBackgroundRules.DYNAMIC_ALPHA },
-                )
+            // 云音 keeps its historical rule (only composed when 动态背景 is on). The two new
+            // clean-room styles still paint one static frame when 动态背景 is off, as specified.
+            if (BackgroundStyleRules.shouldCompose(backgroundStyle, nowPlayingDynamicBackground)) {
+                val styleMotion = dynamicMotionEnabled && nowPlayingDynamicBackground
+                val styleAudio = audioReactiveEnabled && nowPlayingDynamicBackground
+                val backgroundModifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { alpha = NowPlayingBackgroundRules.DYNAMIC_ALPHA }
+                when (backgroundStyle) {
+                    BackgroundStyle.Yunyin -> HyperBackground(
+                        palette = palette,
+                        isDark = true,
+                        dim = backgroundDim,
+                        paused = transitioning,
+                        audioReactive = styleAudio,
+                        staticMotion = !styleMotion,
+                        modifier = backgroundModifier,
+                    )
+                    BackgroundStyle.CoverWarp -> CoverWarpBackground(
+                        palette = palette,
+                        cover = cover,
+                        trackId = state.current?.id ?: 0L,
+                        isDark = true,
+                        dim = backgroundDim,
+                        paused = transitioning,
+                        audioReactive = styleAudio,
+                        staticMotion = !styleMotion,
+                        modifier = backgroundModifier,
+                    )
+                    BackgroundStyle.OkLabFlow -> OkLabFlowBackground(
+                        palette = palette,
+                        trackId = state.current?.id ?: 0L,
+                        isDark = true,
+                        dim = backgroundDim,
+                        paused = transitioning,
+                        audioReactive = styleAudio,
+                        staticMotion = !styleMotion,
+                        modifier = backgroundModifier,
+                    )
+                }
             }
         }
 

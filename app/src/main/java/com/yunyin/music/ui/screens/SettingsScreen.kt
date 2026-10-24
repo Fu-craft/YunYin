@@ -44,6 +44,7 @@ import com.yunyin.music.data.lxsource.LxImportedSource
 import com.yunyin.music.data.lxsource.LxSourceKey
 import com.yunyin.music.data.update.UpdateUiState
 import com.yunyin.music.ui.PlayerStyle
+import com.yunyin.music.ui.background.BackgroundStyle
 import com.yunyin.music.ui.components.GlassTopBar
 import com.yunyin.music.ui.components.glassTopBarTopPadding
 import com.yunyin.music.ui.components.rememberGlassTopBarBackdrop
@@ -130,6 +131,9 @@ fun SettingsScreen(
     onNowPlayingAudioReactiveChange: (Boolean) -> Unit = {},
     nowPlayingDynamicBackground: Boolean = true,
     onNowPlayingDynamicBackgroundChange: (Boolean) -> Unit = {},
+    /** 云音 / 封面流动 / 色阶流动; changing it applies immediately through the host state. */
+    nowPlayingBackgroundStyle: BackgroundStyle = BackgroundStyle.default,
+    onShowBackgroundStyle: () -> Unit = {},
     /** Remaining sleep-timer label ("关闭" / "还有约 12 分钟" / "播完当前歌"). */
     sleepTimerLabel: String = "关闭",
     onShowSleepTimer: () -> Unit = {},
@@ -233,6 +237,13 @@ fun SettingsScreen(
                 ToggleRow("音频律动", "背景随音频节奏变化", nowPlayingAudioReactive, onNowPlayingAudioReactiveChange)
                 RowDivider()
                 ToggleRow("动态背景", "显示随时间变化的动态背景", nowPlayingDynamicBackground, onNowPlayingDynamicBackgroundChange)
+                RowDivider()
+                LinkRow(
+                    "背景样式",
+                    nowPlayingBackgroundStyle.label,
+                    onShowBackgroundStyle,
+                    "选择正在播放页的动态背景",
+                )
             }
 
             SettingsSection(

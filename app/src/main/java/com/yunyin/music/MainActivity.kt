@@ -266,6 +266,10 @@ class MainActivity : ComponentActivity() {
         var nowPlayingDynamicBackground by remember {
             mutableStateOf(container.settings.nowPlayingDynamicBackground)
         }
+        var backgroundStyle by remember {
+            mutableStateOf(com.yunyin.music.ui.background.BackgroundStyle.fromKey(container.settings.nowPlayingBackgroundStyle))
+        }
+        var showBackgroundStyle by remember { mutableStateOf(false) }
         // The player's centrepiece. Held as Compose state as well as persisted, for the same reason as the
         // settings above: a SharedPreferences write does not invalidate composition, so a value read
         // straight from the store would change only on the next launch.
@@ -1215,6 +1219,8 @@ class MainActivity : ComponentActivity() {
                         nowPlayingDynamicBackground = enabled
                         container.settings.nowPlayingDynamicBackground = enabled
                     },
+                    nowPlayingBackgroundStyle = backgroundStyle,
+                    onShowBackgroundStyle = { showBackgroundStyle = true },
                     sleepTimerLabel = when {
                         sleepTimerEndOfTrack -> "播完当前歌"
                         sleepTimerEnd != null -> {
@@ -1633,6 +1639,7 @@ class MainActivity : ComponentActivity() {
                     nowPlayingCoverBlurBackground = nowPlayingCoverBlurBackground,
                     nowPlayingAudioReactive = nowPlayingAudioReactive,
                     nowPlayingDynamicBackground = nowPlayingDynamicBackground,
+                    backgroundStyle = backgroundStyle,
                     download = playerViewModel.download,
                     onSaveCover = playerViewModel::saveCover,
                     onDownloadDismissed = playerViewModel::clearDownloadState,
@@ -1903,6 +1910,16 @@ class MainActivity : ComponentActivity() {
 
             // Queue sheet. It animates itself inside the Dialog; an outer AnimatedVisibility would
             // be a second, redundant transition (same reason as the profile editor).
+            if (showBackgroundStyle) {
+                com.yunyin.music.ui.background.BackgroundStylePicker(
+                    selected = backgroundStyle,
+                    onSelect = { style ->
+                        backgroundStyle = style
+                        container.settings.nowPlayingBackgroundStyle = style.storageKey
+                    },
+                    onDismiss = { showBackgroundStyle = false },
+                )
+            }
             if (showLyricPicker) {
                 com.yunyin.music.ui.share.LyricSelectionSheet(
                     lines = lyricShareLines,
