@@ -250,8 +250,6 @@ fun KaraokeLyricsView(
     useBlurEffect: Boolean = true,
     showTranslation: Boolean = true,
     showPhonetic: Boolean = true,
-    /** Off: CJK lines use a line-level highlight, matching Lyricify's disable_cjk_karaoke. */
-    cjkKaraokeEnabled: Boolean = true,
     offset: Dp = 32.dp,
     keepAliveZone: Dp = 100.dp,
     /**
@@ -799,7 +797,6 @@ fun KaraokeLyricsView(
                                                 } else {
                                                     INACTIVE_UNSUNG_ALPHA
                                                 },
-                                                cjkKaraokeEnabled = cjkKaraokeEnabled,
                                             )
                                         }
                                     }
