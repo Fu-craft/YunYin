@@ -16,7 +16,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
@@ -57,7 +56,6 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -72,14 +70,11 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asAndroidBitmap
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
@@ -139,11 +134,9 @@ import com.yunyin.music.ui.playlist.LocalPlaylistActions
 import com.yunyin.music.ui.DownloadState
 import com.mocharealm.accompanist.lyrics.core.model.SyncedLyrics
 import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 /**
  * Full-screen player, in two presentations.
@@ -355,9 +348,13 @@ fun PlayerScreen(
     // move, so the shared element's bounds are the only animated quantity; because a constant times a
     // monotone sequence is monotone, the cover can only travel one way. See
     // [sharedCoverPausedScale] and its unit test.
+    val effectivePausedScale = FullScreenCoverRules.pausedScale(
+        playerStyle,
+        coverMotion.pausedScale,
+    )
     val sharedCoverScale: () -> Float = {
         // Read in the layer phase: `pausedCoverProgress.value`, not a captured Float.
-        sharedCoverPausedScale(1f - pausedCoverProgress.value * (1f - coverMotion.pausedScale))
+        sharedCoverPausedScale(1f - pausedCoverProgress.value * (1f - effectivePausedScale))
     }
 
     // 1 = chrome fully present, 0 = immersed. Everything that belongs to the chrome — the header,
@@ -634,13 +631,8 @@ fun PlayerScreen(
             // Always present, always cheap: a still palette gradient. It is what the page shows
             // when both motion layers are off, so switching the background off never leaves black.
             if (fullScreenCover) {
-                StaticPaletteBackdrop(
-                    palette = palette,
-                    dim = backgroundDim,
-                    modifier = Modifier.fillMaxSize(),
-                )
                 FullScreenCoverBackdrop(
-                    cover = cover,
+                    palette = palette,
                     modifier = Modifier.fillMaxSize(),
                 )
             } else {
@@ -1182,6 +1174,7 @@ fun PlayerScreen(
                                 playerStyle = playerStyle,
                                 isPlaying = state.isPlaying,
                                 flat = fullScreenCover,
+                                feather = fullScreenCover && !transitioning,
                                 corner = if (fullScreenCover) 0.dp else ARTWORK_CORNER,
                                 artworkScale = sharedCoverScale,
                                 sharedScope = this@SharedTransitionLayout,
@@ -1288,78 +1281,28 @@ fun PlayerScreen(
 }
 
 /**
- * Cover-derived full-screen extension for [PlayerStyle.Immersive]. A 96 px CPU pre-blur is stretched
- * with Crop and darkened 35 %, so the square cover above and the information block below share one
- * continuous field. No bitmap work happens per frame.
+ * Full-screen-cover backdrop: one static vertical field from the cover's dominant palette colour.
+ * Top is lightened 8 %, the middle is the dominant colour, bottom is darkened 12 %. No shader, no
+ * frame pump and no bitmap work; the player style owns this surface.
  */
 @Composable
 private fun FullScreenCoverBackdrop(
-    cover: ImageBitmap?,
+    palette: DynamicBackgroundPalette,
     modifier: Modifier = Modifier,
 ) {
-    val blurred by produceState<ImageBitmap?>(initialValue = null, cover) {
-        value = if (cover == null) null else withContext(Dispatchers.Default) {
-            runCatching { blurCoverForExtension(cover) }.getOrNull()
-        }
-    }
-    Box(modifier) {
-        blurred?.let { image ->
-            Image(
-                bitmap = image,
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
-            )
-        }
-        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = FullScreenCoverRules.DARKEN)))
-    }
-}
-
-private fun blurCoverForExtension(cover: ImageBitmap): ImageBitmap {
-    val source = cover.asAndroidBitmap()
-    val size = FullScreenCoverRules.blurSourceSize(source.width)
-    val small = android.graphics.Bitmap.createScaledBitmap(source, size, size, true)
-    try {
-        repeat(FullScreenCoverRules.BLUR_PASSES) {
-            boxBlurOnce(small, FullScreenCoverRules.BLUR_RADIUS)
-        }
-        return small.asImageBitmap()
-    } finally {
-        // `asImageBitmap` wraps the bitmap; keep it alive for the Image.
-    }
-}
-
-private fun boxBlurOnce(bitmap: android.graphics.Bitmap, radius: Int) {
-    val w = bitmap.width
-    val h = bitmap.height
-    val pixels = IntArray(w * h)
-    val temp = IntArray(w * h)
-    bitmap.getPixels(pixels, 0, w, 0, 0, w, h)
-    for (y in 0 until h) {
-        for (x in 0 until w) {
-            var a = 0; var r = 0; var g = 0; var b = 0
-            for (k in -radius..radius) {
-                val p = pixels[y * w + (x + k).coerceIn(0, w - 1)]
-                a += (p ushr 24) and 0xFF; r += (p ushr 16) and 0xFF
-                g += (p ushr 8) and 0xFF; b += p and 0xFF
-            }
-            val d = 2 * radius + 1
-            temp[y * w + x] = (a / d shl 24) or (r / d shl 16) or (g / d shl 8) or (b / d)
-        }
-    }
-    for (y in 0 until h) {
-        for (x in 0 until w) {
-            var a = 0; var r = 0; var g = 0; var b = 0
-            for (k in -radius..radius) {
-                val p = temp[(y + k).coerceIn(0, h - 1) * w + x]
-                a += (p ushr 24) and 0xFF; r += (p ushr 16) and 0xFF
-                g += (p ushr 8) and 0xFF; b += p and 0xFF
-            }
-            val d = 2 * radius + 1
-            pixels[y * w + x] = (a / d shl 24) or (r / d shl 16) or (g / d shl 8) or (b / d)
-        }
-    }
-    bitmap.setPixels(pixels, 0, w, 0, 0, w, h)
+    val dominant = palette.colors.firstOrNull() ?: FullScreenCoverRules.FALLBACK_COLOR
+    val field = FullScreenCoverRules.fieldColors(dominant)
+    Box(
+        modifier.background(
+            Brush.verticalGradient(
+                colorStops = arrayOf(
+                    0f to Color(field[0]),
+                    FullScreenCoverRules.GRADIENT_MIDDLE to Color(field[1]),
+                    1f to Color(field[2]),
+                ),
+            ),
+        ),
+    )
 }
 
 /**
@@ -1395,6 +1338,8 @@ private fun ArtworkWithGestures(
     isPlaying: Boolean,
     /** Full-screen style: no shadow and a caller-supplied (normally zero) corner. */
     flat: Boolean = false,
+    /** Full-screen style: feather the top 56 dp and bottom 72 dp into the palette field. */
+    feather: Boolean = false,
     corner: androidx.compose.ui.unit.Dp = ARTWORK_CORNER,
     animatedCoverEnabled: Boolean = false,
     animatedArtwork: com.yunyin.music.data.AnimatedArtworkRepository? = null,
@@ -1509,6 +1454,32 @@ private fun ArtworkWithGestures(
                     .then(
                         if (flat) Modifier
                         else Modifier.shadow(14.dp, ContinuousRoundedRectangle(corner)),
+                    )
+                    .then(
+                        if (feather) {
+                            Modifier
+                                .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                                .drawWithContent {
+                                    drawContent()
+                                    val h = size.height.coerceAtLeast(1f)
+                                    val top = (FullScreenCoverRules.FEATHER_TOP_DP.dp.toPx() / h)
+                                        .coerceIn(0f, 0.5f)
+                                    val bottom =
+                                        (1f - FullScreenCoverRules.FEATHER_BOTTOM_DP.dp.toPx() / h)
+                                            .coerceIn(0.5f, 1f)
+                                    drawRect(
+                                        brush = Brush.verticalGradient(
+                                            0f to Color.Transparent,
+                                            top to Color.White,
+                                            bottom to Color.White,
+                                            1f to Color.Transparent,
+                                        ),
+                                        blendMode = BlendMode.DstIn,
+                                    )
+                                }
+                        } else {
+                            Modifier
+                        },
                     ),
             )
             val videoUrl = animatedUrl

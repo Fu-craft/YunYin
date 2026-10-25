@@ -12,18 +12,28 @@ import org.junit.Test
 class FullScreenCoverRulesTest {
 
     @Test
-    fun `full screen cover owns the backdrop and extends below a square cover`() {
+    fun `palette field feather and pause rules are pinned`() {
         assertTrue(FullScreenCoverRules.usesOwnBackdrop(PlayerStyle.Immersive, false))
-        assertFalse(FullScreenCoverRules.usesOwnBackdrop(PlayerStyle.Classic, false))
         assertFalse(FullScreenCoverRules.usesOwnBackdrop(PlayerStyle.Immersive, true))
         assertFalse(FullScreenCoverRules.backgroundStyleComposed(PlayerStyle.Immersive, false))
         assertTrue(FullScreenCoverRules.backgroundStyleComposed(PlayerStyle.Classic, false))
+        assertTrue(FullScreenCoverRules.backdropIsStatic(PlayerStyle.Immersive))
 
-        assertEquals(1080, FullScreenCoverRules.coverHeightPx(1080))
-        assertEquals(1320, FullScreenCoverRules.extensionHeightPx(2400, 1080))
-        assertEquals(0, FullScreenCoverRules.extensionHeightPx(600, 1080))
-        assertEquals(96, FullScreenCoverRules.blurSourceSize(1080))
-        assertEquals(24, FullScreenCoverRules.blurSourceSize(100))
-        assertEquals(0.35f, FullScreenCoverRules.DARKEN, 0f)
+        val field = FullScreenCoverRules.fieldColors(0xFF336699.toInt())
+        assertTrue(FullScreenCoverRules.luminance(field[0]) >
+            FullScreenCoverRules.luminance(field[1]))
+        assertTrue(FullScreenCoverRules.luminance(field[1]) >
+            FullScreenCoverRules.luminance(field[2]))
+        assertEquals(0xFF336699.toInt(), field[1])
+
+        assertEquals(56f, FullScreenCoverRules.FEATHER_TOP_DP, 0f)
+        assertEquals(72f, FullScreenCoverRules.FEATHER_BOTTOM_DP, 0f)
+        assertTrue(FullScreenCoverRules.isCenterOpaque(1000f, 2400, 1f))
+        assertFalse(FullScreenCoverRules.isCenterOpaque(20f, 2400, 1f))
+        assertFalse(FullScreenCoverRules.isCenterOpaque(2380f, 2400, 1f))
+
+        assertEquals(1f, FullScreenCoverRules.pausedScale(PlayerStyle.Immersive, 0.94f), 0f)
+        assertEquals(0.94f, FullScreenCoverRules.pausedScale(PlayerStyle.Classic, 0.94f), 0f)
+        assertEquals(0.94f, FullScreenCoverRules.pausedScale(PlayerStyle.Vinyl, 0.94f), 0f)
     }
 }
