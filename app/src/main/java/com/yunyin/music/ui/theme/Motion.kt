@@ -38,26 +38,24 @@ object Motion {
     val SpringSettle: FiniteAnimationSpec<Float> = spring(dampingRatio = 0.8f, stiffness = 400f)
 
     /**
-     * The cover settling back while playback pauses — the **springy** one.
+     * The cover receding while playback pauses: **critically damped, and quick**.
      *
-     * The pause is an occasional, deliberate state change, so it may carry a little bounce: the
-     * cover drops past 92 % and eases back, which is what makes the paused state feel like it has
-     * mass rather than a linear scale-down. Damping 0.72 is Apple's `bounce ≈ 0.28` band (the skill
-     * caps bounce at 0.3); anything lower reads as a wobble on an element this large.
-     *
-     * Stiffness 320 keeps the whole settle inside ~0.5 s so the overshoot is a single soft
-     * rebound, not a second animation. Compose honours the system animation scale, so with
-     * animators disabled this snaps straight to the paused rest value.
+     * The asymmetry is the point. Pausing is the user's own action, so the cover should *land*
+     * immediately — no wobble, no second motion to wait for. Damping 1 with stiffness 1300 settles
+     * in ~150–180 ms, which is the same shape NeriPlayer's Clean interaction uses for its press-in
+     * phase (`spring(dampingRatio = 1f, stiffness = 1400f)`).
      */
-    val CoverPauseSettle: FiniteAnimationSpec<Float> = spring(dampingRatio = 0.72f, stiffness = 320f)
+    val CoverPauseSettle: FiniteAnimationSpec<Float> = spring(dampingRatio = 1f, stiffness = 1300f)
 
     /**
-     * The cover coming back when playback resumes: the same bounce, but crisper.
+     * The cover coming back when playback resumes: **under-damped, so it springs past full size**
+     * and settles back — the "Q弹" the pause deliberately does not have.
      *
-     * Resume is the system answering the user — the music has already started — so the rebound is
-     * faster (stiffness 500) and slightly tighter (damping 0.70) than the pause.
+     * Damping 0.62 / stiffness 420 is NeriPlayer's Clean release phase
+     * (`spring(dampingRatio = 0.62f, stiffness = 420f)`), which is tuned for exactly this: a short
+     * overshoot that reads as elastic rather than as a wobble. Roughly 400 ms in total.
      */
-    val CoverResumeSettle: FiniteAnimationSpec<Float> = spring(dampingRatio = 0.70f, stiffness = 500f)
+    val CoverResumeSettle: FiniteAnimationSpec<Float> = spring(dampingRatio = 0.62f, stiffness = 420f)
 
     /**
      * Button / press feedback: 100-160ms.

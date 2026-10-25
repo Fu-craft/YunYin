@@ -1,4 +1,4 @@
-﻿// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 云音 / YunYin contributors
 
 package com.yunyin.music.ui.screens
@@ -90,23 +90,26 @@ class SharedCoverScaleTest {
         val pause = Motion.CoverPauseSettle as SpringSpec<Float>
         val resume = Motion.CoverResumeSettle as SpringSpec<Float>
 
-        // Apple's bounce band is 0.1-0.3, i.e. damping 0.7-0.9. Outside it the move either reads as
-        // a wobble (too bouncy) or as a dead linear scale-down (critically damped).
-        assertTrue("pause damping ${pause.dampingRatio} is outside the bounce band", pause.dampingRatio in 0.7f..0.9f)
-        assertTrue("resume damping ${resume.dampingRatio} is outside the bounce band", resume.dampingRatio in 0.7f..0.9f)
-        assertTrue("resume must settle at least as fast as pause", resume.stiffness >= pause.stiffness)
+        // The asymmetry is the whole effect: pausing lands (critically damped, stiff), resuming
+        // springs past its target (under-damped) — NeriPlayer's Clean press-in/release pair.
+        assertTrue("pause must be critically damped so it lands without a wobble", pause.dampingRatio >= 0.99f)
+        assertTrue("pause must be quick", pause.stiffness >= 1000f)
+        assertTrue("resume must overshoot", resume.dampingRatio in 0.55f..0.75f)
+        assertTrue("resume must settle slower than the pause lands", resume.stiffness < pause.stiffness)
     }
 
     /**
      * The rebound overshoots the rest value, and the two clamps in [sharedCoverPausedScale] /
-     * [sharedCoverPausedAlpha] absorb it: the cover may dip slightly past 92 %, but the dim stays
-     * inside the paused look instead of inverting.
+     * [sharedCoverPausedAlpha] absorb it: the cover may dip slightly past the paused rest scale,
+     * but the dim stays inside the paused look instead of inverting.
      */
     @Test
     fun `an overshooting progress clamps the scale and the dim`() {
-        val overshoot = 1.08f // ~8 % past the target at the first rebound
-        val scale = sharedCoverPausedScale(1f - overshoot * (1f - 0.92f))
-        assertTrue("the rebound must stay a dip, not an inversion", scale in 0.85f..0.92f)
+        // The resume spring overshoots to ~1.08 of the travel; the paused rest scale is 0.94, so the
+        // rebound dips to ~0.935 before settling. Anything in this band is a dip, never an inversion.
+        val overshoot = 1.08f
+        val scale = sharedCoverPausedScale(1f - overshoot * (1f - 0.94f))
+        assertTrue("the rebound must stay a dip, not an inversion", scale in 0.90f..0.94f)
         assertEquals(1f - 0.06f, sharedCoverPausedAlpha(scale), 1e-6f)
     }
 }

@@ -331,7 +331,7 @@ fun PlayerScreen(
     // During a presentation change the two are the two ends of one shared element: [AnimatedContent]
     // composes both presentations for the length of the cross-fade, and the shared element animates
     // the cover's *bounds* from one end to the other. If only the full artwork carried the paused
-    // scale, the unscaled thumbnail would fade in over the settled 92 % artwork and the cover would
+    // scale, the unscaled thumbnail would fade in over the settled 94 % artwork and the cover would
     // visibly enlarge from 0.92 to 1.0 before the share animation started shrinking it — the
     // "enlarge then shrink" wobble. With one value on both ends the scale is constant through the
     // move, so the shared element's bounds are the only animated quantity; because a constant times a
@@ -2797,7 +2797,7 @@ private val HEADER_COVER_CORNER = 10.dp
  * transition's shared element keeps full-size bounds, so the three transform systems compose
  * without fighting (see [ArtworkWithGestures]). The paired dim is [PAUSED_ARTWORK_DIM].
  */
-private const val PAUSED_ARTWORK_SCALE = 0.92f
+private const val PAUSED_ARTWORK_SCALE = 0.94f
 
 /**
  * How much the cover dims at the paused rest value, as a fraction of full opacity.
@@ -2817,7 +2817,7 @@ private const val PAUSED_ARTWORK_DIM = 0.06f
  * the length of a presentation change, so at every instant of the cross-fade the two renderings are
  * blended and their shared bounds are animating. That means the two ends must render at the **same**
  * scale. The earlier code applied the paused scale to the full artwork only, so the unscaled header
- * thumbnail faded in over the settled 92 % artwork: the apparent scale slid 0.92 -> 1.0 and only then
+ * thumbnail faded in over the settled 94 % artwork: the apparent scale slid 0.94 -> 1.0 and only then
  * started shrinking into the header, which is the "enlarge then shrink" the user saw. Sharing one
  * value keeps the scale constant through the move, so the transition's own bounds animation is the
  * only animated quantity and the visible size (bounds x scale) is monotone by construction.
@@ -2833,7 +2833,7 @@ internal fun sharedCoverPausedScale(pausedCoverScale: Float): Float =
  * Keeping it a function of the scale (rather than a second animation) is what preserves the shared
  * cover's invariant: both renderings of the shared element compute the same alpha from the same
  * scale, so they cannot drift, and because the mapping is monotone the paired scale/alpha path only
- * moves one way. At the paused rest value (0.92) this is 1 - [PAUSED_ARTWORK_DIM] = 0.94; at full
+ * moves one way. At the paused rest value (0.94) this is 1 - [PAUSED_ARTWORK_DIM] = 0.94; at full
  * size it is 1. Values outside the paused range clamp, so a stray scale can never make the cover
  * darker than the paused rest state.
  *
