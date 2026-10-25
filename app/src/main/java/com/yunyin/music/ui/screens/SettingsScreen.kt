@@ -135,6 +135,9 @@ fun SettingsScreen(
     onNowPlayingAudioReactiveChange: (Boolean) -> Unit = {},
     nowPlayingDynamicBackground: Boolean = true,
     onNowPlayingDynamicBackgroundChange: (Boolean) -> Unit = {},
+    /** Whether tapping the artwork opens the immersive artwork view (default on). */
+    nowPlayingImmersiveCover: Boolean = true,
+    onNowPlayingImmersiveCoverChange: (Boolean) -> Unit = {},
     /** 云音 / 封面流动 / 色阶流动; changing it applies immediately through the host state. */
     nowPlayingBackgroundStyle: BackgroundStyle = BackgroundStyle.default,
     onShowBackgroundStyle: () -> Unit = {},
@@ -249,6 +252,8 @@ fun SettingsScreen(
                 ToggleRow("音频律动", "背景随音频节奏变化", nowPlayingAudioReactive, onNowPlayingAudioReactiveChange)
                 RowDivider()
                 ToggleRow("动态背景", "显示随时间变化的动态背景", nowPlayingDynamicBackground, onNowPlayingDynamicBackgroundChange)
+                RowDivider()
+                ToggleRow("点封面进入沉浸式封面", "点封面全屏欣赏；关闭后点封面打开歌词", nowPlayingImmersiveCover, onNowPlayingImmersiveCoverChange)
                 if (animatedCoverAvailable) {
                     RowDivider()
                     ToggleRow(

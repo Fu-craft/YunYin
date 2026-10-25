@@ -1,9 +1,10 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+﻿// SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 云音 / YunYin contributors
 
 package com.yunyin.music.ui.screens
 
 import android.animation.ValueAnimator
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.SharedTransitionLayout
@@ -12,6 +13,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -36,6 +38,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -74,6 +77,9 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -224,6 +230,8 @@ fun PlayerScreen(
      * style cannot be a half-implemented second player.
      */
     playerStyle: PlayerStyle = PlayerStyle.Classic,
+    /** Apple-Music-style tap-to-fill artwork interaction; on by default. */
+    immersiveCoverEnabled: Boolean = true,
     positionProvider: () -> Long,
     modifier: Modifier = Modifier,
 ) {
@@ -265,6 +273,18 @@ fun PlayerScreen(
     var dragSettleJob by remember { mutableStateOf<Job?>(null) }
     var interaction by remember { mutableIntStateOf(0) }
     var immersive by remember { mutableStateOf(false) }
+    // Apple Music-style artwork immersion is independent of the lyrics auto-immersion above.
+    var artworkImmersive by remember { mutableStateOf(false) }
+    var artworkBounds by remember { mutableStateOf<Rect?>(null) }
+
+    LaunchedEffect(showLyrics) {
+        if (showLyrics) artworkImmersive = false
+    }
+
+    BackHandler(enabled = artworkImmersive) {
+        interaction++
+        artworkImmersive = false
+    }
 
     LaunchedEffect(showLyrics, interaction, state.isPlaying, autoImmersiveLyrics) {
         if (!showLyrics) {
@@ -365,9 +385,9 @@ fun PlayerScreen(
     // Measured, that curve spent 0.76 of its opacity in the first quarter; a linear presence spends
     // 0.32.
     val chromeProgress by animateFloatAsState(
-        targetValue = if (immersive) 0f else 1f,
+        targetValue = if (immersive || artworkImmersive) 0f else 1f,
         animationSpec = tween(
-            durationMillis = if (immersive) CHROME_EXIT_MS else CHROME_ENTER_MS,
+            durationMillis = if (immersive || artworkImmersive) CHROME_EXIT_MS else CHROME_ENTER_MS,
             // Linear is its own inverse, so the return retraces the departure exactly.
             easing = LinearEasing,
         ),
@@ -431,7 +451,6 @@ fun PlayerScreen(
          * puts the cover beside the controls instead.
          */
         val isLandscape = maxWidth > maxHeight
-        val immersivePortrait = playerStyle == PlayerStyle.Immersive && !isLandscape
 
         // Lyric typography is decided here, once, and shared by the pre-warmer *and* the lyrics
         // view below.
@@ -576,6 +595,20 @@ fun PlayerScreen(
             }
         }
 
+        val onArtworkTap: () -> Unit = {
+            interaction++
+            if (immersiveCoverEnabled) {
+                artworkImmersive = true
+            } else {
+                togglePresentation()
+            }
+        }
+
+        val exitArtworkImmersive: () -> Unit = {
+            interaction++
+            artworkImmersive = false
+        }
+
         // Capture: arm -> one recorded frame -> freeze to a bitmap -> open the warp session.
         LaunchedEffect(warp.armed) {
             if (!warp.armed) return@LaunchedEffect
@@ -610,6 +643,14 @@ fun PlayerScreen(
             runCatching { android.animation.ValueAnimator.areAnimatorsEnabled() }
                 .getOrDefault(true)
         }
+
+        // Standard settle spring for the bounds expansion; system animations off swaps instantly.
+        // Chrome keeps its existing 400/440 ms fade.
+        val artworkImmersiveProgress by animateFloatAsState(
+            targetValue = if (artworkImmersive) 1f else 0f,
+            animationSpec = if (animatorsOn) Motion.SpringSettle else snap(),
+            label = "artwork-immersive-progress",
+        )
         val dynamicMotionEnabled = NowPlayingBackgroundRules.shouldRunDynamic(
             nowPlayingDynamicBackground, animatorsOn, powerSaveMode,
         )
@@ -626,16 +667,6 @@ fun PlayerScreen(
         ) {
             // Always present, always cheap: a still palette gradient. It is what the page shows
             // when both motion layers are off, so switching the background off never leaves black.
-            if (immersivePortrait) {
-                // No background style is composited in immersive portrait. The full-bleed cover
-                // replaces the field; this base remains as the loader fallback and as the lyrics
-                // page backdrop after the cover has shrunk into the header.
-                StaticPaletteBackdrop(
-                    palette = palette,
-                    dim = backgroundDim,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            } else {
             StaticPaletteBackdrop(
                 palette = palette,
                 dim = backgroundDim,
@@ -706,7 +737,6 @@ fun PlayerScreen(
                         modifier = backgroundModifier,
                     )
                 }
-            }
             }
         }
 
@@ -856,7 +886,7 @@ fun PlayerScreen(
                                         cover = cover,
                                         loader = loader,
                                         download = download,
-                                        onToggleLyrics = { interaction++; togglePresentation() },
+                                        onToggleLyrics = onArtworkTap,
                                         onSaveCover = { interaction++; onSaveCover() },
                                         onDownloadDismissed = onDownloadDismissed,
                                         setDragDistance = onDrag,
@@ -872,6 +902,7 @@ fun PlayerScreen(
                                         sharedScope = this@SharedTransitionLayout,
                                         visibilityScope = this@AnimatedContent,
                                         onCoverCenter = { artworkCoverCenter = it },
+                                onCoverBounds = { artworkBounds = it },
                                     )
                                 }
                             }
@@ -1128,35 +1159,6 @@ fun PlayerScreen(
                     }
                 } else {
                     // ------------------------------------- artwork: stacked (portrait)
-                    Box(Modifier.fillMaxSize()) {
-                    if (playerStyle == PlayerStyle.Immersive) {
-                        ImmersiveCoverWithGestures(
-                            track = track,
-                            cover = cover,
-                            loader = loader,
-                            download = download,
-                            onToggleLyrics = { interaction++; togglePresentation() },
-                            onSaveCover = { interaction++; onSaveCover() },
-                            onDownloadDismissed = onDownloadDismissed,
-                            setDragDistance = onDrag,
-                            onDragFinished = onDragFinished,
-                            artworkScale = sharedCoverScale,
-                            sharedScope = this@SharedTransitionLayout,
-                            visibilityScope = this@AnimatedContent,
-                            onCoverCenter = { artworkCoverCenter = it },
-                        )
-                        Box(
-                            Modifier
-                                .fillMaxSize()
-                                .background(
-                                    Brush.verticalGradient(
-                                        0f to Color.Transparent,
-                                        0.55f to Color.Transparent,
-                                        1f to Color.Black.copy(alpha = 0.92f),
-                                    ),
-                                ),
-                        )
-                    }
                     Column(
                         Modifier
                             .fillMaxSize()
@@ -1187,31 +1189,25 @@ fun PlayerScreen(
                             // and can never clip the controls. On a tall screen the leftover height
                             // sits below the controls, never between the cover and its title.
                             val artSize = PlayerArtworkLayoutRules.artworkSize(maxWidth, maxHeight)
-                            if (playerStyle == PlayerStyle.Immersive) {
-                                // The full-bleed layer owns the visible cover and its gestures;
-                                // this keeps the exact same space so the title and controls do
-                                // not move when switching styles.
-                                Box(Modifier.size(artSize))
-                            } else {
-                                ArtworkWithGestures(
-                                    artSize = artSize,
-                                    track = track,
-                                    cover = cover,
-                                    loader = loader,
-                                    download = download,
-                                    onToggleLyrics = { interaction++; togglePresentation() },
-                                    onSaveCover = { interaction++; onSaveCover() },
-                                    onDownloadDismissed = onDownloadDismissed,
-                                    setDragDistance = onDrag,
-                                    onDragFinished = onDragFinished,
-                                    playerStyle = playerStyle,
-                                    isPlaying = state.isPlaying,
-                                    artworkScale = sharedCoverScale,
-                                    sharedScope = this@SharedTransitionLayout,
-                                    visibilityScope = this@AnimatedContent,
-                                    onCoverCenter = { artworkCoverCenter = it },
-                                )
-                            }
+                            ArtworkWithGestures(
+                                artSize = artSize,
+                                track = track,
+                                cover = cover,
+                                loader = loader,
+                                download = download,
+                                onToggleLyrics = onArtworkTap,
+                                onSaveCover = { interaction++; onSaveCover() },
+                                onDownloadDismissed = onDownloadDismissed,
+                                setDragDistance = onDrag,
+                                onDragFinished = onDragFinished,
+                                playerStyle = playerStyle,
+                                isPlaying = state.isPlaying,
+                                artworkScale = sharedCoverScale,
+                                sharedScope = this@SharedTransitionLayout,
+                                visibilityScope = this@AnimatedContent,
+                                onCoverCenter = { artworkCoverCenter = it },
+                                onCoverBounds = { artworkBounds = it },
+                            )
 
                         }
 
@@ -1221,6 +1217,11 @@ fun PlayerScreen(
                             ),
                         )
 
+                        Column(
+                            Modifier
+                                .fillMaxWidth()
+                                .graphicsLayer { alpha = chromeProgress },
+                        ) {
                         TitleBlock(
                             track = track,
                             liked = liked,
@@ -1259,9 +1260,34 @@ fun PlayerScreen(
                             onToggleLyrics = { interaction++; togglePresentation() },
                             onShowQueue = { interaction++; onShowQueue() },
                         )
-                    }
+                        }
                     }
                 }
+            }
+        }
+
+        if (artworkImmersive || artworkImmersiveProgress > 0.001f) {
+            Box(Modifier.fillMaxSize()) {
+                ImmersiveArtworkOverlay(
+                    progress = artworkImmersiveProgress,
+                    sourceBounds = artworkBounds,
+                    track = track,
+                    cover = cover,
+                    loader = loader,
+                    download = download,
+                    artworkScale = sharedCoverScale,
+                    onExit = exitArtworkImmersive,
+                    onSaveCover = { interaction++; onSaveCover() },
+                    onDownloadDismissed = onDownloadDismissed,
+                )
+                ImmersiveLyricsAffordance(
+                    alpha = artworkImmersiveProgress,
+                    onClick = {
+                        interaction++
+                        artworkImmersive = false
+                        togglePresentation()
+                    },
+                )
             }
         }
 
@@ -1313,65 +1339,105 @@ fun PlayerScreen(
 }
 
 /**
- * Full-bleed cover for [PlayerStyle.Immersive]: edge-to-edge crop, no corner and no shadow. The
- * same press detector as the inset cover owns tap / long press / drag, and the shared-element key
- * lets the whole page shrink into the lyrics header.
+ * Full-screen artwork expansion. The layout rect is interpolated to the root bounds while the
+ * artwork is cropped at every size, so the cover appears to grow out of its card rather than
+ * cross-fade. `progress` is the shared settle spring; chrome fades independently on chromeProgress.
  */
 @Composable
-private fun ImmersiveCoverWithGestures(
+private fun ImmersiveArtworkOverlay(
+    progress: Float,
+    sourceBounds: Rect?,
     track: Track?,
     cover: ImageBitmap?,
     loader: ArtworkLoader,
     download: DownloadState,
-    onToggleLyrics: () -> Unit,
+    artworkScale: () -> Float,
+    onExit: () -> Unit,
     onSaveCover: () -> Unit,
     onDownloadDismissed: () -> Unit,
-    setDragDistance: (Float) -> Unit,
-    onDragFinished: (distancePx: Float, elapsedMs: Long) -> Unit,
-    artworkScale: () -> Float,
-    sharedScope: SharedTransitionScope,
-    visibilityScope: AnimatedVisibilityScope,
-    onCoverCenter: (Offset) -> Unit,
 ) {
-    Box(
-        Modifier
-            .fillMaxSize()
-            .onGloballyPositioned { onCoverCenter(it.boundsInRoot().center) }
-            .pressableGestures(
-                onTap = onToggleLyrics,
-                onLongPress = onSaveCover,
-                setDragDistance = setDragDistance,
-                onDragEnd = { distance, elapsedMs -> onDragFinished(distance, elapsedMs) },
-            ),
-        contentAlignment = Alignment.Center,
-    ) {
-        Artwork(
-            url = track?.coverUrl,
-            loader = loader,
-            corner = 0.dp,
-            requestSize = 1600,
-            preloaded = cover,
-            modifier = Modifier
-                .fillMaxSize()
-                .then(
-                    with(sharedScope) {
-                        Modifier.sharedElement(
-                            rememberSharedContentState(key = COVER_SHARED_KEY),
-                            animatedVisibilityScope = visibilityScope,
-                            boundsTransform = { _, _ ->
-                                tween(PRESENTATION_FADE_MS, easing = Motion.EaseOut)
-                            },
-                        )
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val density = androidx.compose.ui.platform.LocalDensity.current
+        val rootW = with(density) { maxWidth.toPx() }
+        val rootH = with(density) { maxHeight.toPx() }
+        val source = sourceBounds ?: Rect(0f, 0f, rootW, rootH)
+        val p = progress.coerceIn(0f, 1f)
+        val left = source.left * (1f - p)
+        val top = source.top * (1f - p)
+        val width = source.width + (rootW - source.width) * p
+        val height = source.height + (rootH - source.height) * p
+        val exitDistance = with(density) { 64.dp.toPx() }
+        Box(
+            Modifier
+                .offset { IntOffset(left.roundToInt(), top.roundToInt()) }
+                .size(with(density) { width.toDp() }, with(density) { height.toDp() })
+                .pressableGestures(
+                    onTap = onExit,
+                    onLongPress = onSaveCover,
+                    setDragDistance = { },
+                    onDragEnd = { distance, elapsedMs ->
+                        if (distance > exitDistance || (elapsedMs > 0 && distance / elapsedMs > 0.11f)) {
+                            onExit()
+                        }
                     },
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Artwork(
+                url = track?.coverUrl,
+                loader = loader,
+                corner = 0.dp,
+                requestSize = 1600,
+                preloaded = cover,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        val scale = artworkScale()
+                        scaleX = scale
+                        scaleY = scale
+                        alpha = sharedCoverPausedAlpha(scale)
+                    },
+            )
+            DownloadOverlay(state = download, size = 96.dp, onDismissed = onDownloadDismissed)
+        }
+    }
+}
+
+/** Discreet exit-to-lyrics affordance; lyrics remain reachable while the chrome is hidden. */
+@Composable
+private fun ImmersiveLyricsAffordance(alpha: Float, onClick: () -> Unit) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+        Row(
+            Modifier
+                .navigationBarsPadding()
+                .padding(bottom = 24.dp)
+                .height(44.dp)
+                .graphicsLayer { this.alpha = alpha.coerceIn(0f, 1f) }
+                .clip(ContinuousRoundedRectangle(AppleShapes.pill))
+                .background(Color.Black.copy(alpha = 0.42f))
+                .clickable(
+                    indication = rememberControlRipple(bounded = false),
+                    interactionSource = null,
+                    onClick = onClick,
                 )
-                .graphicsLayer {
-                    val scale = artworkScale()
-                    scaleX = scale
-                    scaleY = scale
-                    alpha = sharedCoverPausedAlpha(scale)
-                },
-        )
-        DownloadOverlay(state = download, size = 96.dp, onDismissed = onDownloadDismissed)
+                .padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
+            Icon(
+                imageVector = SfIcons.QuoteOpening,
+                contentDescription = "歌词",
+                tint = Color.White.copy(alpha = 0.9f),
+                modifier = Modifier.size(16.dp),
+            )
+            Text(
+                text = "歌词",
+                fontFamily = SFPro,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                color = Color.White.copy(alpha = 0.9f),
+            )
+        }
     }
 }
 
@@ -1421,6 +1487,8 @@ private fun ArtworkWithGestures(
     visibilityScope: AnimatedVisibilityScope,
     /** Reports the cover area's centre in root coordinates; the warp dollies around it. */
     onCoverCenter: ((Offset) -> Unit)? = null,
+    /** Exact in-layout cover rect, used as the start of the immersive bounds expansion. */
+    onCoverBounds: ((Rect) -> Unit)? = null,
 ) {
     var animatedUrl by remember(track?.id, playerStyle, animatedCoverEnabled, animatedArtwork) {
         mutableStateOf<String?>(null)
@@ -1471,6 +1539,7 @@ private fun ArtworkWithGestures(
                 isPlaying = isPlaying,
                 modifier = Modifier
                     .size(artSize)
+                    .onGloballyPositioned { onCoverBounds?.invoke(it.boundsInRoot()) }
                     .graphicsLayer {
                         val scale = artworkScale()
                         scaleX = scale
@@ -1493,6 +1562,7 @@ private fun ArtworkWithGestures(
                 preloaded = cover,
                 modifier = Modifier
                     .size(artSize)
+                    .onGloballyPositioned { onCoverBounds?.invoke(it.boundsInRoot()) }
                     // The other half of the shared cover: switching to the lyrics presentation shrinks
                     // this into the header thumbnail.
                     .then(
