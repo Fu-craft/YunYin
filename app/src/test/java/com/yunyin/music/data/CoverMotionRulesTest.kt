@@ -15,12 +15,12 @@ class CoverMotionRulesTest {
     @Test
     fun `defaults are the soft pair, not the hard snap`() {
         val p = CoverMotion.Params()
-        assertEquals(0.85f, p.pauseDamping, 1e-6f)
-        assertEquals(380f, p.pauseStiffness, 1e-3f)
-        assertEquals(0.68f, p.resumeDamping, 1e-6f)
+        assertEquals(1.00f, p.pauseDamping, 1e-6f)
+        assertEquals(220f, p.pauseStiffness, 1e-3f)
+        assertEquals(0.92f, p.resumeDamping, 1e-6f)
         assertEquals(0.94f, p.pausedScale, 1e-6f)
-        assertTrue("pause must not be critically damped to a snap", p.pauseDamping < 1f)
-        assertTrue("pause must feel soft", p.pauseStiffness <= 400f)
+        assertTrue("Apple's pause is critically damped: no wobble", p.pauseDamping >= 0.99f)
+        assertTrue("pause must feel soft, not snapped", p.pauseStiffness <= 260f)
     }
 
     @Test

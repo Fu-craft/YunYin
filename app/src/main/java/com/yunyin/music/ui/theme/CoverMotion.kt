@@ -47,15 +47,24 @@ object CoverMotion {
     const val MIN_PAUSED_SCALE = 0.80f
     const val MAX_PAUSED_SCALE = 1.00f
 
-    /** Soft landing with a hint of settle; stiffness low enough that it reads as mass, not a snap. */
-    const val DEFAULT_PAUSE_DAMPING = 0.85f
-    const val DEFAULT_PAUSE_STIFFNESS = 380f
+    /**
+     * Apple Music's pause: **smooth, no bounce, and slow**.
+     *
+     * The artwork sinks steadily and lands without a wobble — critically damped (1.0) — but the
+     * stiffness is low (220) so the whole move takes roughly 0.55–0.65 s and reads as weight rather
+     * than a snap. High stiffness with critical damping is what made an earlier build feel 生硬.
+     */
+    const val DEFAULT_PAUSE_DAMPING = 1.00f
+    const val DEFAULT_PAUSE_STIFFNESS = 220f
 
-    /** Slightly more overshoot on the way back, so resuming feels elastic. */
-    const val DEFAULT_RESUME_DAMPING = 0.68f
-    const val DEFAULT_RESUME_STIFFNESS = 380f
+    /**
+     * Resume: a touch crisper (260) with the faintest overshoot (0.92), because the music has already
+     * started — but still far from a bouncy spring.
+     */
+    const val DEFAULT_RESUME_DAMPING = 0.92f
+    const val DEFAULT_RESUME_STIFFNESS = 260f
 
-    /** How far the cover recedes while paused. */
+    /** How far the cover recedes while paused. Apple's own step is subtle, not a shrink. */
     const val DEFAULT_PAUSED_SCALE = 0.94f
 
     private val _params = MutableStateFlow(Params())

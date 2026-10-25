@@ -93,9 +93,9 @@ class SharedCoverScaleTest {
         // The settle is user-tunable now, so the invariants are relative: the pause must not be a
         // mechanical snap (low stiffness, damped but not dead), and the resume must overshoot at
         // least as much as the pause does.
-        assertTrue("pause must feel soft, not snapped", pause.stiffness <= 500f)
+        assertTrue("pause must feel soft, not snapped", pause.stiffness <= 300f)
         assertTrue("pause must be damped but not dead", pause.dampingRatio in 0.6f..1f)
-        assertTrue("resume must overshoot", resume.dampingRatio < 0.8f)
+        assertTrue("resume keeps a faint overshoot", resume.dampingRatio < 0.95f)
         assertTrue("resume should spring at least as much as the pause", resume.dampingRatio <= pause.dampingRatio + 0.05f)
     }
 
