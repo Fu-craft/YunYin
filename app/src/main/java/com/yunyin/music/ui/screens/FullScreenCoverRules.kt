@@ -10,6 +10,8 @@ object FullScreenCoverRules {
 
     const val FEATHER_TOP_DP = 56f
     const val FEATHER_BOTTOM_DP = 72f
+    const val EDGE_BLUR_DP = 24f
+    const val BLUR_DOWNSCALE = 4
     const val TOP_LIGHTEN = 0.08f
     const val BOTTOM_DARKEN = 0.12f
     const val GRADIENT_MIDDLE = 0.55f
@@ -32,6 +34,30 @@ object FullScreenCoverRules {
 
     fun extensionHeightPx(viewportHeightPx: Int, viewportWidthPx: Int): Int =
         (viewportHeightPx - coverHeightPx(viewportWidthPx)).coerceAtLeast(0)
+
+    /**
+     * Area-weighted average of a downscaled cover, ignoring fully transparent pixels.
+     * `null` when there is no opaque sample.
+     */
+    fun averageColor(pixels: IntArray): Int? {
+        var a = 0L; var r = 0L; var g = 0L; var b = 0L
+        var weight = 0L
+        for (p in pixels) {
+            val alpha = (p ushr 24) and 0xFF
+            if (alpha == 0) continue
+            a += alpha.toLong() * alpha
+            r += ((p ushr 16) and 0xFF).toLong() * alpha
+            g += ((p ushr 8) and 0xFF).toLong() * alpha
+            b += (p and 0xFF).toLong() * alpha
+            weight += alpha.toLong()
+        }
+        if (weight == 0L) return null
+        val alpha = (a / weight).toInt().coerceIn(0, 255)
+        return (alpha shl 24) or
+            ((r / weight).toInt().coerceIn(0, 255) shl 16) or
+            ((g / weight).toInt().coerceIn(0, 255) shl 8) or
+            (b / weight).toInt().coerceIn(0, 255)
+    }
 
     /** Top lighter → dominant → bottom darker, all at full alpha. */
     fun fieldColors(dominant: Int): IntArray = intArrayOf(

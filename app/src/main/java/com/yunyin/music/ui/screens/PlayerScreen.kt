@@ -16,6 +16,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
@@ -56,6 +57,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -70,6 +72,7 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -134,9 +137,11 @@ import com.yunyin.music.ui.playlist.LocalPlaylistActions
 import com.yunyin.music.ui.DownloadState
 import com.mocharealm.accompanist.lyrics.core.model.SyncedLyrics
 import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Full-screen player, in two presentations.
@@ -633,6 +638,8 @@ fun PlayerScreen(
             if (fullScreenCover) {
                 FullScreenCoverBackdrop(
                     palette = palette,
+                    cover = cover,
+                    trackId = state.current?.id ?: 0L,
                     modifier = Modifier.fillMaxSize(),
                 )
             } else {
@@ -1174,7 +1181,7 @@ fun PlayerScreen(
                                 playerStyle = playerStyle,
                                 isPlaying = state.isPlaying,
                                 flat = fullScreenCover,
-                                feather = fullScreenCover && !transitioning,
+                                soften = fullScreenCover && !transitioning,
                                 corner = if (fullScreenCover) 0.dp else ARTWORK_CORNER,
                                 artworkScale = sharedCoverScale,
                                 sharedScope = this@SharedTransitionLayout,
@@ -1288,9 +1295,18 @@ fun PlayerScreen(
 @Composable
 private fun FullScreenCoverBackdrop(
     palette: DynamicBackgroundPalette,
+    cover: ImageBitmap?,
+    trackId: Long,
     modifier: Modifier = Modifier,
 ) {
-    val dominant = palette.colors.firstOrNull() ?: FullScreenCoverRules.FALLBACK_COLOR
+    val average by produceState<Int?>(initialValue = null, cover, trackId) {
+        value = if (cover == null) null else withContext(Dispatchers.Default) {
+            runCatching { CoverFieldCache.average(trackId, cover) }.getOrNull()
+        }
+    }
+    val dominant = average
+        ?: palette.colors.firstOrNull()
+        ?: FullScreenCoverRules.FALLBACK_COLOR
     val field = FullScreenCoverRules.fieldColors(dominant)
     Box(
         modifier.background(
@@ -1302,6 +1318,54 @@ private fun FullScreenCoverBackdrop(
                 ),
             ),
         ),
+    )
+}
+
+/**
+ * A pre-rendered blurred copy of the cover, masked to the top 56 dp and bottom 72 dp bands only.
+ * The sharp artwork below stays fully opaque; the blurred copy is 1.0 at each outer edge and fades
+ * inward to 0, so the edge dissolves by sharpness rather than by revealing the flat field.
+ */
+@Composable
+private fun ImmersiveEdgeSoftening(
+    cover: ImageBitmap?,
+    trackId: Long,
+    modifier: Modifier = Modifier,
+) {
+    if (cover == null) return
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val radiusPx = with(density) { FullScreenCoverRules.EDGE_BLUR_DP.dp.toPx() }
+    val blurred by produceState<ImageBitmap?>(initialValue = null, cover, trackId) {
+        value = withContext(Dispatchers.Default) {
+            runCatching { CoverFieldCache.blurred(trackId, cover, radiusPx) }.getOrNull()
+        }
+    }
+    val image = blurred ?: return
+    Image(
+        bitmap = image,
+        contentDescription = null,
+        contentScale = ContentScale.FillBounds,
+        modifier = modifier
+            .fillMaxSize()
+            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+            .drawWithContent {
+                drawContent()
+                val h = size.height.coerceAtLeast(1f)
+                val top = (FullScreenCoverRules.FEATHER_TOP_DP.dp.toPx() / h)
+                    .coerceIn(0f, 0.5f)
+                val bottom =
+                    (1f - FullScreenCoverRules.FEATHER_BOTTOM_DP.dp.toPx() / h)
+                        .coerceIn(0.5f, 1f)
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        0f to Color.White,
+                        top to Color.Transparent,
+                        bottom to Color.Transparent,
+                        1f to Color.White,
+                    ),
+                    blendMode = BlendMode.DstIn,
+                )
+            },
     )
 }
 
@@ -1338,8 +1402,8 @@ private fun ArtworkWithGestures(
     isPlaying: Boolean,
     /** Full-screen style: no shadow and a caller-supplied (normally zero) corner. */
     flat: Boolean = false,
-    /** Full-screen style: feather the top 56 dp and bottom 72 dp into the palette field. */
-    feather: Boolean = false,
+    /** Full-screen style: pre-blurred top 56 dp / bottom 72 dp bands over the sharp cover. */
+    soften: Boolean = false,
     corner: androidx.compose.ui.unit.Dp = ARTWORK_CORNER,
     animatedCoverEnabled: Boolean = false,
     animatedArtwork: com.yunyin.music.data.AnimatedArtworkRepository? = null,
@@ -1455,33 +1519,14 @@ private fun ArtworkWithGestures(
                         if (flat) Modifier
                         else Modifier.shadow(14.dp, ContinuousRoundedRectangle(corner)),
                     )
-                    .then(
-                        if (feather) {
-                            Modifier
-                                .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-                                .drawWithContent {
-                                    drawContent()
-                                    val h = size.height.coerceAtLeast(1f)
-                                    val top = (FullScreenCoverRules.FEATHER_TOP_DP.dp.toPx() / h)
-                                        .coerceIn(0f, 0.5f)
-                                    val bottom =
-                                        (1f - FullScreenCoverRules.FEATHER_BOTTOM_DP.dp.toPx() / h)
-                                            .coerceIn(0.5f, 1f)
-                                    drawRect(
-                                        brush = Brush.verticalGradient(
-                                            0f to Color.Transparent,
-                                            top to Color.White,
-                                            bottom to Color.White,
-                                            1f to Color.Transparent,
-                                        ),
-                                        blendMode = BlendMode.DstIn,
-                                    )
-                                }
-                        } else {
-                            Modifier
-                        },
-                    ),
             )
+            if (soften) {
+                ImmersiveEdgeSoftening(
+                    cover = cover,
+                    trackId = track?.id ?: 0L,
+                    modifier = Modifier.size(artSize),
+                )
+            }
             val videoUrl = animatedUrl
             if (videoUrl != null && animatedCoverEnabled && animatedArtwork != null && playerStyle == PlayerStyle.Classic) {
                 AnimatedArtworkPlayer(

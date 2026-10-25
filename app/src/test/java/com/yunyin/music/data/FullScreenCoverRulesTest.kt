@@ -19,6 +19,16 @@ class FullScreenCoverRulesTest {
         assertTrue(FullScreenCoverRules.backgroundStyleComposed(PlayerStyle.Classic, false))
         assertTrue(FullScreenCoverRules.backdropIsStatic(PlayerStyle.Immersive))
 
+        val black = FullScreenCoverRules.averageColor(IntArray(16) { 0xFF000000.toInt() })
+        val white = FullScreenCoverRules.averageColor(IntArray(16) { 0xFFFFFFFF.toInt() })
+        assertTrue(black != null && FullScreenCoverRules.luminance(black) < 0.1f)
+        assertTrue(white != null && FullScreenCoverRules.luminance(white) > 0.9f)
+        val midField = FullScreenCoverRules.fieldColors(0xFF808080.toInt())
+        assertTrue(FullScreenCoverRules.luminance(midField[0]) >
+            FullScreenCoverRules.luminance(midField[1]))
+        assertTrue(FullScreenCoverRules.luminance(midField[1]) >
+            FullScreenCoverRules.luminance(midField[2]))
+
         val field = FullScreenCoverRules.fieldColors(0xFF336699.toInt())
         assertTrue(FullScreenCoverRules.luminance(field[0]) >
             FullScreenCoverRules.luminance(field[1]))
