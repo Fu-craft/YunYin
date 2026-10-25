@@ -150,31 +150,65 @@ object LyricsShareCard {
         val lines = input.lyricLines.take(4).filter { it.isNotBlank() }
         if (lines.isEmpty()) return
         val maxWidth = WIDTH - NeriLyricCardRules.PADDING * 2f
-        val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+        val parsed = lines.map(NeriLyricCardRules::splitLine)
+        val primaryPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.WHITE
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         }
-        val fitted = NeriLyricCardRules.fitSize(lines, maxWidth) { text, size ->
-            textPaint.textSize = size
-            textPaint.measureText(text)
+        val fitted = NeriLyricCardRules.fitSize(parsed.map { it.primary }, maxWidth) { text, size ->
+            primaryPaint.textSize = size
+            primaryPaint.measureText(text)
         }
-        textPaint.textSize = fitted
+        primaryPaint.textSize = fitted
+        val translationPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(NeriLyricCardRules.TRANSLATION_ALPHA, 255, 255, 255)
+            textSize = NeriLyricCardRules.TRANSLATION_SIZE
+            typeface = Typeface.DEFAULT
+        }
         val spacing = NeriLyricCardRules.lineSpacing(fitted)
-        val lineHeight = textPaint.fontMetrics.descent - textPaint.fontMetrics.ascent
-        val blockHeight = lines.size * lineHeight + (lines.size - 1).coerceAtLeast(0) * spacing
+        val primaryLineHeight =
+            primaryPaint.fontMetrics.descent - primaryPaint.fontMetrics.ascent
+        val translationLineHeight =
+            translationPaint.fontMetrics.descent - translationPaint.fontMetrics.ascent
+        val blockHeight = NeriLyricCardRules.blockHeight(
+            lines = lines,
+            primaryLineHeight = primaryLineHeight,
+            translationLineHeight = translationLineHeight,
+            groupSpacing = spacing,
+        )
         val maxHeight = NeriLyricCardRules.lyricsMaxHeight(height).toFloat()
         var y = NeriLyricCardRules.LYRICS_TOP +
             ((maxHeight - blockHeight) / 2f).coerceAtLeast(0f)
-        lines.forEach { line ->
-            val ellipsized = TextUtils.ellipsize(
-                line,
-                TextPaint(textPaint),
+        lines.forEach { raw ->
+            val line = NeriLyricCardRules.splitLine(raw)
+            val primaryBaseline = y - primaryPaint.fontMetrics.ascent
+            drawSingleLine(
+                canvas,
+                line.primary,
+                NeriLyricCardRules.PADDING,
+                primaryBaseline,
                 maxWidth,
-                TextUtils.TruncateAt.END,
-            ).toString()
-            val baseline = y - textPaint.fontMetrics.ascent
-            canvas.drawText(ellipsized, NeriLyricCardRules.PADDING, baseline, textPaint)
-            y += lineHeight + spacing
+                primaryPaint,
+            )
+            if (line.translation != null) {
+                val translationBaseline = NeriLyricCardRules.translationBaseline(
+                    primaryBaseline = primaryBaseline,
+                    primaryDescent = primaryPaint.fontMetrics.descent,
+                    translationAscent = translationPaint.fontMetrics.ascent,
+                )
+                drawSingleLine(
+                    canvas,
+                    line.translation,
+                    NeriLyricCardRules.PADDING,
+                    translationBaseline,
+                    maxWidth,
+                    translationPaint,
+                )
+            }
+            y += primaryLineHeight + spacing
+            if (line.translation != null) {
+                y += NeriLyricCardRules.TRANSLATION_GAP + translationLineHeight
+            }
         }
     }
 

@@ -100,8 +100,6 @@ import com.yunyin.music.ui.LYRIC_OFFSET_LIMIT_MS
 import com.yunyin.music.ui.PlayerStyle
 import com.yunyin.music.ui.background.DynamicBackgroundPalette
 import com.yunyin.music.ui.background.CoverBlurBackground
-import com.yunyin.music.ui.background.ImmersiveCoverBackdrop
-import com.yunyin.music.ui.background.ImmersiveCoverRules
 import com.yunyin.music.ui.background.BackgroundStyle
 import com.yunyin.music.ui.background.BackgroundStyleRules
 import com.yunyin.music.ui.background.HyperBackground
@@ -197,8 +195,6 @@ fun PlayerScreen(
     nowPlayingCoverBlurBackground: Boolean = false,
     nowPlayingAudioReactive: Boolean = true,
     nowPlayingDynamicBackground: Boolean = true,
-    /** Opt-in full-bleed cover with a liquid ripple behind the portrait player. */
-    nowPlayingImmersiveCover: Boolean = false,
     /** 云音 / 色阶流动. */
     backgroundStyle: BackgroundStyle = BackgroundStyle.default,
     /** Animated cover is opt-in and only active when an operator endpoint is configured. */
@@ -435,6 +431,7 @@ fun PlayerScreen(
          * puts the cover beside the controls instead.
          */
         val isLandscape = maxWidth > maxHeight
+        val immersivePortrait = playerStyle == PlayerStyle.Immersive && !isLandscape
 
         // Lyric typography is decided here, once, and shared by the pre-warmer *and* the lyrics
         // view below.
@@ -629,6 +626,16 @@ fun PlayerScreen(
         ) {
             // Always present, always cheap: a still palette gradient. It is what the page shows
             // when both motion layers are off, so switching the background off never leaves black.
+            if (immersivePortrait) {
+                // No background style is composited in immersive portrait. The full-bleed cover
+                // replaces the field; this base remains as the loader fallback and as the lyrics
+                // page backdrop after the cover has shrunk into the header.
+                StaticPaletteBackdrop(
+                    palette = palette,
+                    dim = backgroundDim,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
             StaticPaletteBackdrop(
                 palette = palette,
                 dim = backgroundDim,
@@ -700,22 +707,6 @@ fun PlayerScreen(
                     )
                 }
             }
-            if (ImmersiveCoverRules.shouldRender(
-                    enabled = nowPlayingImmersiveCover,
-                    isLandscape = isLandscape,
-                    hasCover = cover != null,
-                )
-            ) {
-                ImmersiveCoverBackdrop(
-                    cover = cover,
-                    animate = ImmersiveCoverRules.shouldAnimate(
-                        enabled = nowPlayingImmersiveCover,
-                        dynamicBackground = nowPlayingDynamicBackground,
-                        animatorsEnabled = animatorsOn,
-                        transitioning = transitioning,
-                    ),
-                    modifier = Modifier.fillMaxSize(),
-                )
             }
         }
 
@@ -1137,6 +1128,35 @@ fun PlayerScreen(
                     }
                 } else {
                     // ------------------------------------- artwork: stacked (portrait)
+                    Box(Modifier.fillMaxSize()) {
+                    if (playerStyle == PlayerStyle.Immersive) {
+                        ImmersiveCoverWithGestures(
+                            track = track,
+                            cover = cover,
+                            loader = loader,
+                            download = download,
+                            onToggleLyrics = { interaction++; togglePresentation() },
+                            onSaveCover = { interaction++; onSaveCover() },
+                            onDownloadDismissed = onDownloadDismissed,
+                            setDragDistance = onDrag,
+                            onDragFinished = onDragFinished,
+                            artworkScale = sharedCoverScale,
+                            sharedScope = this@SharedTransitionLayout,
+                            visibilityScope = this@AnimatedContent,
+                            onCoverCenter = { artworkCoverCenter = it },
+                        )
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                .background(
+                                    Brush.verticalGradient(
+                                        0f to Color.Transparent,
+                                        0.55f to Color.Transparent,
+                                        1f to Color.Black.copy(alpha = 0.92f),
+                                    ),
+                                ),
+                        )
+                    }
                     Column(
                         Modifier
                             .fillMaxSize()
@@ -1167,24 +1187,31 @@ fun PlayerScreen(
                             // and can never clip the controls. On a tall screen the leftover height
                             // sits below the controls, never between the cover and its title.
                             val artSize = PlayerArtworkLayoutRules.artworkSize(maxWidth, maxHeight)
-                            ArtworkWithGestures(
-                                artSize = artSize,
-                                track = track,
-                                cover = cover,
-                                loader = loader,
-                                download = download,
-                                onToggleLyrics = { interaction++; togglePresentation() },
-                                onSaveCover = { interaction++; onSaveCover() },
-                                onDownloadDismissed = onDownloadDismissed,
-                                setDragDistance = onDrag,
-                                onDragFinished = onDragFinished,
-                                playerStyle = playerStyle,
-                                isPlaying = state.isPlaying,
-                                artworkScale = sharedCoverScale,
-                                sharedScope = this@SharedTransitionLayout,
-                                visibilityScope = this@AnimatedContent,
-                                onCoverCenter = { artworkCoverCenter = it },
-                            )
+                            if (playerStyle == PlayerStyle.Immersive) {
+                                // The full-bleed layer owns the visible cover and its gestures;
+                                // this keeps the exact same space so the title and controls do
+                                // not move when switching styles.
+                                Box(Modifier.size(artSize))
+                            } else {
+                                ArtworkWithGestures(
+                                    artSize = artSize,
+                                    track = track,
+                                    cover = cover,
+                                    loader = loader,
+                                    download = download,
+                                    onToggleLyrics = { interaction++; togglePresentation() },
+                                    onSaveCover = { interaction++; onSaveCover() },
+                                    onDownloadDismissed = onDownloadDismissed,
+                                    setDragDistance = onDrag,
+                                    onDragFinished = onDragFinished,
+                                    playerStyle = playerStyle,
+                                    isPlaying = state.isPlaying,
+                                    artworkScale = sharedCoverScale,
+                                    sharedScope = this@SharedTransitionLayout,
+                                    visibilityScope = this@AnimatedContent,
+                                    onCoverCenter = { artworkCoverCenter = it },
+                                )
+                            }
 
                         }
 
@@ -1232,6 +1259,7 @@ fun PlayerScreen(
                             onToggleLyrics = { interaction++; togglePresentation() },
                             onShowQueue = { interaction++; onShowQueue() },
                         )
+                    }
                     }
                 }
             }
@@ -1281,6 +1309,69 @@ fun PlayerScreen(
                 onDismiss = { showQuality = false },
             )
         }
+    }
+}
+
+/**
+ * Full-bleed cover for [PlayerStyle.Immersive]: edge-to-edge crop, no corner and no shadow. The
+ * same press detector as the inset cover owns tap / long press / drag, and the shared-element key
+ * lets the whole page shrink into the lyrics header.
+ */
+@Composable
+private fun ImmersiveCoverWithGestures(
+    track: Track?,
+    cover: ImageBitmap?,
+    loader: ArtworkLoader,
+    download: DownloadState,
+    onToggleLyrics: () -> Unit,
+    onSaveCover: () -> Unit,
+    onDownloadDismissed: () -> Unit,
+    setDragDistance: (Float) -> Unit,
+    onDragFinished: (distancePx: Float, elapsedMs: Long) -> Unit,
+    artworkScale: () -> Float,
+    sharedScope: SharedTransitionScope,
+    visibilityScope: AnimatedVisibilityScope,
+    onCoverCenter: (Offset) -> Unit,
+) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .onGloballyPositioned { onCoverCenter(it.boundsInRoot().center) }
+            .pressableGestures(
+                onTap = onToggleLyrics,
+                onLongPress = onSaveCover,
+                setDragDistance = setDragDistance,
+                onDragEnd = { distance, elapsedMs -> onDragFinished(distance, elapsedMs) },
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Artwork(
+            url = track?.coverUrl,
+            loader = loader,
+            corner = 0.dp,
+            requestSize = 1600,
+            preloaded = cover,
+            modifier = Modifier
+                .fillMaxSize()
+                .then(
+                    with(sharedScope) {
+                        Modifier.sharedElement(
+                            rememberSharedContentState(key = COVER_SHARED_KEY),
+                            animatedVisibilityScope = visibilityScope,
+                            boundsTransform = { _, _ ->
+                                tween(PRESENTATION_FADE_MS, easing = Motion.EaseOut)
+                            },
+                        )
+                    },
+                )
+                .graphicsLayer {
+                    val scale = artworkScale()
+                    scaleX = scale
+                    scaleY = scale
+                    alpha = sharedCoverPausedAlpha(scale)
+                },
+        )
+        DownloadOverlay(state = download, size = 96.dp, onDismissed = onDownloadDismissed)
     }
 }
 

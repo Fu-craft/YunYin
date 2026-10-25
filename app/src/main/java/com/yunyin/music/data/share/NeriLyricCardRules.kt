@@ -29,6 +29,9 @@ object NeriLyricCardRules {
     const val LYRIC_STEP = 4f
     const val LYRIC_SPACING = 16f
     const val LYRIC_SPACING_MIN_SIZE = 12f
+    const val TRANSLATION_SIZE = 34f
+    const val TRANSLATION_GAP = 8f
+    const val TRANSLATION_ALPHA = 205
 
     const val TITLE_SIZE = 46f
     const val ARTIST_SIZE = 38f
@@ -42,6 +45,51 @@ object NeriLyricCardRules {
 
     fun lineSpacing(textSize: Float): Float =
         if (textSize > LYRIC_MIN_SIZE) LYRIC_SPACING else LYRIC_SPACING_MIN_SIZE
+
+    /** The selected string is `primary\ntranslation` from LyricClipboard; split before drawing. */
+    data class LyricLine(val primary: String, val translation: String?)
+
+    fun splitLine(raw: String): LyricLine {
+        val newline = raw.indexOf('\n')
+        if (newline < 0) return LyricLine(raw.trim(), null)
+        val primary = raw.substring(0, newline).trim()
+        val translation = raw.substring(newline + 1).trim().ifBlank { null }
+        return LyricLine(primary, translation)
+    }
+
+    /** Translation baselines are derived independently; this is the testable non-overlap rule. */
+    fun translationBaseline(
+        primaryBaseline: Float,
+        primaryDescent: Float,
+        translationAscent: Float,
+    ): Float = primaryBaseline + primaryDescent + TRANSLATION_GAP - translationAscent
+
+    /** Total block height including one extra row for every translation. */
+    fun blockHeight(
+        lines: List<String>,
+        primaryLineHeight: Float,
+        translationLineHeight: Float,
+        groupSpacing: Float,
+    ): Float {
+        if (lines.isEmpty()) return 0f
+        val parsed = lines.map(::splitLine)
+        val translationExtra = parsed.count { it.translation != null } *
+            (TRANSLATION_GAP + translationLineHeight)
+        return parsed.size * primaryLineHeight + translationExtra +
+            (parsed.size - 1).coerceAtLeast(0) * groupSpacing
+    }
+
+    fun renderedRows(lines: List<String>): Int =
+        lines.sumOf { if (splitLine(it).translation != null) 2 else 1 }
+
+    fun fitsBudget(
+        canvasHeight: Int,
+        lines: List<String>,
+        primaryLineHeight: Float,
+        translationLineHeight: Float,
+        groupSpacing: Float,
+    ): Boolean = blockHeight(lines, primaryLineHeight, translationLineHeight, groupSpacing) <=
+        lyricsMaxHeight(canvasHeight)
 
     /** NeriPlayer's line budget: spacing appears only between lines. */
     fun lineBudget(maxHeight: Int, lineHeight: Float, spacing: Float): Int {

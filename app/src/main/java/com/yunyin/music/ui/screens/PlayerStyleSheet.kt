@@ -183,6 +183,12 @@ private fun StyleGlyph(style: PlayerStyle, tint: Color) {
                         .background(AppTheme.palette.secondaryBackground),
                 )
             }
+            PlayerStyle.Immersive -> Box(
+                Modifier
+                    .size(22.dp)
+                    .clip(ContinuousRoundedRectangle(2.dp))
+                    .background(tint),
+            )
         }
     }
 }

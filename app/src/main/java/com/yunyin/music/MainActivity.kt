@@ -269,9 +269,6 @@ class MainActivity : ComponentActivity() {
         var nowPlayingDynamicBackground by remember {
             mutableStateOf(container.settings.nowPlayingDynamicBackground)
         }
-        var nowPlayingImmersiveCover by remember {
-            mutableStateOf(container.settings.nowPlayingImmersiveCover)
-        }
         var backgroundStyle by remember {
             mutableStateOf(com.yunyin.music.ui.background.BackgroundStyle.fromKey(container.settings.nowPlayingBackgroundStyle))
         }
@@ -1229,11 +1226,6 @@ class MainActivity : ComponentActivity() {
                         nowPlayingDynamicBackground = enabled
                         container.settings.nowPlayingDynamicBackground = enabled
                     },
-                    nowPlayingImmersiveCover = nowPlayingImmersiveCover,
-                    onNowPlayingImmersiveCoverChange = { enabled ->
-                        nowPlayingImmersiveCover = enabled
-                        container.settings.nowPlayingImmersiveCover = enabled
-                    },
                     nowPlayingBackgroundStyle = backgroundStyle,
                     onShowBackgroundStyle = { showBackgroundStyle = true },
                     onShowCoverMotionTuner = { showCoverMotionTuner = true },
@@ -1661,7 +1653,6 @@ class MainActivity : ComponentActivity() {
                     nowPlayingCoverBlurBackground = nowPlayingCoverBlurBackground,
                     nowPlayingAudioReactive = nowPlayingAudioReactive,
                     nowPlayingDynamicBackground = nowPlayingDynamicBackground,
-                    nowPlayingImmersiveCover = nowPlayingImmersiveCover,
                     backgroundStyle = backgroundStyle,
                     animatedCoverEnabled = animatedCoverEnabled && container.hasAnimatedArtwork,
                     animatedArtwork = container.animatedArtwork,
