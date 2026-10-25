@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 云音 / YunYin contributors
+// Portions ported from NeriPlayer (GPL-3.0), © NeriPlayer contributors.
+// Source: app/src/main/java/moe/ouom/neriplayer/ui/component/lyrics/LyricShareSheet.kt
 
 package com.yunyin.music.ui.share
 
@@ -11,6 +13,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.LinearGradient
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.Typeface
@@ -18,8 +21,7 @@ import android.net.Uri
 import android.provider.MediaStore
 import android.text.TextPaint
 import android.text.TextUtils
-import com.yunyin.music.data.share.LyricsCardLayoutRules
-import com.yunyin.music.data.share.LyricsTitleFitRules
+import com.yunyin.music.data.share.NeriLyricCardRules
 
 /** Everything the lyric share card needs, already resolved by the caller. */
 data class LyricsShareInput(
@@ -32,195 +34,330 @@ data class LyricsShareInput(
 )
 
 /**
- * Lyric share card. Layout ideas from luzhenhua/LyricsCard (MIT): rounded cover thumb + title/artist header,
- * cover-derived colour field, lyric block as the hero. AMLL (AGPL-3.0) informed only the blurred-cover idea;
- * all drawing code here is ours.
+ * NeriPlayer-style lyric share card.
  *
- * The cover is downscaled to a 40 px texture and blown back up, so no title/artwork detail survives: it reads as a
- * soft background texture instead of competing with our typography. Below it a solid gradient built from the cover's
- * dominant colour keeps contrast stable. The lyric block is vertically centred in the remaining space, one type
- * scale, 1.55 leading, current line accent + bold, other lines at ~78 % white.
+ * The design is the square NeriPlayer card (1080 px, 88 px padding, 76 px corner, 214 px glass
+ * information bar, 66/44 px lyrics), extended to our 1080×1440 feed and 1080×1920 story canvases.
+ * The lyric block is vertically centred in the larger area; the information hierarchy is unchanged:
+ * brand at the top, lyrics as the hero, cover + title + artist in the bottom glass bar.
  *
- * Two outputs share the same design system: 1080x1440 feed and 1080x1920 story.
+ * The background is a CPU-preblurred cover (135 px source, three box-blur passes, upscaled) so it is
+ * a texture rather than competing artwork. The same blur is reused for the bottom glass. Rendering is
+ * entirely CPU and the caller already runs it off the main thread.
  */
 object LyricsShareCard {
 
-    const val WIDTH = 1080
-    const val FEED_HEIGHT = 1440
-    const val STORY_HEIGHT = 1920
+    const val WIDTH = NeriLyricCardRules.WIDTH
+    const val FEED_HEIGHT = NeriLyricCardRules.FEED_HEIGHT
+    const val STORY_HEIGHT = NeriLyricCardRules.STORY_HEIGHT
 
     fun render(input: LyricsShareInput, story: Boolean = false): Bitmap {
-        val height = if (story) STORY_HEIGHT else FEED_HEIGHT
+        val height = NeriLyricCardRules.height(story)
         val bitmap = Bitmap.createBitmap(WIDTH, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
-        val margin = LyricsCardLayoutRules.marginPx(WIDTH).toFloat()
-        val dominant = dominantColor(input.cover)
-        drawBackdrop(canvas, input.cover, dominant, height)
-
-        val titleSize = if (story) 84f else 76f
-        val titlePaint = textPaint(titleSize, Color.WHITE, bold = true)
-        val artistPaint = textPaint(34f, Color.argb(205, 255, 255, 255), bold = false)
-        val lyricSize = if (story) 54f else 50f
-        val lyricPaint = textPaint(lyricSize, Color.argb(200, 255, 255, 255), bold = false)
-        val currentPaint = textPaint(lyricSize, Color.WHITE, bold = true)
-        val markPaint = textPaint(24f, Color.argb(135, 255, 255, 255), bold = false)
-
-        // Header: small rounded cover thumb + typographic hierarchy.
-        val thumb = if (story) 252f else 232f
-        input.cover?.let { cover ->
-            val rect = RectF(margin, margin, margin + thumb, margin + thumb)
-            val path = android.graphics.Path().apply { addRoundRect(rect, 30f, 30f, android.graphics.Path.Direction.CW) }
-            canvas.save(); canvas.clipPath(path)
-            canvas.drawBitmap(cover, null, rect, Paint(Paint.FILTER_BITMAP_FLAG))
+        val widthF = WIDTH.toFloat()
+        val heightF = height.toFloat()
+        val cardRect = RectF(0f, 0f, widthF, heightF)
+        val cardPath = Path().apply {
+            addRoundRect(cardRect, NeriLyricCardRules.CORNER, NeriLyricCardRules.CORNER, Path.Direction.CW)
+        }
+        val blurred = input.cover?.let { runCatching { buildBlurredCover(it, WIDTH) }.getOrNull() }
+        try {
+            canvas.save()
+            canvas.clipPath(cardPath)
+            drawBackground(canvas, cardRect, input.cover, blurred)
+            drawBrand(canvas)
+            drawLyrics(canvas, input, height)
+            drawInfoBar(canvas, input, blurred, height)
             canvas.restore()
-            canvas.drawRoundRect(rect, 30f, 30f, Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                style = Paint.Style.STROKE; strokeWidth = 2f; color = Color.argb(70, 255, 255, 255)
-            })
+        } finally {
+            blurred?.recycle()
         }
-        val headerTop = margin + thumb + 60f
-        // Single-line title: auto-shrink from the design size, then ellipsise at the floor. The title block
-        // height is a constant (base size * 1.2), so lyric-block centring never shifts with title length.
-        val titleWidth = (WIDTH - margin) - margin
-        val fittedSize = LyricsTitleFitRules.fitSize(
-            text = input.songName,
-            maxWidth = titleWidth,
-            baseSize = titleSize,
-            measure = { value, size -> titlePaint.textSize = size; titlePaint.measureText(value) },
-        )
-        titlePaint.textSize = fittedSize
-        val titleText = if (LyricsTitleFitRules.needsEllipsis(
-                input.songName, titleWidth, titleSize.coerceAtMost(LyricsTitleFitRules.MIN_SIZE),
-                measure = { value, size -> titlePaint.textSize = size; titlePaint.measureText(value) },
-            )
-        ) {
-            TextUtils.ellipsize(input.songName, TextPaint(titlePaint), titleWidth, TextUtils.TruncateAt.END).toString()
-        } else {
-            input.songName
-        }
-        val titleBlockHeight = titleSize * 1.2f
-        canvas.drawText(titleText, margin, headerTop + titleSize * 0.95f, titlePaint)
-        val artistTop = headerTop + titleBlockHeight + 34f
-        val artistText = TextUtils.ellipsize(
-            input.artistLine.ifBlank { "未知艺人" }, TextPaint(artistPaint), titleWidth, TextUtils.TruncateAt.END,
-        ).toString()
-        canvas.drawText(artistText, margin, artistTop, artistPaint)
-        val topAreaBottom = artistTop + 80f
-
-        // Lyric hero: centred in the space above the bottom mark, one type scale.
-        val lines = if (input.lyricLines.isEmpty()) listOf("愿这首歌陪你此刻") else input.lyricLines.take(4)
-        val blockHeight = LyricsCardLayoutRules.lyricBlockHeight(lines.size, lyricSize)
-        val bottomReserve = height * 0.12f
-        var y = LyricsCardLayoutRules.lyricBlockTop(height.toFloat().toInt(), topAreaBottom, bottomReserve, blockHeight)
-        val highlight = input.highlightIndex.coerceIn(0, lines.lastIndex)
-        val leading = LyricsCardLayoutRules.lyricLineHeight(lyricSize)
-        lines.forEachIndexed { index, line ->
-            val paint = if (index == highlight) currentPaint else lyricPaint
-            if (index == highlight) {
-                // Thin accent bar marks the current line; the text itself stays the same size and colour family.
-                canvas.drawRect(margin - 18f, y + 2f, margin - 14f, y + lyricSize + 2f,
-                    Paint().apply { color = input.accent })
-            }
-            canvas.drawText(line, margin, y + lyricSize, paint)
-            y += leading
-        }
-
-        // Bottom mark + thin accent rule, both inside the safe margin.
-        val ruleY = height - bottomReserve
-        canvas.drawRect(margin, ruleY, margin + 64f, ruleY + 3f, Paint().apply { color = input.accent })
-        markPaint.textAlign = Paint.Align.RIGHT
-        canvas.drawText("云音 · YunYin", WIDTH - margin, ruleY + 58f, markPaint)
-        markPaint.textAlign = Paint.Align.LEFT
         return bitmap
     }
 
-    private fun drawBackdrop(canvas: Canvas, cover: Bitmap?, dominant: Int, height: Int) {
-        canvas.drawColor(Color.rgb(8, 8, 11))
-        if (cover != null) {
-            // 40 px wide source destroyed the artwork's legibility; drawn back up it is a texture.
-            val tiny = runCatching {
-                val scale = 40f / cover.width.coerceAtLeast(1)
-                Bitmap.createScaledBitmap(cover, 40, (cover.height * scale).toInt().coerceAtLeast(40), true)
-            }.getOrNull()
-            if (tiny != null) {
-                canvas.drawBitmap(tiny, null, RectF(0f, 0f, WIDTH.toFloat(), height.toFloat()),
-                    Paint(Paint.FILTER_BITMAP_FLAG).apply { alpha = 235 })
-            }
+    private fun drawBackground(
+        canvas: Canvas,
+        rect: RectF,
+        cover: Bitmap?,
+        blurred: Bitmap?,
+    ) {
+        if (blurred != null) {
+            canvas.drawBitmap(
+                blurred,
+                null,
+                rect,
+                Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG),
+            )
+        } else {
+            val seed = cover?.averageColor() ?: Color.rgb(156, 148, 80)
+            val start = blend(seed, Color.WHITE, 0.18f)
+            val end = blend(seed, Color.BLACK, 0.28f)
+            canvas.drawRect(
+                rect,
+                Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    shader = LinearGradient(
+                        rect.left, rect.top, rect.right, rect.bottom,
+                        intArrayOf(start, seed, end),
+                        floatArrayOf(0f, 0.62f, 1f),
+                        Shader.TileMode.CLAMP,
+                    )
+                },
+            )
         }
-        val wash = Paint().apply {
+        // NeriPlayer's exact scrim: white 86 → black 64 at 48% → black 118.
+        canvas.drawRect(
+            rect,
+            Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                shader = LinearGradient(
+                    rect.left, rect.top, rect.right, rect.bottom,
+                    intArrayOf(
+                        Color.argb(86, 255, 255, 255),
+                        Color.argb(64, 0, 0, 0),
+                        Color.argb(118, 0, 0, 0),
+                    ),
+                    floatArrayOf(0f, 0.48f, 1f),
+                    Shader.TileMode.CLAMP,
+                )
+            },
+        )
+    }
+
+    private fun drawBrand(canvas: Canvas) {
+        val padding = NeriLyricCardRules.PADDING
+        val iconPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(142, 255, 255, 255)
+            style = Paint.Style.FILL
+        }
+        // The compact three-dot mark is NeriPlayer's fallback icon geometry, scaled 1:1.
+        canvas.drawCircle(padding + 12f, 108f, 16f, iconPaint)
+        canvas.drawCircle(padding + 38f, 92f, 9f, iconPaint)
+        canvas.drawCircle(padding + 38f, 124f, 9f, iconPaint)
+        val brandPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(142, 255, 255, 255)
+            textSize = NeriLyricCardRules.BRAND_TEXT
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+        canvas.drawText(
+            "云音 · YunYin",
+            padding + NeriLyricCardRules.BRAND_ICON + 18f,
+            124f,
+            brandPaint,
+        )
+    }
+
+    private fun drawLyrics(canvas: Canvas, input: LyricsShareInput, height: Int) {
+        val lines = input.lyricLines.take(4).filter { it.isNotBlank() }
+        if (lines.isEmpty()) return
+        val maxWidth = WIDTH - NeriLyricCardRules.PADDING * 2f
+        val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+        val fitted = NeriLyricCardRules.fitSize(lines, maxWidth) { text, size ->
+            textPaint.textSize = size
+            textPaint.measureText(text)
+        }
+        textPaint.textSize = fitted
+        val spacing = NeriLyricCardRules.lineSpacing(fitted)
+        val lineHeight = textPaint.fontMetrics.descent - textPaint.fontMetrics.ascent
+        val blockHeight = lines.size * lineHeight + (lines.size - 1).coerceAtLeast(0) * spacing
+        val maxHeight = NeriLyricCardRules.lyricsMaxHeight(height).toFloat()
+        var y = NeriLyricCardRules.LYRICS_TOP +
+            ((maxHeight - blockHeight) / 2f).coerceAtLeast(0f)
+        lines.forEach { line ->
+            val ellipsized = TextUtils.ellipsize(
+                line,
+                TextPaint(textPaint),
+                maxWidth,
+                TextUtils.TruncateAt.END,
+            ).toString()
+            val baseline = y - textPaint.fontMetrics.ascent
+            canvas.drawText(ellipsized, NeriLyricCardRules.PADDING, baseline, textPaint)
+            y += lineHeight + spacing
+        }
+    }
+
+    private fun drawInfoBar(
+        canvas: Canvas,
+        input: LyricsShareInput,
+        blurred: Bitmap?,
+        height: Int,
+    ) {
+        val widthF = WIDTH.toFloat()
+        val barHeight = NeriLyricCardRules.BOTTOM_BAR
+        val top = height - barHeight
+        val barRect = RectF(0f, top, widthF, height.toFloat())
+        if (blurred != null) {
+            canvas.save()
+            canvas.clipRect(barRect)
+            canvas.drawBitmap(
+                blurred,
+                null,
+                RectF(0f, 0f, widthF, height.toFloat()),
+                Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply { alpha = 185 },
+            )
+            canvas.restore()
+        }
+        // NeriPlayer's white 70 glass, on top of the blurred repeat of the card.
+        canvas.drawRect(
+            barRect,
+            Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(70, 255, 255, 255) },
+        )
+        val coverSize = NeriLyricCardRules.COVER_SIZE
+        val coverTop = top + (barHeight - coverSize) / 2f
+        val coverRect = RectF(
+            NeriLyricCardRules.PADDING,
+            coverTop,
+            NeriLyricCardRules.PADDING + coverSize,
+            coverTop + coverSize,
+        )
+        drawCover(canvas, input.cover, coverRect, input.songName)
+        val titlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textSize = NeriLyricCardRules.TITLE_SIZE
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+        val artistPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(224, 255, 255, 255)
+            textSize = NeriLyricCardRules.ARTIST_SIZE
+            typeface = Typeface.DEFAULT
+        }
+        val textLeft = NeriLyricCardRules.PADDING + coverSize + 28f
+        val textWidth = widthF - textLeft - NeriLyricCardRules.PADDING
+        drawSingleLine(canvas, input.songName, textLeft, top + 82f, textWidth, titlePaint)
+        drawSingleLine(
+            canvas,
+            input.artistLine.ifBlank { "未知艺人" },
+            textLeft,
+            top + 136f,
+            textWidth,
+            artistPaint,
+        )
+    }
+
+    private fun drawCover(canvas: Canvas, cover: Bitmap?, rect: RectF, fallbackText: String) {
+        if (cover != null) {
+            val path = Path().apply {
+                addRoundRect(rect, NeriLyricCardRules.COVER_CORNER, NeriLyricCardRules.COVER_CORNER, Path.Direction.CW)
+            }
+            canvas.save()
+            canvas.clipPath(path)
+            canvas.drawBitmap(cover, null, rect, Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG))
+            canvas.restore()
+            return
+        }
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             shader = LinearGradient(
-                0f, 0f, 0f, height.toFloat(),
-                intArrayOf(withAlpha(darken(dominant, 0.55f), 225), withAlpha(darken(dominant, 0.30f), 235), Color.rgb(8, 8, 11)),
-                floatArrayOf(0f, 0.55f, 1f),
+                rect.left, rect.top, rect.right, rect.bottom,
+                Color.rgb(229, 88, 112), Color.rgb(90, 138, 168),
                 Shader.TileMode.CLAMP,
             )
         }
-        canvas.drawRect(0f, 0f, WIDTH.toFloat(), height.toFloat(), wash)
-        // Vignette prevents a flat field at the edges; deterministic grain hides gradient banding.
-        val vignette = Paint().apply {
-            shader = android.graphics.RadialGradient(
-                WIDTH / 2f, height / 2f, height * 0.72f,
-                intArrayOf(Color.TRANSPARENT, Color.argb(110, 0, 0, 0)),
-                floatArrayOf(0.55f, 1f), Shader.TileMode.CLAMP,
-            )
-        }
-        canvas.drawRect(0f, 0f, WIDTH.toFloat(), height.toFloat(), vignette)
-        val grain = Paint().apply { color = Color.argb(10, 255, 255, 255); strokeWidth = 1.5f }
-        var seed = 17
-        repeat(700) {
-            seed = seed * 1103515245 + 12345
-            val x = ((seed ushr 8) and 0x7FFFFFFF) % WIDTH
-            val y = ((seed ushr 4) and 0x7FFFFFFF) % height
-            canvas.drawPoint(x.toFloat(), y.toFloat(), grain)
-        }
-    }
-
-    private fun dominantColor(cover: Bitmap?): Int {
-        if (cover == null) return Color.rgb(44, 44, 52)
-        var r = 0L; var g = 0L; var b = 0L; var count = 0
-        val stepX = (cover.width / 12).coerceAtLeast(1)
-        val stepY = (cover.height / 12).coerceAtLeast(1)
-        var x = stepX / 2
-        while (x < cover.width) {
-            var y = stepY / 2
-            while (y < cover.height) {
-                val pixel = runCatching { cover.getPixel(x, y) }.getOrNull()
-                if (pixel != null) {
-                    r += Color.red(pixel); g += Color.green(pixel); b += Color.blue(pixel); count++
-                }
-                y += stepY
+        canvas.drawRoundRect(rect, NeriLyricCardRules.COVER_CORNER, NeriLyricCardRules.COVER_CORNER, paint)
+        val letter = fallbackText.trim().firstOrNull()?.toString().orEmpty()
+        if (letter.isNotBlank()) {
+            val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.WHITE
+                textSize = 58f
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                textAlign = Paint.Align.CENTER
             }
-            x += stepX
+            val baseline = rect.centerY() - (textPaint.descent() + textPaint.ascent()) / 2f
+            canvas.drawText(letter, rect.centerX(), baseline, textPaint)
         }
-        if (count == 0) return Color.rgb(44, 44, 52)
-        return Color.rgb((r / count).toInt(), (g / count).toInt(), (b / count).toInt())
     }
 
-    private fun darken(color: Int, factor: Float): Int = Color.rgb(
-        (Color.red(color) * factor).toInt().coerceIn(0, 255),
-        (Color.green(color) * factor).toInt().coerceIn(0, 255),
-        (Color.blue(color) * factor).toInt().coerceIn(0, 255),
-    )
-
-    private fun withAlpha(color: Int, alpha: Int): Int = Color.argb(alpha, Color.red(color), Color.green(color), Color.blue(color))
-
-    private fun drawFitted(canvas: Canvas, text: String, left: Float, right: Float, baseline: Float, paint: Paint) {
-        var size = paint.textSize
-        while (size > 40f && paint.measureText(text) > right - left) {
-            size -= 2f
-            paint.textSize = size
-        }
-        canvas.drawText(text, left, baseline, paint)
+    private fun drawSingleLine(
+        canvas: Canvas,
+        text: String,
+        x: Float,
+        baseline: Float,
+        maxWidth: Float,
+        paint: TextPaint,
+    ) {
+        val ellipsized = TextUtils.ellipsize(text, paint, maxWidth, TextUtils.TruncateAt.END).toString()
+        canvas.drawText(ellipsized, x, baseline, paint)
     }
 
-    private fun textPaint(size: Float, color: Int, bold: Boolean): Paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        textSize = size
-        this.color = color
-        typeface = if (bold) Typeface.create(Typeface.DEFAULT, Typeface.BOLD) else Typeface.DEFAULT
+    /** CPU pre-blur: 135 px source, three radius-7 box passes, then upscale. */
+    private fun buildBlurredCover(cover: Bitmap, targetSize: Int): Bitmap {
+        val smallSize = (targetSize / 8).coerceAtLeast(1)
+        val small = Bitmap.createScaledBitmap(cover, smallSize, smallSize, true)
+        return try {
+            repeat(3) { boxBlurOnce(small, 7) }
+            Bitmap.createScaledBitmap(small, targetSize, targetSize, true)
+        } finally {
+            small.recycle()
+        }
+    }
+
+    private fun boxBlurOnce(bitmap: Bitmap, radius: Int) {
+        val w = bitmap.width
+        val h = bitmap.height
+        val pixels = IntArray(w * h)
+        val temp = IntArray(w * h)
+        bitmap.getPixels(pixels, 0, w, 0, 0, w, h)
+        for (y in 0 until h) {
+            for (x in 0 until w) {
+                var a = 0; var r = 0; var g = 0; var b = 0
+                for (k in -radius..radius) {
+                    val p = pixels[y * w + (x + k).coerceIn(0, w - 1)]
+                    a += (p ushr 24) and 0xFF; r += (p ushr 16) and 0xFF
+                    g += (p ushr 8) and 0xFF; b += p and 0xFF
+                }
+                val d = 2 * radius + 1
+                temp[y * w + x] = (a / d shl 24) or (r / d shl 16) or (g / d shl 8) or (b / d)
+            }
+        }
+        for (y in 0 until h) {
+            for (x in 0 until w) {
+                var a = 0; var r = 0; var g = 0; var b = 0
+                for (k in -radius..radius) {
+                    val p = temp[(y + k).coerceIn(0, h - 1) * w + x]
+                    a += (p ushr 24) and 0xFF; r += (p ushr 16) and 0xFF
+                    g += (p ushr 8) and 0xFF; b += p and 0xFF
+                }
+                val d = 2 * radius + 1
+                pixels[y * w + x] = (a / d shl 24) or (r / d shl 16) or (g / d shl 8) or (b / d)
+            }
+        }
+        bitmap.setPixels(pixels, 0, w, 0, 0, w, h)
+    }
+
+    private fun Bitmap.averageColor(): Int {
+        val stepX = (width / 48).coerceAtLeast(1)
+        val stepY = (height / 48).coerceAtLeast(1)
+        var red = 0L; var green = 0L; var blue = 0L; var count = 0L
+        var y = 0
+        while (y < height) {
+            var x = 0
+            while (x < width) {
+                val pixel = runCatching { getPixel(x, y) }.getOrNull()
+                if (pixel != null) {
+                    red += Color.red(pixel); green += Color.green(pixel); blue += Color.blue(pixel); count++
+                }
+                x += stepX
+            }
+            y += stepY
+        }
+        if (count == 0L) return Color.rgb(156, 148, 80)
+        return Color.rgb((red / count).toInt(), (green / count).toInt(), (blue / count).toInt())
+    }
+
+    private fun blend(color: Int, other: Int, fraction: Float): Int {
+        val f = fraction.coerceIn(0f, 1f)
+        return Color.rgb(
+            (Color.red(color) + (Color.red(other) - Color.red(color)) * f).toInt().coerceIn(0, 255),
+            (Color.green(color) + (Color.green(other) - Color.green(color)) * f).toInt().coerceIn(0, 255),
+            (Color.blue(color) + (Color.blue(other) - Color.blue(color)) * f).toInt().coerceIn(0, 255),
+        )
     }
 
     /**
-     * Writes the feed card (and optional story variant) into `Pictures/云音` and opens the share sheet. The app's own
-     * MediaStore insert needs no runtime permission; any failure is returned so the caller can show the reason.
+     * Writes the feed card (and optional story variant) into `Pictures/云音` and opens the share sheet.
+     * The app's own MediaStore insert needs no runtime permission; any failure is returned so the
+     * caller can show the reason. Rendering happens before this call, off the main thread.
      */
     fun saveAndShare(context: Context, bitmap: Bitmap, story: Bitmap? = null): Result<Unit> = runCatching {
         val uris = ArrayList<Uri>()
@@ -249,7 +386,8 @@ object LyricsShareCard {
             put(MediaStore.Images.Media.IS_PENDING, 1)
         }
         val resolver = context.contentResolver
-        val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: error("无法创建图片文件")
+        val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+            ?: error("无法创建图片文件")
         try {
             resolver.openOutputStream(uri)?.use { out ->
                 if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)) error("图片编码失败")

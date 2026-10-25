@@ -100,6 +100,8 @@ import com.yunyin.music.ui.LYRIC_OFFSET_LIMIT_MS
 import com.yunyin.music.ui.PlayerStyle
 import com.yunyin.music.ui.background.DynamicBackgroundPalette
 import com.yunyin.music.ui.background.CoverBlurBackground
+import com.yunyin.music.ui.background.ImmersiveCoverBackdrop
+import com.yunyin.music.ui.background.ImmersiveCoverRules
 import com.yunyin.music.ui.background.BackgroundStyle
 import com.yunyin.music.ui.background.BackgroundStyleRules
 import com.yunyin.music.ui.background.HyperBackground
@@ -195,6 +197,8 @@ fun PlayerScreen(
     nowPlayingCoverBlurBackground: Boolean = false,
     nowPlayingAudioReactive: Boolean = true,
     nowPlayingDynamicBackground: Boolean = true,
+    /** Opt-in full-bleed cover with a liquid ripple behind the portrait player. */
+    nowPlayingImmersiveCover: Boolean = false,
     /** 云音 / 色阶流动. */
     backgroundStyle: BackgroundStyle = BackgroundStyle.default,
     /** Animated cover is opt-in and only active when an operator endpoint is configured. */
@@ -695,6 +699,23 @@ fun PlayerScreen(
                         modifier = backgroundModifier,
                     )
                 }
+            }
+            if (ImmersiveCoverRules.shouldRender(
+                    enabled = nowPlayingImmersiveCover,
+                    isLandscape = isLandscape,
+                    hasCover = cover != null,
+                )
+            ) {
+                ImmersiveCoverBackdrop(
+                    cover = cover,
+                    animate = ImmersiveCoverRules.shouldAnimate(
+                        enabled = nowPlayingImmersiveCover,
+                        dynamicBackground = nowPlayingDynamicBackground,
+                        animatorsEnabled = animatorsOn,
+                        transitioning = transitioning,
+                    ),
+                    modifier = Modifier.fillMaxSize(),
+                )
             }
         }
 

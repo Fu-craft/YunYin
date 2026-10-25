@@ -135,6 +135,9 @@ fun SettingsScreen(
     onNowPlayingAudioReactiveChange: (Boolean) -> Unit = {},
     nowPlayingDynamicBackground: Boolean = true,
     onNowPlayingDynamicBackgroundChange: (Boolean) -> Unit = {},
+    /** Opt-in full-bleed cover with liquid ripple behind the portrait player. */
+    nowPlayingImmersiveCover: Boolean = false,
+    onNowPlayingImmersiveCoverChange: (Boolean) -> Unit = {},
     /** 云音 / 封面流动 / 色阶流动; changing it applies immediately through the host state. */
     nowPlayingBackgroundStyle: BackgroundStyle = BackgroundStyle.default,
     onShowBackgroundStyle: () -> Unit = {},
@@ -249,6 +252,8 @@ fun SettingsScreen(
                 ToggleRow("音频律动", "背景随音频节奏变化", nowPlayingAudioReactive, onNowPlayingAudioReactiveChange)
                 RowDivider()
                 ToggleRow("动态背景", "显示随时间变化的动态背景", nowPlayingDynamicBackground, onNowPlayingDynamicBackgroundChange)
+                RowDivider()
+                ToggleRow("沉浸式封面", "全屏封面 + 液态纹理，仅展示于竖屏", nowPlayingImmersiveCover, onNowPlayingImmersiveCoverChange)
                 if (animatedCoverAvailable) {
                     RowDivider()
                     ToggleRow(
