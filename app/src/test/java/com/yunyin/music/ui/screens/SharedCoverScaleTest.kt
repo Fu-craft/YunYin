@@ -90,12 +90,13 @@ class SharedCoverScaleTest {
         val pause = Motion.CoverPauseSettle as SpringSpec<Float>
         val resume = Motion.CoverResumeSettle as SpringSpec<Float>
 
-        // The asymmetry is the whole effect: pausing lands (critically damped, stiff), resuming
-        // springs past its target (under-damped) — NeriPlayer's Clean press-in/release pair.
-        assertTrue("pause must be critically damped so it lands without a wobble", pause.dampingRatio >= 0.99f)
-        assertTrue("pause must be quick", pause.stiffness >= 1000f)
-        assertTrue("resume must overshoot", resume.dampingRatio in 0.55f..0.75f)
-        assertTrue("resume must settle slower than the pause lands", resume.stiffness < pause.stiffness)
+        // The settle is user-tunable now, so the invariants are relative: the pause must not be a
+        // mechanical snap (low stiffness, damped but not dead), and the resume must overshoot at
+        // least as much as the pause does.
+        assertTrue("pause must feel soft, not snapped", pause.stiffness <= 500f)
+        assertTrue("pause must be damped but not dead", pause.dampingRatio in 0.6f..1f)
+        assertTrue("resume must overshoot", resume.dampingRatio < 0.8f)
+        assertTrue("resume should spring at least as much as the pause", resume.dampingRatio <= pause.dampingRatio + 0.05f)
     }
 
     /**

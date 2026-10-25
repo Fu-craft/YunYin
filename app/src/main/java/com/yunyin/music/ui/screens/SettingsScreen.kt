@@ -170,6 +170,7 @@ fun SettingsScreen(
     playerStyle: PlayerStyle = PlayerStyle.Classic,
     /** Opens the picker; the choosing itself lives in the sheet so this screen stays a list. */
     onShowPlayerStyle: () -> Unit = {},
+    onShowCoverMotionTuner: () -> Unit = {},
     /** Imported LX (洛雪) custom sources; empty until one is imported. */
     lxSources: List<LxImportedSource> = emptyList(),
     /** True while a picked script is being run and validated. */
@@ -235,6 +236,9 @@ fun SettingsScreen(
                 LinkRow("定时关闭", sleepTimerLabel, onShowSleepTimer, "到点后自动停止播放")
                 RowDivider()
                 LinkRow("播放器界面", playerStyle.label, onShowPlayerStyle, "播放页展示封面或唱片")
+        RowDivider()
+
+        LinkRow("封面动效手感", "暂停与恢复的弹簧", onShowCoverMotionTuner, "调整封面缩小与回弹的软硬")
                 RowDivider()
                 ToggleRow("自动进入沉浸歌词", "歌词页闲置几秒后隐藏播放控件", autoImmersiveLyrics, onAutoImmersiveLyricsChange)
             }

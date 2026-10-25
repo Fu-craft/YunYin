@@ -273,6 +273,7 @@ class MainActivity : ComponentActivity() {
             mutableStateOf(com.yunyin.music.ui.background.BackgroundStyle.fromKey(container.settings.nowPlayingBackgroundStyle))
         }
         var showBackgroundStyle by remember { mutableStateOf(false) }
+    var showCoverMotionTuner by remember { mutableStateOf(false) }
         var animatedCoverEnabled by remember {
             mutableStateOf(container.settings.nowPlayingAnimatedCover && container.hasAnimatedArtwork)
         }
@@ -1227,6 +1228,7 @@ class MainActivity : ComponentActivity() {
                     },
                     nowPlayingBackgroundStyle = backgroundStyle,
                     onShowBackgroundStyle = { showBackgroundStyle = true },
+                    onShowCoverMotionTuner = { showCoverMotionTuner = true },
                     animatedCoverAvailable = container.hasAnimatedArtwork,
                     animatedCoverEnabled = animatedCoverEnabled,
                     onAnimatedCoverChange = { enabled ->
@@ -1925,6 +1927,16 @@ class MainActivity : ComponentActivity() {
 
             // Queue sheet. It animates itself inside the Dialog; an outer AnimatedVisibility would
             // be a second, redundant transition (same reason as the profile editor).
+            if (showCoverMotionTuner) {
+                com.yunyin.music.ui.components.CoverMotionTunerDialog(
+                    onDismiss = {
+                        container.settings.saveCoverMotion(
+                            com.yunyin.music.ui.theme.CoverMotion.params.value,
+                        )
+                        showCoverMotionTuner = false
+                    },
+                )
+            }
             if (showBackgroundStyle) {
                 com.yunyin.music.ui.background.BackgroundStylePicker(
                     selected = backgroundStyle,

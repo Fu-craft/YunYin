@@ -45,7 +45,8 @@ object Motion {
      * in ~150–180 ms, which is the same shape NeriPlayer's Clean interaction uses for its press-in
      * phase (`spring(dampingRatio = 1f, stiffness = 1400f)`).
      */
-    val CoverPauseSettle: FiniteAnimationSpec<Float> = spring(dampingRatio = 1f, stiffness = 1300f)
+    val CoverPauseSettle: FiniteAnimationSpec<Float> =
+        spring(dampingRatio = CoverMotion.DEFAULT_PAUSE_DAMPING, stiffness = CoverMotion.DEFAULT_PAUSE_STIFFNESS)
 
     /**
      * The cover coming back when playback resumes: **under-damped, so it springs past full size**
@@ -55,7 +56,8 @@ object Motion {
      * (`spring(dampingRatio = 0.62f, stiffness = 420f)`), which is tuned for exactly this: a short
      * overshoot that reads as elastic rather than as a wobble. Roughly 400 ms in total.
      */
-    val CoverResumeSettle: FiniteAnimationSpec<Float> = spring(dampingRatio = 0.62f, stiffness = 420f)
+    val CoverResumeSettle: FiniteAnimationSpec<Float> =
+        spring(dampingRatio = CoverMotion.DEFAULT_RESUME_DAMPING, stiffness = CoverMotion.DEFAULT_RESUME_STIFFNESS)
 
     /**
      * Button / press feedback: 100-160ms.

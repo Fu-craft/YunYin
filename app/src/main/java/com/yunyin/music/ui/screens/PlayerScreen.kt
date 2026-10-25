@@ -47,6 +47,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -121,6 +122,7 @@ import com.yunyin.music.ui.icons.SfIcons
 import com.yunyin.music.ui.theme.AppleColors
 import com.yunyin.music.ui.theme.AppleShapes
 import com.yunyin.music.ui.theme.AppTheme
+import com.yunyin.music.ui.theme.CoverMotion
 import com.yunyin.music.ui.theme.Motion
 import com.yunyin.music.ui.theme.SFPro
 import com.yunyin.music.data.download.DownloadPhase
@@ -317,9 +319,18 @@ fun PlayerScreen(
     // Not delegated, and never read during composition: `pausedCoverProgress.value` is read only
     // inside the `graphicsLayer` lambdas (the scale and the dim derived from it), so the settle costs
     // a layer update instead of recomposing the player once per frame.
+    // User-tunable cover settle (「封面动效手感」). Read once per composition; it changes only while
+    // the tuner is open, so this does not add per-frame work.
+    val coverMotion by CoverMotion.params.collectAsState()
     val pausedCoverProgress = animateFloatAsState(
         targetValue = if (state.playWhenReady) 0f else 1f,
-        animationSpec = if (state.playWhenReady) Motion.CoverResumeSettle else Motion.CoverPauseSettle,
+        // The settle is user-tunable (「封面动效手感」), so both specs come from `CoverMotion` at the
+        // current parameters instead of the frozen `Motion` constants.
+        animationSpec = if (state.playWhenReady) {
+            CoverMotion.resumeSpec(coverMotion)
+        } else {
+            CoverMotion.pauseSpec(coverMotion)
+        },
         label = "paused-artwork-progress",
     )
 
@@ -339,7 +350,7 @@ fun PlayerScreen(
     // [sharedCoverPausedScale] and its unit test.
     val sharedCoverScale: () -> Float = {
         // Read in the layer phase: `pausedCoverProgress.value`, not a captured Float.
-        sharedCoverPausedScale(1f - pausedCoverProgress.value * (1f - PAUSED_ARTWORK_SCALE))
+        sharedCoverPausedScale(1f - pausedCoverProgress.value * (1f - coverMotion.pausedScale))
     }
 
     // 1 = chrome fully present, 0 = immersed. Everything that belongs to the chrome — the header,

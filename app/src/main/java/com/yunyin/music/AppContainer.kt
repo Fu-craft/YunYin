@@ -114,7 +114,11 @@ class AppContainer(val appContext: Context) {
         }
     }
 
-    init { runCatching { startPlaybackStats() } }
+    init {
+        runCatching { startPlaybackStats() }
+        // Restore the cover settle the user tuned in 「封面动效手感」 before the player can compose.
+        runCatching { com.yunyin.music.ui.theme.CoverMotion.set(settings.coverMotionParams()) }
+    }
 
     /** Bumped after a background local-music scan so an open 本地音乐 sheet can refresh itself. */
     val localMusicRevision = kotlinx.coroutines.flow.MutableStateFlow(0)

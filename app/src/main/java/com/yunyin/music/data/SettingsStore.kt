@@ -4,6 +4,7 @@
 package com.yunyin.music.data
 
 import android.content.Context
+import com.yunyin.music.ui.theme.CoverMotion
 import android.content.SharedPreferences
 import com.yunyin.music.BuildConfig
 import com.yunyin.music.core.Account
@@ -142,6 +143,40 @@ class SettingsStore(context: Context) {
      * read always survives a write; they used to disagree, which reset QPlayer styles to 云音 on
      * every relaunch. Default keeps existing installs visually unchanged.
      */
+    /** 「封面动效手感」 values, clamped by `CoverMotion` on read. */
+    var coverPauseDamping: Float
+        get() = prefs.getFloat(KEY_COVER_PAUSE_DAMPING, CoverMotion.DEFAULT_PAUSE_DAMPING)
+        set(value) = prefs.edit().putFloat(KEY_COVER_PAUSE_DAMPING, value).apply()
+
+    var coverPauseStiffness: Float
+        get() = prefs.getFloat(KEY_COVER_PAUSE_STIFFNESS, CoverMotion.DEFAULT_PAUSE_STIFFNESS)
+        set(value) = prefs.edit().putFloat(KEY_COVER_PAUSE_STIFFNESS, value).apply()
+
+    var coverResumeDamping: Float
+        get() = prefs.getFloat(KEY_COVER_RESUME_DAMPING, CoverMotion.DEFAULT_RESUME_DAMPING)
+        set(value) = prefs.edit().putFloat(KEY_COVER_RESUME_DAMPING, value).apply()
+
+    var coverPausedScale: Float
+        get() = prefs.getFloat(KEY_COVER_PAUSED_SCALE, CoverMotion.DEFAULT_PAUSED_SCALE)
+        set(value) = prefs.edit().putFloat(KEY_COVER_PAUSED_SCALE, value).apply()
+
+    /** The four tunables as one value, for `CoverMotion.set`. */
+    fun coverMotionParams(): CoverMotion.Params = CoverMotion.Params(
+        pauseDamping = coverPauseDamping,
+        pauseStiffness = coverPauseStiffness,
+        resumeDamping = coverResumeDamping,
+        resumeStiffness = CoverMotion.DEFAULT_RESUME_STIFFNESS,
+        pausedScale = coverPausedScale,
+    )
+
+    fun saveCoverMotion(params: CoverMotion.Params) {
+        val clean = params.sanitized()
+        coverPauseDamping = clean.pauseDamping
+        coverPauseStiffness = clean.pauseStiffness
+        coverResumeDamping = clean.resumeDamping
+        coverPausedScale = clean.pausedScale
+        CoverMotion.set(clean)
+    }
     var nowPlayingBackgroundStyle: String
         get() = normalizeNowPlayingBackgroundStyle(
             prefs.getString(KEY_NOW_PLAYING_BACKGROUND_STYLE, DEFAULT_NOW_PLAYING_BACKGROUND_STYLE),
@@ -328,6 +363,10 @@ class SettingsStore(context: Context) {
         private const val KEY_NOW_PLAYING_DYNAMIC = "now_playing_dynamic_background"
         private const val KEY_NOW_PLAYING_BACKGROUND_STYLE = "now_playing_background_style"
         private const val KEY_NOW_PLAYING_ANIMATED_COVER = "now_playing_animated_cover"
+    private const val KEY_COVER_PAUSE_DAMPING = "cover_motion_pause_damping"
+    private const val KEY_COVER_PAUSE_STIFFNESS = "cover_motion_pause_stiffness"
+    private const val KEY_COVER_RESUME_DAMPING = "cover_motion_resume_damping"
+    private const val KEY_COVER_PAUSED_SCALE = "cover_motion_paused_scale"
         private const val KEY_PROFILE_SIGNATURE = "profile_signature"
         private const val KEY_CUSTOM_NICKNAME = "custom_nickname"
         private const val KEY_USE_NETEASE_NAME = "use_netease_name"
