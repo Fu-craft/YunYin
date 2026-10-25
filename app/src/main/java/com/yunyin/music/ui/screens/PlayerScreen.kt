@@ -306,10 +306,13 @@ fun PlayerScreen(
     // would dip the cover on every seek and every track load and pop straight back up.
     //
     // The specs are deliberately asymmetric. Pausing is the user's considered action, so it settles
-    // slowly ([Motion.CoverPauseSettle]); resuming is the system answering the user — the music is
-    // already back — so the cover catches up crisper ([Motion.CoverResumeSettle]). Both are
-    // critically damped (no overshoot) because the shared cover must only ever move one way; see
-    // [sharedCoverPausedScale].
+    // with one soft rebound ([Motion.CoverPauseSettle]); resuming is the system answering the user —
+    // the music is already back — so the cover catches up crisper ([Motion.CoverResumeSettle]).
+    //
+    // Both are under-damped **on purpose**: the overshoot is what gives the paused cover its springy,
+    // Apple-Music feel. The progress can therefore leave `0..1` for a few frames, which is why every
+    // consumer clamps — [sharedCoverPausedScale] and [sharedCoverPausedAlpha] both coerce, so the
+    // rebound can only ever dip the cover a little past 92 % and come back, never invert the dim state.
     //
     // Not delegated, and never read during composition: `pausedCoverProgress.value` is read only
     // inside the `graphicsLayer` lambdas (the scale and the dim derived from it), so the settle costs

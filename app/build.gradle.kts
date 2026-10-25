@@ -33,10 +33,10 @@ android {
         minSdk = 33
         targetSdk = 37
         // versionCode must increase for Android to accept a build as an update over a previous one;
-        // versionName is what the user sees. Bumped together 鈥?a version name change with an unchanged
+        // versionName is what the user sees. Bumped together: a version name change with an unchanged
         // code would install as a downgrade and be rejected.
-        versionCode = 210
-        versionName = "4.38.1"
+        versionCode = 211
+        versionName = "4.38.2"
         vectorDrawables { useSupportLibrary = true }
 
         // The API endpoint is injected at build time rather than baked into the sources, so the
@@ -180,7 +180,7 @@ dependencies {
     implementation(libs.gaze.capsule)
 
     // 璇嶅箷 (Lyricon) provider bridge: pushes song, lyrics and playback state to Lyricon so it can
-    // render a status-bar lyric. Optional at runtime 鈥?the app works unchanged when Lyricon is not
+    // render a status-bar lyric. Optional at runtime —?the app works unchanged when Lyricon is not
     // installed, and the bridge reports "unavailable" rather than failing.
     implementation(libs.lyricon.provider)
 

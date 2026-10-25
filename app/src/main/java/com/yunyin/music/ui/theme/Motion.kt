@@ -38,22 +38,26 @@ object Motion {
     val SpringSettle: FiniteAnimationSpec<Float> = spring(dampingRatio = 0.8f, stiffness = 400f)
 
     /**
-     * The cover settling back while playback pauses.
+     * The cover settling back while playback pauses — the **springy** one.
      *
-     * Critically damped, not [SpringSettle]'s 0.8: on an element this large an overshoot reads as a
-     * flick at the end of the move, and the paused cover must not cross its rest value (the shared
-     * element's monotonicity rule — see `sharedCoverPausedScale`). Stiffness 240 is deliberate
-     * weight: the cover recedes under its own mass instead of twitching to 92 %.
+     * The pause is an occasional, deliberate state change, so it may carry a little bounce: the
+     * cover drops past 92 % and eases back, which is what makes the paused state feel like it has
+     * mass rather than a linear scale-down. Damping 0.72 is Apple's `bounce ≈ 0.28` band (the skill
+     * caps bounce at 0.3); anything lower reads as a wobble on an element this large.
+     *
+     * Stiffness 320 keeps the whole settle inside ~0.5 s so the overshoot is a single soft
+     * rebound, not a second animation. Compose honours the system animation scale, so with
+     * animators disabled this snaps straight to the paused rest value.
      */
-    val CoverPauseSettle: FiniteAnimationSpec<Float> = spring(dampingRatio = 1f, stiffness = 240f)
+    val CoverPauseSettle: FiniteAnimationSpec<Float> = spring(dampingRatio = 0.72f, stiffness = 320f)
 
     /**
-     * The cover coming back when playback resumes: the same critically damped shape, but crisper.
+     * The cover coming back when playback resumes: the same bounce, but crisper.
      *
-     * Pause is the user's considered action, so it may take its time; resume is the system answering
-     * the user, and the music has already started — the cover catching up should not be the slow part.
+     * Resume is the system answering the user — the music has already started — so the rebound is
+     * faster (stiffness 500) and slightly tighter (damping 0.70) than the pause.
      */
-    val CoverResumeSettle: FiniteAnimationSpec<Float> = spring(dampingRatio = 1f, stiffness = 480f)
+    val CoverResumeSettle: FiniteAnimationSpec<Float> = spring(dampingRatio = 0.70f, stiffness = 500f)
 
     /**
      * Button / press feedback: 100-160ms.
