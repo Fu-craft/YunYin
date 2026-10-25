@@ -19,6 +19,8 @@ class PlayerStyleTest {
 
     @Test
     fun `each style round-trips through its stored level`() {
+        assertEquals(3, PlayerStyle.entries.size)
+        assertEquals(PlayerStyle.Immersive, PlayerStyle.entries[2])
         PlayerStyle.entries.forEach { style ->
             assertEquals(style, PlayerStyle.from(style.level))
         }
@@ -27,8 +29,7 @@ class PlayerStyleTest {
     @Test
     fun `an unknown level falls back to the classic cover`() {
         assertEquals(PlayerStyle.Classic, PlayerStyle.from("something-else"))
-        // A style removed after 4.39.1 must not prevent the player from opening.
-        assertEquals(PlayerStyle.Classic, PlayerStyle.from("immersive"))
+        assertEquals(PlayerStyle.Immersive, PlayerStyle.from("immersive"))
     }
 
     @Test
@@ -43,6 +44,7 @@ class PlayerStyleTest {
         // These strings are in users' preferences already; changing them silently resets the choice.
         assertEquals("classic", PlayerStyle.Classic.level)
         assertEquals("vinyl", PlayerStyle.Vinyl.level)
+        assertEquals("immersive", PlayerStyle.Immersive.level)
     }
 
     @Test

@@ -135,14 +135,6 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_NOW_PLAYING_ANIMATED_COVER, false)
         set(value) = prefs.edit().putBoolean(KEY_NOW_PLAYING_ANIMATED_COVER, value).apply()
 
-    /** Whether tapping the artwork opens the full-screen immersive artwork view. */
-    var nowPlayingImmersiveCover: Boolean
-        get() = prefs.getBoolean(
-            KEY_NOW_PLAYING_IMMERSIVE_COVER,
-            DEFAULT_NOW_PLAYING_IMMERSIVE_COVER,
-        )
-        set(value) = prefs.edit().putBoolean(KEY_NOW_PLAYING_IMMERSIVE_COVER, value).apply()
-
     /**
      * The now-playing background family. Every [com.yunyin.music.ui.background.BackgroundStyle]
      * storage key round-trips; `oklab_flow` (the v4.32.0–v4.32.2 legacy key) is normalised to
@@ -371,7 +363,6 @@ class SettingsStore(context: Context) {
         private const val KEY_NOW_PLAYING_DYNAMIC = "now_playing_dynamic_background"
         private const val KEY_NOW_PLAYING_BACKGROUND_STYLE = "now_playing_background_style"
         private const val KEY_NOW_PLAYING_ANIMATED_COVER = "now_playing_animated_cover"
-    private const val KEY_NOW_PLAYING_IMMERSIVE_COVER = "now_playing_immersive_cover"
     private const val KEY_COVER_PAUSE_DAMPING = "cover_motion_pause_damping"
     private const val KEY_COVER_PAUSE_STIFFNESS = "cover_motion_pause_stiffness"
     private const val KEY_COVER_RESUME_DAMPING = "cover_motion_resume_damping"
@@ -396,7 +387,6 @@ internal const val DEFAULT_DOWNLOAD_WIFI_ONLY = true
 // Now-playing background defaults, matching NeriPlayer (GPL-3.0) exactly:
 // app/src/main/java/moe/ouom/neriplayer/ui/settings/route/AppSettingsRouteState.kt
 internal const val DEFAULT_NOW_PLAYING_COVER_BLUR = false
-internal const val DEFAULT_NOW_PLAYING_IMMERSIVE_COVER = true
 internal const val DEFAULT_NOW_PLAYING_AUDIO_REACTIVE = true
 internal const val DEFAULT_NOW_PLAYING_DYNAMIC = true
 
