@@ -1347,19 +1347,36 @@ private fun Modifier.coverEdgeFade(fadePx: Float): Modifier = this
         drawContent()
         val h = size.height.coerceAtLeast(1f)
         val fade = (fadePx / h).coerceIn(0f, 0.45f)
+        // **Smoothstep**, not linear. A linear ramp leaves a visible crease where its slope changes
+        // (the end of the band reads as a line on covers with hard tonal edges), which is exactly the
+        // "still see the border" the user reported. Sampling the smoothstep curve at six stops keeps
+        // the derivative continuous at both ends of the band.
+        val stops = floatArrayOf(0f, 0.2f, 0.4f, 0.6f, 0.8f, 1f)
+        val alphas = floatArrayOf(0f, 0.104f, 0.352f, 0.648f, 0.896f, 1f)
+        val colors = arrayOfNulls<Color>(12)
+        val positions = FloatArray(12)
+        // Top band: edge → inside.
+        for (i in stops.indices) {
+            positions[i] = fade * stops[i]
+            colors[i] = Color.White.copy(alpha = alphas[i])
+        }
+        // Bottom band: mirrored, inside → edge.
+        for (i in stops.indices) {
+            positions[6 + i] = 1f - fade * stops[stops.size - 1 - i]
+            colors[6 + i] = Color.White.copy(alpha = alphas[stops.size - 1 - i])
+        }
         drawRect(
             brush = Brush.verticalGradient(
-                0f to Color.Transparent,
-                fade to Color.White,
-                (1f - fade) to Color.White,
-                1f to Color.Transparent,
+                colorStops = Array(12) { positions[it] to (colors[it] ?: Color.White) },
+                startY = 0f,
+                endY = h,
             ),
             blendMode = BlendMode.DstIn,
         )
     }
 
 /** How much of the cover's top and bottom dissolves into the page field. */
-private const val EDGE_FADE_DP = 132f
+private const val EDGE_FADE_DP = 150f
 
 
 /**
