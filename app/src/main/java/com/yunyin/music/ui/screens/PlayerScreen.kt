@@ -1333,47 +1333,33 @@ private fun FullScreenCoverBackdrop(
 }
 
 /**
- * The cover's soft halo: the **same artwork, scaled up and blurred, drawn behind it**.
+ * Fades the cover's own top and bottom edges into the page field, inline on the artwork itself.
  *
- * Earlier attempts masked a blurred copy inside the artwork rect and used
- * `graphicsLayer { compositingStrategy = Offscreen }`, which clips the layer to the composable's own
- * bounds — the entire spill was discarded, so the only visible blur was *inside* the cover. This
- * version puts the enlarged blurred copy behind the sharp artwork with
- * `BlurredEdgeTreatment.Unbounded`, so the blur genuinely bleeds **outside** the rectangle and the
- * edge dissolves into the page field, the way NetEase does it.
+ * This is the third and correct approach. Blurring a copy inside the artwork rect was invisible (the
+ * outermost pixel stays sharp); drawing an enlarged blurred copy behind it read as "the whole cover
+ * is blurry". Masking the artwork's own pixels fades the rectangle out over [EDGE_FADE_DP] at each
+ * end, which is what NetEase shows: sharp artwork in the middle, no visible border, background
+ * colour taking over at the top and bottom.
  */
-@Composable
-private fun ImmersiveEdgeSoftening(
-    cover: ImageBitmap?,
-    trackId: Long,
-    modifier: Modifier = Modifier,
-) {
-    if (cover == null) return
-    Image(
-        bitmap = cover,
-        contentDescription = null,
-        contentScale = ContentScale.Crop,
-        modifier = modifier
-            .fillMaxSize()
-            // Past the artwork bounds and blurred with unbounded edges: the halo is visible outside
-            // the rectangle, which is the whole point.
-            .graphicsLayer {
-                scaleX = EDGE_HALO_SCALE
-                scaleY = EDGE_HALO_SCALE
-                alpha = EDGE_HALO_ALPHA
-            }
-            .blur(EDGE_HALO_BLUR_DP.dp, edgeTreatment = BlurredEdgeTreatment.Unbounded),
-    )
-}
+private fun Modifier.coverEdgeFade(fadePx: Float): Modifier = this
+    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+    .drawWithContent {
+        drawContent()
+        val h = size.height.coerceAtLeast(1f)
+        val fade = (fadePx / h).coerceIn(0f, 0.45f)
+        drawRect(
+            brush = Brush.verticalGradient(
+                0f to Color.Transparent,
+                fade to Color.White,
+                (1f - fade) to Color.White,
+                1f to Color.Transparent,
+            ),
+            blendMode = BlendMode.DstIn,
+        )
+    }
 
-/** How much larger the blurred halo is than the artwork it surrounds. */
-private const val EDGE_HALO_SCALE = 1.14f
-
-/** The halo's blur radius; large enough to read as a soft bleed, small enough to keep shapes. */
-private const val EDGE_HALO_BLUR_DP = 36f
-
-/** The halo is slightly transparent so the page field still shows through it. */
-private const val EDGE_HALO_ALPHA = 0.95f
+/** How much of the cover's top and bottom dissolves into the page field. */
+private const val EDGE_FADE_DP = 132f
 
 
 /**
@@ -1488,15 +1474,7 @@ private fun ArtworkWithGestures(
                     .shadow(14.dp, CircleShape),
             )
         } else {
-            // The soft halo is drawn *behind* the sharp artwork, so the blur bleeds past the
-            // artwork's rectangle instead of washing over it.
-            if (soften) {
-                ImmersiveEdgeSoftening(
-                    cover = cover,
-                    trackId = track?.id ?: 0L,
-                    modifier = Modifier.size(artSize),
-                )
-            }
+
             Artwork(
                 url = track?.coverUrl,
                 loader = loader,
@@ -1535,14 +1513,18 @@ private fun ArtworkWithGestures(
                         if (flat) Modifier
                         else Modifier.shadow(14.dp, ContinuousRoundedRectangle(corner)),
                     )
+                    .then(
+                        if (soften) {
+                            Modifier.coverEdgeFade(
+                                with(androidx.compose.ui.platform.LocalDensity.current) {
+                                    EDGE_FADE_DP.dp.toPx()
+                                },
+                            )
+                        } else {
+                            Modifier
+                        },
+                    )
             )
-            if (soften) {
-                ImmersiveEdgeSoftening(
-                    cover = cover,
-                    trackId = track?.id ?: 0L,
-                    modifier = Modifier.size(artSize),
-                )
-            }
             val videoUrl = animatedUrl
             if (videoUrl != null && animatedCoverEnabled && animatedArtwork != null && playerStyle == PlayerStyle.Classic) {
                 AnimatedArtworkPlayer(
