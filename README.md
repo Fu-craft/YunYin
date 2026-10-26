@@ -75,6 +75,8 @@
 ```properties
 sdk.dir=/path/to/Android/Sdk
 api.base.url=https://your-netease-api.example.com
+# 动态封面接口（GET {base}/api/v1/artwork/search?artist=&album=&title=）；留空则该功能完全关闭
+artwork.api.base.url=https://artwork.m8tec.top
 update.repo.owner=your-github-name
 update.repo.name=your-repo-name
 ```
