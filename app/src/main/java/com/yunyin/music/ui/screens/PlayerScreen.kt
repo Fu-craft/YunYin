@@ -1376,7 +1376,7 @@ private fun Modifier.coverEdgeFade(fadePx: Float): Modifier = this
     }
 
 /** How much of the cover's top and bottom dissolves into the page field. */
-private const val EDGE_FADE_DP = 150f
+private const val EDGE_FADE_DP = 190f
 
 
 /**
