@@ -240,6 +240,8 @@ fun PlayerScreen(
      * style cannot be a half-implemented second player.
      */
     playerStyle: PlayerStyle = PlayerStyle.Classic,
+    /** Tabletop foldable: stack the player instead of using the landscape rail. */
+    tabletop: Boolean = false,
     positionProvider: () -> Long,
     modifier: Modifier = Modifier,
 ) {
@@ -450,7 +452,7 @@ fun PlayerScreen(
          * zero — the cover disappeared entirely. Stacking vertically simply cannot fit, so landscape
          * puts the cover beside the controls instead.
          */
-        val isLandscape = maxWidth > maxHeight
+        val isLandscape = if (tabletop) false else maxWidth > maxHeight
         val fullScreenCover = FullScreenCoverRules.usesOwnBackdrop(playerStyle, isLandscape)
 
         // Lyric typography is decided here, once, and shared by the pre-warmer *and* the lyrics

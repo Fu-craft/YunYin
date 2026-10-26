@@ -11,12 +11,13 @@ import org.junit.Test
 class WindowLayoutRulesTest {
 
     @Test
-    fun `two pane starts at 840dp and the hinge is split out`() {
-        assertFalse(WindowLayoutRules.isTwoPane(839f))
-        assertTrue(WindowLayoutRules.isTwoPane(840f))
-        assertTrue(WindowLayoutRules.isTwoPane(1200f))
-        assertEquals(600f, WindowLayoutRules.leftPaneWidthDp(1200f, 0f), 0f)
-        assertEquals(585f, WindowLayoutRules.leftPaneWidthDp(1200f, 30f), 0f)
+    fun `tablet breakpoint columns and tabletop decision are pinned`() {
+        assertFalse(WindowLayoutRules.isTablet(839f))
+        assertTrue(WindowLayoutRules.isTablet(840f))
+        assertEquals(1, WindowLayoutRules.cardColumns(600f))
+        assertEquals(2, WindowLayoutRules.cardColumns(1200f))
+        assertTrue(WindowLayoutRules.isTabletop(true))
+        assertFalse(WindowLayoutRules.isTabletop(false))
         assertEquals(30f, WindowLayoutRules.hingeGutterDp(90, true, 3f), 0f)
         assertEquals(0f, WindowLayoutRules.hingeGutterDp(90, false, 3f), 0f)
     }

@@ -153,8 +153,6 @@ fun LibraryScreen(
     onEditProfile: () -> Unit = {},
     onPlaylistClick: (Playlist) -> Unit,
     onLikedSongsClick: () -> Unit,
-    /** Opens the subscribed artists / albums / playlists hub. */
-    onOpenFavorites: () -> Unit = {},
     onTrackClick: (Track) -> Unit,
     /** Opens the create-playlist sheet; shown only for a signed-in account. */
     onCreatePlaylist: () -> Unit = {},
@@ -373,7 +371,6 @@ private fun LibraryContent(
     onEditProfile: () -> Unit,
     onPlaylistClick: (Playlist) -> Unit,
     onLikedSongsClick: () -> Unit,
-    onOpenFavorites: () -> Unit = {},
     onTrackClick: (Track) -> Unit,
     onCreatePlaylist: () -> Unit = {},
     onLocalMusicClick: () -> Unit = {},
@@ -424,13 +421,6 @@ private fun LibraryContent(
                         else -> null
                     },
                     onClick = onLikedSongsClick,
-                )
-
-                LibraryRow(
-                    icon = SfIcons.Heart,
-                    label = "我的收藏",
-                    trailing = null,
-                    onClick = onOpenFavorites,
                 )
 
                 // 我的歌单 — opens its own page rather than unfolding here.

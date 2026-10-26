@@ -16,6 +16,8 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.IBinder
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.provider.Settings
 import android.text.Spannable
@@ -33,6 +35,7 @@ import androidx.core.app.ServiceCompat
 import com.yunyin.music.AppContainer
 import com.yunyin.music.MainActivity
 import com.yunyin.music.data.DesktopLyricFrame
+import com.yunyin.music.data.DesktopLyricsRules
 import com.yunyin.music.data.DesktopLyricsState
 import com.yunyin.music.ui.theme.Motion
 import kotlinx.coroutines.CoroutineScope
@@ -56,6 +59,15 @@ class DesktopLyricsService : Service() {
     private var collectionJob: Job? = null
     private var lastPlayingAt = 0L
     private var locked = false
+    private var lockedControlsVisible = false
+    private var controlsStrip: View? = null
+    private var lockControl: TextView? = null
+    private var panelBackground: GradientDrawable? = null
+    private val revealHandler = Handler(Looper.getMainLooper())
+    private val hideChrome = Runnable {
+        lockedControlsVisible = false
+        applyChromeVisibility()
+    }
     private var notificationShown = false
 
     override fun onCreate() {
@@ -141,13 +153,15 @@ class DesktopLyricsService : Service() {
         val width = (metrics.widthPixels - 32 * metrics.density).toInt()
             .coerceAtMost((640 * metrics.density).toInt())
             .coerceAtLeast((240 * metrics.density).toInt())
+        val panel = GradientDrawable().apply {
+            cornerRadius = dp(20).toFloat()
+            setColor(Color.argb(185, 12, 12, 16))
+        }
+        panelBackground = panel
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(8), dp(16), dp(12))
-            background = GradientDrawable().apply {
-                cornerRadius = dp(20).toFloat()
-                setColor(Color.argb(185, 12, 12, 16))
-            }
+            background = panel
         }
         val strip = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -157,6 +171,8 @@ class DesktopLyricsService : Service() {
         val close = control("关闭") { stopFromOverlay() }
         strip.addView(lock)
         strip.addView(close)
+        controlsStrip = strip
+        lockControl = lock
         val lyric = TextView(this).apply {
             setTextColor(Color.WHITE)
             textSize = 19f
@@ -170,10 +186,14 @@ class DesktopLyricsService : Service() {
             typeface = Typeface.DEFAULT
             maxLines = 2
             visibility = View.GONE
+            setShadowLayer(4f, 0f, 1f, Color.BLACK)
         }
         container.addView(strip)
         container.addView(lyric)
         container.addView(translation)
+        lyric.setOnClickListener {
+            if (locked) revealLockedChrome()
+        }
         lyricView = lyric
         translationView = translation
         val layout = WindowManager.LayoutParams(
@@ -235,7 +255,29 @@ class DesktopLyricsService : Service() {
 
     private fun toggleLock() {
         locked = !locked
-        root?.alpha = if (locked) 0.78f else 1f
+        lockedControlsVisible = false
+        revealHandler.removeCallbacks(hideChrome)
+        applyChromeVisibility()
+    }
+
+    /**
+     * Locked chrome is fully transparent. A single tap on the lyric reveals the control strip for
+     * four seconds; this is the only way back besides closing the service from the notification.
+     */
+    private fun revealLockedChrome() {
+        if (!locked) return
+        lockedControlsVisible = true
+        applyChromeVisibility()
+        revealHandler.removeCallbacks(hideChrome)
+        revealHandler.postDelayed(hideChrome, DesktopLyricsRules.LOCK_REVEAL_MS)
+    }
+
+    private fun applyChromeVisibility() {
+        val visible = !locked || lockedControlsVisible
+        controlsStrip?.visibility = if (visible) View.VISIBLE else View.GONE
+        lockControl?.text = if (locked) "解锁" else "锁定"
+        root?.background = if (visible) panelBackground else null
+        root?.alpha = 1f
     }
 
     private fun startCollection() {
@@ -298,6 +340,7 @@ class DesktopLyricsService : Service() {
         root = null
         windowManager = null
         scope.cancel()
+        revealHandler.removeCallbacksAndMessages(null)
         DesktopLyricsState.clear()
         super.onDestroy()
     }

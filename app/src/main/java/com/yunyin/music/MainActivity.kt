@@ -95,7 +95,6 @@ import com.yunyin.music.ui.screens.PlaylistSquareScreen
 import com.yunyin.music.ui.screens.ArtistScreen
 import com.yunyin.music.ui.screens.HomeScreen
 import com.yunyin.music.ui.screens.LibraryScreen
-import com.yunyin.music.ui.screens.FavoritesScreen
 import com.yunyin.music.ui.screens.LoginScreen
 import com.yunyin.music.ui.screens.PROJECT_URL
 import com.yunyin.music.ui.download.DownloadController
@@ -187,17 +186,12 @@ class MainActivity : ComponentActivity() {
             .firstOrNull { it.isSeparating }
         val hingeDp = fold?.let {
             WindowLayoutRules.hingeGutterDp(
-                hingeWidthPx = it.bounds.width(),
+                hingeSizePx = it.bounds.width(),
                 vertical = it.orientation == FoldingFeature.Orientation.VERTICAL,
                 density = density.density,
             )
         } ?: 0f
-        val twoPane = WindowLayoutRules.isTwoPane(windowWidthDp)
-        val leftPaneWidth = WindowLayoutRules.leftPaneWidthDp(windowWidthDp, hingeDp)
-        val contentEndPadding = if (twoPane) {
-            (windowWidthDp - leftPaneWidth + hingeDp / 2f).dp
-        } else 0.dp
-        val playerStartPadding = if (twoPane) (leftPaneWidth + hingeDp / 2f).dp else 0.dp
+        val tabletop = fold?.orientation == FoldingFeature.Orientation.HORIZONTAL
 
         val playerViewModel: PlayerViewModel = viewModel(factory = viewModelFactory(container))
         val appViewModel: AppViewModel = viewModel(factory = viewModelFactory(container))
@@ -272,7 +266,6 @@ class MainActivity : ComponentActivity() {
         var beatModeActive by remember { mutableStateOf(false) }
         var showSettings by remember { mutableStateOf(false) }
         var showDownloadCenter by remember { mutableStateOf(false) }
-        var showFavorites by remember { mutableStateOf(false) }
     var showStats by remember { mutableStateOf(false) }
     var showLyricPicker by remember { mutableStateOf(false) }
     var lyricShareLines by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -1060,17 +1053,12 @@ class MainActivity : ComponentActivity() {
 
         Box(Modifier.fillMaxSize().background(AppTheme.palette.background)) {
             // ------------------------------------------------ primary content
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .layerBackdrop(bottomBackdrop)
-                    .padding(start = if (twoPane) WindowLayoutRules.NAV_RAIL_DP.dp else 0.dp, end = contentEndPadding),
-            ) {
+            Box(Modifier.fillMaxSize().layerBackdrop(bottomBackdrop)) {
                 // The chrome's now-playing row exists only while a track is loaded (see the chrome block
                 // below); the screens read that through `chromeContentBottomPadding()`, which then reserves
                 // one row instead of two. Provided here, around the tab screens, because that is where the
                 // padding is read.
-                CompositionLocalProvider(LocalChromeTopRowVisible provides (hasTrack && !twoPane)) {
+                CompositionLocalProvider(LocalChromeTopRowVisible provides hasTrack) {
                 Box(Modifier.fillMaxSize()) {
                     // Cross-fade between screens. Kept — an instant swap read as a flicker — but
                     // short: switching is a tens-of-times-a-day action, so it must not read as a
@@ -1160,7 +1148,6 @@ class MainActivity : ComponentActivity() {
                             onEditProfile = { showProfileEdit = true },
                             onPlaylistClick = { appViewModel.openPlaylist(it, account?.userId ?: 0L) },
                             onCreatePlaylist = { openPlaylistCreate() },
-                            onOpenFavorites = { showFavorites = true },
                             onLikedSongsClick = {
                                 appViewModel.openLikedSongs(
                                     uid = account?.userId ?: 0L,
@@ -1195,7 +1182,7 @@ class MainActivity : ComponentActivity() {
              * panel draws that same capture through the reference's material, so what shows through is a
              * blurred field rather than readable rows.
              */
-            if (!twoPane) Column(
+            Column(
                 Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
@@ -1721,34 +1708,7 @@ class MainActivity : ComponentActivity() {
             }
 
             AnimatedVisibility(
-                visible = showFavorites,
-                enter = slideInHorizontally(tween(Motion.SheetEnterDuration, easing = Motion.EaseOut)) { it } + fadeIn(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
-                exit = slideOutHorizontally(tween(Motion.SheetExitDuration, easing = Motion.EaseOut)) { it } + fadeOut(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
-            ) {
-                Box(Modifier.fillMaxSize().background(AppTheme.palette.background)) {
-                    FavoritesScreen(
-                        signedIn = account?.let { !it.isAnonymous } == true,
-                        onBack = { showFavorites = false },
-                        onArtistClick = { artist -> appViewModel.openArtistByName(artist.name) },
-                        onAlbumClick = { album -> appViewModel.openAlbum(album.id, album.name, album.coverUrl) },
-                        onPlaylistClick = { playlist ->
-                            appViewModel.openPlaylist(
-                                com.yunyin.music.core.Playlist(
-                                    id = playlist.id,
-                                    name = playlist.name,
-                                    coverUrl = playlist.coverUrl,
-                                    trackCount = playlist.trackCount,
-                                ),
-                                account?.userId ?: 0L,
-                            )
-                        },
-                    )
-                }
-            }
-
-            AnimatedVisibility(
-                visible = twoPane || showPlayer,
-                modifier = if (twoPane) Modifier.padding(start = playerStartPadding, end = (hingeDp / 2f).dp) else Modifier,
+                visible = showPlayer,
                 enter = slideInVertically(tween(Motion.SheetEnterDuration, easing = Motion.EaseOut)) { it } + fadeIn(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
                 exit = slideOutVertically(tween(Motion.SheetEnterDuration, easing = Motion.EaseOut)) { it } + fadeOut(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
             ) {
@@ -1794,7 +1754,7 @@ class MainActivity : ComponentActivity() {
                     },
                     showLyrics = showLyrics,
                     onToggleLyrics = { showLyrics = !showLyrics },
-                    onCollapse = { if (!twoPane) showPlayer = false },
+                    onCollapse = { showPlayer = false },
                     onTogglePlay = { container.player.togglePlayPause() },
                     onNext = { container.player.next() },
                     onPrevious = { container.player.previous() },
@@ -1802,7 +1762,7 @@ class MainActivity : ComponentActivity() {
                     onCycleRepeat = { container.player.cycleRepeat() },
                     onToggleShuffle = { container.player.toggleShuffle() },
                     onShowQueue = { showQueue = true },
-                    onShowSettings = { showSettings = true; if (!twoPane) showPlayer = false },
+                    onShowSettings = { showSettings = true; showPlayer = false },
                     onArtistClick = { name ->
                         // The artist page sits above the player: closing it returns to where the tap
                         // happened, which is the least surprising layering for a page reached mid-play.
@@ -2263,7 +2223,6 @@ class MainActivity : ComponentActivity() {
         // (queue, then login/settings, then the player, then a detail page, then the tab).
         BackHandler(enabled = tab != PlayerTab.Home) { tab = PlayerTab.Home }
         BackHandler(enabled = showPlayer) { showPlayer = false }
-        BackHandler(enabled = twoPane && showLyrics) { showLyrics = false }
         BackHandler(enabled = artistState != null) { appViewModel.closeArtist() }
         BackHandler(enabled = collectionState != null) { appViewModel.closeCollection() }
         BackHandler(enabled = commentsState.visible) { appViewModel.closeComments() }
@@ -2350,54 +2309,4 @@ private fun viewModelFactory(container: AppContainer) = object : androidx.lifecy
             else -> error("Unknown ViewModel: ${modelClass.name}")
         }
     }
-
-/** Tablet/foldable left navigation rail; the right pane is the always-present player. */
-@Composable
-private fun WideNavigationRail(
-    selected: PlayerTab,
-    onSelect: (PlayerTab) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier
-            .fillMaxHeight()
-            .width(WindowLayoutRules.NAV_RAIL_DP.dp)
-            .background(AppTheme.palette.background.copy(alpha = 0.96f))
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .padding(vertical = 12.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        listOf(PlayerTab.Home, PlayerTab.PlaylistSquare, PlayerTab.Library).forEach { item ->
-            val active = item == selected
-            Column(
-                Modifier
-                    .width(64.dp)
-                    .height(56.dp)
-                    .clip(com.mocharealm.gaze.capsule.ContinuousRoundedRectangle(com.yunyin.music.ui.theme.AppleShapes.control))
-                    .background(if (active) AppTheme.palette.accent.copy(alpha = 0.16f) else Color.Transparent)
-                    .clickable(
-                        indication = com.yunyin.music.ui.components.rememberControlRipple(bounded = false),
-                        interactionSource = null,
-                    ) { onSelect(item) },
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-            ) {
-                androidx.compose.material3.Icon(
-                    item.icon,
-                    contentDescription = item.label,
-                    tint = if (active) AppTheme.palette.accent else AppTheme.palette.secondaryLabel,
-                    modifier = Modifier.size(23.dp),
-                )
-                androidx.compose.material3.Text(
-                    item.label,
-                    fontFamily = com.yunyin.music.ui.theme.SFPro,
-                    fontSize = 9.sp,
-                    color = if (active) AppTheme.palette.accent else AppTheme.palette.secondaryLabel,
-                )
-            }
-        }
-    }
-}
 }

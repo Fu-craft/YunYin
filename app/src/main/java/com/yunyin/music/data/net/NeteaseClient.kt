@@ -9,10 +9,6 @@ import com.yunyin.music.core.ChartInfo
 import com.yunyin.music.core.LyricBundle
 import com.yunyin.music.core.NetResult
 import com.yunyin.music.core.Playlist
-import com.yunyin.music.core.FavoriteAlbum
-import com.yunyin.music.core.FavoriteArtist
-import com.yunyin.music.core.FavoritePage
-import com.yunyin.music.core.FavoritePlaylist
 import com.yunyin.music.core.Track
 import com.yunyin.music.core.map
 import com.yunyin.music.data.SettingsStore
@@ -939,88 +935,6 @@ class NeteaseClient(
      * need one. Without it the API server's two-minute URL cache can swallow the request and the
      * toggle silently does nothing.
      */
-    // ---------------------------------------------------------------- favourites
-    //
-    // The account's subscribed artists/albums/playlists. NetEase exposes three sibling
-    // endpoints with the same limit/offset/more contract; the rows are normalized into the
-    // small Favorite* models because the raw payloads carry unrelated fields.
-
-    suspend fun artistSublist(offset: Int, limit: Int = FAVORITES_PAGE_SIZE): NetResult<FavoritePage<FavoriteArtist>> =
-        request(
-            "/artist/sublist",
-            query = RequestCacheBust.withCacheBust(
-                mapOf("offset" to "$offset", "limit" to "$limit"),
-                System.currentTimeMillis(),
-            ),
-        ).map { json ->
-            val array = json.optJSONArray("artists")
-            val items = (0 until (array?.length() ?: 0)).mapNotNull { i ->
-                val o = array?.optJSONObject(i) ?: return@mapNotNull null
-                val id = o.optLong("id")
-                if (id <= 0L) null else FavoriteArtist(
-                    id = id,
-                    name = o.text("name").orEmpty(),
-                    coverUrl = o.text("picUrl") ?: o.text("img1v1Url"),
-                    albumCount = o.optInt("albumSize"),
-                    songCount = o.optInt("musicSize"),
-                )
-            }
-            FavoritePage(items, json.optBoolean("more", items.size >= limit))
-        }
-
-    suspend fun albumSublist(offset: Int, limit: Int = FAVORITES_PAGE_SIZE): NetResult<FavoritePage<FavoriteAlbum>> =
-        request(
-            "/album/sublist",
-            query = RequestCacheBust.withCacheBust(
-                mapOf("offset" to "$offset", "limit" to "$limit"),
-                System.currentTimeMillis(),
-            ),
-        ).map { json ->
-            val array = json.optJSONArray("albums")
-            val items = (0 until (array?.length() ?: 0)).mapNotNull { i ->
-                val o = array?.optJSONObject(i) ?: return@mapNotNull null
-                val id = o.optLong("id")
-                if (id <= 0L) null else FavoriteAlbum(
-                    id = id,
-                    name = o.text("name").orEmpty(),
-                    coverUrl = o.text("picUrl"),
-                    artistLine = o.optJSONArray("artists")?.let { artists ->
-                        (0 until artists.length()).mapNotNull { a ->
-                            artists.optJSONObject(a)?.text("name")
-                        }.joinToString(" / ")
-                    }.orEmpty(),
-                    year = o.optLong("publishTime").let { time ->
-                        if (time <= 0L) 0 else java.util.Calendar.getInstance().apply { this.timeInMillis = time }.get(1)
-                    },
-                    trackCount = o.optInt("size"),
-                )
-            }
-            FavoritePage(items, json.optBoolean("more", items.size >= limit))
-        }
-
-    suspend fun playlistSublist(offset: Int, limit: Int = FAVORITES_PAGE_SIZE): NetResult<FavoritePage<FavoritePlaylist>> =
-        request(
-            "/playlist/sublist",
-            query = RequestCacheBust.withCacheBust(
-                mapOf("offset" to "$offset", "limit" to "$limit"),
-                System.currentTimeMillis(),
-            ),
-        ).map { json ->
-            val array = json.optJSONArray("playlists")
-            val items = (0 until (array?.length() ?: 0)).mapNotNull { i ->
-                val o = array?.optJSONObject(i) ?: return@mapNotNull null
-                val id = o.optLong("id")
-                if (id <= 0L) null else FavoritePlaylist(
-                    id = id,
-                    name = o.text("name").orEmpty(),
-                    coverUrl = o.text("coverImgUrl"),
-                    creatorName = o.optJSONObject("creator")?.text("nickname").orEmpty(),
-                    trackCount = o.optInt("trackCount"),
-                )
-            }
-            FavoritePage(items, json.optBoolean("more", items.size >= limit))
-        }
-
     /** Account-level subscribe: kind = artist | album | playlist; t=1 follow, t=0 unfollow. */
     suspend fun subscribe(kind: String, id: Long, follow: Boolean): NetResult<Unit> {
         val path = when (kind) {
@@ -1141,7 +1055,6 @@ class NeteaseClient(
     }
 
     companion object {
-        const val FAVORITES_PAGE_SIZE = 30
         private const val UA = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36"
 
         /** NetEase marks the built-in "我喜欢的音乐" playlist with this `specialType`. */

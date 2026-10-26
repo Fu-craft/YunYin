@@ -4,10 +4,6 @@
 package com.yunyin.music.data
 
 import com.yunyin.music.core.HomeFeed
-import com.yunyin.music.core.FavoriteAlbum
-import com.yunyin.music.core.FavoriteArtist
-import com.yunyin.music.core.FavoritePage
-import com.yunyin.music.core.FavoritePlaylist
 import com.yunyin.music.core.ArtistInfo
 import com.yunyin.music.core.NetResult
 import com.yunyin.music.core.Playlist
@@ -583,15 +579,6 @@ class MusicRepository(
 
     suspend fun subscribe(kind: String, id: Long, follow: Boolean): NetResult<Unit> =
         client.subscribe(kind, id, follow)
-
-    suspend fun favoriteArtists(offset: Int, limit: Int = 30): NetResult<FavoritePage<FavoriteArtist>> =
-        client.artistSublist(offset, limit)
-
-    suspend fun favoriteAlbums(offset: Int, limit: Int = 30): NetResult<FavoritePage<FavoriteAlbum>> =
-        client.albumSublist(offset, limit)
-
-    suspend fun favoritePlaylists(offset: Int, limit: Int = 30): NetResult<FavoritePage<FavoritePlaylist>> =
-        client.playlistSublist(offset, limit)
 
     suspend fun albumSubscribed(id: Long): NetResult<Boolean> = client.albumSubscribed(id)
 

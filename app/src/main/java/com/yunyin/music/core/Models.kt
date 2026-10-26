@@ -140,33 +140,3 @@ inline fun <T, R> NetResult<T>.map(transform: (T) -> R): NetResult<R> = when (th
     is NetResult.Err -> this
 }
 
-/** One page of the account's subscribed artists/albums/playlists. */
-data class FavoriteArtist(
-    val id: Long,
-    val name: String,
-    val coverUrl: String?,
-    val albumCount: Int = 0,
-    val songCount: Int = 0,
-)
-
-data class FavoriteAlbum(
-    val id: Long,
-    val name: String,
-    val coverUrl: String?,
-    val artistLine: String,
-    val year: Int = 0,
-    val trackCount: Int = 0,
-)
-
-data class FavoritePlaylist(
-    val id: Long,
-    val name: String,
-    val coverUrl: String?,
-    val creatorName: String,
-    val trackCount: Int = 0,
-)
-
-data class FavoritePage<T>(
-    val items: List<T>,
-    val more: Boolean,
-)

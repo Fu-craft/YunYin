@@ -7,6 +7,13 @@ package com.yunyin.music.data
 object DesktopLyricsRules {
     const val UPDATE_INTERVAL_MS = 100L
     const val STOP_AFTER_MS = 30_000L
+    const val LOCK_REVEAL_MS = 4_000L
+
+    fun chromeVisible(locked: Boolean, temporarilyRevealed: Boolean): Boolean =
+        !locked || temporarilyRevealed
+
+    fun panelAlpha(locked: Boolean, temporarilyRevealed: Boolean): Int =
+        if (chromeVisible(locked, temporarilyRevealed)) 185 else 0
 
     fun shouldShow(enabled: Boolean, permission: Boolean, hasTrack: Boolean): Boolean =
         enabled && permission && hasTrack

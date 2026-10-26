@@ -3,18 +3,24 @@
 
 package com.yunyin.music.ui.screens
 
-/** Pure two-pane decisions for tablets and foldables. */
+/**
+ * Tablet/foldable decisions. Tablets use the normal app shell: bottom navigation and mini player
+ * stay, and Now Playing opens as a full-width page. A tabletop fold stacks the player; a vertical
+ * hinge does not force a permanent side pane.
+ */
 object WindowLayoutRules {
 
     const val SPLIT_AT_DP = 840f
-    const val NAV_RAIL_DP = 84f
+    const val CARD_COLUMNS_TABLET = 2
 
-    fun isTwoPane(widthDp: Float): Boolean = widthDp >= SPLIT_AT_DP
+    fun isTablet(widthDp: Float): Boolean = widthDp >= SPLIT_AT_DP
 
-    /** Half the usable width after reserving the hinge gutter. */
-    fun leftPaneWidthDp(widthDp: Float, hingeDp: Float): Float =
-        ((widthDp - hingeDp).coerceAtLeast(0f) / 2f).coerceAtLeast(0f)
+    fun cardColumns(widthDp: Float): Int =
+        if (isTablet(widthDp)) CARD_COLUMNS_TABLET else 1
 
-    fun hingeGutterDp(hingeWidthPx: Int, vertical: Boolean, density: Float): Float =
-        if (vertical && hingeWidthPx > 0) (hingeWidthPx / density).coerceAtLeast(0f) else 0f
+    /** Tabletop (horizontal separating hinge) stacks; vertical hinges keep the full-width page. */
+    fun isTabletop(horizontalSeparatingHinge: Boolean): Boolean = horizontalSeparatingHinge
+
+    fun hingeGutterDp(hingeSizePx: Int, vertical: Boolean, density: Float): Float =
+        if (vertical && hingeSizePx > 0) (hingeSizePx / density).coerceAtLeast(0f) else 0f
 }
