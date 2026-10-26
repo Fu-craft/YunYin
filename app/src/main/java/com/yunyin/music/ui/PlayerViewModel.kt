@@ -13,6 +13,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.yunyin.music.AppContainer
 import com.yunyin.music.data.CoverDownloader
+import com.yunyin.music.data.DesktopLyricsState
 import com.yunyin.music.data.LyricTicker
 import com.yunyin.music.playback.PlaybackUiState
 import com.yunyin.music.ui.background.DynamicBackgroundPalette
@@ -253,6 +254,13 @@ class PlayerViewModel(private val container: AppContainer) : ViewModel() {
                 // it needs the current line at this same 4Hz, and the same clock the other two
                 // surfaces read. Updated after the Lyricon branch so both see identical state.
                 updateTickerLyric(state.current, state.positionMs, state.isPlaying, trackChanged)
+                DesktopLyricsState.publish(
+                    lyrics = lyrics,
+                    track = state.current,
+                    positionMs = state.positionMs,
+                    isPlaying = state.isPlaying,
+                    offsetMs = lyricOffsetMs,
+                )
 
                 previousTrackId = trackId
                 previousPlaying = state.isPlaying

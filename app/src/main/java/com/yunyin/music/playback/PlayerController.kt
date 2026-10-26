@@ -363,6 +363,79 @@ class PlayerController(
         }
     }
 
+    /**
+     * Moves one queue item. The sheet shows the underlying media-item order, so this is also the
+     * visible order; shuffle mode still decides playback order independently.
+     */
+    fun moveQueueItem(from: Int, to: Int): Boolean {
+        val mediaController = controller ?: return false
+        if (from !in currentQueue.indices || to !in currentQueue.indices || from == to) return false
+        return runCatching {
+            mediaController.moveMediaItem(from, to)
+            val mutable = currentQueue.toMutableList()
+            val moved = mutable.removeAt(from)
+            mutable.add(to.coerceIn(0, mutable.size), moved)
+            currentQueue = mutable
+            publish()
+            true
+        }.getOrElse {
+            Log.w(TAG, "Could not move queue item", it)
+            false
+        }
+    }
+
+    /** Removes a non-current item. The current item is protected by the caller and here. */
+    fun removeQueueItem(index: Int): Boolean {
+        val mediaController = controller ?: return false
+        if (index !in currentQueue.indices) return false
+        if (index == mediaController.currentMediaItemIndex) return false
+        return runCatching {
+            mediaController.removeMediaItem(index)
+            currentQueue = currentQueue.toMutableList().apply { removeAt(index) }
+            publish()
+            true
+        }.getOrElse {
+            Log.w(TAG, "Could not remove queue item", it)
+            false
+        }
+    }
+
+    /** Restores a removed item at its original index for the snackbar's 撤销 action. */
+    fun insertQueueItem(index: Int, track: Track): Boolean {
+        val mediaController = controller ?: return false
+        return runCatching {
+            val at = index.coerceIn(0, mediaController.mediaItemCount)
+            mediaController.addMediaItem(at, TrackMediaItem.mediaItem(track))
+            currentQueue = currentQueue.toMutableList().apply { add(at.coerceIn(0, size), track) }
+            publish()
+            true
+        }.getOrElse {
+            Log.w(TAG, "Could not restore queue item", it)
+            false
+        }
+    }
+
+    /**
+     * Clears everything **after** the current item without stopping it. Past items are retained;
+     * the current media item is never removed.
+     */
+    fun clearQueueAfterCurrent(): Boolean {
+        val mediaController = controller ?: return false
+        if (mediaController.mediaItemCount == 0) return false
+        return runCatching {
+            val current = mediaController.currentMediaItemIndex.coerceIn(0, mediaController.mediaItemCount - 1)
+            val currentTrack = currentQueue.getOrNull(current)
+            val count = mediaController.mediaItemCount
+            if (count > current + 1) mediaController.removeMediaItems(current + 1, count)
+            currentQueue = currentQueue.take(current + 1)
+            publish()
+            true
+        }.getOrElse {
+            Log.w(TAG, "Could not clear queue", it)
+            false
+        }
+    }
+
     fun next() = controller?.let { it.seekToNextMediaItem(); publish() }
     fun previous() = controller?.let { it.seekToPreviousMediaItem(); publish() }
 

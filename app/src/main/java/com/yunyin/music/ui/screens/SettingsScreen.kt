@@ -114,6 +114,11 @@ fun SettingsScreen(
     flymeSupported: Boolean = false,
     statusBarLyrics: Boolean = true,
     onStatusBarLyricsChange: (Boolean) -> Unit = {},
+    /** Floating desktop lyrics; the host handles the overlay permission before starting the service. */
+    desktopLyricsEnabled: Boolean = false,
+    onDesktopLyricsEnabledChange: (Boolean) -> Unit = {},
+    overlayPermissionGranted: Boolean = false,
+    onRequestOverlayPermission: () -> Unit = {},
     /** Whether tracks run into each other without the dead air that makes them sound like files. */
     seamlessTransition: Boolean = true,
     onSeamlessTransitionChange: (Boolean) -> Unit = {},
@@ -285,6 +290,12 @@ fun SettingsScreen(
                     enabled = statusBarLyrics,
                     onChange = onStatusBarLyricsChange,
                 )
+                RowDivider()
+                ToggleRow("桌面歌词", "在其他应用上方显示当前歌词", desktopLyricsEnabled, onDesktopLyricsEnabledChange)
+                if (desktopLyricsEnabled && !overlayPermissionGranted) {
+                    RowDivider()
+                    LinkRow("悬浮窗权限", "未授权", onRequestOverlayPermission, "允许云音显示在其他应用上方")
+                }
                 RowDivider()
                 ActionRow("测试状态栏歌词", onTestFlymeLyric, "发送一条测试歌词到状态栏")
             }

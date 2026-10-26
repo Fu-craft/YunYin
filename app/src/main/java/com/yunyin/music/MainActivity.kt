@@ -5,6 +5,7 @@ package com.yunyin.music
 
 import android.content.Intent
 import android.net.Uri
+import android.provider.Settings
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -25,13 +26,16 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -50,10 +54,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.core.content.ContextCompat
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.window.layout.WindowInfoTracker
+import androidx.window.layout.FoldingFeature
+import androidx.window.layout.WindowLayoutInfo
 import com.yunyin.music.core.NetResult
 import com.yunyin.music.data.SettingsStore
 import com.yunyin.music.data.ShareText
@@ -61,6 +71,7 @@ import com.yunyin.music.data.net.BeatModeRules
 import com.yunyin.music.data.net.BeatModeSeedRules
 import com.yunyin.music.data.net.BeatSeed
 import com.yunyin.music.data.net.BeatSeedPath
+import com.yunyin.music.playback.DesktopLyricsService
 import com.yunyin.music.playback.LocalPlayerController
 import com.yunyin.music.playback.PlaybackUiState
 import com.yunyin.music.ui.AppViewModel
@@ -84,6 +95,7 @@ import com.yunyin.music.ui.screens.PlaylistSquareScreen
 import com.yunyin.music.ui.screens.ArtistScreen
 import com.yunyin.music.ui.screens.HomeScreen
 import com.yunyin.music.ui.screens.LibraryScreen
+import com.yunyin.music.ui.screens.FavoritesScreen
 import com.yunyin.music.ui.screens.LoginScreen
 import com.yunyin.music.ui.screens.PROJECT_URL
 import com.yunyin.music.ui.download.DownloadController
@@ -101,6 +113,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.yunyin.music.ui.screens.PlaybackStatsScreen
 import com.yunyin.music.ui.screens.PlayerScreen
+import com.yunyin.music.ui.screens.WindowLayoutRules
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.statusBarsPadding
 import com.yunyin.music.ui.screens.LxSourceUrlSheet
 import com.yunyin.music.ui.screens.ProfileEditSheet
 import com.yunyin.music.ui.screens.PlayerArtworkCorner
@@ -157,6 +175,29 @@ class MainActivity : ComponentActivity() {
     private fun YunYinApp(container: AppContainer) {
         val context = LocalContext.current
         val scope = rememberCoroutineScope()
+        val windowInfo by remember {
+            val activity = context as? ComponentActivity
+            if (activity == null) kotlinx.coroutines.flow.flowOf(WindowLayoutInfo(emptyList()))
+            else WindowInfoTracker.getOrCreate(context).windowLayoutInfo(activity)
+        }.collectAsState(initial = WindowLayoutInfo(emptyList()))
+        val configuration = LocalConfiguration.current
+        val density = LocalDensity.current
+        val windowWidthDp = configuration.screenWidthDp.toFloat()
+        val fold = windowInfo.displayFeatures.filterIsInstance<FoldingFeature>()
+            .firstOrNull { it.isSeparating }
+        val hingeDp = fold?.let {
+            WindowLayoutRules.hingeGutterDp(
+                hingeWidthPx = it.bounds.width(),
+                vertical = it.orientation == FoldingFeature.Orientation.VERTICAL,
+                density = density.density,
+            )
+        } ?: 0f
+        val twoPane = WindowLayoutRules.isTwoPane(windowWidthDp)
+        val leftPaneWidth = WindowLayoutRules.leftPaneWidthDp(windowWidthDp, hingeDp)
+        val contentEndPadding = if (twoPane) {
+            (windowWidthDp - leftPaneWidth + hingeDp / 2f).dp
+        } else 0.dp
+        val playerStartPadding = if (twoPane) (leftPaneWidth + hingeDp / 2f).dp else 0.dp
 
         val playerViewModel: PlayerViewModel = viewModel(factory = viewModelFactory(container))
         val appViewModel: AppViewModel = viewModel(factory = viewModelFactory(container))
@@ -231,6 +272,7 @@ class MainActivity : ComponentActivity() {
         var beatModeActive by remember { mutableStateOf(false) }
         var showSettings by remember { mutableStateOf(false) }
         var showDownloadCenter by remember { mutableStateOf(false) }
+        var showFavorites by remember { mutableStateOf(false) }
     var showStats by remember { mutableStateOf(false) }
     var showLyricPicker by remember { mutableStateOf(false) }
     var lyricShareLines by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -250,6 +292,53 @@ class MainActivity : ComponentActivity() {
          */
         var quality by remember { mutableStateOf(AudioQuality.from(container.settings.quality)) }
         var statusBarLyricsEnabled by remember { mutableStateOf(container.settings.statusBarLyrics) }
+        var desktopLyricsEnabled by remember { mutableStateOf(container.settings.desktopLyricsEnabled) }
+        var overlayPermissionGranted by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
+        val overlayPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+            val granted = Settings.canDrawOverlays(context)
+            overlayPermissionGranted = granted
+            desktopLyricsEnabled = granted
+            container.settings.desktopLyricsEnabled = granted
+            if (granted) {
+                runCatching {
+                    ContextCompat.startForegroundService(
+                        context,
+                        Intent(context, DesktopLyricsService::class.java)
+                            .setAction(DesktopLyricsService.ACTION_START),
+                    )
+                }
+            } else {
+                Toast.makeText(context, "需要悬浮窗权限才能显示桌面歌词", Toast.LENGTH_SHORT).show()
+            }
+        }
+        DisposableEffect(context) {
+            val receiver = object : android.content.BroadcastReceiver() {
+                override fun onReceive(c: android.content.Context?, intent: android.content.Intent?) {
+                    if (intent?.action == DesktopLyricsService.ACTION_CLOSED) {
+                        desktopLyricsEnabled = false
+                        container.settings.desktopLyricsEnabled = false
+                    }
+                }
+            }
+            ContextCompat.registerReceiver(
+                context,
+                receiver,
+                android.content.IntentFilter(DesktopLyricsService.ACTION_CLOSED),
+                ContextCompat.RECEIVER_NOT_EXPORTED,
+            )
+            onDispose { runCatching { context.unregisterReceiver(receiver) } }
+        }
+        LaunchedEffect(Unit) {
+            if (container.settings.desktopLyricsEnabled && Settings.canDrawOverlays(context)) {
+                runCatching {
+                    ContextCompat.startForegroundService(
+                        context,
+                        Intent(context, DesktopLyricsService::class.java)
+                            .setAction(DesktopLyricsService.ACTION_START),
+                    )
+                }
+            }
+        }
         // Read from the bridge rather than the preference: the bridge is the authority on whether it is
         // publishing, and it mirrors the stored value, so the switch cannot disagree with what is running.
         var lyriconEnabled by remember { mutableStateOf(container.lyricon.enabled) }
@@ -971,12 +1060,17 @@ class MainActivity : ComponentActivity() {
 
         Box(Modifier.fillMaxSize().background(AppTheme.palette.background)) {
             // ------------------------------------------------ primary content
-            Box(Modifier.fillMaxSize().layerBackdrop(bottomBackdrop)) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .layerBackdrop(bottomBackdrop)
+                    .padding(start = if (twoPane) WindowLayoutRules.NAV_RAIL_DP.dp else 0.dp, end = contentEndPadding),
+            ) {
                 // The chrome's now-playing row exists only while a track is loaded (see the chrome block
                 // below); the screens read that through `chromeContentBottomPadding()`, which then reserves
                 // one row instead of two. Provided here, around the tab screens, because that is where the
                 // padding is read.
-                CompositionLocalProvider(LocalChromeTopRowVisible provides hasTrack) {
+                CompositionLocalProvider(LocalChromeTopRowVisible provides (hasTrack && !twoPane)) {
                 Box(Modifier.fillMaxSize()) {
                     // Cross-fade between screens. Kept — an instant swap read as a flicker — but
                     // short: switching is a tens-of-times-a-day action, so it must not read as a
@@ -1066,6 +1160,7 @@ class MainActivity : ComponentActivity() {
                             onEditProfile = { showProfileEdit = true },
                             onPlaylistClick = { appViewModel.openPlaylist(it, account?.userId ?: 0L) },
                             onCreatePlaylist = { openPlaylistCreate() },
+                            onOpenFavorites = { showFavorites = true },
                             onLikedSongsClick = {
                                 appViewModel.openLikedSongs(
                                     uid = account?.userId ?: 0L,
@@ -1100,7 +1195,7 @@ class MainActivity : ComponentActivity() {
              * panel draws that same capture through the reference's material, so what shows through is a
              * blurred field rather than readable rows.
              */
-            Column(
+            if (!twoPane) Column(
                 Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
@@ -1161,7 +1256,6 @@ class MainActivity : ComponentActivity() {
                 )
             }
 
-
             AnimatedVisibility(
                 visible = showSettings,
                 enter = slideInVertically(tween(Motion.SheetEnterDuration, easing = Motion.EaseOut)) { it },
@@ -1201,6 +1295,48 @@ class MainActivity : ComponentActivity() {
                         // Turning it off must remove the resident notification immediately rather
                         // than leaving it in the shade until the next track change.
                         if (!enabled) container.tickerLyrics.clear()
+                    },
+                    desktopLyricsEnabled = desktopLyricsEnabled,
+                    onDesktopLyricsEnabledChange = { enabled ->
+                        if (enabled && !Settings.canDrawOverlays(context)) {
+                            overlayPermissionGranted = false
+                            runCatching {
+                                overlayPermissionLauncher.launch(
+                                    Intent(
+                                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                        Uri.parse("package:${context.packageName}"),
+                                    ),
+                                )
+                            }
+                        } else {
+                            desktopLyricsEnabled = enabled
+                            container.settings.desktopLyricsEnabled = enabled
+                            if (enabled) {
+                                runCatching {
+                                    ContextCompat.startForegroundService(
+                                        context,
+                                        Intent(context, DesktopLyricsService::class.java)
+                                            .setAction(DesktopLyricsService.ACTION_START),
+                                    )
+                                }
+                            } else {
+                                runCatching {
+                                    context.stopService(Intent(context, DesktopLyricsService::class.java))
+                                }
+                                com.yunyin.music.data.DesktopLyricsState.clear()
+                            }
+                        }
+                    },
+                    overlayPermissionGranted = overlayPermissionGranted,
+                    onRequestOverlayPermission = {
+                        runCatching {
+                            overlayPermissionLauncher.launch(
+                                Intent(
+                                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                    Uri.parse("package:${context.packageName}"),
+                                ),
+                            )
+                        }
                     },
                     crossfadeSeconds = crossfadeSeconds,
                     seamlessTransition = seamlessTransition,
@@ -1585,7 +1721,34 @@ class MainActivity : ComponentActivity() {
             }
 
             AnimatedVisibility(
-                visible = showPlayer,
+                visible = showFavorites,
+                enter = slideInHorizontally(tween(Motion.SheetEnterDuration, easing = Motion.EaseOut)) { it } + fadeIn(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
+                exit = slideOutHorizontally(tween(Motion.SheetExitDuration, easing = Motion.EaseOut)) { it } + fadeOut(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
+            ) {
+                Box(Modifier.fillMaxSize().background(AppTheme.palette.background)) {
+                    FavoritesScreen(
+                        signedIn = account?.let { !it.isAnonymous } == true,
+                        onBack = { showFavorites = false },
+                        onArtistClick = { artist -> appViewModel.openArtistByName(artist.name) },
+                        onAlbumClick = { album -> appViewModel.openAlbum(album.id, album.name, album.coverUrl) },
+                        onPlaylistClick = { playlist ->
+                            appViewModel.openPlaylist(
+                                com.yunyin.music.core.Playlist(
+                                    id = playlist.id,
+                                    name = playlist.name,
+                                    coverUrl = playlist.coverUrl,
+                                    trackCount = playlist.trackCount,
+                                ),
+                                account?.userId ?: 0L,
+                            )
+                        },
+                    )
+                }
+            }
+
+            AnimatedVisibility(
+                visible = twoPane || showPlayer,
+                modifier = if (twoPane) Modifier.padding(start = playerStartPadding, end = (hingeDp / 2f).dp) else Modifier,
                 enter = slideInVertically(tween(Motion.SheetEnterDuration, easing = Motion.EaseOut)) { it } + fadeIn(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
                 exit = slideOutVertically(tween(Motion.SheetEnterDuration, easing = Motion.EaseOut)) { it } + fadeOut(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
             ) {
@@ -1631,7 +1794,7 @@ class MainActivity : ComponentActivity() {
                     },
                     showLyrics = showLyrics,
                     onToggleLyrics = { showLyrics = !showLyrics },
-                    onCollapse = { showPlayer = false },
+                    onCollapse = { if (!twoPane) showPlayer = false },
                     onTogglePlay = { container.player.togglePlayPause() },
                     onNext = { container.player.next() },
                     onPrevious = { container.player.previous() },
@@ -1639,7 +1802,7 @@ class MainActivity : ComponentActivity() {
                     onCycleRepeat = { container.player.cycleRepeat() },
                     onToggleShuffle = { container.player.toggleShuffle() },
                     onShowQueue = { showQueue = true },
-                    onShowSettings = { showSettings = true; showPlayer = false },
+                    onShowSettings = { showSettings = true; if (!twoPane) showPlayer = false },
                     onArtistClick = { name ->
                         // The artist page sits above the player: closing it returns to where the tap
                         // happened, which is the least surprising layering for a page reached mid-play.
@@ -2013,7 +2176,12 @@ class MainActivity : ComponentActivity() {
                     queue = playback.queue,
                     currentIndex = playback.index,
                     loader = container.artwork,
+                    shuffle = playback.shuffle,
                     onSelect = { index -> container.player.seekToIndex(index) },
+                    onMove = { from, to -> container.player.moveQueueItem(from, to) },
+                    onRemove = { index -> container.player.removeQueueItem(index) },
+                    onInsert = { index, track -> container.player.insertQueueItem(index, track) },
+                    onClear = { container.player.clearQueueAfterCurrent() },
                     onDismiss = { showQueue = false },
                 )
             }
@@ -2095,6 +2263,7 @@ class MainActivity : ComponentActivity() {
         // (queue, then login/settings, then the player, then a detail page, then the tab).
         BackHandler(enabled = tab != PlayerTab.Home) { tab = PlayerTab.Home }
         BackHandler(enabled = showPlayer) { showPlayer = false }
+        BackHandler(enabled = twoPane && showLyrics) { showLyrics = false }
         BackHandler(enabled = artistState != null) { appViewModel.closeArtist() }
         BackHandler(enabled = collectionState != null) { appViewModel.closeCollection() }
         BackHandler(enabled = commentsState.visible) { appViewModel.closeComments() }
@@ -2181,4 +2350,54 @@ private fun viewModelFactory(container: AppContainer) = object : androidx.lifecy
             else -> error("Unknown ViewModel: ${modelClass.name}")
         }
     }
+
+/** Tablet/foldable left navigation rail; the right pane is the always-present player. */
+@Composable
+private fun WideNavigationRail(
+    selected: PlayerTab,
+    onSelect: (PlayerTab) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier
+            .fillMaxHeight()
+            .width(WindowLayoutRules.NAV_RAIL_DP.dp)
+            .background(AppTheme.palette.background.copy(alpha = 0.96f))
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .padding(vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        listOf(PlayerTab.Home, PlayerTab.PlaylistSquare, PlayerTab.Library).forEach { item ->
+            val active = item == selected
+            Column(
+                Modifier
+                    .width(64.dp)
+                    .height(56.dp)
+                    .clip(com.mocharealm.gaze.capsule.ContinuousRoundedRectangle(com.yunyin.music.ui.theme.AppleShapes.control))
+                    .background(if (active) AppTheme.palette.accent.copy(alpha = 0.16f) else Color.Transparent)
+                    .clickable(
+                        indication = com.yunyin.music.ui.components.rememberControlRipple(bounded = false),
+                        interactionSource = null,
+                    ) { onSelect(item) },
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                androidx.compose.material3.Icon(
+                    item.icon,
+                    contentDescription = item.label,
+                    tint = if (active) AppTheme.palette.accent else AppTheme.palette.secondaryLabel,
+                    modifier = Modifier.size(23.dp),
+                )
+                androidx.compose.material3.Text(
+                    item.label,
+                    fontFamily = com.yunyin.music.ui.theme.SFPro,
+                    fontSize = 9.sp,
+                    color = if (active) AppTheme.palette.accent else AppTheme.palette.secondaryLabel,
+                )
+            }
+        }
+    }
+}
 }

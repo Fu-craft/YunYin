@@ -61,6 +61,11 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_STATUS_BAR_LYRICS, true)
         set(value) = prefs.edit().putBoolean(KEY_STATUS_BAR_LYRICS, value).apply()
 
+    /** Floating desktop-lyrics overlay preference; only started when overlay permission exists. */
+    var desktopLyricsEnabled: Boolean
+        get() = prefs.getBoolean(KEY_DESKTOP_LYRICS, false)
+        set(value) = prefs.edit().putBoolean(KEY_DESKTOP_LYRICS, value).apply()
+
     /**
      * Whether the head of each stream is tapered, so a track begins rather than switching on.
      *
@@ -352,6 +357,7 @@ class SettingsStore(context: Context) {
         private const val KEY_ANON = "anonymous"
         private const val KEY_LYRIC_OFFSETS = "lyric_offsets"
         private const val KEY_STATUS_BAR_LYRICS = "status_bar_lyrics"
+    private const val KEY_DESKTOP_LYRICS = "desktop_lyrics_enabled"
         private const val KEY_LYRICON_ENABLED = "lyricon_enabled"
         private const val KEY_SEAMLESS_TRANSITION = "seamless_transition"
         private const val KEY_DOWNLOAD_WIFI_ONLY = "download_wifi_only"

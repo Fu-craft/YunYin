@@ -35,8 +35,8 @@ android {
         // versionCode must increase for Android to accept a build as an update over a previous one;
         // versionName is what the user sees. Bumped together: a version name change with an unchanged
         // code would install as a downgrade and be rejected.
-        versionCode = 226
-        versionName = "4.39.11"
+        versionCode = 227
+        versionName = "4.40.0"
         vectorDrawables { useSupportLibrary = true }
 
         // The API endpoint is injected at build time rather than baked into the sources, so the
@@ -151,6 +151,7 @@ android {
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.window)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     // Bridges MediaController's ListenableFuture to coroutines.
