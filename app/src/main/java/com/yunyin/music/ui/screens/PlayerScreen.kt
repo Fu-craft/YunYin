@@ -65,6 +65,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.core.graphics.scale
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.foundation.Canvas
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.graphics.FilterQuality
@@ -1328,14 +1332,16 @@ private fun FullScreenCoverBackdrop(
 }
 
 /**
- * Blurs the cover's **own** top and bottom edges by letting a blurred copy **spill outside** the
- * artwork bounds and fade out there.
+ * Softens the cover's **own** top and bottom edges: a heavily downscaled-then-upscaled copy of the
+ * artwork spills past each edge and fades out, so the silhouette dissolves instead of ending in a
+ * straight line.
  *
- * An earlier version drew the blurred copy inside the artwork's rect and masked it: the outermost
- * pixel was still the sharp edge pixel, so the boundary against the field stayed a hard line — the
- * blur was invisible on covers whose top rows are uniform. Spilling the blurred copy ~56 dp past
- * each edge is what actually softens the silhouette: sharp artwork → blurred halo crossing the old
- * boundary → field.
+ * Two earlier attempts were invisible on device:
+ *  - masking the copy *inside* the artwork rect (the outermost pixel is still the sharp one), and
+ *  - sourcing the copy from `CoverFieldCache.blurred(...)`, which could return null and leave the
+ *    layer drawing nothing at all.
+ * This version always produces its own copy, synchronously on the first composition of a cover, and
+ * it spills 64 dp past each edge so the softening is unmissable.
  */
 @Composable
 private fun ImmersiveEdgeSoftening(
@@ -1345,64 +1351,73 @@ private fun ImmersiveEdgeSoftening(
 ) {
     if (cover == null) return
     val density = androidx.compose.ui.platform.LocalDensity.current
-    val radiusPx = with(density) { FullScreenCoverRules.EDGE_BLUR_DP.dp.toPx() }
-    val blurred by produceState<ImageBitmap?>(initialValue = null, cover, trackId) {
-        value = withContext(Dispatchers.Default) {
-            runCatching { CoverFieldCache.blurred(trackId, cover, radiusPx) }.getOrNull()
-        }
-    }
-    val image = blurred ?: return
     val spillPx = with(density) { EDGE_SPILL_DP.dp.toPx() }
     val innerPx = with(density) { EDGE_INNER_DP.dp.toPx() }
 
-    Box(
+    // Downscale → upscale with bilinear filtering. No RenderEffect, no cache, no null path: the very
+    // first frame already has a soft copy, which is what "看不见" was really about.
+    val soft by produceState<ImageBitmap?>(initialValue = null, cover, trackId) {
+        value = withContext(Dispatchers.Default) {
+            runCatching { softCopy(cover) }.getOrNull() ?: cover
+        }
+    }
+    val image = soft ?: cover
+
+    Canvas(
         modifier
             .fillMaxSize()
-            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-            .drawWithContent {
-                // Nothing to draw from the layout phase; the halo is painted below.
-            }
-            .drawBehind {
-                val h = size.height.coerceAtLeast(1f)
-                val w = size.width
-                val total = h + spillPx * 2f
-                // Blurred copy stretched over the artwork **plus** the spill above and below it, so
-                // the blur mixes real artwork into the region outside the old edge.
-                drawImage(
-                    image = image,
-                    srcOffset = IntOffset.Zero,
-                    srcSize = IntSize(image.width, image.height),
-                    dstOffset = IntOffset(0, -spillPx.roundToInt()),
-                    dstSize = IntSize(w.roundToInt(), total.roundToInt()),
-                    filterQuality = FilterQuality.Low,
-                )
-                // Alpha ramp, expressed in the spilled coordinate space: outside the artwork the
-                // halo fades to nothing, inside it fades out quickly so the centre stays sharp.
-                val topEdge = spillPx / total
-                val topFadeEnd = ((spillPx + innerPx) / total).coerceAtMost(0.5f)
-                val bottomFadeStart = (1f - (spillPx + innerPx) / total).coerceAtLeast(0.5f)
-                val bottomEdge = 1f - spillPx / total
-                drawRect(
-                    brush = Brush.verticalGradient(
-                        0f to Color.Transparent,
-                        topEdge to Color.White,
-                        topFadeEnd to Color.Transparent,
-                        bottomFadeStart to Color.Transparent,
-                        bottomEdge to Color.White,
-                        1f to Color.Transparent,
-                    ),
-                    topLeft = Offset(0f, -spillPx),
-                    size = Size(w, total),
-                    blendMode = BlendMode.DstIn,
-                )
-            },
-    )
+            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen },
+    ) {
+        val h = size.height.coerceAtLeast(1f)
+        val w = size.width
+        val total = h + spillPx * 2f
+        drawImage(
+            image = image,
+            srcOffset = IntOffset.Zero,
+            srcSize = IntSize(image.width, image.height),
+            dstOffset = IntOffset(0, -spillPx.roundToInt()),
+            dstSize = IntSize(w.roundToInt(), total.roundToInt()),
+            filterQuality = FilterQuality.Low,
+        )
+        val topEdge = spillPx / total
+        val topFadeEnd = ((spillPx + innerPx) / total).coerceAtMost(0.5f)
+        val bottomFadeStart = (1f - (spillPx + innerPx) / total).coerceAtLeast(0.5f)
+        val bottomEdge = 1f - spillPx / total
+        drawRect(
+            brush = Brush.verticalGradient(
+                0f to Color.Transparent,
+                topEdge to Color.White,
+                topFadeEnd to Color.Transparent,
+                bottomFadeStart to Color.Transparent,
+                bottomEdge to Color.White,
+                1f to Color.Transparent,
+            ),
+            topLeft = Offset(0f, -spillPx),
+            size = Size(w, total),
+            blendMode = BlendMode.DstIn,
+        )
+    }
 }
 
-/** How far the blurred halo spills past the artwork's top and bottom edges. */
-private const val EDGE_SPILL_DP = 56f
+/**
+ * A soft copy of the artwork: downscale to 1/[SOFT_DOWNSCALE], then back up with bilinear filtering.
+ * Cheap, deterministic, and produces a wide blur without any RenderEffect or bitmap loop.
+ */
+private fun softCopy(source: ImageBitmap): ImageBitmap {
+    val android = source.asAndroidBitmap()
+    val smallWidth = (android.width / SOFT_DOWNSCALE).coerceAtLeast(1)
+    val smallHeight = (android.height / SOFT_DOWNSCALE).coerceAtLeast(1)
+    val small = android.scale(smallWidth, smallHeight, true)
+    return small.scale(android.width, android.height, true).asImageBitmap()
+}
 
-/** How far into the artwork the blurred halo fades out, so the centre stays sharp. */
+/** Downscale factor for [softCopy]; 24 reads as a strong blur at 1080 px wide covers. */
+private const val SOFT_DOWNSCALE = 24
+
+/** How far the soft copy spills past the artwork's top and bottom edges. */
+private const val EDGE_SPILL_DP = 64f
+
+/** How far into the artwork the soft copy fades out, so the centre stays sharp. */
 private const val EDGE_INNER_DP = 40f
 
 
