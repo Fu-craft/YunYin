@@ -65,6 +65,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.core.graphics.scale
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
@@ -1332,16 +1333,14 @@ private fun FullScreenCoverBackdrop(
 }
 
 /**
- * Softens the cover's **own** top and bottom edges: a heavily downscaled-then-upscaled copy of the
- * artwork spills past each edge and fades out, so the silhouette dissolves instead of ending in a
- * straight line.
+ * The cover's soft halo: the **same artwork, scaled up and blurred, drawn behind it**.
  *
- * Two earlier attempts were invisible on device:
- *  - masking the copy *inside* the artwork rect (the outermost pixel is still the sharp one), and
- *  - sourcing the copy from `CoverFieldCache.blurred(...)`, which could return null and leave the
- *    layer drawing nothing at all.
- * This version always produces its own copy, synchronously on the first composition of a cover, and
- * it spills 64 dp past each edge so the softening is unmissable.
+ * Earlier attempts masked a blurred copy inside the artwork rect and used
+ * `graphicsLayer { compositingStrategy = Offscreen }`, which clips the layer to the composable's own
+ * bounds — the entire spill was discarded, so the only visible blur was *inside* the cover. This
+ * version puts the enlarged blurred copy behind the sharp artwork with
+ * `BlurredEdgeTreatment.Unbounded`, so the blur genuinely bleeds **outside** the rectangle and the
+ * edge dissolves into the page field, the way NetEase does it.
  */
 @Composable
 private fun ImmersiveEdgeSoftening(
@@ -1350,75 +1349,31 @@ private fun ImmersiveEdgeSoftening(
     modifier: Modifier = Modifier,
 ) {
     if (cover == null) return
-    val density = androidx.compose.ui.platform.LocalDensity.current
-    val spillPx = with(density) { EDGE_SPILL_DP.dp.toPx() }
-    val innerPx = with(density) { EDGE_INNER_DP.dp.toPx() }
-
-    // Downscale → upscale with bilinear filtering. No RenderEffect, no cache, no null path: the very
-    // first frame already has a soft copy, which is what "看不见" was really about.
-    val soft by produceState<ImageBitmap?>(initialValue = null, cover, trackId) {
-        value = withContext(Dispatchers.Default) {
-            runCatching { softCopy(cover) }.getOrNull() ?: cover
-        }
-    }
-    val image = soft ?: cover
-
-    Canvas(
-        modifier
+    Image(
+        bitmap = cover,
+        contentDescription = null,
+        contentScale = ContentScale.Crop,
+        modifier = modifier
             .fillMaxSize()
-            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen },
-    ) {
-        val h = size.height.coerceAtLeast(1f)
-        val w = size.width
-        val total = h + spillPx * 2f
-        drawImage(
-            image = image,
-            srcOffset = IntOffset.Zero,
-            srcSize = IntSize(image.width, image.height),
-            dstOffset = IntOffset(0, -spillPx.roundToInt()),
-            dstSize = IntSize(w.roundToInt(), total.roundToInt()),
-            filterQuality = FilterQuality.Low,
-        )
-        val topEdge = spillPx / total
-        val topFadeEnd = ((spillPx + innerPx) / total).coerceAtMost(0.5f)
-        val bottomFadeStart = (1f - (spillPx + innerPx) / total).coerceAtLeast(0.5f)
-        val bottomEdge = 1f - spillPx / total
-        drawRect(
-            brush = Brush.verticalGradient(
-                0f to Color.Transparent,
-                topEdge to Color.White,
-                topFadeEnd to Color.Transparent,
-                bottomFadeStart to Color.Transparent,
-                bottomEdge to Color.White,
-                1f to Color.Transparent,
-            ),
-            topLeft = Offset(0f, -spillPx),
-            size = Size(w, total),
-            blendMode = BlendMode.DstIn,
-        )
-    }
+            // Past the artwork bounds and blurred with unbounded edges: the halo is visible outside
+            // the rectangle, which is the whole point.
+            .graphicsLayer {
+                scaleX = EDGE_HALO_SCALE
+                scaleY = EDGE_HALO_SCALE
+                alpha = EDGE_HALO_ALPHA
+            }
+            .blur(EDGE_HALO_BLUR_DP.dp, edgeTreatment = BlurredEdgeTreatment.Unbounded),
+    )
 }
 
-/**
- * A soft copy of the artwork: downscale to 1/[SOFT_DOWNSCALE], then back up with bilinear filtering.
- * Cheap, deterministic, and produces a wide blur without any RenderEffect or bitmap loop.
- */
-private fun softCopy(source: ImageBitmap): ImageBitmap {
-    val android = source.asAndroidBitmap()
-    val smallWidth = (android.width / SOFT_DOWNSCALE).coerceAtLeast(1)
-    val smallHeight = (android.height / SOFT_DOWNSCALE).coerceAtLeast(1)
-    val small = android.scale(smallWidth, smallHeight, true)
-    return small.scale(android.width, android.height, true).asImageBitmap()
-}
+/** How much larger the blurred halo is than the artwork it surrounds. */
+private const val EDGE_HALO_SCALE = 1.14f
 
-/** Downscale factor for [softCopy]; 24 reads as a strong blur at 1080 px wide covers. */
-private const val SOFT_DOWNSCALE = 24
+/** The halo's blur radius; large enough to read as a soft bleed, small enough to keep shapes. */
+private const val EDGE_HALO_BLUR_DP = 36f
 
-/** How far the soft copy spills past the artwork's top and bottom edges. */
-private const val EDGE_SPILL_DP = 64f
-
-/** How far into the artwork the soft copy fades out, so the centre stays sharp. */
-private const val EDGE_INNER_DP = 40f
+/** The halo is slightly transparent so the page field still shows through it. */
+private const val EDGE_HALO_ALPHA = 0.95f
 
 
 /**
@@ -1533,6 +1488,15 @@ private fun ArtworkWithGestures(
                     .shadow(14.dp, CircleShape),
             )
         } else {
+            // The soft halo is drawn *behind* the sharp artwork, so the blur bleeds past the
+            // artwork's rectangle instead of washing over it.
+            if (soften) {
+                ImmersiveEdgeSoftening(
+                    cover = cover,
+                    trackId = track?.id ?: 0L,
+                    modifier = Modifier.size(artSize),
+                )
+            }
             Artwork(
                 url = track?.coverUrl,
                 loader = loader,
