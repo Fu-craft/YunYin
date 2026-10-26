@@ -1,4 +1,4 @@
-﻿// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 云音 / YunYin contributors
 
 package com.yunyin.music.ui.screens
@@ -65,6 +65,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
@@ -95,6 +100,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import com.yunyin.music.core.Track
+import kotlin.math.roundToInt
 import com.yunyin.music.core.player.effects.AudioReactive
 import com.yunyin.music.data.ArtworkLoader
 import com.yunyin.music.playback.PlaybackUiState
@@ -1322,9 +1328,14 @@ private fun FullScreenCoverBackdrop(
 }
 
 /**
- * A pre-rendered blurred copy of the cover, masked to the top 56 dp and bottom 72 dp bands only.
- * The sharp artwork below stays fully opaque; the blurred copy is 1.0 at each outer edge and fades
- * inward to 0, so the edge dissolves by sharpness rather than by revealing the flat field.
+ * Blurs the cover's **own** top and bottom edges by letting a blurred copy **spill outside** the
+ * artwork bounds and fade out there.
+ *
+ * An earlier version drew the blurred copy inside the artwork's rect and masked it: the outermost
+ * pixel was still the sharp edge pixel, so the boundary against the field stayed a hard line — the
+ * blur was invisible on covers whose top rows are uniform. Spilling the blurred copy ~56 dp past
+ * each edge is what actually softens the silhouette: sharp artwork → blurred halo crossing the old
+ * boundary → field.
  */
 @Composable
 private fun ImmersiveEdgeSoftening(
@@ -1341,33 +1352,59 @@ private fun ImmersiveEdgeSoftening(
         }
     }
     val image = blurred ?: return
-    Image(
-        bitmap = image,
-        contentDescription = null,
-        contentScale = ContentScale.FillBounds,
-        modifier = modifier
+    val spillPx = with(density) { EDGE_SPILL_DP.dp.toPx() }
+    val innerPx = with(density) { EDGE_INNER_DP.dp.toPx() }
+
+    Box(
+        modifier
             .fillMaxSize()
             .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
             .drawWithContent {
-                drawContent()
+                // Nothing to draw from the layout phase; the halo is painted below.
+            }
+            .drawBehind {
                 val h = size.height.coerceAtLeast(1f)
-                val top = (FullScreenCoverRules.FEATHER_TOP_DP.dp.toPx() / h)
-                    .coerceIn(0f, 0.5f)
-                val bottom =
-                    (1f - FullScreenCoverRules.FEATHER_BOTTOM_DP.dp.toPx() / h)
-                        .coerceIn(0.5f, 1f)
+                val w = size.width
+                val total = h + spillPx * 2f
+                // Blurred copy stretched over the artwork **plus** the spill above and below it, so
+                // the blur mixes real artwork into the region outside the old edge.
+                drawImage(
+                    image = image,
+                    srcOffset = IntOffset.Zero,
+                    srcSize = IntSize(image.width, image.height),
+                    dstOffset = IntOffset(0, -spillPx.roundToInt()),
+                    dstSize = IntSize(w.roundToInt(), total.roundToInt()),
+                    filterQuality = FilterQuality.Low,
+                )
+                // Alpha ramp, expressed in the spilled coordinate space: outside the artwork the
+                // halo fades to nothing, inside it fades out quickly so the centre stays sharp.
+                val topEdge = spillPx / total
+                val topFadeEnd = ((spillPx + innerPx) / total).coerceAtMost(0.5f)
+                val bottomFadeStart = (1f - (spillPx + innerPx) / total).coerceAtLeast(0.5f)
+                val bottomEdge = 1f - spillPx / total
                 drawRect(
                     brush = Brush.verticalGradient(
-                        0f to Color.White,
-                        top to Color.Transparent,
-                        bottom to Color.Transparent,
-                        1f to Color.White,
+                        0f to Color.Transparent,
+                        topEdge to Color.White,
+                        topFadeEnd to Color.Transparent,
+                        bottomFadeStart to Color.Transparent,
+                        bottomEdge to Color.White,
+                        1f to Color.Transparent,
                     ),
+                    topLeft = Offset(0f, -spillPx),
+                    size = Size(w, total),
                     blendMode = BlendMode.DstIn,
                 )
             },
     )
 }
+
+/** How far the blurred halo spills past the artwork's top and bottom edges. */
+private const val EDGE_SPILL_DP = 56f
+
+/** How far into the artwork the blurred halo fades out, so the centre stays sharp. */
+private const val EDGE_INNER_DP = 40f
+
 
 /**
  * The album cover with its gestures, shared by the portrait and landscape layouts.
