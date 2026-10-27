@@ -31,9 +31,6 @@
 | `yunyin-<版本>-armeabi-v7a.apk` | 32 位设备 |
 | `yunyin-<版本>-universal.apk` | 不确定时选这个 |
 
-接口地址在构建时注入（`local.properties` 的 `api.base.url` → `BuildConfig.API_BASE_URL`），
-安装后可直接使用；App 内没有填写地址的入口。自行构建时若不填，启动会提示「未配置接口地址」。
-
 ## 构建
 
 需要 JDK 17+ 与 Android SDK（`compileSdk 37`、build-tools 37.0.0）。
