@@ -1744,7 +1744,7 @@ private fun ArtworkWithGestures(
                                     // tuned here instead of inheriting the framework default.
                                     boundsTransform = { _, _ ->
                                         // Fast, then slow with a whisper of settle: the cover lands in the header rather than stopping dead.
-                                        spring(dampingRatio = 0.86f, stiffness = 380f)
+                                        spring(dampingRatio = 0.92f, stiffness = 240f)
                                     },
                                 )
                             }
@@ -2185,13 +2185,13 @@ private fun PlayerControls(
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            TransportButton(SfIcons.Backward, "上一首", 40.dp, onPrevious)
+            TransportButton(SfIcons.Backward, "上一首", 47.dp, onPrevious)
             PlayPauseButton(
                 isPlaying = state.isPlaying,
                 isBuffering = state.isBuffering,
                 onClick = onTogglePlay,
             )
-            TransportButton(SfIcons.Forward, "下一首", 40.dp, onNext)
+            TransportButton(SfIcons.Forward, "下一首", 47.dp, onNext)
         }
 
         Spacer(Modifier.height(14.dp))
@@ -2203,26 +2203,15 @@ private fun PlayerControls(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             BottomIcon(SfIcons.QuoteOpening, "歌词", active = showLyrics, onClick = onToggleLyrics)
-            // Shuffle and repeat are two separate controls with one job each.
-            //
-            // They used to share a single button: tap cycled the loop mode, *long press* toggled
-            // shuffle, and the icon swapped between a shuffle glyph and a repeat glyph to match. That
-            // was wrong three ways. Two unrelated settings behind one control are not discoverable —
-            // a long press is not a control, it is a secret. The repeat mode disappeared from view
-            // whenever shuffle was on, because the icon had been swapped away. And there was no way to
-            // reach repeat-one at all without first turning shuffle off. One tap, one setting, and a
-            // glyph that always shows its own state.
-            BottomIcon(
-                icon = SfIcons.Shuffle,
-                description = if (state.shuffle) "随机播放：已开启" else "随机播放：已关闭",
-                active = state.shuffle,
-                onClick = onToggleShuffle,
-            )
+            // Three glyphs, no fourth: the reference row is 歌词 / 循环 / 队列. Shuffle used to sit
+            // between them; it is still reachable from the queue sheet, and dropping it here keeps
+            // the row from reading as a settings bar.
             BottomIcon(
                 icon = if (state.repeatMode == Player.REPEAT_MODE_ONE) SfIcons.RepeatOne
                 else SfIcons.Repeat,
                 description = repeatDescription(state.repeatMode),
-                active = state.repeatMode != Player.REPEAT_MODE_OFF,
+                // Neutral by design: the row carries no accent block, so nothing in it turns red.
+                active = false,
                 onClick = onCycleRepeat,
             )
             BottomIcon(SfIcons.ListBullet, "播放队列", active = false, onClick = onShowQueue)
@@ -2298,7 +2287,7 @@ private fun LyricsHeader(
                         // are one element, so a different curve would fight itself mid-flight.
                         boundsTransform = { _, _ ->
                             // Must match the full artwork exactly (same key) or the two ends fight mid-flight.
-                            spring(dampingRatio = 0.86f, stiffness = 380f)
+                            spring(dampingRatio = 0.92f, stiffness = 240f)
                         },
                     )
                     // The same paused scale and dim as the full artwork. This is the other end of the
@@ -3089,7 +3078,7 @@ private fun TransportButton(
     val scale = rememberPressScale(interaction)
     Box(
         Modifier
-            .size(64.dp)
+            .size(72.dp)
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .clickable(interactionSource = interaction, indication = ripple, onClick = onClick),
         contentAlignment = Alignment.Center,
@@ -3105,7 +3094,7 @@ private fun PlayPauseButton(isPlaying: Boolean, isBuffering: Boolean, onClick: (
     val scale = rememberPressScale(interaction)
     Box(
         Modifier
-            .size(72.dp)
+            .size(80.dp)
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .clickable(interactionSource = interaction, indication = ripple, onClick = onClick),
         contentAlignment = Alignment.Center,
@@ -3121,7 +3110,7 @@ private fun PlayPauseButton(isPlaying: Boolean, isBuffering: Boolean, onClick: (
                 imageVector = if (playing) SfIcons.Pause else SfIcons.Play,
                 contentDescription = if (playing) "暂停" else "播放",
                 tint = Color.White,
-                modifier = Modifier.size(if (playing) 44.dp else 42.dp),
+                modifier = Modifier.size(if (playing) 52.dp else 50.dp),
             )
         }
         if (isBuffering) {
