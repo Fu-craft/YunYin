@@ -113,4 +113,17 @@ class SharedCoverScaleTest {
         assertTrue("the rebound must stay a dip, not an inversion", scale in 0.90f..0.94f)
         assertEquals(1f - 0.06f, sharedCoverPausedAlpha(scale), 1e-6f)
     }
+/**
+     * The resume spring undershoots its target, so the computed scale goes above 1 — that is the
+     * elastic pop the play button is supposed to produce. It must stay small enough to read as a
+     * settle rather than a zoom.
+     */
+    @Test
+    fun `the resume rebound pops past full size but stays bounded`() {
+        val popped = sharedCoverPausedScale(1f - (-0.5f) * (1f - 0.94f))
+        assertTrue("the cover must overshoot full size on play", popped > 1f)
+        assertTrue("the pop must stay subtle", popped <= 1.05f)
+        assertEquals("the clamp bounds a runaway spring", 1.05f, sharedCoverPausedScale(1.4f), 0f)
+        assertEquals("the dim lifts completely at full size", 1f, sharedCoverPausedAlpha(popped), 1e-6f)
+    }
 }

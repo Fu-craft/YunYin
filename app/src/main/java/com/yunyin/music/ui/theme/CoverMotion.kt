@@ -58,11 +58,12 @@ object CoverMotion {
     const val DEFAULT_PAUSE_STIFFNESS = 220f
 
     /**
-     * Resume: a touch crisper (260) with the faintest overshoot (0.92), because the music has already
-     * started — but still far from a bouncy spring.
+     * Resume: a visible elastic pop. Damping below critical (0.58) is what lets the cover shoot past
+     * its full size by a few percent and settle back — the "press play and the artwork springs back"
+     * feel — while 420 keeps it quick enough that the first beat is not delayed by the animation.
      */
-    const val DEFAULT_RESUME_DAMPING = 0.92f
-    const val DEFAULT_RESUME_STIFFNESS = 260f
+    const val DEFAULT_RESUME_DAMPING = 0.58f
+    const val DEFAULT_RESUME_STIFFNESS = 420f
 
     /** How far the cover recedes while paused. Apple's own step is subtle, not a shrink. */
     const val DEFAULT_PAUSED_SCALE = 0.94f

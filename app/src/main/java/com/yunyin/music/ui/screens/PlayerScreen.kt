@@ -12,7 +12,12 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
@@ -638,7 +643,7 @@ fun PlayerScreen(
         // [PresentationWarpOverlay] for the field and the fallbacks.
         val warpEffect = rememberPresentationWarpEffect()
         val warp = rememberPresentationWarpState()
-        val warpAvailable = warpEffect != null
+        val warpAvailable = warpEffect != null && PRESENTATION_WARP_ENABLED
         // The artwork cover's centre in root coordinates: the dolly's focus, measured by the
         // layout rather than assumed to be the screen centre. Written in layout, read only by
         // the capture effect, so it never triggers a recomposition of the player.
@@ -830,20 +835,37 @@ fun PlayerScreen(
                     // to be read, while the live outgoing presentation still leaves early underneath
                     // the overlay, so the second half never looks like a double exposure. The
                     // fallback keeps the original 560 ms cross-fade.
-                    val incomingFadeMs = if (warpAvailable) {
-                        PresentationWarpRules.DURATION_MS.toInt()
+                    // The lyrics page is a sheet that rises over the player (portrait) or slides in
+                    // from the right (landscape). The outgoing presentation does not move at all: the
+                    // controls, the progress bar and the button row stay exactly where they are and
+                    // only fade, so the cover is the sole travelling element. Returning reverses the
+                    // sheet and fades the cover back in.
+                    val enterSpec = tween<androidx.compose.ui.unit.IntOffset>(
+                        durationMillis = SLIDE_MS,
+                        easing = Motion.EaseOut,
+                    )
+                    val enterFade = tween<Float>(durationMillis = if (targetState) 300 else 220, easing = Motion.EaseOut)
+                    val exitFade = tween<Float>(durationMillis = if (targetState) 180 else 260, easing = Motion.EaseOut)
+                    val incoming = if (targetState) {
+                        (if (isLandscape) {
+                            slideInHorizontally(enterSpec) { it }
+                        } else {
+                            slideInVertically(enterSpec) { it }
+                        }) + fadeIn(enterFade)
                     } else {
-                        PRESENTATION_FADE_MS
+                        fadeIn(enterFade)
                     }
-                    val outgoingFadeMs = if (warpAvailable) {
-                        PresentationWarpRules.OUTGOING_FADE_MS.toInt()
+                    val outgoing = if (!targetState) {
+                        (if (isLandscape) {
+                            slideOutHorizontally(enterSpec) { it }
+                        } else {
+                            slideOutVertically(enterSpec) { it }
+                        }) + fadeOut(exitFade)
                     } else {
-                        PRESENTATION_FADE_MS
+                        fadeOut(exitFade)
                     }
-                    (
-                        (fadeIn(tween(incomingFadeMs, easing = Motion.EaseOut)) togetherWith
-                            fadeOut(tween(outgoingFadeMs, easing = Motion.EaseOut))) using null
-                        ).apply { targetContentZIndex = 1f }
+                    ((incoming togetherWith outgoing) using null)
+                        .apply { targetContentZIndex = 1f }
                 },
                 label = "presentation",
             ) { lyricsShown ->
@@ -1677,7 +1699,8 @@ private fun ArtworkWithGestures(
                                     // Both ends of the shared element pass the same curve, so the travel is
                                     // tuned here instead of inheriting the framework default.
                                     boundsTransform = { _, _ ->
-                                        tween(PRESENTATION_FADE_MS, easing = Motion.EaseOut)
+                                        // Fast, then slow with a whisper of settle: the cover lands in the header rather than stopping dead.
+                                        spring(dampingRatio = 0.86f, stiffness = 380f)
                                     },
                                 )
                             }
@@ -2230,7 +2253,8 @@ private fun LyricsHeader(
                         // Must match the full artwork's boundsTransform exactly (same key): the two ends
                         // are one element, so a different curve would fight itself mid-flight.
                         boundsTransform = { _, _ ->
-                            tween(PRESENTATION_FADE_MS, easing = Motion.EaseOut)
+                            // Must match the full artwork exactly (same key) or the two ends fight mid-flight.
+                            spring(dampingRatio = 0.86f, stiffness = 380f)
                         },
                     )
                     // The same paused scale and dim as the full artwork. This is the other end of the
@@ -3181,6 +3205,19 @@ private const val CHROME_ENTER_MS = 440
 private const val PRESENTATION_FADE_MS = 560
 
 /**
+ * How long the lyrics sheet takes to slide in or out. Long enough to read as a sheet, short enough
+ * that a tap does not feel queued behind an animation.
+ */
+private const val SLIDE_MS = 380
+
+/**
+ * The AGSL warp that distorted the outgoing presentation. It was the signature of an earlier design,
+ * but it deforms the cover on its way into the header — the opposite of "the card stays intact" — so
+ * the presentation change now uses a straight slide and the shared element alone.
+ */
+private const val PRESENTATION_WARP_ENABLED = false
+
+/**
  * Key identifying the shared album cover across the two presentations.
  *
  * Both sides declare it, which is what lets the framework treat the full-size artwork and the
@@ -3229,7 +3266,10 @@ private const val PAUSED_ARTWORK_DIM = 0.06f
  * Kept as a pure function so the curve can be unit-tested (see `SharedCoverScaleTest`).
  */
 internal fun sharedCoverPausedScale(pausedCoverScale: Float): Float =
-    pausedCoverScale.coerceIn(0f, 1f)
+    // Up to a few percent *above* full size: the resume spring undershoots its target (progress goes
+    // negative) and that is the elastic pop on play. The upper clamp keeps a stray spring from growing
+    // the cover into the chrome.
+    pausedCoverScale.coerceIn(0f, 1.05f)
 
 /**
  * The artwork dim that accompanies the paused scale, derived from the **same** single value.

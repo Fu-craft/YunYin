@@ -17,10 +17,13 @@ class CoverMotionRulesTest {
         val p = CoverMotion.Params()
         assertEquals(1.00f, p.pauseDamping, 1e-6f)
         assertEquals(220f, p.pauseStiffness, 1e-3f)
-        assertEquals(0.92f, p.resumeDamping, 1e-6f)
+        assertEquals(CoverMotion.DEFAULT_RESUME_DAMPING, p.resumeDamping, 1e-6f)
         assertEquals(0.94f, p.pausedScale, 1e-6f)
         assertTrue("Apple's pause is critically damped: no wobble", p.pauseDamping >= 0.99f)
         assertTrue("pause must feel soft, not snapped", p.pauseStiffness <= 260f)
+        // Resume is the opposite job: it has to overshoot so the cover visibly springs back on play.
+        assertTrue("resume must be under-damped enough to bounce", p.resumeDamping <= 0.7f)
+        assertTrue("resume must not crawl", p.resumeStiffness >= 350f)
     }
 
     @Test
