@@ -354,6 +354,30 @@ fun PlayerScreen(
         onDispose { animatedCoverPlayer?.release() }
     }
 
+    // Hoisted animated-cover state. The cover subtree is disposed while the lyrics page shows, so a
+    // state that lives inside it comes back empty and the returning cover flashed the static artwork
+    // before the video reappeared. Resolving here keeps the URL across the swap; the player host
+    // keeps the decoder warm, so returning re-attaches the surface to an already-rendering stream.
+    var animatedCoverUrl by remember(state.current?.id) { mutableStateOf<String?>(null) }
+    var animatedCoverPoster by remember(state.current?.id) { mutableStateOf<String?>(null) }
+    LaunchedEffect(state.current?.id, playerStyle, animatedCoverEnabled, animatedArtwork) {
+        val current = state.current ?: return@LaunchedEffect
+        if (playerStyle == PlayerStyle.Vinyl || !animatedCoverEnabled || animatedArtwork == null) {
+            animatedCoverUrl = null
+            animatedCoverPoster = null
+            return@LaunchedEffect
+        }
+        // Multi-artist tracks ("A / B") miss on the catalogue; retry with the primary artist.
+        val resolved = animatedArtwork.resolve(current.artistLine, current.albumName, current.name)
+            ?: current.artists.firstOrNull()
+                ?.takeIf { it.isNotBlank() && it != current.artistLine }
+                ?.let { primary -> animatedArtwork.resolve(primary, current.albumName, current.name) }
+        if (resolved != null && resolved.url.isNotBlank()) {
+            animatedCoverUrl = resolved.url
+            animatedCoverPoster = resolved.posterUrl
+        }
+    }
+
     // Warm the next track's cover while this one plays. Keyed on the track identity rather than the
     // queue instance, because the queue is republished as a fresh list on unrelated state changes.
     LaunchedEffect(state.current?.id, state.index) {
@@ -941,6 +965,9 @@ fun PlayerScreen(
                                         animatedCoverPlayer = animatedCoverPlayer,
                                         animatedArtwork = animatedArtwork,
                                         onAnimatedArtworkLog = onAnimatedArtworkLog,
+                                        animatedUrl = animatedCoverUrl,
+                                        animatedPoster = animatedCoverPoster,
+                                        onAnimatedArtworkFailed = { animatedCoverUrl = null },
                                         videoEdgeField = if (fullScreenCover) immersiveEdgeField else null,
                                         artworkScale = sharedCoverScale,
                                         sharedScope = this@SharedTransitionLayout,
@@ -1019,6 +1046,7 @@ fun PlayerScreen(
                                         },
                                         onArtistClick = onArtistClick,
                                         cover = cover,
+                                        posterUrl = if (playerStyle == PlayerStyle.Immersive) animatedCoverPoster else null,
                                         artworkScale = sharedCoverScale,
                                         sharedScope = this@SharedTransitionLayout,
                                         visibilityScope = this@AnimatedContent,
@@ -1132,6 +1160,7 @@ fun PlayerScreen(
                                     },
                                     onArtistClick = onArtistClick,
                                     cover = cover,
+                                    posterUrl = if (playerStyle == PlayerStyle.Immersive) animatedCoverPoster else null,
                                     artworkScale = sharedCoverScale,
                                     sharedScope = this@SharedTransitionLayout,
                                     visibilityScope = this@AnimatedContent,
@@ -1261,6 +1290,9 @@ fun PlayerScreen(
                                 animatedCoverPlayer = animatedCoverPlayer,
                                 animatedArtwork = animatedArtwork,
                                 onAnimatedArtworkLog = onAnimatedArtworkLog,
+                                animatedUrl = animatedCoverUrl,
+                                animatedPoster = animatedCoverPoster,
+                                onAnimatedArtworkFailed = { animatedCoverUrl = null },
                                 videoEdgeField = if (fullScreenCover) immersiveEdgeField else null,
                                 artworkScale = sharedCoverScale,
                                 sharedScope = this@SharedTransitionLayout,
@@ -1511,6 +1543,15 @@ private fun ArtworkWithGestures(
     animatedCoverEnabled: Boolean = false,
     /** True while the cover and lyrics presentations cross-fade; the video is withheld meanwhile. */
     coverTransitioning: Boolean = false,
+    /**
+     * The resolved video URL and poster frame, hoisted to the player screen so a trip to the lyrics
+     * page does not lose them (a state that lives in this subtree comes back empty, which is what
+     * made the returning cover sit static for a moment and then snap into video).
+     */
+    animatedUrl: String? = null,
+    animatedPoster: String? = null,
+    /** Playback rejected the URL; the caller clears its hoisted state so the static cover stays. */
+    onAnimatedArtworkFailed: () -> Unit = {},
     /** Screen-lifetime player, so a presentation change only re-attaches the surface. */
     animatedCoverPlayer: com.yunyin.music.ui.components.AnimatedCoverPlayerHost? = null,
     animatedArtwork: com.yunyin.music.data.AnimatedArtworkRepository? = null,
@@ -1533,12 +1574,6 @@ private fun ArtworkWithGestures(
     /** Reports the cover area's centre in root coordinates; the warp dollies around it. */
     onCoverCenter: ((Offset) -> Unit)? = null,
 ) {
-    var animatedUrl by remember(track?.id, playerStyle, animatedCoverEnabled, animatedArtwork) {
-        mutableStateOf<String?>(null)
-    }
-    // A still frame pulled from the motion artwork: shown while the HLS stream is still opening, so
-    // the square is already the album's moving-art frame instead of the flat cover.
-    var animatedPoster by remember(track?.id) { mutableStateOf<String?>(null) }
     var animatedVideoReady by remember(track?.id) { mutableStateOf(false) }
     // The video square's own bounds in the window, for sampling the immersive backdrop gradient at
     // its edges.
@@ -1556,30 +1591,6 @@ private fun ArtworkWithGestures(
     if (animatedCoverEnabled && playerStyle == PlayerStyle.Vinyl && animatedArtwork != null) {
         LaunchedEffect(playerStyle) {
             onAnimatedArtworkLog("stage=animated-artwork skipped reason=style-${playerStyle.level}")
-        }
-    }
-    LaunchedEffect(track?.id, playerStyle, animatedCoverEnabled, animatedArtwork) {
-        animatedUrl = null
-        // Every style that draws a square cover can play the motion artwork: classic, and the
-        // full-bleed immersive page (which is the same square at screen width). The vinyl style has
-        // no square at all — a spinning disc with a video inside would be a different design.
-        if (playerStyle == PlayerStyle.Vinyl || !animatedCoverEnabled || animatedArtwork == null || track == null) {
-            return@LaunchedEffect
-        }
-        // The endpoint matches on the catalogue artist and album, so a multi-artist track
-        // ("A / B", the form this app renders) misses even when "A" is in the catalogue. Fall back to
-        // the primary artist before giving up; the repository caches each attempt separately.
-        val resolved = animatedArtwork.resolve(track.artistLine, track.albumName, track.name)
-            ?: track.artists.firstOrNull()
-                ?.takeIf { it.isNotBlank() && it != track.artistLine }
-                ?.let { primary -> animatedArtwork.resolve(primary, track.albumName, track.name) }
-        android.util.Log.i(
-            "YunYinArtwork",
-            "resolve artist=${track.artistLine} album=${track.albumName} -> ${resolved?.url ?: "miss"}",
-        )
-        if (resolved != null && resolved.url.isNotBlank()) {
-            animatedUrl = resolved.url
-            animatedPoster = resolved.posterUrl
         }
     }
 
@@ -1763,7 +1774,7 @@ private fun ArtworkWithGestures(
                             if (reason.startsWith("play error")) {
                             onAnimatedArtworkLog("stage=animated-artwork play error reason=$reason")
                         }
-                        animatedUrl = null
+                        onAnimatedArtworkFailed()
                         onAnimatedArtworkLog("stage=animated-artwork fallback reason=$reason")
                     },
                     onFirstFrame = {
@@ -2166,6 +2177,11 @@ private fun LyricsHeader(
     /** The already-decoded cover, so the thumbnail never shows a placeholder mid-transition. */
     cover: ImageBitmap?,
     /**
+     * The motion artwork's still frame. The immersive page has no cover-to-thumbnail morph, so there
+     * the header can show a frame from the animation instead of the flat album art.
+     */
+    posterUrl: String? = null,
+    /**
      * The paused settle, shared with the full artwork. Both ends of the shared element must render at
      * one scale or the cross-fade between them reads as an enlargement — see
      * [sharedCoverPausedScale].
@@ -2184,11 +2200,11 @@ private fun LyricsHeader(
     ) {
         with(sharedScope) {
             Artwork(
-                url = track?.coverUrl,
+                url = posterUrl ?: track?.coverUrl,
                 loader = loader,
                 corner = HEADER_COVER_CORNER,
                 requestSize = 200,
-                preloaded = cover,
+                preloaded = if (posterUrl != null) null else cover,
                 modifier = Modifier
                     .size(56.dp)
                     // Tapping the thumbnail returns to the artwork presentation. The shared
