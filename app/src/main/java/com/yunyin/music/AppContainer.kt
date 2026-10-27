@@ -178,18 +178,19 @@ class AppContainer(val appContext: Context) {
                 ?.isLowRamDevice == true
             val maxEdge = if (lowRam) 640 else 1080
             val resolver = com.yunyin.music.data.net.HlsVariantResolver(http, maxEdge, ::recordArtworkDiagnostic)
+            val apple = com.yunyin.music.data.net.AppleMusicArtworkSource(http, ::recordArtworkDiagnostic)
             // Endpoint first (fast, already proven), then Apple's own catalogue so albums the
-            // endpoint does not carry -- Chinese releases in the cn storefront -- still resolve.
+            // endpoint does not carry -- Chinese releases in the cn storefront -- still resolve. The
+            // endpoint has no preview frame, so a hit there borrows one from Apple.
+            val endpointHit = com.yunyin.music.data.net.PosterBackfillSource(
+                inner = com.yunyin.music.data.net.AnimatedArtworkClient(base, http, ::recordArtworkDiagnostic),
+                posterSource = apple,
+                diag = ::recordArtworkDiagnostic,
+            )
             val source = com.yunyin.music.data.net.ChainedArtworkSource(
                 listOf(
-                    com.yunyin.music.data.net.VariantResolvingSource(
-                        com.yunyin.music.data.net.AnimatedArtworkClient(base, http, ::recordArtworkDiagnostic),
-                        resolver,
-                    ),
-                    com.yunyin.music.data.net.VariantResolvingSource(
-                        com.yunyin.music.data.net.AppleMusicArtworkSource(http, ::recordArtworkDiagnostic),
-                        resolver,
-                    ),
+                    com.yunyin.music.data.net.VariantResolvingSource(endpointHit, resolver),
+                    com.yunyin.music.data.net.VariantResolvingSource(apple, resolver),
                 ),
             )
             AnimatedArtworkRepository(

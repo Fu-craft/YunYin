@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 云音 / YunYin contributors
+// Copyright (C) 2026 浜戦煶 / YunYin contributors
 
 package com.yunyin.music.ui.components
 
@@ -16,6 +16,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -51,6 +52,10 @@ class AnimatedCoverPlayerHost(context: Context) {
     @Volatile
     var renderedUrl: String? = null
 
+    /** The last frame the video view produced, used as a bridge while a new surface attaches. */
+    @Volatile
+    var lastFrame: android.graphics.Bitmap? = null
+
     val player: ExoPlayer
         get() = instance ?: createAnimatedCoverPlayer(appContext).also { instance = it }
 
@@ -63,7 +68,7 @@ class AnimatedCoverPlayerHost(context: Context) {
     }
 
     /**
-     * Pauses the (possibly still prepared) player while the cover is off screen — the lyrics page
+     * Pauses the (possibly still prepared) player while the cover is off screen 鈥?the lyrics page
      * keeps this host alive, and a looping 1080p decode behind a full-screen lyrics page is pure
      * battery burn.
      */
@@ -120,6 +125,13 @@ fun AnimatedArtworkPlayer(
     // Stays transparent until a decoded frame exists: attaching the surface first paints a black
     // rectangle for a frame or two, which read as a flash between the static cover and the video.
     var revealed by remember(url) { mutableStateOf(host?.renderedUrl == url) }
+    // Whether this composition's TextureView has a surface yet. Until it does, the video draws
+    // nothing at all — the gap a returning cover used to fill with the static album art.
+    var surfaceReady by remember(url) { mutableStateOf(false) }
+    // The last frame this view produced, so a re-attach (returning from the lyrics page) shows the
+    // frozen video instead of falling back to the flat album cover for a beat.
+    val lastFrame = remember(url) { host?.lastFrame }
+    var attachedView by remember { mutableStateOf<TextureView?>(null) }
 
     DisposableEffect(player) {
         val listener = object : Player.Listener {
@@ -142,6 +154,11 @@ fun AnimatedArtworkPlayer(
         player.addListener(listener)
         onDispose {
             player.removeListener(listener)
+            // Freeze the current frame before the surface goes away; it bridges the gap while the
+            // next composition re-attaches a new TextureView.
+            host?.let { shared ->
+                runCatching { attachedView?.bitmap }.getOrNull()?.let { shared.lastFrame = it }
+            }
             if (owned) player.release()
         }
     }
@@ -190,29 +207,46 @@ fun AnimatedArtworkPlayer(
     )
 
     if (!failed) {
-        AndroidView(
-            factory = { ctx ->
-                RoundedTextureView(ctx, cornerRadiusPx).also { view ->
-                    view.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
-                        override fun onSurfaceTextureAvailable(texture: android.graphics.SurfaceTexture, w: Int, h: Int) {
-                            Log.i(TAG, "surface available ${w}x$h")
-                        }
+        androidx.compose.foundation.layout.Box(modifier) {
+            // Bridge between compositions: the frozen last frame of this very video stays on screen
+            // while the new TextureView attaches, so returning from the lyrics page never shows the
+            // static album cover for a beat.
+            val bridge = lastFrame?.takeIf { host?.renderedUrl == url }
+            if (!surfaceReady && bridge != null) {
+                androidx.compose.foundation.Image(
+                    bitmap = bridge.asImageBitmap(),
+                    contentDescription = null,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier.matchParentSize(),
+                )
+            }
+            AndroidView(
+                factory = { ctx ->
+                    RoundedTextureView(ctx, cornerRadiusPx).also { view ->
+                        attachedView = view
+                        view.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+                            override fun onSurfaceTextureAvailable(texture: android.graphics.SurfaceTexture, w: Int, h: Int) {
+                                Log.i(TAG, "surface available ${w}x$h")
+                                surfaceReady = true
+                            }
 
-                        override fun onSurfaceTextureSizeChanged(texture: android.graphics.SurfaceTexture, w: Int, h: Int) = Unit
-                        override fun onSurfaceTextureDestroyed(texture: android.graphics.SurfaceTexture): Boolean = true
-                        override fun onSurfaceTextureUpdated(texture: android.graphics.SurfaceTexture) = Unit
+                            override fun onSurfaceTextureSizeChanged(texture: android.graphics.SurfaceTexture, w: Int, h: Int) = Unit
+                            override fun onSurfaceTextureDestroyed(texture: android.graphics.SurfaceTexture): Boolean = true
+                            override fun onSurfaceTextureUpdated(texture: android.graphics.SurfaceTexture) = Unit
+                        }
                     }
-                }
-            },
-            modifier = modifier
-                .fillMaxSize()
-                .graphicsLayer { alpha = revealAlpha },
-            update = { view ->
-                Log.i(TAG, "attach texture view url=$url")
-                (view as? RoundedTextureView)?.setCornerRadius(cornerRadiusPx)
-                player.setVideoTextureView(view)
-            },
-        )
+                },
+                modifier = Modifier
+                    .matchParentSize()
+                    .graphicsLayer { alpha = revealAlpha },
+                update = { view ->
+                    Log.i(TAG, "attach texture view url=$url")
+                    attachedView = view
+                    (view as? RoundedTextureView)?.setCornerRadius(cornerRadiusPx)
+                    player.setVideoTextureView(view)
+                },
+            )
+        }
     }
 }
 
@@ -258,7 +292,7 @@ private fun createAnimatedCoverPlayer(context: Context): ExoPlayer = ExoPlayer.B
     .setTrackSelector(
         // Belt and braces over the AVC-variant preselection: even if a master playlist slips
         // through, never let the selector climb to a 2160p HEVC rendition the device may be unable
-        // to decode — that is the "prepares forever, never shows a frame" failure. 1080 is the top
+        // to decode 鈥?that is the "prepares forever, never shows a frame" failure. 1080 is the top
         // AVC rung Apple publishes for square artwork, so this does not cost sharpness.
         DefaultTrackSelector(context).apply {
             setParameters(

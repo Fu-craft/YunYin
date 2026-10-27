@@ -849,8 +849,16 @@ fun PlayerScreen(
             ) { lyricsShown ->
                 // The hoisted cover player outlives this swap, so stop decoding while the lyrics
                 // presentation owns the screen and resume the moment the cover comes back.
+                // Stop decoding only after the lyrics page has been up for a while: a quick look and
+                // back must not cold-start the stream, which is what made the returning cover sit on
+                // the static art before the video resumed.
                 LaunchedEffect(lyricsShown) {
-                    animatedCoverPlayer?.setScreenVisible(!lyricsShown)
+                    if (lyricsShown) {
+                        delay(5_000)
+                        animatedCoverPlayer?.setScreenVisible(false)
+                    } else {
+                        animatedCoverPlayer?.setScreenVisible(true)
+                    }
                 }
                 // ---------------------------------------------- presentations
                 //
