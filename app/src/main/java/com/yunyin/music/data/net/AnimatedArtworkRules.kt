@@ -12,10 +12,19 @@ data class AnimatedArtwork(
     val artist: String,
     val album: String,
     val isCached: Boolean,
+    /** A still frame from the motion artwork, shown until the first video frame arrives. */
+    val posterUrl: String? = null,
 )
 
 /** A cache hit, including a cached negative result (value == null). */
 data class AnimatedArtworkCacheHit(val value: AnimatedArtwork?)
+
+/**
+ * A lookup failed in a way that says nothing about the album: the host answered 5xx, the socket
+ * dropped, or the call timed out. Callers must not cache a miss from one of these, or a busy
+ * endpoint would poison the session cache with "no artwork" for albums that do have it.
+ */
+class AnimatedArtworkRetryableException(message: String) : Exception(message)
 
 /**
  * Pure rules for the operator-supplied animated-artwork endpoint.
@@ -53,6 +62,7 @@ object AnimatedArtworkRules {
             artist = text("artist") ?: "",
             album = text("album") ?: "",
             isCached = json.optBoolean("isCached", false),
+            posterUrl = text("poster") ?: text("poster_url") ?: text("preview_frame"),
         )
     }.getOrNull()
 

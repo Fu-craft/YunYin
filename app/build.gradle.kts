@@ -1,4 +1,4 @@
-﻿import java.util.Properties
+import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
@@ -35,8 +35,8 @@ android {
         // versionCode must increase for Android to accept a build as an update over a previous one;
         // versionName is what the user sees. Bumped together: a version name change with an unchanged
         // code would install as a downgrade and be rejected.
-        versionCode = 229
-        versionName = "4.40.2"
+        versionCode = 246
+        versionName = "4.41.9"
         vectorDrawables { useSupportLibrary = true }
 
         // The API endpoint is injected at build time rather than baked into the sources, so the
@@ -53,13 +53,15 @@ android {
         // at the repository that actually publishes *its* updates: a fork that hardcoded the upstream
         // coordinates would offer users builds signed by someone else. Blank disables the feature, and the
         // Settings row then explains that rather than failing a check.
-        // Animated artwork lookup. The operator supplies their own endpoint in local.properties as
-        // `artwork.api.base.url`; there is deliberately no default or third-party fallback. Blank
-        // keeps the feature completely inert (no network, no player, settings row hidden).
+        // Animated artwork lookup. `artwork.api.base.url` in local.properties overrides this, and an
+        // explicitly blank value there turns the feature off (no network, no player, settings row
+        // hidden); leaving the key out uses the project endpoint below, so every build of this app --
+        // including CI -- resolves the same catalogue. The app also falls back to Apple's own
+        // amp-api lookup when this endpoint has no match for an album.
         buildConfigField(
             "String",
             "ANIMATED_ARTWORK_BASE_URL",
-            "\"${localProps.getProperty("artwork.api.base.url") ?: ""}\"",
+            "\"${localProps.getProperty("artwork.api.base.url") ?: "https://artwork.m8tec.top"}\"",
         )
 
         buildConfigField(

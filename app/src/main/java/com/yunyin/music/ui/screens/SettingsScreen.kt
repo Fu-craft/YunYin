@@ -30,6 +30,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalUriHandler
 import com.yunyin.music.ui.theme.Motion
@@ -147,6 +148,8 @@ fun SettingsScreen(
     animatedCoverAvailable: Boolean = false,
     animatedCoverEnabled: Boolean = false,
     onAnimatedCoverChange: (Boolean) -> Unit = {},
+    /** Runs one canned lookup so the device can be told apart from the endpoint. */
+    onTestAnimatedCover: (() -> Unit)? = null,
     /** Remaining sleep-timer label ("关闭" / "还有约 12 分钟" / "播完当前歌"). */
     sleepTimerLabel: String = "关闭",
     onShowSleepTimer: () -> Unit = {},
@@ -258,10 +261,28 @@ fun SettingsScreen(
                     RowDivider()
                     ToggleRow(
                         "动态封面",
-                        "为当前歌曲显示服务端动态封面",
+                        // Naming the host makes it obvious which endpoint this build resolves against,
+                        // so "the toggle is on but nothing moves" can be told apart from "this build
+                        // has no artwork endpoint at all".
+                        "为当前歌曲显示服务端动态封面 · ${com.yunyin.music.BuildConfig.ANIMATED_ARTWORK_BASE_URL.removePrefix("https://").removePrefix("http://").trimEnd('/')} · v${com.yunyin.music.BuildConfig.VERSION_NAME}",
                         animatedCoverEnabled,
                         onAnimatedCoverChange,
                     )
+                    if (animatedCoverEnabled) {
+                        // What the last track lookup actually did: no request, 404, 5xx, a hit whose
+                        // stream the player rejected, or a hit that is now playing.
+                        val artworkStatus by com.yunyin.music.data.AnimatedArtworkDiagnostics.status.collectAsState()
+                        RowDivider()
+                        InfoRow("接口状态", artworkStatus)
+                        if (onTestAnimatedCover != null) {
+                            RowDivider()
+                            ActionRow(
+                                "测试接口",
+                                onClick = onTestAnimatedCover,
+                                subtitle = "用 Taylor Swift《Lover》查一次，验证网络与接口",
+                            )
+                        }
+                    }
                 }
                 RowDivider()
                 LinkRow(

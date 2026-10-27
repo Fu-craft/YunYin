@@ -170,12 +170,47 @@ class AppContainer(val appContext: Context) {
         val base = BuildConfig.ANIMATED_ARTWORK_BASE_URL
         if (!com.yunyin.music.data.net.AnimatedArtworkRules.isAvailable(base)) null
         else runCatching {
+            val http = com.yunyin.music.data.net.AnimatedArtworkClient.defaultHttp()
+            // A 486-edge rendition stretched to a ~1000 px cover is what made the artwork look soft;
+            // 1080 is the top AVC rung Apple publishes. Low-RAM devices stay on 640 so the decoder
+            // does not become the bottleneck.
+            val lowRam = (appContext.getSystemService(android.content.Context.ACTIVITY_SERVICE) as? android.app.ActivityManager)
+                ?.isLowRamDevice == true
+            val maxEdge = if (lowRam) 640 else 1080
+            val resolver = com.yunyin.music.data.net.HlsVariantResolver(http, maxEdge, ::recordArtworkDiagnostic)
+            // Endpoint first (fast, already proven), then Apple's own catalogue so albums the
+            // endpoint does not carry -- Chinese releases in the cn storefront -- still resolve.
+            val source = com.yunyin.music.data.net.ChainedArtworkSource(
+                listOf(
+                    com.yunyin.music.data.net.VariantResolvingSource(
+                        com.yunyin.music.data.net.AnimatedArtworkClient(base, http, ::recordArtworkDiagnostic),
+                        resolver,
+                    ),
+                    com.yunyin.music.data.net.VariantResolvingSource(
+                        com.yunyin.music.data.net.AppleMusicArtworkSource(http, ::recordArtworkDiagnostic),
+                        resolver,
+                    ),
+                ),
+            )
             AnimatedArtworkRepository(
-                source = AnimatedArtworkClient(base, diag = { lxLog.recordDiagnostic(it) }),
-                diag = { lxLog.recordDiagnostic(it) },
+                source = source,
+                diag = ::recordArtworkDiagnostic,
+                disk = com.yunyin.music.data.AnimatedArtworkDiskCache(appContext),
             )
         }.getOrNull()
     }
+
+    /** Feeds the LX log (durable) and the Settings status line (what the device just did). */
+    private fun recordArtworkDiagnostic(message: String) {
+        lxLog.recordDiagnostic(message)
+        com.yunyin.music.data.AnimatedArtworkDiagnostics.record(message)
+    }
+
+    /**
+     * The player-side half of the same trail. Without this the on-cover status stopped at the last
+     * lookup, so a video layer that failed to render looked identical to one that was never built.
+     */
+    fun recordAnimatedArtworkLog(message: String) = recordArtworkDiagnostic(message)
 
     val hasAnimatedArtwork: Boolean get() = animatedArtwork != null
 
