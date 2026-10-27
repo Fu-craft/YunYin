@@ -1447,36 +1447,27 @@ private const val EDGE_FADE_DP = 190f
  * The same edge dissolve for the animated cover.
  *
  * The static artwork can mask its own pixels (`coverEdgeFade`), but a TextureView draws from its own
- * surface, so that mask does not reliably reach it. Painting the immersive backdrop's own field
- * colours over the video's top and bottom bands gives the identical result from the other direction.
+ * surface, so that mask does not reliably reach it and a draw-time scrim inside the same node does
+ * not either. The video therefore gets a Compose sibling painted on top, using the backdrop's own
+ * field colours sampled at the cover's measured top and bottom.
  */
-private fun Modifier.videoEdgeFade(fadePx: Float, topColor: Color, bottomColor: Color): Modifier =
-    drawWithContent {
-        drawContent()
-        val height = size.height.coerceAtLeast(1f)
-        val fade = (fadePx / height).coerceIn(0f, 0.45f) * height
-        if (fade > 0f) {
-            drawRect(
-                brush = Brush.verticalGradient(
-                    0f to topColor,
-                    1f to topColor.copy(alpha = 0f),
-                    startY = 0f,
-                    endY = fade,
-                ),
-                size = Size(size.width, fade),
-            )
-            drawRect(
-                brush = Brush.verticalGradient(
-                    0f to bottomColor.copy(alpha = 0f),
-                    1f to bottomColor,
-                    startY = height - fade,
-                    endY = height,
-                ),
-                topLeft = Offset(0f, height - fade),
-                size = Size(size.width, fade),
-            )
-        }
+private fun sampleFieldColor(field: IntArray, fraction: Float): Color {
+    val t = fraction.coerceIn(0f, 1f)
+    val mid = FullScreenCoverRules.GRADIENT_MIDDLE
+    return if (t <= mid) {
+        androidx.compose.ui.graphics.lerp(
+            Color(field[0]),
+            Color(field[1]),
+            (t / mid).coerceIn(0f, 1f),
+        )
+    } else {
+        androidx.compose.ui.graphics.lerp(
+            Color(field[1]),
+            Color(field[2]),
+            ((t - mid) / (1f - mid)).coerceIn(0f, 1f),
+        )
     }
+}
 
 
 /**
@@ -1547,6 +1538,9 @@ private fun ArtworkWithGestures(
     // the square is already the album's moving-art frame instead of the flat cover.
     var animatedPoster by remember(track?.id) { mutableStateOf<String?>(null) }
     var animatedVideoReady by remember(track?.id) { mutableStateOf(false) }
+    // The video square's own bounds in the window, for sampling the immersive backdrop gradient at
+    // its edges.
+    var videoBounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
     // Records *why* a resolved cover still produces no video layer: the only inputs that can
     // suppress it are the toggle, the cross-fade and the repository.
     LaunchedEffect(animatedUrl, animatedCoverEnabled, playerStyle, animatedArtwork, coverTransitioning) {
@@ -1647,17 +1641,25 @@ private fun ArtworkWithGestures(
                     .size(artSize)
                     // The other half of the shared cover: switching to the lyrics presentation shrinks
                     // this into the header thumbnail.
+                    //
+                    // The immersive page opts out, like the vinyl record does: there the cover IS the
+                    // page, so warping it into a 56 dp thumbnail read as the whole screen collapsing
+                    // rather than the artwork travelling. It cross-fades instead.
                     .then(
-                        with(sharedScope) {
-                            Modifier.sharedElement(
-                                rememberSharedContentState(key = COVER_SHARED_KEY),
-                                animatedVisibilityScope = visibilityScope,
-                                // Both ends of the shared element pass the same curve, so the travel is
-                                // tuned here instead of inheriting the framework default.
-                                boundsTransform = { _, _ ->
-                                    tween(PRESENTATION_FADE_MS, easing = Motion.EaseOut)
-                                },
-                            )
+                        if (flat) {
+                            Modifier
+                        } else {
+                            with(sharedScope) {
+                                Modifier.sharedElement(
+                                    rememberSharedContentState(key = COVER_SHARED_KEY),
+                                    animatedVisibilityScope = visibilityScope,
+                                    // Both ends of the shared element pass the same curve, so the travel is
+                                    // tuned here instead of inheriting the framework default.
+                                    boundsTransform = { _, _ ->
+                                        tween(PRESENTATION_FADE_MS, easing = Motion.EaseOut)
+                                    },
+                                )
+                            }
                         },
                     )
                     // Inside the shared element, so the transition still animates full-size bounds:
@@ -1711,42 +1713,47 @@ private fun ArtworkWithGestures(
                     animationSpec = androidx.compose.animation.core.tween(durationMillis = 180),
                     label = "animated-cover-alpha",
                 )
+                // Immersive edge dissolve. The backdrop is a full-screen vertical gradient, so the
+                // colour to fade into is whatever that gradient shows at the cover's own top and
+                // bottom — not its first and last stops. Sampling at the measured bounds is what
+                // removes the seam the fixed `field[2]` left at the cover's bottom edge.
+                val rootHeightPx = androidx.compose.ui.platform.LocalView.current.height
+                    .toFloat().coerceAtLeast(1f)
+                val fadeFraction = with(androidx.compose.ui.platform.LocalDensity.current) {
+                    val coverHeight = videoBounds?.height ?: 1f
+                    (EDGE_FADE_DP.dp.toPx() / coverHeight).coerceIn(0f, 0.45f)
+                }
+                val edgeTop = videoEdgeField?.let {
+                    sampleFieldColor(it, (videoBounds?.top ?: 0f) / rootHeightPx)
+                }
+                val edgeBottom = videoEdgeField?.let {
+                    sampleFieldColor(it, (videoBounds?.bottom ?: rootHeightPx) / rootHeightPx)
+                }
                 LaunchedEffect(videoUrl) {
                     onAnimatedArtworkLog("stage=animated-artwork compose")
                 }
-                AnimatedArtworkPlayer(
-                    url = videoUrl,
-                    cornerRadiusDp = corner.value,
-                    host = animatedCoverPlayer,
-                    playing = isPlaying,
-                    modifier = Modifier
+                Box(
+                    Modifier
                         .size(artSize)
-                        // The static cover is the shared element; its transition layer must never end up
-                        // painting over the video, so the video is explicitly raised above it.
                         .zIndex(1f)
-                        .clip(ContinuousRoundedRectangle(corner))
-                        .graphicsLayer {
-                            val scale = artworkScale()
-                            scaleX = scale
-                            scaleY = scale
-                            alpha = sharedCoverPausedAlpha(scale) * videoAlpha
-                        }
-                        .then(
-                            if (soften && videoEdgeField != null) {
-                                val field = videoEdgeField!!
-                                Modifier.videoEdgeFade(
-                                    with(androidx.compose.ui.platform.LocalDensity.current) {
-                                        EDGE_FADE_DP.dp.toPx()
-                                    },
-                                    Color(field[0]),
-                                    Color(field[2]),
-                                )
-                            } else {
-                                Modifier
+                        .onGloballyPositioned { videoBounds = it.boundsInRoot() },
+                ) {
+                    AnimatedArtworkPlayer(
+                        url = videoUrl,
+                        cornerRadiusDp = corner.value,
+                        host = animatedCoverPlayer,
+                        playing = isPlaying,
+                        modifier = Modifier
+                            .matchParentSize()
+                            .clip(ContinuousRoundedRectangle(corner))
+                            .graphicsLayer {
+                                val scale = artworkScale()
+                                scaleX = scale
+                                scaleY = scale
+                                alpha = sharedCoverPausedAlpha(scale) * videoAlpha
                             },
-                        ),
-                    onError = { reason ->
-                        if (reason.startsWith("play error")) {
+                        onError = { reason ->
+                            if (reason.startsWith("play error")) {
                             onAnimatedArtworkLog("stage=animated-artwork play error reason=$reason")
                         }
                         animatedUrl = null
@@ -1756,7 +1763,30 @@ private fun ArtworkWithGestures(
                         animatedVideoReady = true
                         onAnimatedArtworkLog("stage=animated-artwork playing")
                     },
-                )
+                    )
+                    if (soften && edgeTop != null && edgeBottom != null) {
+                        // Compose sibling above the AndroidView: the one place a scrim is guaranteed
+                        // to paint over a TextureView's surface.
+                        Box(
+                            Modifier
+                                .matchParentSize()
+                                .graphicsLayer {
+                                    val scale = artworkScale()
+                                    scaleX = scale
+                                    scaleY = scale
+                                    alpha = sharedCoverPausedAlpha(scale) * videoAlpha
+                                }
+                                .background(
+                                    Brush.verticalGradient(
+                                        0f to edgeTop,
+                                        fadeFraction to Color.Transparent,
+                                        1f - fadeFraction to Color.Transparent,
+                                        1f to edgeBottom,
+                                    ),
+                                ),
+                        )
+                    }
+                }
             }
         }
 
