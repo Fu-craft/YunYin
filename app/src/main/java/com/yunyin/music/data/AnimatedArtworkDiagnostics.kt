@@ -33,7 +33,7 @@ object AnimatedArtworkDiagnostics {
             }
             text.startsWith("compose") -> "已装载视频层，等待第一帧"
             text.startsWith("skipped reason=style-") ->
-                "当前是黑胶/非经典样式：动态封面只在「经典封面」下播放"
+                "当前是黑胶样式：唱片页不播放动态封面，切到经典封面或全屏封面即可"
             text.startsWith("skipped reason=transitioning") -> "封面↔歌词切换中，视频层稍后恢复"
             text.startsWith("cache hit value=true") -> "已命中（缓存）"
             text.startsWith("cache hit value=false") -> "未命中（缓存：该专辑没有动态封面）"

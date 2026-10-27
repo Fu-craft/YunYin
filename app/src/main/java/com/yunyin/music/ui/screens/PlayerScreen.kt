@@ -477,6 +477,19 @@ fun PlayerScreen(
         val isLandscape = if (tabletop) false else maxWidth > maxHeight
         val fullScreenCover = FullScreenCoverRules.usesOwnBackdrop(playerStyle, isLandscape)
 
+        // The immersive page fades the cover's top/bottom edges into its backdrop. The static artwork
+        // gets that as a mask on its own pixels; the video cannot be masked the same way, so it fades
+        // by painting the backdrop's own field colours over its edges. Computed from the same inputs
+        // as FullScreenCoverBackdrop, so the two gradients agree.
+        val immersiveEdgeField by produceState<IntArray?>(null, cover, state.current?.id, fullScreenCover) {
+            value = if (!fullScreenCover || cover == null) null else withContext(Dispatchers.Default) {
+                val dominant = runCatching { CoverFieldCache.average(state.current?.id ?: 0L, cover!!) }
+                    .getOrNull()
+                    ?: palette.colors.firstOrNull()
+                FullScreenCoverRules.fieldColors(dominant ?: FullScreenCoverRules.FALLBACK_COLOR)
+            }
+        }
+
         // Lyric typography is decided here, once, and shared by the pre-warmer *and* the lyrics
         // view below.
         //
@@ -928,6 +941,7 @@ fun PlayerScreen(
                                         animatedCoverPlayer = animatedCoverPlayer,
                                         animatedArtwork = animatedArtwork,
                                         onAnimatedArtworkLog = onAnimatedArtworkLog,
+                                        videoEdgeField = if (fullScreenCover) immersiveEdgeField else null,
                                         artworkScale = sharedCoverScale,
                                         sharedScope = this@SharedTransitionLayout,
                                         visibilityScope = this@AnimatedContent,
@@ -1245,6 +1259,7 @@ fun PlayerScreen(
                                 animatedCoverPlayer = animatedCoverPlayer,
                                 animatedArtwork = animatedArtwork,
                                 onAnimatedArtworkLog = onAnimatedArtworkLog,
+                                videoEdgeField = if (fullScreenCover) immersiveEdgeField else null,
                                 artworkScale = sharedCoverScale,
                                 sharedScope = this@SharedTransitionLayout,
                                 visibilityScope = this@AnimatedContent,
@@ -1392,8 +1407,7 @@ private fun FullScreenCoverBackdrop(
  * end, which is what NetEase shows: sharp artwork in the middle, no visible border, background
  * colour taking over at the top and bottom.
  */
-private fun Modifier.coverEdgeFade(fadePx: Float): Modifier = this
-    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+private fun Modifier.coverEdgeFade(fadePx: Float): Modifier = this    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
     .drawWithContent {
         drawContent()
         val h = size.height.coerceAtLeast(1f)
@@ -1428,6 +1442,41 @@ private fun Modifier.coverEdgeFade(fadePx: Float): Modifier = this
 
 /** How much of the cover's top and bottom dissolves into the page field. */
 private const val EDGE_FADE_DP = 190f
+
+/**
+ * The same edge dissolve for the animated cover.
+ *
+ * The static artwork can mask its own pixels (`coverEdgeFade`), but a TextureView draws from its own
+ * surface, so that mask does not reliably reach it. Painting the immersive backdrop's own field
+ * colours over the video's top and bottom bands gives the identical result from the other direction.
+ */
+private fun Modifier.videoEdgeFade(fadePx: Float, topColor: Color, bottomColor: Color): Modifier =
+    drawWithContent {
+        drawContent()
+        val height = size.height.coerceAtLeast(1f)
+        val fade = (fadePx / height).coerceIn(0f, 0.45f) * height
+        if (fade > 0f) {
+            drawRect(
+                brush = Brush.verticalGradient(
+                    0f to topColor,
+                    1f to topColor.copy(alpha = 0f),
+                    startY = 0f,
+                    endY = fade,
+                ),
+                size = Size(size.width, fade),
+            )
+            drawRect(
+                brush = Brush.verticalGradient(
+                    0f to bottomColor.copy(alpha = 0f),
+                    1f to bottomColor,
+                    startY = height - fade,
+                    endY = height,
+                ),
+                topLeft = Offset(0f, height - fade),
+                size = Size(size.width, fade),
+            )
+        }
+    }
 
 
 /**
@@ -1474,6 +1523,11 @@ private fun ArtworkWithGestures(
     animatedArtwork: com.yunyin.music.data.AnimatedArtworkRepository? = null,
     onAnimatedArtworkLog: (String) -> Unit = {},
     /**
+     * Immersive page only: the backdrop's field colours (`top`, `mid`, `bottom`). The video fades its
+     * own edges into them, since a TextureView cannot be masked the way the static artwork is.
+     */
+    videoEdgeField: IntArray? = null,
+    /**
      * The paused settle, as a **lambda**: read inside a `graphicsLayer`, so the spring animates in
      * the layer phase instead of recomposing the player once per frame. The layer also derives its
      * opacity dim from this same value ([sharedCoverPausedAlpha]) — there is no second animation.
@@ -1501,9 +1555,19 @@ private fun ArtworkWithGestures(
                 "style=${playerStyle.level} repo=${animatedArtwork != null} transition=$coverTransitioning",
         )
     }
+    // The vinyl record has no square to put the video on; say so instead of leaving the last lookup
+    // status on screen.
+    if (animatedCoverEnabled && playerStyle == PlayerStyle.Vinyl && animatedArtwork != null) {
+        LaunchedEffect(playerStyle) {
+            onAnimatedArtworkLog("stage=animated-artwork skipped reason=style-${playerStyle.level}")
+        }
+    }
     LaunchedEffect(track?.id, playerStyle, animatedCoverEnabled, animatedArtwork) {
         animatedUrl = null
-        if (playerStyle != PlayerStyle.Classic || !animatedCoverEnabled || animatedArtwork == null || track == null) {
+        // Every style that draws a square cover can play the motion artwork: classic, and the
+        // full-bleed immersive page (which is the same square at screen width). The vinyl style has
+        // no square at all — a spinning disc with a video inside would be a different design.
+        if (playerStyle == PlayerStyle.Vinyl || !animatedCoverEnabled || animatedArtwork == null || track == null) {
             return@LaunchedEffect
         }
         // The endpoint matches on the catalogue artist and album, so a multi-artist track
@@ -1637,7 +1701,7 @@ private fun ArtworkWithGestures(
                 )
             }
             val videoUrl = animatedUrl
-            if (videoUrl != null && animatedCoverEnabled && animatedArtwork != null && playerStyle == PlayerStyle.Classic) {
+            if (videoUrl != null && animatedCoverEnabled && animatedArtwork != null && playerStyle != PlayerStyle.Vinyl) {
                 // The player is kept alive through a presentation change and merely faded out: tearing
                 // it down (as the old `!coverTransitioning` condition did) released the ExoPlayer, so
                 // coming back from lyrics had to re-prepare the stream and the static cover was
@@ -1666,7 +1730,21 @@ private fun ArtworkWithGestures(
                             scaleX = scale
                             scaleY = scale
                             alpha = sharedCoverPausedAlpha(scale) * videoAlpha
-                        },
+                        }
+                        .then(
+                            if (soften && videoEdgeField != null) {
+                                val field = videoEdgeField!!
+                                Modifier.videoEdgeFade(
+                                    with(androidx.compose.ui.platform.LocalDensity.current) {
+                                        EDGE_FADE_DP.dp.toPx()
+                                    },
+                                    Color(field[0]),
+                                    Color(field[2]),
+                                )
+                            } else {
+                                Modifier
+                            },
+                        ),
                     onError = { reason ->
                         if (reason.startsWith("play error")) {
                             onAnimatedArtworkLog("stage=animated-artwork play error reason=$reason")
