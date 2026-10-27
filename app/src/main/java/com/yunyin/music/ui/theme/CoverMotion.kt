@@ -67,8 +67,8 @@ object CoverMotion {
      * its full size and settle back — the "press play and the artwork springs back" feel — while 420
      * keeps it quick enough that the first beat is not delayed by the animation.
      */
-    const val DEFAULT_RESUME_DAMPING = 0.45f
-    const val DEFAULT_RESUME_STIFFNESS = 420f
+    const val DEFAULT_RESUME_DAMPING = 0.60f
+    const val DEFAULT_RESUME_STIFFNESS = 400f
 
     /**
      * The spring's overshoot is a fraction of the *travel*, and the travel is only 6 % (0.94 → 1.0),
@@ -76,7 +76,7 @@ object CoverMotion {
      * is why the rebound was invisible. This gain scales the visible overshoot directly: at the
      * default 0.25 a ~20 % spring overshoot shows as a ~5 % pop.
      */
-    const val DEFAULT_RESUME_POP = 0.25f
+    const val DEFAULT_RESUME_POP = 0.20f
 
     /** How far the cover recedes while paused. Apple's own step is subtle, not a shrink. */
     const val DEFAULT_PAUSED_SCALE = 0.94f

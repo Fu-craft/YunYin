@@ -285,6 +285,23 @@ fun PlayerScreen(
             sheetBlur.snapTo(0f)
         }
     }
+    // Only the lyrics *sheet* travels; the chrome behind it (progress, transport, buttons) stays
+    // where it is. Sliding the whole presentation was what dragged the control bar up with it.
+    val lyricsSheet = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(showLyrics) {
+        if (showLyrics) {
+            lyricsSheet.snapTo(0f)
+            lyricsSheet.animateTo(
+                targetValue = 1f,
+                animationSpec = androidx.compose.animation.core.tween(
+                    durationMillis = SLIDE_MS,
+                    easing = androidx.compose.animation.core.CubicBezierEasing(0.32f, 0.72f, 0f, 1f),
+                ),
+            )
+        } else {
+            lyricsSheet.snapTo(0f)
+        }
+    }
     val sheetBlurModifier: Modifier = Modifier.graphicsLayer {
         val radius = sheetBlur.value
         renderEffect = if (radius > 0.4f) {
@@ -871,33 +888,12 @@ fun PlayerScreen(
                     // controls, the progress bar and the button row stay exactly where they are and
                     // only fade, so the cover is the sole travelling element. Returning reverses the
                     // sheet and fades the cover back in.
-                    val enterSpec = tween<androidx.compose.ui.unit.IntOffset>(
-                        durationMillis = SLIDE_MS,
-                        // iOS-like drawer curve: leaves immediately, then decelerates into place —
-                        // "fast then slow" with no bounce of its own (the cover carries the spring).
-                        easing = androidx.compose.animation.core.CubicBezierEasing(0.32f, 0.72f, 0f, 1f),
-                    )
-                    val enterFade = tween<Float>(durationMillis = if (targetState) 300 else 220, easing = Motion.EaseOut)
-                    val exitFade = tween<Float>(durationMillis = if (targetState) 180 else 260, easing = Motion.EaseOut)
-                    val incoming = if (targetState) {
-                        (if (isLandscape) {
-                            slideInHorizontally(enterSpec) { it }
-                        } else {
-                            slideInVertically(enterSpec) { it }
-                        }) + fadeIn(enterFade)
-                    } else {
-                        fadeIn(enterFade)
-                    }
-                    val outgoing = if (!targetState) {
-                        (if (isLandscape) {
-                            slideOutHorizontally(enterSpec) { it }
-                        } else {
-                            slideOutVertically(enterSpec) { it }
-                        }) + fadeOut(exitFade)
-                    } else {
-                        fadeOut(exitFade)
-                    }
-                    ((incoming togetherWith outgoing) using null)
+                    // The presentations themselves only cross-fade: the chrome is identical on both
+                    // sides, so moving it would drag the control bar along. The travel belongs to the
+                    // lyrics sheet, which animates inside its own presentation.
+                    val enterFade = tween<Float>(durationMillis = if (targetState) 220 else 200, easing = Motion.EaseOut)
+                    val exitFade = tween<Float>(durationMillis = if (targetState) 160 else 240, easing = Motion.EaseOut)
+                    ((fadeIn(enterFade) togetherWith fadeOut(exitFade)) using null)
                         .apply { targetContentZIndex = 1f }
                 },
                 label = "presentation",
@@ -951,6 +947,11 @@ fun PlayerScreen(
                                 Modifier
                                     .fillMaxSize()
                                     .then(sheetBlurModifier)
+                                    .graphicsLayer {
+                                        val p = lyricsSheet.value
+                                        translationX = (1f - p) * size.width * 0.12f
+                                        alpha = 0.35f + 0.65f * p
+                                    }
                                     .statusBarsPadding()
                                     .navigationBarsPadding()
                                     // Clear the rail while it is up, and keep a comfortable margin
@@ -1157,9 +1158,18 @@ fun PlayerScreen(
                         }
                     }
                 } else if (lyricsShown) {
-                    Box(Modifier.fillMaxSize().then(sheetBlurModifier)) {
+                    Box(Modifier.fillMaxSize()) {
                         // ------------------------------------ lyrics: full-bleed + overlay (portrait)
-                        Box(Modifier.fillMaxSize()) {
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                .then(sheetBlurModifier)
+                                .graphicsLayer {
+                                    val p = lyricsSheet.value
+                                    translationY = (1f - p) * size.height * 0.18f
+                                    alpha = 0.35f + 0.65f * p
+                                },
+                        ) {
                             LyricsView(
                                 lyrics = lyrics,
                                 loading = lyricsLoading,
