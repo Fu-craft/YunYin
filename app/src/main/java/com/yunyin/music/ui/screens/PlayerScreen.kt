@@ -2202,7 +2202,9 @@ private fun PlayerControls(
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            BottomIcon(SfIcons.QuoteOpening, "歌词", active = showLyrics, onClick = onToggleLyrics)
+            // Neutral too: the row carries no accent anywhere now, so opening the lyrics page does
+            // not light a red badge behind this glyph.
+            BottomIcon(SfIcons.QuoteOpening, "歌词", active = false, onClick = onToggleLyrics)
             // Three glyphs, no fourth: the reference row is 歌词 / 循环 / 队列. Shuffle used to sit
             // between them; it is still reachable from the queue sheet, and dropping it here keeps
             // the row from reading as a settings bar.
