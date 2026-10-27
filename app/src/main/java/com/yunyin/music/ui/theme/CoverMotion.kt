@@ -29,6 +29,8 @@ object CoverMotion {
         val resumeDamping: Float = DEFAULT_RESUME_DAMPING,
         val resumeStiffness: Float = DEFAULT_RESUME_STIFFNESS,
         val pausedScale: Float = DEFAULT_PAUSED_SCALE,
+        /** Visible rebound on play, as a fraction of the spring's overshoot. */
+        val resumePop: Float = DEFAULT_RESUME_POP,
     ) {
         /** The values this instance represents after clamping; used to normalise stored settings. */
         fun sanitized(): Params = Params(
@@ -37,6 +39,7 @@ object CoverMotion {
             resumeDamping = resumeDamping.coerceIn(MIN_DAMPING, MAX_DAMPING),
             resumeStiffness = resumeStiffness.coerceIn(MIN_STIFFNESS, MAX_STIFFNESS),
             pausedScale = pausedScale.coerceIn(MIN_PAUSED_SCALE, MAX_PAUSED_SCALE),
+            resumePop = resumePop.coerceIn(MIN_RESUME_POP, MAX_RESUME_POP),
         )
     }
 
@@ -46,6 +49,8 @@ object CoverMotion {
     const val MAX_STIFFNESS = 1500f
     const val MIN_PAUSED_SCALE = 0.80f
     const val MAX_PAUSED_SCALE = 1.00f
+    const val MIN_RESUME_POP = 0.05f
+    const val MAX_RESUME_POP = 0.50f
 
     /**
      * Apple Music's pause: **smooth, no bounce, and slow**.
@@ -58,12 +63,20 @@ object CoverMotion {
     const val DEFAULT_PAUSE_STIFFNESS = 220f
 
     /**
-     * Resume: a visible elastic pop. Damping below critical (0.58) is what lets the cover shoot past
-     * its full size by a few percent and settle back — the "press play and the artwork springs back"
-     * feel — while 420 keeps it quick enough that the first beat is not delayed by the animation.
+     * Resume: a visible elastic pop. Damping below critical (0.45) is what lets the cover shoot past
+     * its full size and settle back — the "press play and the artwork springs back" feel — while 420
+     * keeps it quick enough that the first beat is not delayed by the animation.
      */
-    const val DEFAULT_RESUME_DAMPING = 0.58f
+    const val DEFAULT_RESUME_DAMPING = 0.45f
     const val DEFAULT_RESUME_STIFFNESS = 420f
+
+    /**
+     * The spring's overshoot is a fraction of the *travel*, and the travel is only 6 % (0.94 → 1.0),
+     * so even a strongly under-damped spring popped past full size by well under one percent — which
+     * is why the rebound was invisible. This gain scales the visible overshoot directly: at the
+     * default 0.25 a ~20 % spring overshoot shows as a ~5 % pop.
+     */
+    const val DEFAULT_RESUME_POP = 0.25f
 
     /** How far the cover recedes while paused. Apple's own step is subtle, not a shrink. */
     const val DEFAULT_PAUSED_SCALE = 0.94f

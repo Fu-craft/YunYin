@@ -120,10 +120,10 @@ class SharedCoverScaleTest {
      */
     @Test
     fun `the resume rebound pops past full size but stays bounded`() {
-        val popped = sharedCoverPausedScale(1f - (-0.5f) * (1f - 0.94f))
+        val popped = sharedCoverPausedScale(sharedCoverResumeScale(-0.2f, pausedScale = 0.94f, pop = 0.25f))
         assertTrue("the cover must overshoot full size on play", popped > 1f)
         assertTrue("the pop must stay subtle", popped <= 1.05f)
-        assertEquals("the clamp bounds a runaway spring", 1.05f, sharedCoverPausedScale(1.4f), 0f)
+        assertEquals("the clamp bounds a runaway spring", 1.06f, sharedCoverPausedScale(1.4f), 0f)
         assertEquals("the dim lifts completely at full size", 1f, sharedCoverPausedAlpha(popped), 1e-6f)
     }
 }

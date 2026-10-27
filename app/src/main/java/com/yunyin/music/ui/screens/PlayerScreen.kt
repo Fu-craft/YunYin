@@ -272,6 +272,31 @@ fun PlayerScreen(
      * moment longer.
      */
     var transitionActive by remember { mutableStateOf(false) }
+
+    // A short, decaying blur while the lyrics sheet is travelling. Real motion blur needs a
+    // directional shader; this is the cheap approximation that still reads as speed on the fast part
+    // of the curve and is gone before the text has to be read.
+    val sheetBlur = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(showLyrics) {
+        if (showLyrics) {
+            sheetBlur.snapTo(11f)
+            sheetBlur.animateTo(0f, androidx.compose.animation.core.tween(220, easing = Motion.EaseOut))
+        } else {
+            sheetBlur.snapTo(0f)
+        }
+    }
+    val sheetBlurModifier: Modifier = Modifier.graphicsLayer {
+        val radius = sheetBlur.value
+        renderEffect = if (radius > 0.4f) {
+            androidx.compose.ui.graphics.BlurEffect(
+                radius,
+                radius,
+                androidx.compose.ui.graphics.TileMode.Clamp,
+            )
+        } else {
+            null
+        }
+    }
     var transitionInitialised by remember { mutableStateOf(false) }
     LaunchedEffect(showLyrics) {
         // Do not count the initial composition as a transition.
@@ -423,7 +448,13 @@ fun PlayerScreen(
     )
     val sharedCoverScale: () -> Float = {
         // Read in the layer phase: `pausedCoverProgress.value`, not a captured Float.
-        sharedCoverPausedScale(1f - pausedCoverProgress.value * (1f - effectivePausedScale))
+        sharedCoverPausedScale(
+            sharedCoverResumeScale(
+                progress = pausedCoverProgress.value,
+                pausedScale = effectivePausedScale,
+                pop = coverMotion.resumePop,
+            ),
+        )
     }
 
     // 1 = chrome fully present, 0 = immersed. Everything that belongs to the chrome — the header,
@@ -842,7 +873,9 @@ fun PlayerScreen(
                     // sheet and fades the cover back in.
                     val enterSpec = tween<androidx.compose.ui.unit.IntOffset>(
                         durationMillis = SLIDE_MS,
-                        easing = Motion.EaseOut,
+                        // iOS-like drawer curve: leaves immediately, then decelerates into place —
+                        // "fast then slow" with no bounce of its own (the cover carries the spring).
+                        easing = androidx.compose.animation.core.CubicBezierEasing(0.32f, 0.72f, 0f, 1f),
                     )
                     val enterFade = tween<Float>(durationMillis = if (targetState) 300 else 220, easing = Motion.EaseOut)
                     val exitFade = tween<Float>(durationMillis = if (targetState) 180 else 260, easing = Motion.EaseOut)
@@ -917,6 +950,7 @@ fun PlayerScreen(
                             BoxWithConstraints(
                                 Modifier
                                     .fillMaxSize()
+                                    .then(sheetBlurModifier)
                                     .statusBarsPadding()
                                     .navigationBarsPadding()
                                     // Clear the rail while it is up, and keep a comfortable margin
@@ -1123,7 +1157,7 @@ fun PlayerScreen(
                         }
                     }
                 } else if (lyricsShown) {
-                    Box(Modifier.fillMaxSize()) {
+                    Box(Modifier.fillMaxSize().then(sheetBlurModifier)) {
                         // ------------------------------------ lyrics: full-bleed + overlay (portrait)
                         Box(Modifier.fillMaxSize()) {
                             LyricsView(
@@ -3208,7 +3242,7 @@ private const val PRESENTATION_FADE_MS = 560
  * How long the lyrics sheet takes to slide in or out. Long enough to read as a sheet, short enough
  * that a tap does not feel queued behind an animation.
  */
-private const val SLIDE_MS = 380
+private const val SLIDE_MS = 440
 
 /**
  * The AGSL warp that distorted the outgoing presentation. It was the signature of an earlier design,
@@ -3269,7 +3303,22 @@ internal fun sharedCoverPausedScale(pausedCoverScale: Float): Float =
     // Up to a few percent *above* full size: the resume spring undershoots its target (progress goes
     // negative) and that is the elastic pop on play. The upper clamp keeps a stray spring from growing
     // the cover into the chrome.
-    pausedCoverScale.coerceIn(0f, 1.05f)
+    pausedCoverScale.coerceIn(0f, 1.06f)
+
+/**
+ * Maps the pause progress to a cover scale, with an explicit rebound on the way back.
+ *
+ * Paused, the progress is 1 and the cover sits at `pausedScale`. On play it spring back to 0; the
+ * spring undershoots, so progress goes negative and the cover is allowed past full size. Multiplying
+ * the undershoot by [pop] is what makes that rebound *visible*: the travel back is only
+ * `1 - pausedScale` (6 % at the default), so the raw spring overshoot alone was well under a percent.
+ */
+internal fun sharedCoverResumeScale(progress: Float, pausedScale: Float, pop: Float): Float =
+    if (progress >= 0f) {
+        1f - progress * (1f - pausedScale)
+    } else {
+        1f + (-progress) * pop
+    }
 
 /**
  * The artwork dim that accompanies the paused scale, derived from the **same** single value.

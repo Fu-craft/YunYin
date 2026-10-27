@@ -161,6 +161,18 @@ class SettingsStore(context: Context) {
         get() = prefs.getFloat(KEY_COVER_RESUME_DAMPING, CoverMotion.DEFAULT_RESUME_DAMPING)
         set(value) = prefs.edit().putFloat(KEY_COVER_RESUME_DAMPING, value).apply()
 
+    /**
+     * How far the resume spring may push the cover past full size, as a fraction of its overshoot.
+     *
+     * Separate from the spring constants on purpose: a 0.94 paused cover only has 6 % of travel to
+     * give back, so even a strongly under-damped spring produced a pop of well under one percent and
+     * was invisible. This scales the *visible* rebound instead, independently of how much the cover
+     * shrank while paused.
+     */
+    var coverResumePop: Float
+        get() = prefs.getFloat(KEY_COVER_RESUME_POP, CoverMotion.DEFAULT_RESUME_POP)
+        set(value) = prefs.edit().putFloat(KEY_COVER_RESUME_POP, value).apply()
+
     var coverPausedScale: Float
         get() = prefs.getFloat(KEY_COVER_PAUSED_SCALE, CoverMotion.DEFAULT_PAUSED_SCALE)
         set(value) = prefs.edit().putFloat(KEY_COVER_PAUSED_SCALE, value).apply()
@@ -171,6 +183,7 @@ class SettingsStore(context: Context) {
         pauseStiffness = coverPauseStiffness,
         resumeDamping = coverResumeDamping,
         resumeStiffness = CoverMotion.DEFAULT_RESUME_STIFFNESS,
+        resumePop = coverResumePop,
         pausedScale = coverPausedScale,
     )
 
@@ -179,6 +192,7 @@ class SettingsStore(context: Context) {
         coverPauseDamping = clean.pauseDamping
         coverPauseStiffness = clean.pauseStiffness
         coverResumeDamping = clean.resumeDamping
+        coverResumePop = clean.resumePop
         coverPausedScale = clean.pausedScale
         CoverMotion.set(clean)
     }
@@ -371,7 +385,8 @@ class SettingsStore(context: Context) {
         private const val KEY_NOW_PLAYING_ANIMATED_COVER = "now_playing_animated_cover"
     private const val KEY_COVER_PAUSE_DAMPING = "cover_motion_pause_damping"
     private const val KEY_COVER_PAUSE_STIFFNESS = "cover_motion_pause_stiffness"
-    private const val KEY_COVER_RESUME_DAMPING = "cover_motion_resume_damping"
+    private const val KEY_COVER_RESUME_DAMPING = "cover_motion_resume_damping_v2"
+private const val KEY_COVER_RESUME_POP = "cover_motion_resume_pop"
     private const val KEY_COVER_PAUSED_SCALE = "cover_motion_paused_scale"
         private const val KEY_PROFILE_SIGNATURE = "profile_signature"
         private const val KEY_CUSTOM_NICKNAME = "custom_nickname"
