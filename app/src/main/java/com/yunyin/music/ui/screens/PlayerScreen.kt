@@ -299,7 +299,17 @@ fun PlayerScreen(
                 ),
             )
         } else {
-            lyricsSheet.snapTo(0f)
+            // Leave the way it arrived. Snapping to 0 here teleported the sheet down a fifth of its
+            // height on the same frame the cover started fading in, which read as the lyrics being
+            // shoved out of the way; the exit now travels over the same curve family while the
+            // cover fades underneath it.
+            lyricsSheet.animateTo(
+                targetValue = 0f,
+                animationSpec = androidx.compose.animation.core.tween(
+                    durationMillis = SLIDE_OUT_MS,
+                    easing = androidx.compose.animation.core.CubicBezierEasing(0.4f, 0f, 0.2f, 1f),
+                ),
+            )
         }
     }
     val sheetBlurModifier: Modifier = Modifier.graphicsLayer {
@@ -892,7 +902,7 @@ fun PlayerScreen(
                     // sides, so moving it would drag the control bar along. The travel belongs to the
                     // lyrics sheet, which animates inside its own presentation.
                     val enterFade = tween<Float>(durationMillis = if (targetState) 220 else 200, easing = Motion.EaseOut)
-                    val exitFade = tween<Float>(durationMillis = if (targetState) 160 else 240, easing = Motion.EaseOut)
+                    val exitFade = tween<Float>(durationMillis = if (targetState) 160 else SLIDE_OUT_MS, easing = Motion.EaseOut)
                     ((fadeIn(enterFade) togetherWith fadeOut(exitFade)) using null)
                         .apply { targetContentZIndex = 1f }
                 },
@@ -3244,6 +3254,9 @@ private const val PRESENTATION_FADE_MS = 560
  * that a tap does not feel queued behind an animation.
  */
 private const val SLIDE_MS = 440
+
+/** The exit leg is a little shorter: the sheet is leaving, not being read. */
+private const val SLIDE_OUT_MS = 300
 
 /**
  * The AGSL warp that distorted the outgoing presentation. It was the signature of an earlier design,

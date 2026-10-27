@@ -56,6 +56,10 @@ class AnimatedCoverPlayerHost(context: Context) {
     @Volatile
     var lastFrame: android.graphics.Bitmap? = null
 
+    /** The view that produced [lastFrame]; a fresh view must not overwrite it before it draws. */
+    @Volatile
+    var renderedView: TextureView? = null
+
     val player: ExoPlayer
         get() = instance ?: createAnimatedCoverPlayer(appContext).also { instance = it }
 
@@ -140,7 +144,10 @@ fun AnimatedArtworkPlayer(
     // already being torn down and `getBitmap()` came back null, so the returning cover had no bridge
     // and fell back to the static album art.
     LaunchedEffect(captureFrame, revealed) {
-        if (captureFrame && revealed) {
+        // Only the view that actually produced a frame may be captured: on the way back the
+        // TextureView is brand new and has not drawn, and capturing it stored a black bitmap over
+        // the good bridge frame (which flashed the cover).
+        if (captureFrame && revealed && attachedView != null && attachedView === host?.renderedView) {
             runCatching { attachedView?.bitmap }.getOrNull()?.let { frame ->
                 host?.lastFrame = frame
                 Log.i(TAG, "captured bridge frame ${frame.width}x${frame.height}")
@@ -154,6 +161,7 @@ fun AnimatedArtworkPlayer(
                 firstFrame = true
                 revealed = true
                 host?.renderedUrl = url
+                host?.renderedView = attachedView
                 Log.i(TAG, "first frame rendered url=$url")
                 currentOnFirstFrame()
             }
