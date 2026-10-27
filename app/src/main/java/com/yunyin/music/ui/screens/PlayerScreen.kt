@@ -1248,7 +1248,9 @@ fun PlayerScreen(
                                 playerStyle = playerStyle,
                                 isPlaying = state.isPlaying,
                                 flat = fullScreenCover,
-                                soften = fullScreenCover && !transitioning,
+                                // Not gated on `transitioning`: if that flag ever lagged behind, the
+                                // dissolve would vanish for good after a trip to the lyrics page.
+                                soften = fullScreenCover,
                                 corner = if (fullScreenCover) 0.dp else ARTWORK_CORNER,
                                 // The portrait cover is the other half of the same feature: without
                                 // these four the phone layout never built the video layer at all,
@@ -1723,11 +1725,16 @@ private fun ArtworkWithGestures(
                     val coverHeight = videoBounds?.height ?: 1f
                     (EDGE_FADE_DP.dp.toPx() / coverHeight).coerceIn(0f, 0.45f)
                 }
+                // Falls back to the field's own top/middle colours when the square has not been
+                // measured yet (first frame after returning from the lyrics page): the dissolve must
+                // never blink out just because the bounds state was recreated a frame later.
                 val edgeTop = videoEdgeField?.let {
                     sampleFieldColor(it, (videoBounds?.top ?: 0f) / rootHeightPx)
-                }
+                } ?: videoEdgeField?.let { Color(it[0]) }
                 val edgeBottom = videoEdgeField?.let {
                     sampleFieldColor(it, (videoBounds?.bottom ?: rootHeightPx) / rootHeightPx)
+                } ?: videoEdgeField?.let {
+                    androidx.compose.ui.graphics.lerp(Color(it[0]), Color(it[1]), 0.9f)
                 }
                 LaunchedEffect(videoUrl) {
                     onAnimatedArtworkLog("stage=animated-artwork compose")
@@ -1764,7 +1771,7 @@ private fun ArtworkWithGestures(
                         onAnimatedArtworkLog("stage=animated-artwork playing")
                     },
                     )
-                    if (soften && edgeTop != null && edgeBottom != null) {
+                    if (flat && edgeTop != null && edgeBottom != null) {
                         // Compose sibling above the AndroidView: the one place a scrim is guaranteed
                         // to paint over a TextureView's surface.
                         Box(
