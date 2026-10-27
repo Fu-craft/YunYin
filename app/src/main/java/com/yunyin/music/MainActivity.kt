@@ -60,6 +60,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.core.content.ContextCompat
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.window.layout.WindowInfoTracker
 import androidx.window.layout.FoldingFeature
@@ -1358,6 +1359,18 @@ class MainActivity : ComponentActivity() {
                         animatedCoverEnabled = enabled
                         container.settings.nowPlayingAnimatedCover = enabled
                     },
+                    onTestAnimatedCover = {
+                        lifecycleScope.launch {
+                            val result = withContext(Dispatchers.IO) {
+                                container.animatedArtwork?.resolve("Taylor Swift", "Lover", null)
+                            }
+                            val message = when {
+                                result == null -> "未命中：接口没有返回结果，看「接口状态」那一行"
+                                else -> "命中：${result.artist} / ${result.album}"
+                            }
+                            Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()
+                        }
+                    },
                     sleepTimerLabel = when {
                         sleepTimerEndOfTrack -> "播完当前歌"
                         sleepTimerEnd != null -> {
@@ -1779,7 +1792,7 @@ class MainActivity : ComponentActivity() {
                     backgroundStyle = backgroundStyle,
                     animatedCoverEnabled = animatedCoverEnabled && container.hasAnimatedArtwork,
                     animatedArtwork = container.animatedArtwork,
-                    onAnimatedArtworkLog = { container.lxLog.recordDiagnostic(it) },
+                    onAnimatedArtworkLog = { container.recordAnimatedArtworkLog(it) },
                     download = playerViewModel.download,
                     onSaveCover = playerViewModel::saveCover,
                     onDownloadDismissed = playerViewModel::clearDownloadState,

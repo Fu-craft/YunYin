@@ -99,6 +99,7 @@ import androidx.compose.ui.text.style.TextMotion
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.Player
 import androidx.compose.ui.draw.alpha
@@ -340,6 +341,27 @@ fun PlayerScreen(
     // User-tunable cover settle (「封面动效手感」). Read once per composition; it changes only while
     // the tuner is open, so this does not add per-frame work.
     val coverMotion by CoverMotion.params.collectAsState()
+
+    // One ExoPlayer for the whole player screen, so leaving for the lyrics page and coming back does
+    // not re-prepare the animated cover (which is what made the returning cover flash the static
+    // artwork). The host is released when this screen leaves composition.
+    val coverHostContext = androidx.compose.ui.platform.LocalContext.current
+    val animatedCoverPlayer = remember {
+        if (animatedArtwork == null) null
+        else com.yunyin.music.ui.components.AnimatedCoverPlayerHost(coverHostContext)
+    }
+    DisposableEffect(animatedCoverPlayer) {
+        onDispose { animatedCoverPlayer?.release() }
+    }
+
+    // Warm the next track's cover while this one plays. Keyed on the track identity rather than the
+    // queue instance, because the queue is republished as a fresh list on unrelated state changes.
+    LaunchedEffect(state.current?.id, state.index) {
+        val next = state.queue.getOrNull(state.index + 1)
+        if (next != null && next.id != state.current?.id) {
+            animatedArtwork?.prefetch(next.artistLine, next.albumName, next.name)
+        }
+    }
     val pausedCoverProgress = animateFloatAsState(
         targetValue = if (state.playWhenReady) 0f else 1f,
         // The settle is user-tunable (「封面动效手感」), so both specs come from `CoverMotion` at the
@@ -562,6 +584,15 @@ fun PlayerScreen(
         // shader draw every frame. Measured, this window is where "Slow issue draw commands" spiked.
         val transitioning = transitionActive
 
+        // Why a resolved animated cover can still not appear: the video layer is withheld while the
+        // cover/lyrics presentations cross-fade (a TextureView cannot take part in the shared-element
+        // travel). If that flag ever sticks, the cover looks static with no explanation.
+        LaunchedEffect(transitioning, animatedCoverEnabled) {
+            if (animatedCoverEnabled && transitioning) {
+                onAnimatedArtworkLog("stage=animated-artwork skipped reason=transitioning")
+            }
+        }
+
         // ---- approximate mesh warp for the presentation change -------------------------------
         //
         // A vertex-grid warp is not expressible over composables, so the outgoing presentation is
@@ -779,6 +810,11 @@ fun PlayerScreen(
                 },
                 label = "presentation",
             ) { lyricsShown ->
+                // The hoisted cover player outlives this swap, so stop decoding while the lyrics
+                // presentation owns the screen and resume the moment the cover comes back.
+                LaunchedEffect(lyricsShown) {
+                    animatedCoverPlayer?.setScreenVisible(!lyricsShown)
+                }
                 // ---------------------------------------------- presentations
                 //
                 // Portrait and landscape differ in *where the chrome lives*, so the two branches
@@ -883,9 +919,13 @@ fun PlayerScreen(
                                         onDragFinished = onDragFinished,
                                         playerStyle = playerStyle,
                                         isPlaying = state.isPlaying,
-                                        // Hide the video layer while the two presentations cross-fade: the static
-                                        // Artwork is the shared element, and a TextureView cannot participate in it.
-                                        animatedCoverEnabled = animatedCoverEnabled && !transitioning,
+                                        // The raw toggle goes down; the composable decides for itself
+                                        // whether a cross-fade should withhold the video. Collapsing
+                                        // both signals into one boolean here made "toggle on but
+                                        // nothing happens" indistinguishable from "transition stuck".
+                                        animatedCoverEnabled = animatedCoverEnabled,
+                                        coverTransitioning = transitioning,
+                                        animatedCoverPlayer = animatedCoverPlayer,
                                         animatedArtwork = animatedArtwork,
                                         onAnimatedArtworkLog = onAnimatedArtworkLog,
                                         artworkScale = sharedCoverScale,
@@ -1196,6 +1236,15 @@ fun PlayerScreen(
                                 flat = fullScreenCover,
                                 soften = fullScreenCover && !transitioning,
                                 corner = if (fullScreenCover) 0.dp else ARTWORK_CORNER,
+                                // The portrait cover is the other half of the same feature: without
+                                // these four the phone layout never built the video layer at all,
+                                // which is why the tablet/landscape branch looked wired while the
+                                // phone silently stayed static.
+                                animatedCoverEnabled = animatedCoverEnabled,
+                                coverTransitioning = transitioning,
+                                animatedCoverPlayer = animatedCoverPlayer,
+                                animatedArtwork = animatedArtwork,
+                                onAnimatedArtworkLog = onAnimatedArtworkLog,
                                 artworkScale = sharedCoverScale,
                                 sharedScope = this@SharedTransitionLayout,
                                 visibilityScope = this@AnimatedContent,
@@ -1418,6 +1467,10 @@ private fun ArtworkWithGestures(
     soften: Boolean = false,
     corner: androidx.compose.ui.unit.Dp = ARTWORK_CORNER,
     animatedCoverEnabled: Boolean = false,
+    /** True while the cover and lyrics presentations cross-fade; the video is withheld meanwhile. */
+    coverTransitioning: Boolean = false,
+    /** Screen-lifetime player, so a presentation change only re-attaches the surface. */
+    animatedCoverPlayer: com.yunyin.music.ui.components.AnimatedCoverPlayerHost? = null,
     animatedArtwork: com.yunyin.music.data.AnimatedArtworkRepository? = null,
     onAnimatedArtworkLog: (String) -> Unit = {},
     /**
@@ -1436,14 +1489,37 @@ private fun ArtworkWithGestures(
     var animatedUrl by remember(track?.id, playerStyle, animatedCoverEnabled, animatedArtwork) {
         mutableStateOf<String?>(null)
     }
+    // A still frame pulled from the motion artwork: shown while the HLS stream is still opening, so
+    // the square is already the album's moving-art frame instead of the flat cover.
+    var animatedPoster by remember(track?.id) { mutableStateOf<String?>(null) }
+    var animatedVideoReady by remember(track?.id) { mutableStateOf(false) }
+    // Records *why* a resolved cover still produces no video layer: the only inputs that can
+    // suppress it are the toggle, the cross-fade and the repository.
+    LaunchedEffect(animatedUrl, animatedCoverEnabled, playerStyle, animatedArtwork, coverTransitioning) {
+        onAnimatedArtworkLog(
+            "stage=animated-artwork gate url=${animatedUrl != null} enabled=$animatedCoverEnabled " +
+                "style=${playerStyle.level} repo=${animatedArtwork != null} transition=$coverTransitioning",
+        )
+    }
     LaunchedEffect(track?.id, playerStyle, animatedCoverEnabled, animatedArtwork) {
         animatedUrl = null
         if (playerStyle != PlayerStyle.Classic || !animatedCoverEnabled || animatedArtwork == null || track == null) {
             return@LaunchedEffect
         }
+        // The endpoint matches on the catalogue artist and album, so a multi-artist track
+        // ("A / B", the form this app renders) misses even when "A" is in the catalogue. Fall back to
+        // the primary artist before giving up; the repository caches each attempt separately.
         val resolved = animatedArtwork.resolve(track.artistLine, track.albumName, track.name)
+            ?: track.artists.firstOrNull()
+                ?.takeIf { it.isNotBlank() && it != track.artistLine }
+                ?.let { primary -> animatedArtwork.resolve(primary, track.albumName, track.name) }
+        android.util.Log.i(
+            "YunYinArtwork",
+            "resolve artist=${track.artistLine} album=${track.albumName} -> ${resolved?.url ?: "miss"}",
+        )
         if (resolved != null && resolved.url.isNotBlank()) {
             animatedUrl = resolved.url
+            animatedPoster = resolved.posterUrl
         }
     }
 
@@ -1544,18 +1620,52 @@ private fun ArtworkWithGestures(
                         },
                     )
             )
-            val videoUrl = animatedUrl
-            if (videoUrl != null && animatedCoverEnabled && animatedArtwork != null && playerStyle == PlayerStyle.Classic) {
-                AnimatedArtworkPlayer(
-                    url = videoUrl,
+            // Between "URL resolved" and "first video frame" the square would otherwise fall back to
+            // the flat cover. The motion artwork's own preview frame bridges that gap; the video then
+            // paints over it.
+            val poster = animatedPoster
+            if (poster != null && animatedUrl != null && !animatedVideoReady) {
+                Artwork(
+                    url = poster,
+                    loader = loader,
+                    corner = corner,
+                    requestSize = 600,
                     modifier = Modifier
                         .size(artSize)
-                        .clip(ContinuousRoundedRectangle(ARTWORK_CORNER))
+                        .clip(ContinuousRoundedRectangle(corner))
+                        .graphicsLayer { alpha = sharedCoverPausedAlpha(artworkScale()) },
+                )
+            }
+            val videoUrl = animatedUrl
+            if (videoUrl != null && animatedCoverEnabled && animatedArtwork != null && playerStyle == PlayerStyle.Classic) {
+                // The player is kept alive through a presentation change and merely faded out: tearing
+                // it down (as the old `!coverTransitioning` condition did) released the ExoPlayer, so
+                // coming back from lyrics had to re-prepare the stream and the static cover was
+                // visible until the first frame arrived again.
+                val videoAlpha by androidx.compose.animation.core.animateFloatAsState(
+                    targetValue = if (coverTransitioning) 0f else 1f,
+                    animationSpec = androidx.compose.animation.core.tween(durationMillis = 180),
+                    label = "animated-cover-alpha",
+                )
+                LaunchedEffect(videoUrl) {
+                    onAnimatedArtworkLog("stage=animated-artwork compose")
+                }
+                AnimatedArtworkPlayer(
+                    url = videoUrl,
+                    cornerRadiusDp = corner.value,
+                    host = animatedCoverPlayer,
+                    playing = isPlaying,
+                    modifier = Modifier
+                        .size(artSize)
+                        // The static cover is the shared element; its transition layer must never end up
+                        // painting over the video, so the video is explicitly raised above it.
+                        .zIndex(1f)
+                        .clip(ContinuousRoundedRectangle(corner))
                         .graphicsLayer {
                             val scale = artworkScale()
                             scaleX = scale
                             scaleY = scale
-                            alpha = sharedCoverPausedAlpha(scale)
+                            alpha = sharedCoverPausedAlpha(scale) * videoAlpha
                         },
                     onError = { reason ->
                         if (reason.startsWith("play error")) {
@@ -1564,6 +1674,10 @@ private fun ArtworkWithGestures(
                         animatedUrl = null
                         onAnimatedArtworkLog("stage=animated-artwork fallback reason=$reason")
                     },
+                    onFirstFrame = {
+                        animatedVideoReady = true
+                        onAnimatedArtworkLog("stage=animated-artwork playing")
+                    },
                 )
             }
         }
@@ -1571,6 +1685,7 @@ private fun ArtworkWithGestures(
         // Download feedback, drawn over the cover so the gesture's result appears exactly where the
         // gesture was made.
         DownloadOverlay(state = download, size = artSize, onDismissed = onDownloadDismissed)
+
     }
 }
 

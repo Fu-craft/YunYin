@@ -70,6 +70,17 @@ class AnimatedArtworkRulesTest {
     }
 
     @Test
+    fun `poster frame is optional and accepted under the documented spellings`() {
+        val withPoster = AnimatedArtworkRules.parse(
+            """{"url":"https://example.test/a.m3u8","poster":"https://example.test/p.jpg"}""",
+        )
+        assertEquals("https://example.test/p.jpg", withPoster?.posterUrl)
+
+        val withoutPoster = AnimatedArtworkRules.parse("""{"url":"https://example.test/a.m3u8"}""")
+        assertNull(withoutPoster?.posterUrl)
+    }
+
+    @Test
     fun `lru keeps at most 64 entries and caches negative results`() {
         val cache = AnimatedArtworkLruCache(64)
         repeat(65) { cache.put("k$it", art("https://example.test/$it.m3u8")) }
