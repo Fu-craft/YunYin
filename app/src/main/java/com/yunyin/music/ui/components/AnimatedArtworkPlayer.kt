@@ -106,6 +106,8 @@ fun AnimatedArtworkPlayer(
     host: AnimatedCoverPlayerHost? = null,
     /** Mirrors playback: a paused track keeps its cover frozen, as Apple Music does. */
     playing: Boolean = true,
+    /** True while a presentation change is running; the last frame is frozen for the swap. */
+    captureFrame: Boolean = false,
     onError: (String) -> Unit = {},
     /** Fires when the first decoded frame for [url] reaches the screen. */
     onFirstFrame: () -> Unit = {},
@@ -132,6 +134,19 @@ fun AnimatedArtworkPlayer(
     // frozen video instead of falling back to the flat album cover for a beat.
     val lastFrame = remember(url) { host?.lastFrame }
     var attachedView by remember { mutableStateOf<TextureView?>(null) }
+
+    // Freeze the frame the moment the presentation starts changing, while the TextureView is still
+    // attached and rendering. Capturing in `onDispose` alone was unreliable: by then the surface is
+    // already being torn down and `getBitmap()` came back null, so the returning cover had no bridge
+    // and fell back to the static album art.
+    LaunchedEffect(captureFrame, revealed) {
+        if (captureFrame && revealed) {
+            runCatching { attachedView?.bitmap }.getOrNull()?.let { frame ->
+                host?.lastFrame = frame
+                Log.i(TAG, "captured bridge frame ${frame.width}x${frame.height}")
+            }
+        }
+    }
 
     DisposableEffect(player) {
         val listener = object : Player.Listener {

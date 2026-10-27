@@ -1769,6 +1769,7 @@ private fun ArtworkWithGestures(
                         cornerRadiusDp = corner.value,
                         host = animatedCoverPlayer,
                         playing = isPlaying,
+                        captureFrame = coverTransitioning,
                         modifier = Modifier
                             .matchParentSize()
                             .clip(ContinuousRoundedRectangle(corner))
