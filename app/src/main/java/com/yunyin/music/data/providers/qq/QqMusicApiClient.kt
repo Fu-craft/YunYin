@@ -57,8 +57,20 @@ class QqMusicApiClient(
 
     /** A playable URL for [songmid], or null when the API refuses (VIP-only track, region lock). */
     suspend fun musicUrl(songmid: String): String? {
-        val url = url("getMusicPlay", "songmid" to songmid) ?: return null
-        return when (val result = request(url) { json -> NetResult.Ok(json.optJSONObject("data")?.optString("url")) }) {
+        val cookie = runCatching { com.yunyin.music.BuildConfig.QQ_MUSIC_API_COOKIE }.getOrDefault("")
+        val url = url(
+            "getMusicPlay",
+            "songmid" to songmid,
+            "cookie" to cookie,
+        ) ?: return null
+        return when (val result = request(url) { json ->
+            val root = json.optJSONObject("data") ?: json
+            val direct = root.optString("url").ifBlank { null }
+            val perSong = root.optJSONObject("playUrl")?.let { map ->
+                map.keys().asSequence().firstOrNull()?.let { key -> map.optJSONObject(key)?.optString("url") }
+            }
+            NetResult.Ok(direct ?: perSong)
+        }) {
             is NetResult.Ok -> result.value?.takeIf { it.startsWith("http") }
             is NetResult.Err -> null
         }
@@ -68,8 +80,8 @@ class QqMusicApiClient(
     suspend fun lyric(songmid: String): Lyric? {
         val url = url("getLyric", "songmid" to songmid, "isFormat" to "0") ?: return null
         return when (val result = request(url) { json ->
-            val data = json.optJSONObject("data") ?: return@request NetResult.Ok(null)
-            NetResult.Ok(Lyric(lrc = data.optString("lyric"), translation = data.optString("trans")))
+            val node = json.optJSONObject("lyric") ?: json.optJSONObject("data") ?: return@request NetResult.Ok(null)
+            NetResult.Ok(Lyric(lrc = node.optString("lyric"), translation = node.optString("trans").ifBlank { null }))
         }) {
             is NetResult.Ok -> result.value?.takeIf { !it.lrc.isNullOrBlank() }
             is NetResult.Err -> null
@@ -126,7 +138,11 @@ class QqMusicApiClient(
                 client.newCall(request).execute().use { response ->
                     val body = response.body?.string().orEmpty()
                     if (!response.isSuccessful) return@withContext fail("HTTP ${response.code} $url")
-                    val json = JSONObject(body)
+                    val raw = JSONObject(body)
+                    // Most answers are wrapped in `response`; /getMusicPlay answers in `data`.
+                    // Normalise before reading either one.
+                    // normalise before reading either.
+                    val json = raw.optJSONObject("response") ?: raw
                     if (json.optInt("code", 0) != 0) {
                         return@withContext fail("code=${json.optInt("code")} msg=${json.optString("msg")}")
                     }
