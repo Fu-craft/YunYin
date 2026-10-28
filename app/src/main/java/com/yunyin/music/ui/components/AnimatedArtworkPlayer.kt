@@ -112,6 +112,8 @@ fun AnimatedArtworkPlayer(
     playing: Boolean = true,
     /** True while a presentation change is running; the last frame is frozen for the swap. */
     captureFrame: Boolean = false,
+    /** Fades only the video surface during a presentation change; the bridge frame stays opaque. */
+    transitionFade: Float = 1f,
     onError: (String) -> Unit = {},
     /** Fires when the first decoded frame for [url] reaches the screen. */
     onFirstFrame: () -> Unit = {},
@@ -269,7 +271,7 @@ fun AnimatedArtworkPlayer(
                 },
                 modifier = Modifier
                     .matchParentSize()
-                    .graphicsLayer { alpha = revealAlpha },
+                    .graphicsLayer { alpha = revealAlpha * transitionFade },
                 update = { view ->
                     Log.i(TAG, "attach texture view url=$url")
                     attachedView = view

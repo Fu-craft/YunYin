@@ -1856,6 +1856,10 @@ private fun ArtworkWithGestures(
                         host = animatedCoverPlayer,
                         playing = isPlaying,
                         captureFrame = coverTransitioning,
+                        // The transition fade is passed *into* the player so it covers only the video
+                        // surface: the frozen bridge frame has to stay visible for the whole
+                        // cross-fade, or the static artwork shows again for its length.
+                        transitionFade = videoAlpha,
                         modifier = Modifier
                             .matchParentSize()
                             .clip(ContinuousRoundedRectangle(corner))
@@ -1863,7 +1867,7 @@ private fun ArtworkWithGestures(
                                 val scale = artworkScale()
                                 scaleX = scale
                                 scaleY = scale
-                                alpha = sharedCoverPausedAlpha(scale) * videoAlpha
+                                alpha = sharedCoverPausedAlpha(scale)
                             },
                         onError = { reason ->
                             if (reason.startsWith("play error")) {

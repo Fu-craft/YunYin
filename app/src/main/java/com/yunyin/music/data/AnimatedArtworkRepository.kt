@@ -34,6 +34,11 @@ class AnimatedArtworkRepository(
     private val diag: (String) -> Unit = {},
     /** Optional cross-launch store; the in-memory LRU only helps within one process. */
     private val disk: AnimatedArtworkDiskCache? = null,
+    /**
+     * Supplies the motion artwork's still frame when the answering source has none — the operator
+     * endpoint returns only the stream URL, and entries cached before this existed carry no poster.
+     */
+    private val posterSource: AnimatedArtworkSource? = null,
 ) {
     val available: Boolean = source != null
 
@@ -45,14 +50,21 @@ class AnimatedArtworkRepository(
     suspend fun resolve(artist: String, album: String, title: String? = null): AnimatedArtwork? {
         if (source == null || !available) return null
         val key = AnimatedArtworkRules.cacheKey(artist, album) ?: return null
-        cache.get(key)?.let {
-            diag("stage=animated-artwork cache hit value=${it.value != null}")
-            return it.value
+        cache.get(key)?.let { hit ->
+            diag("stage=animated-artwork cache hit value=${hit.value != null}")
+            val enriched = withPoster(artist, album, title, hit.value)
+            if (enriched !== hit.value) {
+                cache.put(key, enriched)
+                enriched?.let { disk?.write(artist, album, it) }
+            }
+            return enriched
         }
         disk?.read(artist, album)?.let { stored ->
             diag("stage=animated-artwork disk hit album=${album.take(32)}")
-            cache.put(key, stored)
-            return stored
+            val enriched = withPoster(artist, album, title, stored)
+            cache.put(key, enriched)
+            enriched?.let { disk?.write(artist, album, it) }
+            return enriched
         }
         return coroutineScope {
             val deferred = lock.withLock {
@@ -67,14 +79,36 @@ class AnimatedArtworkRepository(
                             error is TimeoutCancellationException
                         diag("stage=animated-artwork search error reason=${(error.message ?: error.javaClass.simpleName).take(80)}")
                     }.getOrNull()
-                    if (result != null || !inconclusive) cache.put(key, result)
-                    if (result != null) disk?.write(artist, album, result)
+                    val enriched = withPoster(artist, album, title, result)
+                    if (enriched != null || !inconclusive) cache.put(key, enriched)
+                    enriched?.let { disk?.write(artist, album, it) }
                     lock.withLock { inFlight.remove(key) }
-                    result
+                    enriched
                 }.also { inFlight[key] = it }
             }
             deferred.await()
         }
+    }
+
+    /**
+     * Adds the still frame from [posterSource] when a hit — cached, on disk, or fresh — carries none.
+     * The result is stored, so the second request only happens once per album.
+     */
+    private suspend fun withPoster(
+        artist: String,
+        album: String,
+        title: String?,
+        artwork: AnimatedArtwork?,
+    ): AnimatedArtwork? {
+        val provider = posterSource ?: return artwork
+        if (artwork == null || artwork.posterUrl != null) return artwork
+        val poster = runCatching { provider.search(artist, album, title)?.posterUrl }.getOrNull()
+        if (poster == null) {
+            diag("stage=animated-artwork poster miss album=${album.take(32)}")
+            return artwork
+        }
+        diag("stage=animated-artwork poster filled album=${album.take(32)}")
+        return artwork.copy(posterUrl = poster)
     }
 
     /**

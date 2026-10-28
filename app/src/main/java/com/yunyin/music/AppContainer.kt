@@ -197,6 +197,9 @@ class AppContainer(val appContext: Context) {
                 source = source,
                 diag = ::recordArtworkDiagnostic,
                 disk = com.yunyin.music.data.AnimatedArtworkDiskCache(appContext),
+                // The endpoint answers without a still frame, and entries cached before the poster
+                // existed carry none either; the repository fills it in from Apple on the first read.
+                posterSource = apple,
             )
         }.getOrNull()
     }
