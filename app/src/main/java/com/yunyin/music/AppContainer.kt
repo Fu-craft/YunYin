@@ -150,7 +150,17 @@ class AppContainer(val appContext: Context) {
         )
     }
 
-    val music: MusicRepository by lazy { MusicRepository(client, lxPlayback, providers, lxLog, localMusic, playlistTrackCache) }
+    val music: MusicRepository by lazy {
+        MusicRepository(
+            client,
+            lxPlayback,
+            providers,
+            lxLog,
+            localMusic,
+            playlistTrackCache,
+            musicSource = { settings.musicSource },
+        )
+    }
 
     val extraLyrics: com.yunyin.music.data.providers.extra.ExtraLyricsProvider by lazy {
         com.yunyin.music.data.providers.extra.ExtraLyricsProvider(log = lxLog)
@@ -339,9 +349,14 @@ class AppContainer(val appContext: Context) {
     /** Built-in QQ Music search (pure Kotlin + OkHttp; see `TxSearch` for provenance). */
     val txSearch: TxSearch by lazy { TxSearch(lxLog) }
 
+    /** Self-hosted QQ Music API; disabled (all calls no-op) unless the build has a base URL. */
+    val qqApi: com.yunyin.music.data.providers.qq.QqMusicApiClient by lazy {
+        com.yunyin.music.data.providers.qq.QqMusicApiClient(log = lxLog)
+    }
+
     /** Cross-platform playback: provider tracks, and the NetEase-VIP retry on another platform. */
     val providers: ProviderPlayback by lazy {
-        ProviderPlayback(lxPlayback, txSearch, providerTracks, lxLog)
+        ProviderPlayback(lxPlayback, txSearch, providerTracks, lxLog, qqApi)
     }
 
     /**

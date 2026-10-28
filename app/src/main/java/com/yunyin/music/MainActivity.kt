@@ -339,6 +339,7 @@ class MainActivity : ComponentActivity() {
         var seamlessTransition by remember { mutableStateOf(container.settings.seamlessTransition) }
         var downloadWifiOnly by remember { mutableStateOf(container.settings.downloadWifiOnly) }
         var crossfadeSeconds by remember { mutableStateOf(container.settings.crossfadeSeconds) }
+        var musicSource by remember { mutableStateOf(container.settings.musicSource) }
         var autoImmersiveLyrics by remember { mutableStateOf(container.settings.autoImmersiveLyrics) }
         // The three now-playing background switches. Compose state + the store, same arrangement as
         // the other settings: the player reads the state so a toggle takes effect immediately, and
@@ -1256,6 +1257,11 @@ class MainActivity : ComponentActivity() {
                     },
                     onBack = { showSettings = false },
                     onOpenDownloads = { showDownloadCenter = true },
+                    musicSource = musicSource,
+                    onCycleMusicSource = {
+                        musicSource = com.yunyin.music.data.nextMusicSource(musicSource)
+                        container.settings.musicSource = musicSource
+                    },
                     downloadWifiOnly = downloadWifiOnly,
                     onDownloadWifiOnlyChange = { enabled ->
                         downloadWifiOnly = enabled

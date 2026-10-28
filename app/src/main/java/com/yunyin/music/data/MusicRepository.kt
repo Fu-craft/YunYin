@@ -68,6 +68,13 @@ class MusicRepository(
     private val localMusic: com.yunyin.music.data.local.LocalMusicStore? = null,
     /** Memory+disk cache for playlist track lists; null in unit tests. */
     private val playlistCache: PlaylistTrackCache? = null,
+    /**
+     * Which catalogue search prefers — `netease`, `qq`, or `both` (see `SettingsStore.musicSource`).
+     *
+     * A lambda rather than a value: the setting can change while the process runs, and the repository
+     * is a singleton.
+     */
+    private val musicSource: () -> String = { "both" },
 ) {
 
     /**
@@ -112,9 +119,17 @@ class MusicRepository(
      */
     suspend fun search(keyword: String, offset: Int = 0): NetResult<MusicSearchPage> = coroutineScope {
         val providerPage = (offset / SEARCH_PAGE_SIZE) + 1
+        // 「仅网易云」 must not pay for a QQ request at all, and 「QQ 优先」 puts the other catalogue first.
+        val source = com.yunyin.music.data.normalizeMusicSource(musicSource())
+        val includeProviders = source != com.yunyin.music.data.MUSIC_SOURCE_NETEASE
         val neteaseDeferred = async { client.search(keyword, limit = SEARCH_PAGE_SIZE, offset = offset) }
         val providerDeferred = async {
-            providers?.search(keyword, page = providerPage, limit = SEARCH_PAGE_SIZE)
+            if (!includeProviders) {
+                NetResult.Ok(MusicSearchPage(emptyList(), hasMore = false))
+            } else {
+                providers?.search(keyword, page = providerPage, limit = SEARCH_PAGE_SIZE)
+                    ?: NetResult.Ok(MusicSearchPage(emptyList(), hasMore = false))
+            }
         }
         when (val netease = neteaseDeferred.await()) {
             is NetResult.Err -> {
@@ -138,7 +153,12 @@ class MusicRepository(
                 providerTracks.forEach { providers?.remember(it) }
                 NetResult.Ok(
                     MusicSearchPage(
-                        tracks = SearchMerge.merge(neteaseTracks, providerTracks),
+                        // 「QQ 音乐优先」 flips the merge so the other catalogue leads; dedupe is symmetric.
+                        tracks = if (source == com.yunyin.music.data.MUSIC_SOURCE_QQ) {
+                            SearchMerge.merge(providerTracks, neteaseTracks)
+                        } else {
+                            SearchMerge.merge(neteaseTracks, providerTracks)
+                        },
                         hasMore = neteaseTracks.size >= SEARCH_PAGE_SIZE || providerHasMore,
                         providers = if (providerTracks.isEmpty()) emptyList() else listOf("tx"),
                     ),

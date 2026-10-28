@@ -44,6 +44,13 @@ class ProviderPlayback(
     private val txSearch: TxSearch,
     private val store: ProviderTrackStore,
     private val log: LxSourceLog? = null,
+    /**
+     * Self-hosted QQ API, when the build/config has one.
+     *
+     * With it, a QQ track no longer needs an installed custom source: the API answers the stream URL and
+     * the lyric file itself. Without it every branch below behaves exactly as before.
+     */
+    private val qqApi: com.yunyin.music.data.providers.qq.QqMusicApiClient? = null,
 ) {
 
     /** Bounded cache of cross-source matches, including misses, so a track load does not search every time. */
@@ -71,7 +78,26 @@ class ProviderPlayback(
      * NetEase half of the results is still shown.
      */
     suspend fun search(keyword: String, page: Int, limit: Int): NetResult<MusicSearchPage> {
-        if (!sources.supports(TxSearch.PROVIDER)) return NetResult.Ok(MusicSearchPage(emptyList(), false))
+        if (!sources.supports(TxSearch.PROVIDER)) {
+            // No custom source, but the QQ API can still search on its own.
+            val api = qqApi?.takeIf { it.available } ?: return NetResult.Ok(MusicSearchPage(emptyList(), false))
+            return when (val result = api.search(keyword, page, limit)) {
+                is NetResult.Err -> {
+                    trace("provider=${TxSearch.PROVIDER}", "stage=search reason=${result.message} query=$keyword")
+                    NetResult.Ok(MusicSearchPage(emptyList(), false))
+                }
+                is NetResult.Ok -> {
+                    result.value.forEach { store.remember(it) }
+                    NetResult.Ok(
+                        MusicSearchPage(
+                            tracks = result.value,
+                            hasMore = result.value.size >= limit,
+                            providers = listOf(TxSearch.PROVIDER),
+                        ),
+                    )
+                }
+            }
+        }
         return when (val result = txSearch.search(keyword, page, limit)) {
             is NetResult.Err -> {
                 trace("provider=${TxSearch.PROVIDER}", "stage=search reason=${result.message} query=$keyword")
@@ -97,6 +123,19 @@ class ProviderPlayback(
     /** The URL for a provider track, or null when no enabled source can serve its platform. */
     suspend fun musicUrlFor(track: Track, appQuality: String): String? {
         val ref = track.providerRef ?: return null
+        // The self-hosted QQ API answers first: it is one HTTP call against the same catalogue, where the
+        // custom-source path costs a JS engine call and may not even be installed.
+        if (ref.provider == TxSearch.PROVIDER) {
+            qqApi?.takeIf { it.available }?.let { api ->
+                val direct = api.musicUrl(ref.providerId)
+                if (direct != null) {
+                    trace("provider=${ref.provider} trackId=${track.id}", "stage=url source=qq-api ok")
+                    store.remember(track)
+                    return direct
+                }
+                trace("provider=${ref.provider} trackId=${track.id}", "stage=url source=qq-api refused")
+            }
+        }
         if (!sources.supports(ref.provider)) {
             trace(
                 "provider=${ref.provider} trackId=${track.id}",

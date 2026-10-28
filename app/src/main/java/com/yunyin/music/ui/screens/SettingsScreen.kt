@@ -126,6 +126,14 @@ fun SettingsScreen(
     /** Overlap length in seconds for the dual-player crossfade. */
     crossfadeSeconds: Int = 6,
     onCycleCrossfadeSeconds: () -> Unit = {},
+    /**
+     * Which catalogue search prefers: `netease`, `qq`, or `both`.
+     *
+     * Shown as one row that cycles, because three states do not deserve a dialog and the label states
+     * the current choice outright.
+     */
+    musicSource: String = "both",
+    onCycleMusicSource: () -> Unit = {},
     /** Settings → 播放 → 测试状态栏歌词 (cycles four recipes). */
     onTestFlymeLyric: () -> Unit = {},
     /** Whether the lyrics page auto-hides the chrome after the idle delay (default off). */
@@ -240,6 +248,8 @@ fun SettingsScreen(
                 ToggleRow("无缝衔接", "切歌时让两首重叠淡入淡出", seamlessTransition, onSeamlessTransitionChange)
                 RowDivider()
                 LinkRow("交叉淡化时长", "${crossfadeSeconds} 秒", onCycleCrossfadeSeconds, "切歌重叠的时长")
+                RowDivider()
+                LinkRow("音乐源", com.yunyin.music.data.musicSourceLabel(musicSource), onCycleMusicSource, "搜索时优先展示哪个曲库")
                 RowDivider()
                 LinkRow("定时关闭", sleepTimerLabel, onShowSleepTimer, "到点后自动停止播放")
                 RowDivider()

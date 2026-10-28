@@ -35,8 +35,8 @@ android {
         // versionCode must increase for Android to accept a build as an update over a previous one;
         // versionName is what the user sees. Bumped together: a version name change with an unchanged
         // code would install as a downgrade and be rejected.
-        versionCode = 264
-        versionName = "4.43.8"
+        versionCode = 265
+        versionName = "4.44.0"
         vectorDrawables { useSupportLibrary = true }
 
         // The API endpoint is injected at build time rather than baked into the sources, so the
@@ -62,6 +62,15 @@ android {
             "String",
             "ANIMATED_ARTWORK_BASE_URL",
             "\"${localProps.getProperty("artwork.api.base.url") ?: "https://artwork.m8tec.top"}\"",
+        )
+
+        // Self-hosted QQ Music API (koa2, https://sansenjian.github.io/qq-music-api/). Blank means
+        // "not deployed": the app then plays QQ tracks only through a custom source, exactly as
+        // before. `qq.music.api.base.url` in local.properties points it at another host.
+        buildConfigField(
+            "String",
+            "QQ_MUSIC_API_BASE_URL",
+            "\"${localProps.getProperty("qq.music.api.base.url") ?: ""}\"",
         )
 
         buildConfigField(
