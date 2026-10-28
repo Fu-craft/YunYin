@@ -331,6 +331,9 @@ fun PlayerScreen(
             transitionInitialised = true
             return@LaunchedEffect
         }
+        // Freeze the cover's frame here, not inside the cover composable: the outgoing content is
+        // composed with the previous `transitioning` value, so it never sees the flag flip. This is
+        // also the last moment the TextureView is still attached and painting.
         transitionActive = true
         delay(TRANSITION_SETTLE_MS)
         transitionActive = false
@@ -409,6 +412,17 @@ fun PlayerScreen(
     }
     DisposableEffect(animatedCoverPlayer) {
         onDispose { animatedCoverPlayer?.release() }
+    }
+
+    // Freeze the last video frame the moment the lyrics page opens. Done here, outside the cover
+    // subtree, because that subtree is composed with the previous `transitioning` value and never
+    // observes the flip — which is why the bridge frame was always missing.
+    var coverFrame by remember { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
+    LaunchedEffect(showLyrics) {
+        if (showLyrics) {
+            animatedCoverPlayer?.captureCurrentFrame()
+            coverFrame = animatedCoverPlayer?.lastFrame?.let { it.asImageBitmap() }
+        }
     }
 
     // Hoisted animated-cover state. The cover subtree is disposed while the lyrics page shows, so a
@@ -1122,6 +1136,7 @@ fun PlayerScreen(
                                         onArtistClick = onArtistClick,
                                         cover = cover,
                                         posterUrl = animatedCoverPoster,
+                                        posterBitmap = coverFrame,
                                         artworkScale = sharedCoverScale,
                                         sharedScope = this@SharedTransitionLayout,
                                         visibilityScope = this@AnimatedContent,
@@ -1245,6 +1260,7 @@ fun PlayerScreen(
                                     onArtistClick = onArtistClick,
                                     cover = cover,
                                     posterUrl = animatedCoverPoster,
+                                    posterBitmap = coverFrame,
                                     artworkScale = sharedCoverScale,
                                     sharedScope = this@SharedTransitionLayout,
                                     visibilityScope = this@AnimatedContent,
@@ -2271,6 +2287,8 @@ private fun LyricsHeader(
      * the header can show a frame from the animation instead of the flat album art.
      */
     posterUrl: String? = null,
+    /** Last-resort still: the cover video's own frozen frame, used when the album has no poster. */
+    posterBitmap: androidx.compose.ui.graphics.ImageBitmap? = null,
     /**
      * The paused settle, shared with the full artwork. Both ends of the shared element must render at
      * one scale or the cross-fade between them reads as an enlargement — see
@@ -2294,7 +2312,11 @@ private fun LyricsHeader(
                 loader = loader,
                 corner = HEADER_COVER_CORNER,
                 requestSize = 200,
-                preloaded = if (posterUrl != null) null else cover,
+                preloaded = when {
+                    posterUrl != null -> null
+                    posterBitmap != null -> posterBitmap
+                    else -> cover
+                },
                 modifier = Modifier
                     .size(56.dp)
                     // Tapping the thumbnail returns to the artwork presentation. The shared

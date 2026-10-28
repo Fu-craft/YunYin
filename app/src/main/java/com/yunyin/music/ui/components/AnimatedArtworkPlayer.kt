@@ -60,6 +60,18 @@ class AnimatedCoverPlayerHost(context: Context) {
     @Volatile
     var renderedView: TextureView? = null
 
+    /**
+     * Freezes the current frame for the bridge. Called by the player screen when a presentation
+     * change starts, because the cover subtree is composed with the *previous* `transitioning` value
+     * and therefore never observes the flag itself.
+     */
+    fun captureCurrentFrame() {
+        val view = renderedView ?: return
+        runCatching { view.bitmap }.getOrNull()?.let { frame ->
+            if (!frame.isRecycled) lastFrame = frame
+        }
+    }
+
     val player: ExoPlayer
         get() = instance ?: createAnimatedCoverPlayer(appContext).also { instance = it }
 
