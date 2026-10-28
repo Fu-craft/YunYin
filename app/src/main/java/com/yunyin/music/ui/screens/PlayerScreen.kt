@@ -1121,7 +1121,7 @@ fun PlayerScreen(
                                         },
                                         onArtistClick = onArtistClick,
                                         cover = cover,
-                                        posterUrl = if (playerStyle == PlayerStyle.Immersive) animatedCoverPoster else null,
+                                        posterUrl = animatedCoverPoster,
                                         artworkScale = sharedCoverScale,
                                         sharedScope = this@SharedTransitionLayout,
                                         visibilityScope = this@AnimatedContent,
@@ -1244,7 +1244,7 @@ fun PlayerScreen(
                                     },
                                     onArtistClick = onArtistClick,
                                     cover = cover,
-                                    posterUrl = if (playerStyle == PlayerStyle.Immersive) animatedCoverPoster else null,
+                                    posterUrl = animatedCoverPoster,
                                     artworkScale = sharedCoverScale,
                                     sharedScope = this@SharedTransitionLayout,
                                     visibilityScope = this@AnimatedContent,
@@ -1766,7 +1766,13 @@ private fun ArtworkWithGestures(
                         val scale = artworkScale()
                         scaleX = scale
                         scaleY = scale
-                        alpha = sharedCoverPausedAlpha(scale)
+                        // Once the video layer has something to show, the static artwork underneath
+                        // must step aside: keeping both visible is what made the cover look like two
+                        // cards stacked (and let a square video edge peek past the rounded art).
+                        val hideForVideo = animatedCoverEnabled && animatedUrl != null &&
+                            playerStyle != PlayerStyle.Vinyl && !coverTransitioning &&
+                            (animatedPoster != null || animatedVideoReady)
+                        alpha = if (hideForVideo) 0f else sharedCoverPausedAlpha(scale)
                     }
                     .then(
                         if (flat) Modifier
@@ -1839,6 +1845,9 @@ private fun ArtworkWithGestures(
                     Modifier
                         .size(artSize)
                         .zIndex(1f)
+                        // The TextureView clips itself through clipToOutline; the bridge image and the
+                        // edge-fade scrim inside this box need the Compose clip as well.
+                        .clip(ContinuousRoundedRectangle(corner))
                         .onGloballyPositioned { videoBounds = it.boundsInRoot() },
                 ) {
                     AnimatedArtworkPlayer(

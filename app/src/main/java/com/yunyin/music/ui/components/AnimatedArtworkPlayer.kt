@@ -134,6 +134,9 @@ fun AnimatedArtworkPlayer(
     // Whether this composition's TextureView has a surface yet. Until it does, the video draws
     // nothing at all — the gap a returning cover used to fill with the static album art.
     var surfaceReady by remember(url) { mutableStateOf(false) }
+    // Whether this particular composition has painted a frame yet; the bridge hangs on this, not on
+    // the surface being created.
+    var frameShown by remember(url) { mutableStateOf(false) }
     // The last frame this view produced, so a re-attach (returning from the lyrics page) shows the
     // frozen video instead of falling back to the flat album cover for a beat.
     val lastFrame = remember(url) { host?.lastFrame }
@@ -158,6 +161,7 @@ fun AnimatedArtworkPlayer(
     DisposableEffect(player) {
         val listener = object : Player.Listener {
             override fun onRenderedFirstFrame() {
+                frameShown = true
                 firstFrame = true
                 revealed = true
                 host?.renderedUrl = url
@@ -234,8 +238,12 @@ fun AnimatedArtworkPlayer(
             // Bridge between compositions: the frozen last frame of this very video stays on screen
             // while the new TextureView attaches, so returning from the lyrics page never shows the
             // static album cover for a beat.
+            // The bridge stays up until *this* view has produced a frame. Hiding it on
+            // `surfaceReady` was wrong: the surface exists as soon as the TextureView is attached,
+            // hundreds of milliseconds before the decoder paints into it, so the static album cover
+            // showed through in that window.
             val bridge = lastFrame?.takeIf { host?.renderedUrl == url }
-            if (!surfaceReady && bridge != null) {
+            if (!frameShown && bridge != null) {
                 androidx.compose.foundation.Image(
                     bitmap = bridge.asImageBitmap(),
                     contentDescription = null,
@@ -265,7 +273,10 @@ fun AnimatedArtworkPlayer(
                 update = { view ->
                     Log.i(TAG, "attach texture view url=$url")
                     attachedView = view
-                    (view as? RoundedTextureView)?.setCornerRadius(cornerRadiusPx)
+                    (view as? RoundedTextureView)?.apply {
+                        setCornerRadius(cornerRadiusPx)
+                        clipToOutline = true
+                    }
                     player.setVideoTextureView(view)
                 },
             )
