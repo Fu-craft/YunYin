@@ -432,6 +432,16 @@ class LyricsRepository(
      * Runs on [scope] (IO), so the disk write never touches the main thread. A persisted bundle
      * answers instantly, which is what lets a previously-seen track resolve with no network at all.
      */
+    /**
+     * The raw LRC/YRC text for a track, as the download writer needs it: a saved file carries the
+     * lyric inside its tag and as a sibling .lrc, so it has to be the original document rather
+     * than the parsed, display-oriented lines.
+     */
+    suspend fun rawLyricText(trackId: Long, track: Track? = null): String? {
+        val bundle = fetchBundle(trackId) ?: return null
+        return bundle.lrc?.takeIf { it.isNotBlank() } ?: bundle.yrc?.takeIf { it.isNotBlank() }
+    }
+
     private suspend fun fetchBundle(trackId: Long): LyricBundle? {
         readCachedBundle(trackId)?.let { cached ->
             lastFetchWasNolyric = cached.nolyric

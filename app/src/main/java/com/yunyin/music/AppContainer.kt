@@ -250,6 +250,7 @@ class AppContainer(val appContext: Context) {
             preferredQuality = { settings.quality },
             sink = com.yunyin.music.data.download.ResumableDownloadSink(
                 appContext, downloadClient, lxLog, downloadRecords,
+                lyricFor = { track -> lyrics.rawLyricText(track.id, track) },
             ),
             log = lxLog,
             scope = CoroutineScope(SupervisorJob() + Dispatchers.IO),

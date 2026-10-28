@@ -36,6 +36,8 @@ class ResumableDownloadSink(
     private val client: OkHttpClient,
     private val log: LxSourceLog? = null,
     private val records: DownloadRecordStore? = null,
+    /** Raw LRC for a track, so the saved file can carry a USLT frame and a sibling .lrc. */
+    private val lyricFor: (suspend (Track) -> String?)? = null,
 ) : DownloadSink {
 
     private val partDir: File = File(context.filesDir, "downloads").apply { mkdirs() }
@@ -168,6 +170,11 @@ class ResumableDownloadSink(
 
     private suspend fun publish(track: Track, part: File, extension: String): SavedDownload {
         val resolver = context.contentResolver
+        val base = DownloadNaming.fileName(track.artistLine, track.name, extension).substringBeforeLast('.', "")
+        // Fetched before the insert: the cover goes *into* the audio file's ID3 tag, because a sibling
+        // image alone is invisible to every other player.
+        val cover = runCatching { fetchCover(track) }.getOrNull()
+        val lyric = runCatching { lyricFor?.invoke(track) }.getOrNull()
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, DownloadNaming.fileName(track.artistLine, track.name, extension))
             put(MediaStore.MediaColumns.MIME_TYPE, DownloadNaming.mimeFor(extension))
@@ -182,16 +189,60 @@ class ResumableDownloadSink(
         val uri = resolver.insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, values)
             ?: throw IOException("MediaStore 拒绝创建文件")
         try {
+            val tag = if (extension == "mp3") Mp3Tags.build(track, cover, lyric) else ByteArray(0)
             part.inputStream().use { input ->
-                resolver.openOutputStream(uri)?.use { output -> input.copyTo(output, 64 * 1024) }
-                    ?: throw IOException("无法打开存储输出流")
+                resolver.openOutputStream(uri)?.use { output ->
+                    if (tag.isNotEmpty()) {
+                        output.write(tag)
+                        // Skip the source's own tag when we just wrote one, so the file carries one tag.
+                        val skip = Mp3Tags.existingTagLength(part)
+                        if (skip > 0) input.skip(skip)
+                    }
+                    input.copyTo(output, 64 * 1024)
+                } ?: throw IOException("无法打开存储输出流")
             }
             resolver.update(uri, ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }, null, null)
-            return SavedDownload(uri.toString(), values.getAsString(MediaStore.MediaColumns.DISPLAY_NAME), DownloadNaming.RELATIVE_PATH)
+            val coverUri = runCatching { writeSidecar(base, "jpg", "image/jpeg", cover) }.getOrNull()
+            runCatching { writeSidecar(base, "lrc", "text/plain", lyric?.toByteArray(Charsets.UTF_8)) }
+            return SavedDownload(
+                uri.toString(),
+                values.getAsString(MediaStore.MediaColumns.DISPLAY_NAME),
+                DownloadNaming.RELATIVE_PATH,
+                coverUri,
+            )
         } catch (t: Throwable) {
             runCatching { resolver.delete(uri, null, null) }
             throw t
         }
+    }
+
+    /** The cover bytes as served, or null when the track has none or the fetch fails. */
+    private fun fetchCover(track: Track): ByteArray? {
+        val url = track.coverUrl?.takeIf { it.startsWith("http://", true) || it.startsWith("https://", true) }
+            ?: return null
+        val request = Request.Builder().url(url).header("User-Agent", "YunYin/1.0").build()
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) return null
+            val body = response.body ?: return null
+            if (body.contentLength() > MAX_COVER_BYTES) return null
+            return body.bytes().takeIf { it.isNotEmpty() }
+        }
+    }
+
+    /** Writes a sibling file (cover image, lyric text) next to the audio, best-effort. */
+    private fun writeSidecar(base: String, extension: String, mime: String, bytes: ByteArray?): String? {
+        if (bytes == null || bytes.isEmpty()) return null
+        val resolver = context.contentResolver
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, "$base.$extension")
+            put(MediaStore.MediaColumns.MIME_TYPE, mime)
+            put(MediaStore.MediaColumns.RELATIVE_PATH, DownloadNaming.RELATIVE_PATH)
+            put(MediaStore.MediaColumns.IS_PENDING, 1)
+        }
+        val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return null
+        resolver.openOutputStream(uri)?.use { it.write(bytes) }
+        resolver.update(uri, ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }, null, null)
+        return uri.toString()
     }
 
     private fun log(message: String) {
@@ -199,6 +250,7 @@ class ResumableDownloadSink(
     }
 
     private companion object {
+        const val MAX_COVER_BYTES = 6L * 1024 * 1024
         const val USER_AGENT = "YunYin/1.0 (download)"
     }
 }
