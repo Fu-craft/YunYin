@@ -196,15 +196,6 @@ class SettingsStore(context: Context) {
         coverPausedScale = clean.pausedScale
         CoverMotion.set(clean)
     }
-    /**
-     * Which catalogue search prefers: `netease`, `qq`, or `both`.
-     *
-     * Stored as a short string rather than an enum so an unknown value from a newer build degrades to
-     * `both` instead of throwing while the settings screen is being composed.
-     */
-    var musicSource: String
-        get() = normalizeMusicSource(prefs.getString(KEY_MUSIC_SOURCE, MUSIC_SOURCE_BOTH))
-        set(value) = prefs.edit().putString(KEY_MUSIC_SOURCE, normalizeMusicSource(value)).apply()
     var nowPlayingBackgroundStyle: String
         get() = normalizeNowPlayingBackgroundStyle(
             prefs.getString(KEY_NOW_PLAYING_BACKGROUND_STYLE, DEFAULT_NOW_PLAYING_BACKGROUND_STYLE),
@@ -396,7 +387,6 @@ class SettingsStore(context: Context) {
     private const val KEY_COVER_PAUSE_STIFFNESS = "cover_motion_pause_stiffness"
     private const val KEY_COVER_RESUME_DAMPING = "cover_motion_resume_damping_v2"
 private const val KEY_COVER_RESUME_POP = "cover_motion_resume_pop"
-private const val KEY_MUSIC_SOURCE = "music_source_priority"
     private const val KEY_COVER_PAUSED_SCALE = "cover_motion_paused_scale"
         private const val KEY_PROFILE_SIGNATURE = "profile_signature"
         private const val KEY_CUSTOM_NICKNAME = "custom_nickname"
@@ -439,28 +429,4 @@ internal fun normalizeNowPlayingBackgroundStyle(value: String?): String = when (
     "qp_mesh" -> "qp_mesh"
     "qp_classic" -> "qp_classic"
     else -> DEFAULT_NOW_PLAYING_BACKGROUND_STYLE
-}
-/** The three catalogue preferences; also the persisted values. */
-const val MUSIC_SOURCE_NETEASE = "netease"
-const val MUSIC_SOURCE_QQ = "qq"
-const val MUSIC_SOURCE_BOTH = "both"
-
-fun normalizeMusicSource(value: String?): String = when (value) {
-    MUSIC_SOURCE_NETEASE -> MUSIC_SOURCE_NETEASE
-    MUSIC_SOURCE_QQ -> MUSIC_SOURCE_QQ
-    else -> MUSIC_SOURCE_BOTH
-}
-
-/** Human label for the settings row. */
-fun musicSourceLabel(value: String): String = when (normalizeMusicSource(value)) {
-    MUSIC_SOURCE_NETEASE -> "仅网易云"
-    MUSIC_SOURCE_QQ -> "QQ 音乐优先"
-    else -> "网易云 + QQ 音乐"
-}
-
-/** The next value in the settings row's cycle. */
-fun nextMusicSource(value: String): String = when (normalizeMusicSource(value)) {
-    MUSIC_SOURCE_NETEASE -> MUSIC_SOURCE_QQ
-    MUSIC_SOURCE_QQ -> MUSIC_SOURCE_BOTH
-    else -> MUSIC_SOURCE_NETEASE
 }
