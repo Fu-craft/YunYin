@@ -190,13 +190,20 @@ class ResumableDownloadSink(
             ?: throw IOException("MediaStore 拒绝创建文件")
         try {
             val tag = if (extension == "mp3") Mp3Tags.build(track, cover, lyric) else ByteArray(0)
+            val flac = if (extension == "flac") FlacTags.build(part, track, cover, lyric) else null
             part.inputStream().use { input ->
                 resolver.openOutputStream(uri)?.use { output ->
-                    if (tag.isNotEmpty()) {
-                        output.write(tag)
-                        // Skip the source's own tag when we just wrote one, so the file carries one tag.
-                        val skip = Mp3Tags.existingTagLength(part)
-                        if (skip > 0) input.skip(skip)
+                    when {
+                        flac != null -> {
+                            output.write(flac.first)
+                            if (flac.second > 0) input.skip(flac.second)
+                        }
+                        tag.isNotEmpty() -> {
+                            output.write(tag)
+                            // Skip the source's own tag when we just wrote one, so the file carries one tag.
+                            val skip = Mp3Tags.existingTagLength(part)
+                            if (skip > 0) input.skip(skip)
+                        }
                     }
                     input.copyTo(output, 64 * 1024)
                 } ?: throw IOException("无法打开存储输出流")

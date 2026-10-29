@@ -271,8 +271,10 @@ class AppContainer(val appContext: Context) {
             onWifi = { isOnWifi(appContext) },
             availableBytes = { appContext.filesDir.usableSpace },
             deleteStored = { uri ->
-                runCatching { appContext.contentResolver.delete(Uri.parse(uri), null, null) > 0 }
-                    .getOrDefault(false)
+                // Also removes the sibling cover and .lrc the writer published next to the audio.
+                runCatching {
+                    com.yunyin.music.data.download.DownloadCleanup.deleteWithSidecars(appContext, Uri.parse(uri))
+                }.getOrDefault(false)
             },
         ).also { manager ->
             // The completion hook lives here rather than in a screen: downloads continue while the user is
