@@ -277,6 +277,8 @@ class MainActivity : ComponentActivity() {
         var cloudRecentLoaded by remember { mutableStateOf(false) }
         var showImportSheet by remember { mutableStateOf(false) }
         var showListenReport by remember { mutableStateOf(false) }
+        var showSimilarArtists by remember { mutableStateOf(false) }
+        var similarArtistTrackId by remember { mutableStateOf(0L) }
         var importText by remember { mutableStateOf("") }
         var importing by remember { mutableStateOf(false) }
         var showDownloadCenter by remember { mutableStateOf(false) }
@@ -1832,6 +1834,10 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     },
+                    onOpenSimilarArtists = { id ->
+                        similarArtistTrackId = id
+                        showSimilarArtists = true
+                    },
                     onShowSettings = { showSettings = true; showPlayer = false },
                     onArtistClick = { name ->
                         // The artist page sits above the player: closing it returns to where the tap
@@ -2351,6 +2357,18 @@ class MainActivity : ComponentActivity() {
                 dismissButton = {
                     androidx.compose.material3.TextButton(onClick = { showImportSheet = false }) { Text("取消") }
                 },
+            )
+        }
+
+        if (showSimilarArtists) {
+            BackHandler { showSimilarArtists = false }
+            com.yunyin.music.ui.screens.SimilarArtistsScreen(
+                loadArtists = { container.music.similarArtists(similarArtistTrackId) },
+                onPick = { id, name ->
+                    showSimilarArtists = false
+                    appViewModel.openArtist(id, name)
+                },
+                onBack = { showSimilarArtists = false },
             )
         }
 

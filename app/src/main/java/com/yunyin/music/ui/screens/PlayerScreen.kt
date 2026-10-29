@@ -204,6 +204,8 @@ fun PlayerScreen(
     onOpenSimilar: ((trackId: Long, title: String) -> Unit)? = null,
     /** Opens the 音乐百科 article for the playing track (null hides the row). */
     onOpenWiki: ((trackId: Long) -> Unit)? = null,
+    /** Opens 相似歌手 for the playing track (null hides the row). */
+    onOpenSimilarArtists: ((trackId: Long) -> Unit)? = null,
     /** Opens the lyric-card share flow; null keeps the row hidden (e.g. no lyrics/current track). */
     onShareLyrics: (() -> Unit)? = null,
     onPlayNext: (() -> Unit)? = null,
@@ -1477,6 +1479,7 @@ fun PlayerScreen(
                     { id, name -> interaction++; open(id, name) }
                 },
                 onOpenWiki = onOpenWiki,
+                onOpenSimilarArtists = onOpenSimilarArtists,
                 onShowQueue = {
                     interaction++
                     onShowQueue()
@@ -2414,6 +2417,7 @@ private fun TrackActionsSheet(
     onShareLyrics: (() -> Unit)? = null,
     onOpenSimilar: ((Long, String) -> Unit)? = null,
     onOpenWiki: ((Long) -> Unit)? = null,
+    onOpenSimilarArtists: ((Long) -> Unit)? = null,
 ) {
     AnimatedSheet(
         onDismissed = onDismiss,
@@ -2432,6 +2436,9 @@ private fun TrackActionsSheet(
     ) { close ->
         if (track != null && onOpenSimilar != null) {
             if (track != null && onOpenWiki != null) {
+                if (track != null && onOpenSimilarArtists != null) {
+                    ActionRow(SfIcons.Heart, "相似歌手", true) { close { onOpenSimilarArtists.invoke(track.id) } }
+                }
                 ActionRow(SfIcons.ListBullet, "音乐百科", true) { close { onOpenWiki.invoke(track.id) } }
             }
             ActionRow(SfIcons.ArrowUpRight, "相似歌曲", track != null) { close { track.let { onOpenSimilar.invoke(it.id, it.name) } } }
