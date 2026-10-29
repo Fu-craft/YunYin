@@ -452,13 +452,6 @@ private fun LibraryContent(
                     onClick = { onOpenPage(LibraryPage.Playlists) },
                 )
 
-                // 导入歌单: text lines or a shared playlist link, imported onto the signed-in account.
-                LibraryRow(
-                    icon = SfIcons.SquareAndArrowDown,
-                    label = "导入歌单",
-                    trailing = null,
-                    onClick = onImportPlaylist,
-                )
 
                 // 最近播放 — opens its own page for the same reason.
                 LibraryRow(

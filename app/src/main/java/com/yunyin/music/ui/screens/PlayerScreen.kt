@@ -2434,15 +2434,6 @@ private fun TrackActionsSheet(
             .clickable(enabled = false, indication = null, interactionSource = null) { }
             .padding(vertical = 6.dp),
     ) { close ->
-        if (track != null && onOpenSimilar != null) {
-            if (track != null && onOpenWiki != null) {
-                if (track != null && onOpenSimilarArtists != null) {
-                    ActionRow(SfIcons.Heart, "相似歌手", true) { close { onOpenSimilarArtists.invoke(track.id) } }
-                }
-                ActionRow(SfIcons.ListBullet, "音乐百科", true) { close { onOpenWiki.invoke(track.id) } }
-            }
-            ActionRow(SfIcons.ArrowUpRight, "相似歌曲", track != null) { close { track.let { onOpenSimilar.invoke(it.id, it.name) } } }
-        }
         if (onPlayNext != null) {
             ActionRow(SfIcons.Forward, "下一首播放", track != null) { close { onPlayNext() } }
         }
