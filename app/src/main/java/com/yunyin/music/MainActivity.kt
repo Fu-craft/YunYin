@@ -1820,6 +1820,17 @@ class MainActivity : ComponentActivity() {
                         showPlayer = false
                         appViewModel.openSimilarSongs(id, title)
                     },
+                    onOpenWiki = { id ->
+                        scope.launch {
+                            val result = container.music.songWiki(id)
+                            val link = (result as? com.yunyin.music.core.NetResult.Ok)?.value?.linkUrl
+                            if (link != null) {
+                                openUrl(link)
+                            } else {
+                                android.widget.Toast.makeText(context, "暂无百科条目", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
                     onShowSettings = { showSettings = true; showPlayer = false },
                     onArtistClick = { name ->
                         // The artist page sits above the player: closing it returns to where the tap

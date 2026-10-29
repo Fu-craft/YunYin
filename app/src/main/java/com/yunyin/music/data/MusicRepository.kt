@@ -72,6 +72,8 @@ class MusicRepository(
     private val recentPlayed: com.yunyin.music.data.net.RecentPlayed? = null,
     /** 歌单导入 transport; null disables the feature. */
     private val playlistImport: com.yunyin.music.data.net.PlaylistImportApi? = null,
+    /** 音乐百科 transport; null disables the card. */
+    private val songWiki: com.yunyin.music.data.net.SongWikiApi? = null,
 ) {
 
     /**
@@ -155,6 +157,10 @@ class MusicRepository(
 
     /** The 曲风 tag tree for the style browser. */
     suspend fun styleTags(): NetResult<List<NeteaseClient.StyleTag>> = client.styleTags()
+
+    /** 音乐百科卡片数据；null 表示没有可用条目. */
+    suspend fun songWiki(songId: Long) =
+        songWiki?.summary(songId) ?: com.yunyin.music.core.NetResult.Ok(null)
 
     /** 歌单导入 —— 文字（每行「歌名 歌手」）. */
     suspend fun importPlaylistFromText(text: String, name: String? = null) =
