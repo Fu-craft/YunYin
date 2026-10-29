@@ -266,6 +266,7 @@ class MainActivity : ComponentActivity() {
         // queue that already exists instead of spending another request; any normal play clears it.
         var beatModeActive by remember { mutableStateOf(false) }
         var showSettings by remember { mutableStateOf(false) }
+        var showStyleBrowser by remember { mutableStateOf(false) }
         var showDownloadCenter by remember { mutableStateOf(false) }
     var showStats by remember { mutableStateOf(false) }
     var showLyricPicker by remember { mutableStateOf(false) }
@@ -1098,6 +1099,7 @@ class MainActivity : ComponentActivity() {
                         PlayerTab.Search -> SearchScreen(
                             state = searchState,
                             loader = container.artwork,
+                            onOpenStyles = { showStyleBrowser = true },
                             onKeywordChange = appViewModel::onKeywordChange,
                             onSubmit = { appViewModel.submitSearch(it) },
                             onClear = { appViewModel.clearSearch() },
@@ -2240,6 +2242,20 @@ class MainActivity : ComponentActivity() {
         BackHandler(enabled = collectionState != null) { appViewModel.closeCollection() }
         BackHandler(enabled = commentsState.visible) { appViewModel.closeComments() }
         BackHandler(enabled = showSettings) { showSettings = false }
+
+        // 曲风 browser: a full-screen overlay above the tabs, opened from the search page. The tag
+        // list is fetched by the screen itself; picking a tag opens the shared collection page.
+        if (showStyleBrowser) {
+            BackHandler { showStyleBrowser = false }
+            com.yunyin.music.ui.screens.StyleScreen(
+                loadTags = { container.music.styleTags() },
+                onPick = { tagId, name ->
+                    showStyleBrowser = false
+                    appViewModel.openStyleSongs(tagId, name)
+                },
+                onBack = { showStyleBrowser = false },
+            )
+        }
         BackHandler(enabled = showDownloadCenter) { showDownloadCenter = false }
         BackHandler(enabled = showStats) { showStats = false }
         BackHandler(enabled = showLogin) { showLogin = false }

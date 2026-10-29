@@ -99,6 +99,8 @@ fun SearchScreen(
     onSuggestionArtist: (Long, String) -> Unit = { _, _ -> },
     onSuggestionAlbum: (Long, String) -> Unit = { _, _ -> },
     onDismissSuggestions: () -> Unit = {},
+    /** Opens the 曲风 browser; shown as a row in the idle state. */
+    onOpenStyles: () -> Unit = {},
 ) {
     val suggestions = state.suggestions
     BackHandler(
@@ -376,6 +378,31 @@ fun SearchScreen(
                                 }
                                 InsetSeparator(startPadding = 50.dp)
                             }
+                        }
+
+                        item("style-entry") {
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clickable(onClick = onOpenStyles)
+                                    .padding(horizontal = 20.dp, vertical = 14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = "按曲风浏览",
+                                    fontFamily = SFPro,
+                                    fontSize = 16.sp,
+                                    color = AppTheme.palette.label,
+                                )
+                                Spacer(Modifier.weight(1f))
+                                Text(
+                                    text = "流行 · 电子 · 民谣 …",
+                                    fontFamily = SFPro,
+                                    fontSize = 13.sp,
+                                    color = AppTheme.palette.secondaryLabel,
+                                )
+                            }
+                            InsetSeparator(startPadding = 20.dp)
                         }
 
                         if (state.hot.isNotEmpty()) {
