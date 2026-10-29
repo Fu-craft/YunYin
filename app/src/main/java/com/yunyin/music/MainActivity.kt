@@ -276,6 +276,7 @@ class MainActivity : ComponentActivity() {
         var cloudRecentError by remember { mutableStateOf<String?>(null) }
         var cloudRecentLoaded by remember { mutableStateOf(false) }
         var showImportSheet by remember { mutableStateOf(false) }
+        var showListenReport by remember { mutableStateOf(false) }
         var importText by remember { mutableStateOf("") }
         var importing by remember { mutableStateOf(false) }
         var showDownloadCenter by remember { mutableStateOf(false) }
@@ -1203,8 +1204,8 @@ class MainActivity : ComponentActivity() {
                             },
                             onOpenDownloads = { showDownloadCenter = true },
                             onOpenStats = {
-                            // Gated: StatsFeature.enabled is false until the crash is understood.
-                            if (com.yunyin.music.data.stats.StatsFeature.enabled) showStats = true
+                            // Cloud listening footprint; the local recorder page stays behind its kill switch.
+                            showListenReport = true
                         },
                         )
                     }
@@ -2350,6 +2351,15 @@ class MainActivity : ComponentActivity() {
                 dismissButton = {
                     androidx.compose.material3.TextButton(onClick = { showImportSheet = false }) { Text("取消") }
                 },
+            )
+        }
+
+        if (showListenReport) {
+            BackHandler { showListenReport = false }
+            com.yunyin.music.ui.screens.ListenReportScreen(
+                loadTotal = { container.music.listenTotalSeconds() },
+                loadReport = { period -> container.music.listenReport(period) },
+                onBack = { showListenReport = false },
             )
         }
 
