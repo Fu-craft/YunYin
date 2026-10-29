@@ -60,7 +60,7 @@ data class CollectionUiState(
 )
 
 /** The source of a collection page, so an error retry can replay the right request. */
-enum class CollectionKind { Playlist, Liked, Chart, Album }
+enum class CollectionKind { Playlist, Liked, Chart, Album, Style }
 
 /** Search tab content. */
 data class SearchUiState(
@@ -833,9 +833,44 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
             CollectionKind.Liked -> openLikedSongs(accountUid(), state.coverUrl)
             CollectionKind.Chart -> openChart(state.id, state.title, state.coverUrl)
             CollectionKind.Album -> openAlbum(state.id, state.title, state.coverUrl)
+            CollectionKind.Style -> openStyleSongs(state.id.toInt(), state.title)
         }
     }
 
+    /**
+     * Opens the song list behind one 曲风 tag.
+     *
+     * Reuses the collection screen rather than introducing a second list UI: the page is "a titled
+     * list of tracks with a header", which is exactly what this state already models. The tag id is
+     * carried in `id` so [retryCollection] can replay the same request.
+     */
+    fun openStyleSongs(tagId: Int, title: String) {
+        collectionJob?.cancel()
+        val requestId = ++collectionRequestId
+        _collection.value = CollectionUiState(
+            id = tagId.toLong(),
+            title = title,
+            coverUrl = null,
+            kind = CollectionKind.Style,
+        )
+        collectionJob = viewModelScope.launch {
+            val result = runCatching { container.music.styleSongs(tagId) }
+            val shown = _collection.value?.id
+            if (shown != null && collectionResultApplies(requestId, collectionRequestId, shown, tagId.toLong())) {
+                val page = result.getOrNull()
+                val tracks = (page as? com.yunyin.music.core.NetResult.Ok)?.value.orEmpty()
+                _collection.value = _collection.value?.copy(
+                    tracks = tracks,
+                    loading = false,
+                    error = if (result.isFailure || page is com.yunyin.music.core.NetResult.Err) {
+                        "曲风加载失败，请重试"
+                    } else {
+                        null
+                    },
+                )
+            }
+        }
+    }
     fun closeCollection() {
         collectionJob?.cancel()
         collectionJob = null

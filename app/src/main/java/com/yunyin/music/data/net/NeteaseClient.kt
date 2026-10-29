@@ -530,6 +530,42 @@ class NeteaseClient(
     }
 
     /** Batched track objects for the playlist loader (500 ids per `/song/detail` call in the deployed instance). */
+    /**
+     * The 曲风 (style) tag tree: /style/list returns top-level tags with their children nested
+     * one level deep, which is exactly the two-level browser the style page shows.
+     */
+    suspend fun styleTags(): NetResult<List<StyleTag>> = request("/style/list").map { json ->
+        val array = json.optJSONArray("data") ?: return@map emptyList()
+        buildList {
+            for (index in 0 until array.length()) {
+                val item = array.optJSONObject(index) ?: continue
+                add(
+                    StyleTag(
+                        id = item.optInt("tagId"),
+                        name = item.optString("tagName"),
+                        children = item.optJSONArray("childrenTags")?.let { children ->
+                            buildList {
+                                for (childIndex in 0 until children.length()) {
+                                    val child = children.optJSONObject(childIndex) ?: continue
+                                    add(StyleTag(child.optInt("tagId"), child.optString("tagName"), emptyList()))
+                                }
+                            }
+                        }.orEmpty(),
+                    ),
+                )
+            }
+        }
+    }
+
+    /** Songs under one style tag; /style/song answers { data: { songs: [...] } }. */
+    suspend fun styleSongs(tagId: Int, limit: Int = 50): NetResult<List<Track>> = request(
+        "/style/song",
+        query = mapOf("tagId" to "$tagId", "limit" to "$limit"),
+    ).map { json -> json.optJSONObject("data")?.optJSONArray("songs")?.mapDetailTracks().orEmpty() }
+
+    /** One node of the 曲风 tree. children is empty for a leaf tag. */
+    data class StyleTag(val id: Int, val name: String, val children: List<StyleTag> = emptyList())
+
     suspend fun songDetails(ids: List<Long>): NetResult<List<Track>> = songsByIds(ids)
 
     suspend fun playlistTracks(id: Long, limit: Int = 1000, offset: Int = 0): NetResult<List<Track>> = request(

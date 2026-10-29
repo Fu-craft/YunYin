@@ -148,7 +148,13 @@ class MusicRepository(
     }
 
     suspend fun hotSearch(): List<String> = client.hotSearch().listOrEmpty()
-    /**
+
+    /** The 曲风 tag tree for the style browser. */
+    suspend fun styleTags(): NetResult<List<NeteaseClient.StyleTag>> = client.styleTags()
+
+    /** Songs under one 曲风 tag. */
+    suspend fun styleSongs(tagId: Int, limit: Int = 50): NetResult<List<Track>> =
+        client.styleSongs(tagId, limit)    /**
      * Resolves a stream URL, or null when the track is unavailable. Trials pass through.
      *
      * ## One resolution per track, shared by both callers
