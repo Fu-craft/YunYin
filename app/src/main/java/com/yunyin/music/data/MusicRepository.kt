@@ -152,6 +152,13 @@ class MusicRepository(
     /** The 曲风 tag tree for the style browser. */
     suspend fun styleTags(): NetResult<List<NeteaseClient.StyleTag>> = client.styleTags()
 
+    /** 相似歌曲 for the player's 「相似」 entry. */
+    suspend fun similarSongs(id: Long): NetResult<List<Track>> = client.similarSongs(id)
+
+    /** 相似歌手 for the player's 「相似」 entry. */
+    suspend fun similarArtists(id: Long): NetResult<List<com.yunyin.music.core.ArtistInfo>> =
+        client.similarArtists(id)
+
     /** Songs under one 曲风 tag. */
     suspend fun styleSongs(tagId: Int, limit: Int = 50): NetResult<List<Track>> =
         client.styleSongs(tagId, limit)    /**

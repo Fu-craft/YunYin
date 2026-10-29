@@ -534,6 +534,32 @@ class NeteaseClient(
      * The 曲风 (style) tag tree: /style/list returns top-level tags with their children nested
      * one level deep, which is exactly the two-level browser the style page shows.
      */
+    /** 相似歌曲 (`/simi/song`); the answer is a bare `songs` array. */
+    suspend fun similarSongs(id: Long, limit: Int = 50): NetResult<List<Track>> = request(
+        "/simi/song",
+        query = mapOf("id" to "$id", "limit" to "$limit"),
+    ).map { json -> json.optJSONArray("songs")?.mapDetailTracks().orEmpty() }
+
+    /** 相似歌手 (`/simi/artist`); each entry carries a NetEase artist id and a cover. */
+    suspend fun similarArtists(id: Long): NetResult<List<ArtistInfo>> = request(
+        "/simi/artist",
+        query = mapOf("id" to "$id"),
+    ).map { json ->
+        val array = json.optJSONArray("artists") ?: return@map emptyList()
+        buildList {
+            for (index in 0 until array.length()) {
+                val item = array.optJSONObject(index) ?: continue
+                add(
+                    ArtistInfo(
+                        id = item.optLong("id"),
+                        name = item.optString("name"),
+                        coverUrl = item.optString("picUrl").takeIf { it.isNotBlank() },
+                    ),
+                )
+            }
+        }
+    }
+
     suspend fun styleTags(): NetResult<List<StyleTag>> = request("/style/list").map { json ->
         val array = json.optJSONArray("data") ?: return@map emptyList()
         buildList {

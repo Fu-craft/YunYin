@@ -60,7 +60,7 @@ data class CollectionUiState(
 )
 
 /** The source of a collection page, so an error retry can replay the right request. */
-enum class CollectionKind { Playlist, Liked, Chart, Album, Style }
+enum class CollectionKind { Playlist, Liked, Chart, Album, Style, Similar }
 
 /** Search tab content. */
 data class SearchUiState(
@@ -834,6 +834,7 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
             CollectionKind.Chart -> openChart(state.id, state.title, state.coverUrl)
             CollectionKind.Album -> openAlbum(state.id, state.title, state.coverUrl)
             CollectionKind.Style -> openStyleSongs(state.id.toInt(), state.title)
+            CollectionKind.Similar -> openSimilarSongs(state.id, state.title)
         }
     }
 
@@ -864,6 +865,33 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
                     loading = false,
                     error = if (result.isFailure || page is com.yunyin.music.core.NetResult.Err) {
                         "曲风加载失败，请重试"
+                    } else {
+                        null
+                    },
+                )
+            }
+        }
+    }
+    /** Opens 相似歌曲 for one track in the shared collection page. */
+    fun openSimilarSongs(trackId: Long, title: String) {
+        collectionJob?.cancel()
+        val requestId = ++collectionRequestId
+        _collection.value = CollectionUiState(
+            id = trackId,
+            title = title,
+            coverUrl = null,
+            kind = CollectionKind.Similar,
+        )
+        collectionJob = viewModelScope.launch {
+            val result = runCatching { container.music.similarSongs(trackId) }
+            val shown = _collection.value?.id
+            if (shown != null && collectionResultApplies(requestId, collectionRequestId, shown, trackId)) {
+                val page = result.getOrNull()
+                _collection.value = _collection.value?.copy(
+                    tracks = (page as? com.yunyin.music.core.NetResult.Ok)?.value.orEmpty(),
+                    loading = false,
+                    error = if (result.isFailure || page is com.yunyin.music.core.NetResult.Err) {
+                        "相似歌曲加载失败，请重试"
                     } else {
                         null
                     },

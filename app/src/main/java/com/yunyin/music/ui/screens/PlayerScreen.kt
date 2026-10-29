@@ -200,6 +200,8 @@ fun PlayerScreen(
     onCycleRepeat: () -> Unit,
     onToggleShuffle: () -> Unit,
     onShowQueue: () -> Unit,
+    /** Opens 相似歌曲 for the playing track (null hides the row). */
+    onOpenSimilar: ((trackId: Long, title: String) -> Unit)? = null,
     /** Opens the lyric-card share flow; null keeps the row hidden (e.g. no lyrics/current track). */
     onShareLyrics: (() -> Unit)? = null,
     onPlayNext: (() -> Unit)? = null,
@@ -1469,6 +1471,9 @@ fun PlayerScreen(
                 onDismiss = { showActions = false },
                 onShare = onShareTrack,
                 onShareLyrics = onShareLyrics,
+                onOpenSimilar = onOpenSimilar?.let { open ->
+                    { id, name -> interaction++; open(id, name) }
+                },
                 onShowQueue = {
                     interaction++
                     onShowQueue()
@@ -2404,6 +2409,7 @@ private fun TrackActionsSheet(
     onShare: () -> Unit,
     onShowQueue: () -> Unit,
     onShareLyrics: (() -> Unit)? = null,
+    onOpenSimilar: ((Long, String) -> Unit)? = null,
 ) {
     AnimatedSheet(
         onDismissed = onDismiss,
@@ -2420,6 +2426,9 @@ private fun TrackActionsSheet(
             .clickable(enabled = false, indication = null, interactionSource = null) { }
             .padding(vertical = 6.dp),
     ) { close ->
+        if (track != null && onOpenSimilar != null) {
+            ActionRow(SfIcons.ArrowUpRight, "相似歌曲", track != null) { close { track.let { onOpenSimilar.invoke(it.id, it.name) } } }
+        }
         if (onPlayNext != null) {
             ActionRow(SfIcons.Forward, "下一首播放", track != null) { close { onPlayNext() } }
         }
