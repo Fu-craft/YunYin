@@ -70,6 +70,8 @@ class MusicRepository(
     private val playlistCache: PlaylistTrackCache? = null,
     /** Cloud record feed (`/record/recent/song|album|playlist`); null in unit tests. */
     private val recentPlayed: com.yunyin.music.data.net.RecentPlayed? = null,
+    /** 歌单导入 transport; null disables the feature. */
+    private val playlistImport: com.yunyin.music.data.net.PlaylistImportApi? = null,
 ) {
 
     /**
@@ -153,6 +155,21 @@ class MusicRepository(
 
     /** The 曲风 tag tree for the style browser. */
     suspend fun styleTags(): NetResult<List<NeteaseClient.StyleTag>> = client.styleTags()
+
+    /** 歌单导入 —— 文字（每行「歌名 歌手」）. */
+    suspend fun importPlaylistFromText(text: String, name: String? = null) =
+        playlistImport?.createFromText(text, name)
+            ?: com.yunyin.music.core.NetResult.Err("导入功能不可用")
+
+    /** 歌单导入 —— 分享链接. */
+    suspend fun importPlaylistFromLinks(links: List<String>, name: String? = null) =
+        playlistImport?.createFromLinks(links, name)
+            ?: com.yunyin.music.core.NetResult.Err("导入功能不可用")
+
+    /** 歌单导入任务状态. */
+    suspend fun importPlaylistStatus(taskId: String) =
+        playlistImport?.status(taskId)
+            ?: com.yunyin.music.core.NetResult.Err("导入功能不可用")
 
     /** 最近播放（云端）歌曲: the feed carries ids only, so they are hydrated into full tracks here. */
     suspend fun recentCloudSongs(limit: Int = 100): NetResult<List<Track>> {

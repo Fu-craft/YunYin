@@ -134,6 +134,8 @@ fun LibraryScreen(
     cloudRecentLoading: Boolean = false,
     cloudRecentError: String? = null,
     onLoadCloudRecent: () -> Unit = {},
+    /** Opens the 歌单导入 sheet (text lines or shared links). */
+    onImportPlaylist: () -> Unit = {},
     onOpenAlbumById: (Long) -> Unit = {},
     onOpenPlaylistById: (Long) -> Unit = {},
     signature: String = "",
@@ -393,6 +395,7 @@ private fun LibraryContent(
     onLocalMusicClick: () -> Unit = {},
     onOpenDownloads: () -> Unit = {},
     onOpenStats: () -> Unit = {},
+    onImportPlaylist: () -> Unit = {},
     onOpenPage: (LibraryPage) -> Unit,
 ) {
     val signedIn = account != null && !account.isAnonymous
@@ -446,6 +449,14 @@ private fun LibraryContent(
                     label = "我的歌单",
                     trailing = if (normalPlaylists.isNotEmpty()) "${normalPlaylists.size}" else null,
                     onClick = { onOpenPage(LibraryPage.Playlists) },
+                )
+
+                // 导入歌单: text lines or a shared playlist link, imported onto the signed-in account.
+                LibraryRow(
+                    icon = SfIcons.SquareAndArrowDown,
+                    label = "导入歌单",
+                    trailing = null,
+                    onClick = onImportPlaylist,
                 )
 
                 // 最近播放 — opens its own page for the same reason.

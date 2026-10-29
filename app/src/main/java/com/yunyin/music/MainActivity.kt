@@ -31,6 +31,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.material3.Text
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -273,6 +275,9 @@ class MainActivity : ComponentActivity() {
         var cloudRecentLoading by remember { mutableStateOf(false) }
         var cloudRecentError by remember { mutableStateOf<String?>(null) }
         var cloudRecentLoaded by remember { mutableStateOf(false) }
+        var showImportSheet by remember { mutableStateOf(false) }
+        var importText by remember { mutableStateOf("") }
+        var importing by remember { mutableStateOf(false) }
         var showDownloadCenter by remember { mutableStateOf(false) }
     var showStats by remember { mutableStateOf(false) }
     var showLyricPicker by remember { mutableStateOf(false) }
@@ -1174,6 +1179,7 @@ class MainActivity : ComponentActivity() {
                             onOpenPlaylistById = { id ->
                                 appViewModel.openPlaylist(com.yunyin.music.core.Playlist(id = id, name = "歌单", coverUrl = null))
                             },
+                            onImportPlaylist = { showImportSheet = true },
                             signature = signature,
                             displayName = displayName,
                             likedCount = appViewModel.likedCount,
@@ -2282,6 +2288,60 @@ class MainActivity : ComponentActivity() {
 
         // 曲风 browser: a full-screen overlay above the tabs, opened from the search page. The tag
         // list is fetched by the screen itself; picking a tag opens the shared collection page.
+        if (showImportSheet) {
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { if (!importing) showImportSheet = false },
+                title = { Text("导入歌单", fontFamily = com.yunyin.music.ui.theme.SFPro) },
+                text = {
+                    Column {
+                        Text(
+                            "每行一首「歌名 歌手」，也可以粘贴歌单分享链接。",
+                            fontFamily = com.yunyin.music.ui.theme.SFPro,
+                            fontSize = 13.sp,
+                            color = AppTheme.palette.secondaryLabel,
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        androidx.compose.material3.OutlinedTextField(
+                            value = importText,
+                            onValueChange = { importText = it },
+                            minLines = 4,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                },
+                confirmButton = {
+                    androidx.compose.material3.TextButton(
+                        enabled = !importing && importText.isNotBlank(),
+                        onClick = {
+                            val input = importText.trim()
+                            importing = true
+                            scope.launch {
+                                val links = input.lineSequence().filter { it.startsWith("http") }.toList()
+                                val result = if (links.isNotEmpty() && links.size == input.lines().size) {
+                                    container.music.importPlaylistFromLinks(links)
+                                } else {
+                                    container.music.importPlaylistFromText(input)
+                                }
+                                importing = false
+                                val message = when (result) {
+                                    is com.yunyin.music.core.NetResult.Ok -> "已提交导入任务 #" + result.value.id
+                                    is com.yunyin.music.core.NetResult.Err -> result.message
+                                }
+                                android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
+                                if (result is com.yunyin.music.core.NetResult.Ok) {
+                                    showImportSheet = false
+                                    importText = ""
+                                }
+                            }
+                        },
+                    ) { Text(if (importing) "导入中…" else "导入") }
+                },
+                dismissButton = {
+                    androidx.compose.material3.TextButton(onClick = { showImportSheet = false }) { Text("取消") }
+                },
+            )
+        }
+
         if (showStyleBrowser) {
             BackHandler { showStyleBrowser = false }
             com.yunyin.music.ui.screens.StyleScreen(
