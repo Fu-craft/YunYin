@@ -68,6 +68,8 @@ class MusicRepository(
     private val localMusic: com.yunyin.music.data.local.LocalMusicStore? = null,
     /** Memory+disk cache for playlist track lists; null in unit tests. */
     private val playlistCache: PlaylistTrackCache? = null,
+    /** Cloud record feed (`/record/recent/song|album|playlist`); null in unit tests. */
+    private val recentPlayed: com.yunyin.music.data.net.RecentPlayed? = null,
 ) {
 
     /**
@@ -152,8 +154,24 @@ class MusicRepository(
     /** The 曲风 tag tree for the style browser. */
     suspend fun styleTags(): NetResult<List<NeteaseClient.StyleTag>> = client.styleTags()
 
-    /** 相似歌曲 for the player's 「相似」 entry. */
-    suspend fun similarSongs(id: Long): NetResult<List<Track>> = client.similarSongs(id)
+    /** 最近播放（云端）歌曲: the feed carries ids only, so they are hydrated into full tracks here. */
+    suspend fun recentCloudSongs(limit: Int = 100): NetResult<List<Track>> {
+        val feed = recentPlayed ?: return NetResult.Ok(emptyList())
+        return when (val ids = feed.songIds(limit)) {
+            is NetResult.Err -> ids
+            is NetResult.Ok -> if (ids.value.isEmpty()) NetResult.Ok(emptyList()) else client.songsByIds(ids.value)
+        }
+    }
+
+    /** 最近播放（云端）专辑 ids. */
+    suspend fun recentCloudAlbumIds(limit: Int = 100): NetResult<List<Long>> =
+        recentPlayed?.albumIds(limit) ?: NetResult.Ok(emptyList())
+
+    /** 最近播放（云端）歌单 ids. */
+    suspend fun recentCloudPlaylistIds(limit: Int = 100): NetResult<List<Long>> =
+        recentPlayed?.playlistIds(limit) ?: NetResult.Ok(emptyList())
+
+    /** 相似歌曲 for the player's 「相似」 entry. */    suspend fun similarSongs(id: Long): NetResult<List<Track>> = client.similarSongs(id)
 
     /** 相似歌手 for the player's 「相似」 entry. */
     suspend fun similarArtists(id: Long): NetResult<List<com.yunyin.music.core.ArtistInfo>> =
