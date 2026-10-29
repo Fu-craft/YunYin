@@ -74,6 +74,8 @@ class MusicRepository(
     private val playlistImport: com.yunyin.music.data.net.PlaylistImportApi? = null,
     /** 音乐百科 transport; null disables the card. */
     private val songWiki: com.yunyin.music.data.net.SongWikiApi? = null,
+    /** 听歌足迹 transport; null disables the report page. */
+    private val listenReport: com.yunyin.music.data.net.ListenReportApi? = null,
 ) {
 
     /**
@@ -157,6 +159,15 @@ class MusicRepository(
 
     /** The 曲风 tag tree for the style browser. */
     suspend fun styleTags(): NetResult<List<NeteaseClient.StyleTag>> = client.styleTags()
+
+    /** 听歌足迹 —— 总时长（秒）. */
+    suspend fun listenTotalSeconds() =
+        listenReport?.total() ?: com.yunyin.music.core.NetResult.Ok(null)
+
+    /** 听歌足迹 —— 周/月/年报告. */
+    suspend fun listenReport(period: String) =
+        listenReport?.report(period)
+            ?: com.yunyin.music.core.NetResult.Err("听歌报告不可用")
 
     /** 音乐百科卡片数据；null 表示没有可用条目. */
     suspend fun songWiki(songId: Long) =
