@@ -276,6 +276,7 @@ fun LibraryScreen(
         onOpenDownloads = onOpenDownloads,
         onOpenStats = onOpenStats,
         onOpenPage = { openPage = it },
+        onImportPlaylist = onImportPlaylist,
     )
 
     // The subpages themselves.

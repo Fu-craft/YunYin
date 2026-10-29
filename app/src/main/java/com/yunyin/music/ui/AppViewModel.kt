@@ -873,7 +873,7 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
     /** Opens 相似歌曲 for one track in the shared collection page. */
-    fun openSimilarSongs(trackId: Long, title: String) {
+    fun openSimilarSongs(trackId: Long, title: String, preloaded: List<Track>? = null) {
         collectionJob?.cancel()
         val requestId = ++collectionRequestId
         _collection.value = CollectionUiState(

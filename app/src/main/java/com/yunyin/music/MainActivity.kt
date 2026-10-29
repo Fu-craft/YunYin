@@ -1820,8 +1820,18 @@ class MainActivity : ComponentActivity() {
                     onToggleShuffle = { container.player.toggleShuffle() },
                     onShowQueue = { showQueue = true },
                     onOpenSimilar = { id, title ->
-                        showPlayer = false
-                        appViewModel.openSimilarSongs(id, title)
+                        // Prefetch so an empty answer is *visible*: opening an empty page looked like a dead tap.
+                        scope.launch {
+                            val result = container.music.similarSongs(id)
+                            val list = (result as? com.yunyin.music.core.NetResult.Ok)?.value.orEmpty()
+                            if (list.isEmpty()) {
+                                val why = (result as? com.yunyin.music.core.NetResult.Err)?.message ?: "没有相似歌曲"
+                                android.widget.Toast.makeText(context, why, android.widget.Toast.LENGTH_SHORT).show()
+                            } else {
+                                showPlayer = false
+                                appViewModel.openSimilarSongs(id, title, preloaded = list)
+                            }
+                        }
                     },
                     onOpenWiki = { id ->
                         scope.launch {
