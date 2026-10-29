@@ -127,6 +127,15 @@ fun LibraryScreen(
     playlistsLoading: Boolean,
     recentTracks: List<Track>,
     loader: ArtworkLoader,
+    /** Cloud record feeds shown on the 最近播放 page's extra tabs. */
+    cloudRecentSongs: List<Track> = emptyList(),
+    cloudRecentAlbumIds: List<Long> = emptyList(),
+    cloudRecentPlaylistIds: List<Long> = emptyList(),
+    cloudRecentLoading: Boolean = false,
+    cloudRecentError: String? = null,
+    onLoadCloudRecent: () -> Unit = {},
+    onOpenAlbumById: (Long) -> Unit = {},
+    onOpenPlaylistById: (Long) -> Unit = {},
     signature: String = "",
     /**
      * The name shown on the profile header.
@@ -337,6 +346,14 @@ fun LibraryScreen(
             loader = loader,
             onBack = { openPage = null },
             onTrackClick = onTrackClick,
+            cloudSongs = cloudRecentSongs,
+            cloudAlbumIds = cloudRecentAlbumIds,
+            cloudPlaylistIds = cloudRecentPlaylistIds,
+            cloudLoading = cloudRecentLoading,
+            cloudError = cloudRecentError,
+            onLoadCloud = onLoadCloudRecent,
+            onOpenAlbum = onOpenAlbumById,
+            onOpenPlaylist = onOpenPlaylistById,
         )
     }
     }
@@ -1005,30 +1022,147 @@ private fun RecentPage(
     loader: ArtworkLoader,
     onBack: () -> Unit,
     onTrackClick: (Track) -> Unit,
+    cloudSongs: List<Track> = emptyList(),
+    cloudAlbumIds: List<Long> = emptyList(),
+    cloudPlaylistIds: List<Long> = emptyList(),
+    cloudLoading: Boolean = false,
+    cloudError: String? = null,
+    onLoadCloud: () -> Unit = {},
+    onOpenAlbum: (Long) -> Unit = {},
+    onOpenPlaylist: (Long) -> Unit = {},
 ) {
+    // Four sources on one page: the device's own history plus the three cloud record feeds. The
+    // cloud half is fetched the first time one of its tabs is opened, so opening 最近播放 to look at
+    // local history never costs a request.
+    var source by remember { mutableStateOf(RecentSource.Device) }
+    LaunchedEffect(source) {
+        if (source != RecentSource.Device) onLoadCloud()
+    }
+
     LibrarySubpage(title = "最近播放", onBack = onBack) { topInset ->
-        if (tracks.isEmpty()) {
-            Column(Modifier.fillMaxWidth().padding(top = topInset)) {
-                EmptyHint("还没有播放记录")
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                contentPadding = PaddingValues(
-                    top = topInset,
-                    bottom = chromeContentBottomPadding(),
-                ),
+        Column(Modifier.fillMaxWidth()) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 16.dp, top = topInset, bottom = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                itemsIndexed(tracks, key = { _, t -> t.id }) { index, track ->
-                    RecentTrackRow(
-                        track = track,
-                        loader = loader,
-                        onClick = { onTrackClick(track) },
+                RecentSource.entries.forEach { entry ->
+                    RecentSourceChip(
+                        label = entry.label,
+                        selected = source == entry,
+                        onClick = { source = entry },
                     )
-                    if (index != tracks.lastIndex) {
-                        RowDivider()
-                    }
                 }
+            }
+
+            when (source) {
+                RecentSource.Device -> RecentTrackList(tracks, loader, onTrackClick)
+                RecentSource.Songs -> RecentTrackList(cloudSongs, loader, onTrackClick, cloudLoading)
+                RecentSource.Albums -> RecentIdList(
+                    ids = cloudAlbumIds,
+                    loading = cloudLoading,
+                    emptyText = cloudError ?: "云端还没有专辑记录",
+                    onClick = onOpenAlbum,
+                )
+                RecentSource.Playlists -> RecentIdList(
+                    ids = cloudPlaylistIds,
+                    loading = cloudLoading,
+                    emptyText = cloudError ?: "云端还没有歌单记录",
+                    onClick = onOpenPlaylist,
+                )
+            }
+        }
+    }
+}
+
+/** Which record feed the page is showing. Device history is local; the rest come from the server. */
+internal enum class RecentSource(val label: String) {
+    Device("本机"),
+    Songs("歌曲"),
+    Albums("专辑"),
+    Playlists("歌单"),
+}
+
+@Composable
+private fun RecentSourceChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(50))
+            .background(
+                if (selected) AppTheme.palette.accent.copy(alpha = 0.18f)
+                else AppTheme.palette.secondaryBackground,
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 7.dp),
+    ) {
+        Text(
+            text = label,
+            fontFamily = SFPro,
+            fontSize = 13.sp,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (selected) AppTheme.palette.accent else AppTheme.palette.label,
+        )
+    }
+}
+
+@Composable
+private fun RecentTrackList(
+    tracks: List<Track>,
+    loader: ArtworkLoader,
+    onTrackClick: (Track) -> Unit,
+    loading: Boolean = false,
+) {
+    when {
+        tracks.isEmpty() && loading -> Box(Modifier.fillMaxWidth().padding(32.dp), Alignment.Center) {
+            CircularProgressIndicator(color = AppTheme.palette.accent)
+        }
+        tracks.isEmpty() -> Column(Modifier.fillMaxWidth()) { EmptyHint("还没有播放记录") }
+        else -> LazyColumn(
+            modifier = Modifier.fillMaxWidth().fillMaxWidth(),
+            contentPadding = PaddingValues(bottom = chromeContentBottomPadding()),
+        ) {
+            itemsIndexed(tracks, key = { _, t -> t.id }) { index, track ->
+                RecentTrackRow(track = track, loader = loader, onClick = { onTrackClick(track) })
+                if (index != tracks.lastIndex) RowDivider()
+            }
+        }
+    }
+}
+
+/** Album and playlist feeds only carry ids; the row shows the id and the page resolves the rest. */
+@Composable
+private fun RecentIdList(
+    ids: List<Long>,
+    loading: Boolean,
+    emptyText: String,
+    onClick: (Long) -> Unit,
+) {
+    when {
+        ids.isEmpty() && loading -> Box(Modifier.fillMaxWidth().padding(32.dp), Alignment.Center) {
+            CircularProgressIndicator(color = AppTheme.palette.accent)
+        }
+        ids.isEmpty() -> Column(Modifier.fillMaxWidth()) { EmptyHint(emptyText) }
+        else -> LazyColumn(
+            modifier = Modifier.fillMaxWidth().fillMaxWidth(),
+            contentPadding = PaddingValues(bottom = chromeContentBottomPadding()),
+        ) {
+            itemsIndexed(ids, key = { _, id -> id }) { index, id ->
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable { onClick(id) }
+                        .padding(horizontal = 20.dp, vertical = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "打开 #$id",
+                        fontFamily = SFPro,
+                        fontSize = 15.sp,
+                        color = AppTheme.palette.label,
+                    )
+                }
+                if (index != ids.lastIndex) RowDivider()
             }
         }
     }

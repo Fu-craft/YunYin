@@ -267,6 +267,12 @@ class MainActivity : ComponentActivity() {
         var beatModeActive by remember { mutableStateOf(false) }
         var showSettings by remember { mutableStateOf(false) }
         var showStyleBrowser by remember { mutableStateOf(false) }
+        var cloudRecentSongs by remember { mutableStateOf<List<com.yunyin.music.core.Track>>(emptyList()) }
+        var cloudRecentAlbumIds by remember { mutableStateOf<List<Long>>(emptyList()) }
+        var cloudRecentPlaylistIds by remember { mutableStateOf<List<Long>>(emptyList()) }
+        var cloudRecentLoading by remember { mutableStateOf(false) }
+        var cloudRecentError by remember { mutableStateOf<String?>(null) }
+        var cloudRecentLoaded by remember { mutableStateOf(false) }
         var showDownloadCenter by remember { mutableStateOf(false) }
     var showStats by remember { mutableStateOf(false) }
     var showLyricPicker by remember { mutableStateOf(false) }
@@ -1141,6 +1147,33 @@ class MainActivity : ComponentActivity() {
                             playlistsLoading = appViewModel.userPlaylistsLoading,
                             recentTracks = appViewModel.recentTracks,
                             loader = container.artwork,
+                            cloudRecentSongs = cloudRecentSongs,
+                            cloudRecentAlbumIds = cloudRecentAlbumIds,
+                            cloudRecentPlaylistIds = cloudRecentPlaylistIds,
+                            cloudRecentLoading = cloudRecentLoading,
+                            cloudRecentError = cloudRecentError,
+                            onLoadCloudRecent = {
+                                if (!cloudRecentLoaded && !cloudRecentLoading) {
+                                    cloudRecentLoading = true
+                                    cloudRecentError = null
+                                    scope.launch {
+                                        val songs = container.music.recentCloudSongs()
+                                        val albums = container.music.recentCloudAlbumIds()
+                                        val playlists = container.music.recentCloudPlaylistIds()
+                                        cloudRecentSongs = (songs as? com.yunyin.music.core.NetResult.Ok)?.value.orEmpty()
+                                        cloudRecentAlbumIds = (albums as? com.yunyin.music.core.NetResult.Ok)?.value.orEmpty()
+                                        cloudRecentPlaylistIds =
+                                            (playlists as? com.yunyin.music.core.NetResult.Ok)?.value.orEmpty()
+                                        cloudRecentError = (songs as? com.yunyin.music.core.NetResult.Err)?.message
+                                        cloudRecentLoading = false
+                                        cloudRecentLoaded = true
+                                    }
+                                }
+                            },
+                            onOpenAlbumById = { id -> appViewModel.openAlbum(id, "专辑", null) },
+                            onOpenPlaylistById = { id ->
+                                appViewModel.openPlaylist(com.yunyin.music.core.Playlist(id = id, name = "歌单", coverUrl = null))
+                            },
                             signature = signature,
                             displayName = displayName,
                             likedCount = appViewModel.likedCount,
