@@ -211,6 +211,9 @@ class ResumableDownloadSink(
             resolver.update(uri, ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }, null, null)
             val coverUri = runCatching { writeSidecar(base, "jpg", "image/jpeg", cover) }.getOrNull()
             runCatching { writeSidecar(base, "lrc", "text/plain", lyric?.toByteArray(Charsets.UTF_8)) }
+            // A private copy as well: MediaStore does not index `.lrc`, so the app itself needs a file
+            // it can find by track id when the network is gone.
+            runCatching { writePrivateLyric(track.id, lyric) }
             return SavedDownload(
                 uri.toString(),
                 values.getAsString(MediaStore.MediaColumns.DISPLAY_NAME),
@@ -221,6 +224,13 @@ class ResumableDownloadSink(
             runCatching { resolver.delete(uri, null, null) }
             throw t
         }
+    }
+
+    /** App-private lyric copy, keyed by track id; this is what offline playback reads. */
+    private fun writePrivateLyric(trackId: Long, lyric: String?) {
+        if (trackId <= 0L || lyric.isNullOrBlank()) return
+        val dir = File(context.filesDir, "lyrics").apply { mkdirs() }
+        File(dir, "$trackId.lrc").writeText(lyric)
     }
 
     /** The cover bytes as served, or null when the track has none or the fetch fails. */

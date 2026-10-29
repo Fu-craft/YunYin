@@ -57,7 +57,7 @@ import java.util.concurrent.TimeUnit
  * auto detection can claim a YRC document and silently drop its syllable timing.
  */
 class LyricsRepository(
-    context: Context,
+    private val context: Context,
     private val client: NeteaseClient,
     /**
      * Lyrics for tracks that came from another platform, or null when that feature is not wired.
@@ -135,6 +135,10 @@ class LyricsRepository(
         // returning it immediately is the one case where waiting buys nothing.
         val cached = cachedLyrics(trackId)?.takeIf { LyricProbeRules.isPaintable(it.lines.size) }
         if (cached != null && isWordByWord(cached)) return cached
+
+        // A downloaded track carries its own lyric file; reading it first keeps the lyrics page
+        // working with no network at all.
+        localLyricFor(trackId)?.let { return it }
 
         // A track from another platform has no NetEase id, so the NetEase/AMLL lanes cannot serve it:
         // its own platform and the title+artist fallbacks are the applicable sources.
@@ -644,6 +648,21 @@ class LyricsRepository(
         if (!ttmlParser.canParse(body)) null else ttmlParser.parse(body)
     }.getOrNull()?.takeIf { it.lines.isNotEmpty() }
 
+    /**
+     * Lyrics saved next to a downloaded track, keyed by track id.
+     *
+     * The download writer stores the LRC it embedded into the file here as well, so a song that was
+     * downloaded once plays with lyrics in airplane mode — the online probes all fail there, and
+     * without this the lyrics page would be empty for exactly the songs the user chose to keep.
+     */
+    private fun localLyricFor(trackId: Long): SyncedLyrics? {
+        if (trackId <= 0L) return null
+        val file = File(File(context.filesDir, LOCAL_LYRIC_DIR), "$trackId.lrc")
+        if (!file.isFile) return null
+        val text = runCatching { file.readText() }.getOrNull()?.takeIf { it.isNotBlank() } ?: return null
+        return runCatching { autoParser.parse(text) }.getOrNull()?.takeIf { it.lines.isNotEmpty() }
+    }
+
     private fun download(url: String): String? = runCatching {
         val request = Request.Builder().url(url).header("User-Agent", "YunYin/1.0").build()
         http.newCall(request).execute().use { response ->
@@ -698,6 +717,7 @@ class LyricsRepository(
 
     private companion object {
         const val MEMORY_CACHE = 24
+        const val LOCAL_LYRIC_DIR = "lyrics"
         const val TTML_MARKER = "http://www.w3.org/ns/ttml"
 
         /** Ceiling for a single AMLL mirror request. */
