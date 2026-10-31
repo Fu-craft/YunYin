@@ -2040,7 +2040,22 @@ class MainActivity : ComponentActivity() {
                     fadeOut(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
             ) {
                 val state = lastCollection
-                if (state != null) {
+                val showcase = com.yunyin.music.ui.components.PlaylistShowcase.of(playlistShowcase)
+                if (state != null && showcase != com.yunyin.music.ui.components.PlaylistShowcase.Off && state.tracks.isNotEmpty()) {
+                    // Full-screen, as in the reference: the ribbon / shelf replaces the playlist page entirely.
+                    Surface(Modifier.fillMaxSize(), color = AppTheme.palette.background) {
+                        com.yunyin.music.ui.components.PlaylistShowcaseScreen(
+                            style = showcase,
+                            title = state.title,
+                            tracks = state.tracks,
+                            loader = container.artwork,
+                            onBack = appViewModel::closeCollection,
+                            onTrackClick = { index ->
+                                state.tracks.getOrNull(index)?.let { track -> play(track, state.tracks, state.id.takeIf { state.canBeatMode }) }
+                            },
+                        )
+                    }
+                } else if (state != null) {
                     // Stripped to just what the list marks: collecting the full state here would
                     // recompose all 500 rows four times a second while music plays.
                     val nowPlaying by remember {

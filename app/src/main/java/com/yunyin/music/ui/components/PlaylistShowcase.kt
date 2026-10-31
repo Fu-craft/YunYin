@@ -15,6 +15,17 @@ import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.fillMaxSize
+import com.yunyin.music.core.Track
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -180,6 +191,80 @@ fun PlaylistShelf(
                         .clickable { onPlaylistClick(playlist) },
                 )
             }
+        }
+    }
+}
+
+/**
+ * Full-screen playlist showcase — the way the reference does it.
+ *
+ * Opening a playlist with a showcase enabled replaces the page entirely: the ribbon or the shelf *is*
+ * the playlist, with a title and a back affordance on top. It is not a decorative block above a track
+ * list, which is what an earlier version did and why it read as "our page with something stuck on it".
+ */
+@Composable
+fun PlaylistShowcaseScreen(
+    style: PlaylistShowcase,
+    title: String,
+    tracks: List<Track>,
+    loader: ArtworkLoader,
+    onBack: () -> Unit,
+    onTrackClick: (index: Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val covers = tracks.map { track ->
+        Playlist(id = track.id, name = track.name, coverUrl = track.coverUrl)
+    }
+    Box(modifier.fillMaxSize().background(AppTheme.palette.background)) {
+        if (style == PlaylistShowcase.Ribbon) {
+            PlaylistRibbon(
+                playlists = covers,
+                loader = loader,
+                onPlaylistClick = { playlist ->
+                    onTrackClick(tracks.indexOfFirst { it.id == playlist.id })
+                },
+                modifier = Modifier.fillMaxSize().padding(top = 96.dp),
+            )
+        } else {
+            PlaylistShelf(
+                playlists = covers,
+                loader = loader,
+                onPlaylistClick = { playlist ->
+                    onTrackClick(tracks.indexOfFirst { it.id == playlist.id })
+                },
+                modifier = Modifier.fillMaxSize().padding(top = 96.dp),
+            )
+        }
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier
+                    .size(40.dp)
+                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(50))
+                    .clickable(onClick = onBack),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = com.yunyin.music.ui.icons.SfIcons.ChevronLeft,
+                    contentDescription = "返回",
+                    tint = AppTheme.palette.label,
+                )
+            }
+            Spacer(Modifier.width(4.dp))
+            Text(
+                text = title,
+                fontFamily = com.yunyin.music.ui.theme.SFPro,
+                fontSize = 17.sp,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                color = AppTheme.palette.label,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            )
         }
     }
 }
