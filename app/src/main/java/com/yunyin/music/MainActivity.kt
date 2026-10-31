@@ -2050,7 +2050,13 @@ class MainActivity : ComponentActivity() {
                     }.collectAsState(initial = null to false)
 
                     Surface(Modifier.fillMaxSize(), color = AppTheme.palette.background) {
-                        CompositionLocalProvider(LocalBeatModeActions provides beatModeActions) {
+                        CompositionLocalProvider(
+                            LocalBeatModeActions provides beatModeActions,
+                            // The collection overlay is composed outside the tab-screens provider,
+                            // so it needs the showcase value here too — without this the playlist
+                            // page always read the default "off" and drew the plain list.
+                            com.yunyin.music.ui.components.LocalPlaylistShowcase provides playlistShowcase,
+                        ) {
                         CollectionScreen(
                             state = state,
                             loader = container.artwork,
