@@ -229,132 +229,116 @@ private fun DailyRecommendationCard(
                 onClick = onPlayAll,
             ),
     ) {
-        // A wall of covers that never stops moving: the artwork *is* the card, and the motion is what
-        // makes it read as "a set in progress" rather than a still frame with a play button on top.
-        RollingCoverWall(tracks = tracks, loader = loader)
+        // 唱片墙: the covers are stitched edge to edge into a wall, the way the reference lays out a
+        // month of listening. The wall is what carries the identity of the card, so it fills the whole
+        // surface; the copy sits on top of it rather than beside it.
+        CoverWall(tracks = tracks, loader = loader)
         Box(
             Modifier
                 .matchParentSize()
                 .background(
                     Brush.verticalGradient(
-                        0f to Color.Black.copy(alpha = 0.10f),
-                        0.45f to Color.Black.copy(alpha = 0.30f),
-                        1f to Color.Black.copy(alpha = 0.80f),
+                        0f to Color.Black.copy(alpha = 0.42f),
+                        0.35f to Color.Black.copy(alpha = 0.10f),
+                        0.72f to Color.Transparent,
+                        1f to Color.Black.copy(alpha = 0.62f),
                     ),
                 ),
         )
-        Column(
-            Modifier
-                .align(Alignment.BottomStart)
-                .padding(start = 16.dp, end = 84.dp, bottom = 14.dp),
-        ) {
+        Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp)) {
             Text(
-                text = "每日推荐 · ${tracks.size} 首",
+                text = "每日推荐",
                 fontFamily = SFPro,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = 0.6.sp,
-                color = Color.White.copy(alpha = 0.82f),
-            )
-            Spacer(Modifier.height(3.dp))
-            Text(
-                text = dailyDateLabel(),
-                fontFamily = SFPro,
-                fontSize = 26.sp,
+                fontSize = 30.sp,
                 fontWeight = FontWeight.Bold,
-                letterSpacing = (-0.8).sp,
+                letterSpacing = (-0.9).sp,
                 color = Color.White,
                 maxLines = 1,
             )
-            Spacer(Modifier.height(2.dp))
+            Spacer(Modifier.height(1.dp))
             Text(
-                text = "根据你的口味生成",
+                text = dailyDateLabel() + " · 根据你的口味生成",
                 fontFamily = SFPro,
-                fontSize = 13.sp,
-                color = Color.White.copy(alpha = 0.78f),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                color = Color.White.copy(alpha = 0.85f),
+                maxLines = 1,
             )
         }
-        Box(
+        Row(
             Modifier
                 .align(Alignment.BottomEnd)
-                .padding(end = 14.dp, bottom = 14.dp)
-                .size(46.dp)
-                .clip(RoundedCornerShape(50))
-                .background(Color.White),
-            contentAlignment = Alignment.Center,
+                .padding(end = 14.dp, bottom = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(
-                imageVector = SfIcons.Play,
-                contentDescription = "播放每日推荐",
-                tint = Color.Black,
-                modifier = Modifier.size(19.dp),
+            Text(
+                text = "${tracks.size} 首",
+                fontFamily = SFPro,
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = (-0.5).sp,
+                color = Color.White,
             )
-        }
-    }
-}
-
-/**
- * The rolling wall: covers laid edge to edge and scrolled left forever.
- *
- * The list is duplicated once and translated by exactly one copy's width, so the wrap is invisible.
- * One copy is small (≤ [WALL_COVERS]) — a 24-sleeve wall would compose 48 images for something that
- * loops anyway. Motion is skipped entirely when the system animator scale is 0.
- */
-@Composable
-private fun RollingCoverWall(
-    tracks: List<Track>,
-    loader: ArtworkLoader,
-) {
-    val covers = tracks
-        .filter { !it.coverUrl.isNullOrBlank() }
-        .distinctBy { if (it.albumId != 0L) "id:${it.albumId}" else "name:${it.albumName}" }
-        .take(WALL_COVERS)
-        .ifEmpty { tracks.take(WALL_COVERS) }
-    if (covers.isEmpty()) return
-
-    val animate = animatorScaleEnabled()
-    val cyclePx = with(LocalDensity.current) { (CARD_HEIGHT * covers.size).toPx() }
-    val progress = if (animate && cyclePx > 0f) {
-        androidx.compose.animation.core.rememberInfiniteTransition(label = "daily-wall")
-            .animateFloat(
-                initialValue = 0f,
-                targetValue = 1f,
-                animationSpec = androidx.compose.animation.core.infiniteRepeatable(
-                    animation = androidx.compose.animation.core.tween(
-                        durationMillis = ((cyclePx / WALL_SPEED_PX_PER_SECOND) * 1000).toInt().coerceAtLeast(1),
-                        easing = androidx.compose.animation.core.LinearEasing,
-                    ),
-                    repeatMode = androidx.compose.animation.core.RepeatMode.Restart,
-                ),
-                label = "daily-wall-offset",
-            )
-    } else {
-        remember { androidx.compose.runtime.mutableStateOf(0f) }
-    }
-
-    Row(
-        Modifier
-            .fillMaxHeight()
-            .graphicsLayer { translationX = -progress.value * cyclePx },
-    ) {
-        repeat(2) {
-            covers.forEach { track ->
-                Artwork(
-                    url = track.coverUrl,
-                    loader = loader,
-                    corner = 0.dp,
-                    modifier = Modifier.width(CARD_HEIGHT).fillMaxHeight(),
+            Spacer(Modifier.width(8.dp))
+            Box(
+                Modifier
+                    .size(38.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(Color.White),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = SfIcons.Play,
+                    contentDescription = "播放每日推荐",
+                    tint = Color.Black,
+                    modifier = Modifier.size(16.dp),
                 )
             }
         }
     }
 }
 
-private val CARD_HEIGHT = 176.dp
-private const val WALL_COVERS = 5
+/**
+ * The stitched wall behind the card.
+ *
+ * A wall needs *many* sleeves, but a day's list often has only one or two distinct covers (a single
+ * album, or rows whose artwork has not hydrated yet) — which is why an earlier version showed two
+ * tiles and looked broken. The wall therefore cycles whatever covers it has until the grid is full:
+ * a repeated sleeve reads as pattern, an empty slot reads as a bug.
+ */
+@Composable
+private fun CoverWall(tracks: List<Track>, loader: ArtworkLoader) {
+    val distinct = tracks
+        .mapNotNull { it.coverUrl?.takeIf { url -> url.isNotBlank() } }
+        .distinct()
+    val tiles = List(WALL_COLUMNS * WALL_ROWS) { index ->
+        if (distinct.isEmpty()) null else distinct[index % distinct.size]
+    }
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(AppTheme.palette.tertiaryBackground),
+    ) {
+        for (row in 0 until WALL_ROWS) {
+            Row(Modifier.weight(1f).fillMaxWidth()) {
+                for (column in 0 until WALL_COLUMNS) {
+                    val url = tiles[row * WALL_COLUMNS + column]
+                    Artwork(
+                        url = url,
+                        loader = loader,
+                        corner = 0.dp,
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                    )
+                }
+            }
+        }
+    }
+}
 
-/** Slow enough to read as ambience: roughly one cover every two seconds. */
-private const val WALL_SPEED_PX_PER_SECOND = 176f * 0.5f
+private val CARD_HEIGHT = 232.dp
+private const val WALL_COLUMNS = 4
+private const val WALL_ROWS = 3
+
 
 
 /** Four covers in a 2×2 grid, rounded as one block; empty slots stay as quiet placeholders. */
