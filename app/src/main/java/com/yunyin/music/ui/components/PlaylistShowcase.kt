@@ -126,6 +126,9 @@ fun PlaylistShelf(
                 bottomInset = 0f
                 // Without this the shelf never leaves its intro state, so nothing ever slides out.
                 setRunning(true)
+                // Wired in the factory as well as in update: the View only ever calls this once per
+                // change, and a callback installed after its first frame was being missed.
+                onSelection = { index -> onSelected(index) }
             }
         },
         update = { view ->
