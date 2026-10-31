@@ -229,33 +229,36 @@ private fun DailyRecommendationCard(
                 onClick = onPlayAll,
             ),
     ) {
-        // 唱片墙: the covers are stitched edge to edge into a wall, the way the reference lays out a
-        // month of listening. The wall is what carries the identity of the card, so it fills the whole
-        // surface; the copy sits on top of it rather than beside it.
-        CoverWall(tracks = tracks, loader = loader)
+        // 唱片墙: covers stitched edge to edge, rolling upward and looping without a seam.
+        RollingCoverWall(tracks = tracks, loader = loader)
         Box(
             Modifier
                 .matchParentSize()
                 .background(
                     Brush.verticalGradient(
-                        0f to Color.Black.copy(alpha = 0.42f),
-                        0.35f to Color.Black.copy(alpha = 0.10f),
-                        0.72f to Color.Transparent,
-                        1f to Color.Black.copy(alpha = 0.62f),
+                        0f to Color.Black.copy(alpha = 0.22f),
+                        0.55f to Color.Transparent,
+                        1f to Color.Black.copy(alpha = 0.72f),
                     ),
                 ),
         )
-        Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp)) {
+        // Copy sits bottom-left: the wall reads top-down, and a title in the top-left corner fought the
+        // artwork for the first thing the eye lands on.
+        Column(
+            Modifier
+                .align(Alignment.BottomStart)
+                .padding(start = 16.dp, end = 96.dp, bottom = 14.dp),
+        ) {
             Text(
                 text = "每日推荐",
                 fontFamily = SFPro,
-                fontSize = 30.sp,
+                fontSize = 28.sp,
                 fontWeight = FontWeight.Bold,
-                letterSpacing = (-0.9).sp,
+                letterSpacing = (-0.8).sp,
                 color = Color.White,
                 maxLines = 1,
             )
-            Spacer(Modifier.height(1.dp))
+            Spacer(Modifier.height(2.dp))
             Text(
                 text = dailyDateLabel() + " · 根据你的口味生成",
                 fontFamily = SFPro,
@@ -274,9 +277,9 @@ private fun DailyRecommendationCard(
             Text(
                 text = "${tracks.size} 首",
                 fontFamily = SFPro,
-                fontSize = 22.sp,
+                fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
-                letterSpacing = (-0.5).sp,
+                letterSpacing = (-0.4).sp,
                 color = Color.White,
             )
             Spacer(Modifier.width(8.dp))
@@ -299,30 +302,59 @@ private fun DailyRecommendationCard(
 }
 
 /**
- * The stitched wall behind the card.
+ * The rolling wall.
  *
- * A wall needs *many* sleeves, but a day's list often has only one or two distinct covers (a single
- * album, or rows whose artwork has not hydrated yet) — which is why an earlier version showed two
- * tiles and looked broken. The wall therefore cycles whatever covers it has until the grid is full:
- * a repeated sleeve reads as pattern, an empty slot reads as a bug.
+ * A cycle is exactly [WALL_ROWS] rows of [WALL_COLUMNS] tiles; that same cycle is laid out twice and
+ * translated upward by one cycle's height, so the wrap is pixel-identical and never visible. Tiles are
+ * built from a fixed pattern (not `index % covers`) so the second cycle repeats the first *exactly* —
+ * with an odd number of distinct covers, a naive modulo would misalign at the loop point and the wall
+ * would jump.
+ *
+ * A wall needs many sleeves, but a day's list often has one or two distinct covers; the pattern cycles
+ * whatever it has until the grid is full, because a repeated sleeve reads as pattern while an empty
+ * slot reads as a bug.
  */
 @Composable
-private fun CoverWall(tracks: List<Track>, loader: ArtworkLoader) {
-    val distinct = tracks
+private fun RollingCoverWall(tracks: List<Track>, loader: ArtworkLoader) {
+    val covers = tracks
         .mapNotNull { it.coverUrl?.takeIf { url -> url.isNotBlank() } }
         .distinct()
-    val tiles = List(WALL_COLUMNS * WALL_ROWS) { index ->
-        if (distinct.isEmpty()) null else distinct[index % distinct.size]
+    if (covers.isEmpty()) {
+        Box(Modifier.fillMaxSize().background(AppTheme.palette.tertiaryBackground))
+        return
     }
+    val cycleTiles = List(WALL_COLUMNS * WALL_ROWS) { covers[it % covers.size] }
+    val tiles = cycleTiles + cycleTiles
+
+    val animate = animatorScaleEnabled()
+    val rowHeightPx = with(LocalDensity.current) { (CARD_HEIGHT / WALL_ROWS).toPx() }
+    val cyclePx = rowHeightPx * WALL_ROWS
+    val progress = if (animate && cyclePx > 0f) {
+        androidx.compose.animation.core.rememberInfiniteTransition(label = "daily-wall")
+            .animateFloat(
+                initialValue = 0f,
+                targetValue = 1f,
+                animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+                    animation = androidx.compose.animation.core.tween(
+                        durationMillis = WALL_LOOP_MILLIS,
+                        easing = androidx.compose.animation.core.LinearEasing,
+                    ),
+                    repeatMode = androidx.compose.animation.core.RepeatMode.Restart,
+                ),
+                label = "daily-wall-offset",
+            )
+    } else {
+        remember { androidx.compose.runtime.mutableStateOf(0f) }
+    }
+
     Column(
         Modifier
             .fillMaxSize()
-            .background(AppTheme.palette.tertiaryBackground),
+            .graphicsLayer { translationY = -progress.value * cyclePx },
     ) {
-        for (row in 0 until WALL_ROWS) {
+        tiles.chunked(WALL_COLUMNS).forEach { rowTiles ->
             Row(Modifier.weight(1f).fillMaxWidth()) {
-                for (column in 0 until WALL_COLUMNS) {
-                    val url = tiles[row * WALL_COLUMNS + column]
+                rowTiles.forEach { url ->
                     Artwork(
                         url = url,
                         loader = loader,
@@ -338,6 +370,10 @@ private fun CoverWall(tracks: List<Track>, loader: ArtworkLoader) {
 private val CARD_HEIGHT = 232.dp
 private const val WALL_COLUMNS = 4
 private const val WALL_ROWS = 3
+
+/** One full cycle (three rows) every 24 s — slow enough to be ambience, moving enough to be alive. */
+private const val WALL_LOOP_MILLIS = 24_000
+
 
 
 
