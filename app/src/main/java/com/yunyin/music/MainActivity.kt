@@ -1105,7 +1105,10 @@ class MainActivity : ComponentActivity() {
                 // below); the screens read that through `chromeContentBottomPadding()`, which then reserves
                 // one row instead of two. Provided here, around the tab screens, because that is where the
                 // padding is read.
-                CompositionLocalProvider(LocalChromeTopRowVisible provides hasTrack) {
+                CompositionLocalProvider(
+                    LocalChromeTopRowVisible provides hasTrack,
+                    com.yunyin.music.ui.LocalExpandedLayout provides expandedLayout,
+                ) {
                 Box(Modifier.fillMaxSize().padding(horizontal = contentSideInset)) {
                     // Cross-fade between screens. Kept — an instant swap read as a flicker — but
                     // short: switching is a tens-of-times-a-day action, so it must not read as a

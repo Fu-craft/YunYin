@@ -96,7 +96,7 @@ fun SectionHeader(
                 text = title,
                 fontFamily = SFPro,
                 fontWeight = FontWeight.Bold,
-                fontSize = 21.sp,
+                fontSize = com.yunyin.music.ui.TabletType.size(21.sp, com.yunyin.music.ui.LocalExpandedLayout.current),
                 color = AppTheme.palette.label,
             )
             if (subtitle != null) {

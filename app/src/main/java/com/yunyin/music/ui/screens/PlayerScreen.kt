@@ -576,6 +576,8 @@ fun PlayerScreen(
          * puts the cover beside the controls instead.
          */
         val isLandscape = if (tabletop) false else maxWidth > maxHeight
+    // Expanded windows give the artwork more room and the controls a wider rail.
+    val expandedLayout = com.yunyin.music.ui.LocalExpandedLayout.current
         val fullScreenCover = FullScreenCoverRules.usesOwnBackdrop(playerStyle, isLandscape)
 
         // The immersive page fades the cover's top/bottom edges into its backdrop. The static artwork
@@ -962,7 +964,7 @@ fun PlayerScreen(
                     // it), the artwork puts it on the right (so the cover leads on the left). The
                     // rail's scrim keys off the same flag, so the two cannot disagree.
                     val railOnLeft = lyricsShown
-                    val railWidth = LANDSCAPE_CONTROLS_WIDTH
+                    val railWidth = if (expandedLayout) LANDSCAPE_CONTROLS_WIDTH_TABLET else LANDSCAPE_CONTROLS_WIDTH
 
                     Box(Modifier.fillMaxSize()) {
                         // ---------------- content
@@ -1025,7 +1027,10 @@ fun PlayerScreen(
                                     .padding(end = railWidth * chromeProgress),
                                 contentAlignment = Alignment.Center,
                             ) {
-                                val available = minOf(maxWidth, maxHeight) * 0.94f
+                                // Tablet: the rail no longer needs a phone-sized share of the width, so the
+                                // artwork takes back most of it instead of leaving a wide empty margin.
+                                val artFraction = if (expandedLayout) 1.02f else 0.94f
+                                val available = minOf(maxWidth, maxHeight) * artFraction
 
                                 Column(
                                     Modifier.fillMaxSize(),
@@ -3536,6 +3541,9 @@ private const val BOTTOM_SCRIM_FRACTION = 0.34f
 
 /** Width of the landscape chrome rail, sized so the transport still fits. */
 private val LANDSCAPE_CONTROLS_WIDTH = 340.dp
+
+/** Tablet landscape: a wider rail so the transport row does not look cramped next to a large cover. */
+private val LANDSCAPE_CONTROLS_WIDTH_TABLET = 400.dp
 
 /**
  * Leading margin the landscape lyrics take on as the rail collapses.

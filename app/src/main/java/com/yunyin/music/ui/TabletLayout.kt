@@ -47,3 +47,30 @@ object TabletLayout {
         return (overflow / 2f).coerceAtLeast(0f)
     }
 }
+
+/**
+ * Whether the window is an expanded (tablet-class) one, published once at the top of the UI.
+ *
+ * Screens and shared components read it instead of re-measuring: a `SectionHeader` three levels deep
+ * still needs to know whether to use the tablet type scale, and threading a boolean through every
+ * call site is how tablet support rots.
+ */
+val LocalExpandedLayout = androidx.compose.runtime.staticCompositionLocalOf { false }
+
+/**
+ * Type scale for large screens.
+ *
+ * A title sized for a 6" phone looks undersized on a 12" tablet: the eye sits further from the glass,
+ * so type has to grow with the window rather than with the density. Same idea for spacing — a 20 dp
+ * gutter that reads as a margin on a phone reads as a hair on a tablet.
+ */
+object TabletType {
+
+    /** Scale a font size: phones keep the value, expanded windows get it ~12 % larger. */
+    fun size(base: androidx.compose.ui.unit.TextUnit, expanded: Boolean) =
+        if (expanded) base * 1.12f else base
+
+    /** Scale a horizontal gutter: phones keep it, expanded windows get 1.5×. */
+    fun gutter(base: androidx.compose.ui.unit.Dp, expanded: Boolean) =
+        if (expanded) base * 1.5f else base
+}
