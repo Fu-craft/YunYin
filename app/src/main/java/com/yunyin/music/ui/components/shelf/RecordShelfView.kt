@@ -62,6 +62,9 @@ internal class RecordShelfView(context: Context) : View(context) {
     private var disposed = false
     private var lastFrame = 0L
     private var selected = -1
+
+    /** Selected slot, readable by the host so the header cannot desync from the shelf. */
+    val currentIndex: Int get() = if (songs.isEmpty()) -1 else Math.floorMod(selected, songs.size)
     private var touching = false
     private var dragging = false
     private var scrubbing = false
