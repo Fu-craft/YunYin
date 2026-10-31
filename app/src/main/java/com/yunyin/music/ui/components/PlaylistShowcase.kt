@@ -85,6 +85,8 @@ enum class PlaylistShowcase(val key: String, val label: String) {
 fun PlaylistShelf(
     playlists: List<Playlist>,
     onSelected: (Int) -> Unit = {},
+    /** Current song name and artists, mirrored straight from the renderer. */
+    onCurrent: (String, String) -> Unit = { _, _ -> },
     pickIndex: Int = -1,
     loader: ArtworkLoader,
     onPlaylistClick: (Playlist) -> Unit,
@@ -230,6 +232,8 @@ fun PlaylistShowcaseScreen(
     var sceneColor by remember { androidx.compose.runtime.mutableStateOf(androidx.compose.ui.graphics.Color(0xFF0B0B0D)) }
     var pickRequest by remember { androidx.compose.runtime.mutableIntStateOf(-1) }
     var current by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    var songTitle by remember { androidx.compose.runtime.mutableStateOf(title) }
+    var songArtists by remember { androidx.compose.runtime.mutableStateOf(visible.size.toString() + " 首") }
     // Sliding onto a record starts it, without a second tap. A short dwell keeps a flick from
     // firing a burst of tracks on the way past.
     androidx.compose.runtime.LaunchedEffect(current) {
@@ -351,7 +355,7 @@ fun PlaylistShowcaseScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
-                    text = visible.getOrNull(current)?.name ?: title,
+                    text = songTitle,
                     fontFamily = SFPro,
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Bold,

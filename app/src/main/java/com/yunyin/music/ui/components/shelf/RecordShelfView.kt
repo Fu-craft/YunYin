@@ -65,6 +65,10 @@ internal class RecordShelfView(context: Context) : View(context) {
 
     /** Selected slot, readable by the host so the header cannot desync from the shelf. */
     val currentIndex: Int get() = if (songs.isEmpty()) -1 else Math.floorMod(selected, songs.size)
+
+    /** Name and artists of the selected slot, for hosts that mirror the shelf in a header. */
+    val currentName: String get() = songs.getOrNull(if (songs.isEmpty()) -1 else Math.floorMod(selected, songs.size))?.name.orEmpty()
+    val currentArtists: String get() = songs.getOrNull(if (songs.isEmpty()) -1 else Math.floorMod(selected, songs.size))?.artists.orEmpty()
     private var touching = false
     private var dragging = false
     private var scrubbing = false
