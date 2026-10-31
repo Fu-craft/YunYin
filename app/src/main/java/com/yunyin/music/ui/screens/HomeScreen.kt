@@ -21,6 +21,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.animation.core.InfiniteTransition
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.runtime.remember
@@ -32,6 +34,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.LazyRow
@@ -185,6 +189,18 @@ private fun ContinueListeningRow(
     }
 }
 
+/** `ANIMATOR_DURATION_SCALE` is 0 when the user turned animations off. */
+@Composable
+private fun animatorScaleEnabled(): Boolean {
+    val context = LocalContext.current.applicationContext
+    return runCatching {
+        android.provider.Settings.Global.getFloat(
+            context.contentResolver,
+            android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
+            1f,
+        ) != 0f
+    }.getOrDefault(true)
+}
 /**
  * 每日推荐 hero — the date, the count and the first cover; one tap plays the whole set.
  *
@@ -204,98 +220,142 @@ private fun DailyRecommendationCard(
         modifier
             .fillMaxWidth()
             .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 22.dp)
+            .height(CARD_HEIGHT)
             .shadow(10.dp, ContinuousRoundedRectangle(AppleShapes.cardLarge), clip = false)
-            .clip(ContinuousRoundedRectangle(AppleShapes.cardLarge)),
+            .clip(ContinuousRoundedRectangle(AppleShapes.cardLarge))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = rememberControlRipple(),
+                onClick = onPlayAll,
+            ),
     ) {
-        // Ambient layer: the set of covers, blurred, tinted down. It gives the card a colour that
-        // belongs to today's songs without any cropped thumbnail competing with the artwork strip.
-        Box(Modifier.matchParentSize().graphicsLayer { scaleX = 1.15f; scaleY = 1.15f }) {
-            DailyCollage(tracks = tracks, loader = loader)
-        }
-        Box(Modifier.matchParentSize().blur(30.dp))
+        // A wall of covers that never stops moving: the artwork *is* the card, and the motion is what
+        // makes it read as "a set in progress" rather than a still frame with a play button on top.
+        RollingCoverWall(tracks = tracks, loader = loader)
         Box(
             Modifier
                 .matchParentSize()
                 .background(
                     Brush.verticalGradient(
-                        0f to Color.Black.copy(alpha = 0.34f),
-                        1f to Color.Black.copy(alpha = 0.62f),
+                        0f to Color.Black.copy(alpha = 0.10f),
+                        0.45f to Color.Black.copy(alpha = 0.30f),
+                        1f to Color.Black.copy(alpha = 0.80f),
                     ),
                 ),
         )
-        Column(Modifier.fillMaxWidth()) {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(start = 16.dp, end = 14.dp, top = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        text = "每日推荐 · ${tracks.size} 首",
-                        fontFamily = SFPro,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        letterSpacing = 0.6.sp,
-                        color = Color.White.copy(alpha = 0.82f),
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        text = dailyDateLabel(),
-                        fontFamily = SFPro,
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = (-0.7).sp,
-                        color = Color.White,
-                        maxLines = 1,
-                    )
-                }
-                Box(
-                    Modifier
-                        .size(38.dp)
-                        .clip(RoundedCornerShape(50))
-                        .background(Color.White)
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = rememberControlRipple(),
-                            onClick = onPlayAll,
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = SfIcons.Play,
-                        contentDescription = "播放每日推荐",
-                        tint = Color.Black,
-                        modifier = Modifier.size(16.dp),
-                    )
-                }
-            }
-            Spacer(Modifier.height(12.dp))
-            // The scroll: the covers themselves are the content, so the card behaves like a shelf
-            // instead of a poster. One swipe browses today's set; a tap on any sleeve starts it.
-            LazyRow(
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.padding(bottom = 14.dp),
-            ) {
-                items(tracks.take(24), key = { "daily-${it.id}" }) { track ->
-                    Artwork(
-                        url = track.coverUrl,
-                        loader = loader,
-                        corner = AppleShapes.control,
-                        modifier = Modifier
-                            .size(92.dp)
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = rememberControlRipple(),
-                                onClick = onPlayAll,
-                            ),
-                    )
-                }
+        Column(
+            Modifier
+                .align(Alignment.BottomStart)
+                .padding(start = 16.dp, end = 84.dp, bottom = 14.dp),
+        ) {
+            Text(
+                text = "每日推荐 · ${tracks.size} 首",
+                fontFamily = SFPro,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 0.6.sp,
+                color = Color.White.copy(alpha = 0.82f),
+            )
+            Spacer(Modifier.height(3.dp))
+            Text(
+                text = dailyDateLabel(),
+                fontFamily = SFPro,
+                fontSize = 26.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = (-0.8).sp,
+                color = Color.White,
+                maxLines = 1,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = "根据你的口味生成",
+                fontFamily = SFPro,
+                fontSize = 13.sp,
+                color = Color.White.copy(alpha = 0.78f),
+            )
+        }
+        Box(
+            Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 14.dp, bottom = 14.dp)
+                .size(46.dp)
+                .clip(RoundedCornerShape(50))
+                .background(Color.White),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = SfIcons.Play,
+                contentDescription = "播放每日推荐",
+                tint = Color.Black,
+                modifier = Modifier.size(19.dp),
+            )
+        }
+    }
+}
+
+/**
+ * The rolling wall: covers laid edge to edge and scrolled left forever.
+ *
+ * The list is duplicated once and translated by exactly one copy's width, so the wrap is invisible.
+ * One copy is small (≤ [WALL_COVERS]) — a 24-sleeve wall would compose 48 images for something that
+ * loops anyway. Motion is skipped entirely when the system animator scale is 0.
+ */
+@Composable
+private fun RollingCoverWall(
+    tracks: List<Track>,
+    loader: ArtworkLoader,
+) {
+    val covers = tracks
+        .filter { !it.coverUrl.isNullOrBlank() }
+        .distinctBy { if (it.albumId != 0L) "id:${it.albumId}" else "name:${it.albumName}" }
+        .take(WALL_COVERS)
+        .ifEmpty { tracks.take(WALL_COVERS) }
+    if (covers.isEmpty()) return
+
+    val animate = animatorScaleEnabled()
+    val cyclePx = with(LocalDensity.current) { (CARD_HEIGHT * covers.size).toPx() }
+    val progress = if (animate && cyclePx > 0f) {
+        androidx.compose.animation.core.rememberInfiniteTransition(label = "daily-wall")
+            .animateFloat(
+                initialValue = 0f,
+                targetValue = 1f,
+                animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+                    animation = androidx.compose.animation.core.tween(
+                        durationMillis = ((cyclePx / WALL_SPEED_PX_PER_SECOND) * 1000).toInt().coerceAtLeast(1),
+                        easing = androidx.compose.animation.core.LinearEasing,
+                    ),
+                    repeatMode = androidx.compose.animation.core.RepeatMode.Restart,
+                ),
+                label = "daily-wall-offset",
+            )
+    } else {
+        remember { androidx.compose.runtime.mutableStateOf(0f) }
+    }
+
+    Row(
+        Modifier
+            .fillMaxHeight()
+            .graphicsLayer { translationX = -progress.value * cyclePx },
+    ) {
+        repeat(2) {
+            covers.forEach { track ->
+                Artwork(
+                    url = track.coverUrl,
+                    loader = loader,
+                    corner = 0.dp,
+                    modifier = Modifier.width(CARD_HEIGHT).fillMaxHeight(),
+                )
             }
         }
     }
 }
+
+private val CARD_HEIGHT = 176.dp
+private const val WALL_COVERS = 5
+
+/** Slow enough to read as ambience: roughly one cover every two seconds. */
+private const val WALL_SPEED_PX_PER_SECOND = 176f * 0.5f
+
 
 /** Four covers in a 2×2 grid, rounded as one block; empty slots stay as quiet placeholders. */
 @Composable
