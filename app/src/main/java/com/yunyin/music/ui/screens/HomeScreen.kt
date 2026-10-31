@@ -205,39 +205,54 @@ private fun DailyRecommendationCard(
 /** Four covers in a 2×2 grid, rounded as one block; empty slots stay as quiet placeholders. */
 @Composable
 private fun DailyCollage(tracks: List<Track>, loader: ArtworkLoader) {
-    // One dominant cover on the left, three stacked on the right: an asymmetric mosaic reads as
-    // "designed" where an even grid reads as a photo dump, and it gives each sleeve enough area to be
-    // recognised. Covers are de-duplicated per album, because four songs from one album would repeat
-    // the same sleeve and the collage would look like two images tiled.
+    // A stitched mosaic rather than a grid: two rows of different *heights*, each split at different
+    // widths, so no seam lines up between rows. That misalignment is what makes it read as a collage
+    // instead of a photo sheet, and six sleeves say "a day of music" better than four.
     val covers = tracks
         .filter { !it.coverUrl.isNullOrBlank() }
         .distinctBy { if (it.albumId != 0L) "id:${it.albumId}" else "name:${it.albumName}" }
-        .take(4)
+        .take(6)
     val gutter = 3.dp
-    Row(
+    Column(
         Modifier
             .fillMaxSize()
             .clip(ContinuousRoundedRectangle(AppleShapes.control)),
-        horizontalArrangement = Arrangement.spacedBy(gutter),
+        verticalArrangement = Arrangement.spacedBy(gutter),
     ) {
-        Artwork(
-            url = covers.getOrNull(0)?.coverUrl,
+        MosaicRow(
+            covers = covers.subList(0, minOf(3, covers.size)),
+            weights = listOf(1.35f, 1.0f, 0.85f),
             loader = loader,
-            corner = 0.dp,
-            modifier = Modifier.weight(1.55f).fillMaxHeight(),
+            gutter = gutter,
+            modifier = Modifier.weight(1.15f).fillMaxWidth(),
         )
-        Column(
-            Modifier.weight(1f).fillMaxHeight(),
-            verticalArrangement = Arrangement.spacedBy(gutter),
-        ) {
-            for (index in 1..3) {
-                Artwork(
-                    url = covers.getOrNull(index)?.coverUrl,
-                    loader = loader,
-                    corner = 0.dp,
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                )
-            }
+        MosaicRow(
+            covers = covers.drop(3).take(3),
+            weights = listOf(0.95f, 1.25f, 1.05f),
+            loader = loader,
+            gutter = gutter,
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+        )
+    }
+}
+
+/** One band of the mosaic; empty slots stay filled so the shape never collapses while covers load. */
+@Composable
+private fun MosaicRow(
+    covers: List<Track>,
+    weights: List<Float>,
+    loader: ArtworkLoader,
+    gutter: androidx.compose.ui.unit.Dp,
+    modifier: Modifier = Modifier,
+) {
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(gutter)) {
+        weights.forEachIndexed { index, weight ->
+            Artwork(
+                url = covers.getOrNull(index)?.coverUrl,
+                loader = loader,
+                corner = 0.dp,
+                modifier = Modifier.weight(weight).fillMaxHeight(),
+            )
         }
     }
 }
