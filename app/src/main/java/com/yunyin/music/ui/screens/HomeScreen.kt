@@ -230,7 +230,7 @@ private fun DailyRecommendationCard(
             ),
     ) {
         // 唱片墙: covers stitched edge to edge, rolling upward and looping without a seam.
-        RollingCoverWall(tracks = tracks, loader = loader)
+        CoverWall(tracks = tracks, loader = loader)
         Box(
             Modifier
                 .matchParentSize()
@@ -302,64 +302,32 @@ private fun DailyRecommendationCard(
 }
 
 /**
- * The rolling wall, horizontal.
+ * The stitched wall behind the card: a static 4 × 3 mosaic, edge to edge.
  *
- * A cycle is [WALL_CYCLE_COLUMNS] columns of [WALL_ROWS] square tiles; that block is laid out twice
- * and translated left by exactly one block's width, so the wrap is pixel-identical and never visible.
- *
- * Tiles are built from the tracks **in list order, one sleeve per song** — not from a de-duplicated
- * set. Deduplicating made a 33-song day look like five repeated covers, which reads as broken rather
- * than as a playlist; per-song ordering means an album appears as many times as it is actually in the
- * list, and the wall changes as the recommendation does.
+ * Tiles come from the tracks in list order, one sleeve per song, cycling when the grid needs more
+ * cells than the list has. De-duplicating by cover instead made a long day look like a handful of
+ * repeated images; per-song ordering keeps the wall tied to what was actually recommended.
  */
 @Composable
-private fun RollingCoverWall(tracks: List<Track>, loader: ArtworkLoader) {
+private fun CoverWall(tracks: List<Track>, loader: ArtworkLoader) {
     if (tracks.isEmpty()) {
         Box(Modifier.fillMaxSize().background(AppTheme.palette.tertiaryBackground))
         return
     }
-    val cycle = WALL_CYCLE_COLUMNS * WALL_ROWS
-    val tiles = List(cycle * 2) { index ->
-        tracks[index % tracks.size].coverUrl
-    }
-
-    val animate = animatorScaleEnabled()
-    val tileSize = CARD_HEIGHT / WALL_ROWS
-    val cyclePx = with(LocalDensity.current) { (tileSize * WALL_CYCLE_COLUMNS).toPx() }
-    val progress = if (animate && cyclePx > 0f) {
-        androidx.compose.animation.core.rememberInfiniteTransition(label = "daily-wall")
-            .animateFloat(
-                initialValue = 0f,
-                targetValue = 1f,
-                animationSpec = androidx.compose.animation.core.infiniteRepeatable(
-                    animation = androidx.compose.animation.core.tween(
-                        durationMillis = WALL_LOOP_MILLIS,
-                        easing = androidx.compose.animation.core.LinearEasing,
-                    ),
-                    repeatMode = androidx.compose.animation.core.RepeatMode.Restart,
-                ),
-                label = "daily-wall-offset",
-            )
-    } else {
-        remember { androidx.compose.runtime.mutableStateOf(0f) }
-    }
-
     Column(
         Modifier
             .fillMaxSize()
-            .graphicsLayer { translationX = -progress.value * cyclePx },
+            .background(AppTheme.palette.tertiaryBackground),
     ) {
         for (row in 0 until WALL_ROWS) {
             Row(Modifier.weight(1f).fillMaxWidth()) {
-                for (column in 0 until WALL_CYCLE_COLUMNS * 2) {
-                    // Each row starts at a different point in the list so the three bands do not repeat
-                    // the same three covers stacked on top of each other.
-                    val index = row * WALL_CYCLE_COLUMNS + column
+                for (column in 0 until WALL_COLUMNS) {
+                    val track = tracks[(row * WALL_COLUMNS + column) % tracks.size]
                     Artwork(
-                        url = tiles[index % tiles.size],
+                        url = track.coverUrl,
                         loader = loader,
                         corner = 0.dp,
-                        modifier = Modifier.width(tileSize).fillMaxHeight(),
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
                     )
                 }
             }
@@ -368,13 +336,9 @@ private fun RollingCoverWall(tracks: List<Track>, loader: ArtworkLoader) {
 }
 
 private val CARD_HEIGHT = 232.dp
+private const val WALL_COLUMNS = 4
 private const val WALL_ROWS = 3
 
-/** Columns per loop; four are visible at a time, so the wall reads as continuous. */
-private const val WALL_CYCLE_COLUMNS = 8
-
-/** One full cycle every 30 s: ~2.7 dp/s, slow enough to stay ambient. */
-private const val WALL_LOOP_MILLIS = 30_000
 
 
 

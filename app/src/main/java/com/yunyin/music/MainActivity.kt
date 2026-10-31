@@ -1099,6 +1099,11 @@ class MainActivity : ComponentActivity() {
                     when (activeTab) {
                         PlayerTab.Home -> HomeScreen(
                             state = homeState,
+                            userName = displayName,
+                            refreshing = homeState.loading,
+                            onRefresh = appViewModel::refreshHome,
+                            continueTrack = continueTrack,
+                            onContinueListening = { showPlayer = true },
                             loader = container.artwork,
                             onSearchClick = { tab = PlayerTab.Search },
                             onTrackClick = { track, queue -> play(track, queue) },
