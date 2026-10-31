@@ -30,6 +30,8 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.LazyRow
@@ -122,9 +124,6 @@ private fun DailyRecommendationCard(
         animationSpec = spring(dampingRatio = 1f, stiffness = 900f),
         label = "daily-hero-press",
     )
-    // Artwork-first card: the covers fill the surface and the type sits on a scrim. The bottom
-    // padding belongs to the card, not to the next shelf — a hero needs air under it or the next
-    // header reads as its caption.
     Box(
         modifier
             .fillMaxWidth()
@@ -133,6 +132,7 @@ private fun DailyRecommendationCard(
                 scaleX = scale
                 scaleY = scale
             }
+            .shadow(10.dp, ContinuousRoundedRectangle(AppleShapes.cardLarge), clip = false)
             .clip(ContinuousRoundedRectangle(AppleShapes.cardLarge))
             .clickable(
                 interactionSource = interaction,
@@ -141,16 +141,34 @@ private fun DailyRecommendationCard(
             )
             .aspectRatio(16f / 10f),
     ) {
-        DailyCollage(tracks = tracks, loader = loader)
+        // Backdrop: the whole mosaic, blurred into an ambient wash. You still see that it is built
+        // from several sleeves, but the seams and tiny crops stop competing with the type — the
+        // "busy collage" look is what made the sharp six-tile version read as a photo sheet.
+        Box(Modifier.matchParentSize().graphicsLayer { scaleX = 1.12f; scaleY = 1.12f }) {
+            DailyCollage(tracks = tracks, loader = loader)
+        }
+        Box(Modifier.matchParentSize().blur(26.dp))
         Box(
             Modifier
                 .matchParentSize()
                 .background(
                     Brush.verticalGradient(
-                        0.35f to Color.Transparent,
-                        1f to Color.Black.copy(alpha = 0.78f),
+                        0f to Color.Black.copy(alpha = 0.10f),
+                        0.45f to Color.Black.copy(alpha = 0.35f),
+                        1f to Color.Black.copy(alpha = 0.82f),
                     ),
                 ),
+        )
+        // One sharp sleeve in front: the card needs a single, readable object, and a sleeve with a
+        // soft shadow is that object. The blurred backdrop carries the rest of the set.
+        Artwork(
+            url = tracks.firstOrNull()?.coverUrl,
+            loader = loader,
+            corner = AppleShapes.control,
+            modifier = Modifier
+                .padding(start = 16.dp, top = 16.dp)
+                .size(76.dp)
+                .shadow(12.dp, ContinuousRoundedRectangle(AppleShapes.control)),
         )
         Column(
             Modifier
@@ -169,7 +187,7 @@ private fun DailyRecommendationCard(
             Text(
                 text = dailyDateLabel(),
                 fontFamily = SFPro,
-                fontSize = 28.sp,
+                fontSize = 26.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = (-0.8).sp,
                 color = Color.White,
@@ -404,10 +422,11 @@ fun HomeScreen(
                 }
                 if (feed.featuredPlaylists.isNotEmpty()) {
             item("featured-header") {
+                // No 「更多」 affordance: it used to open whichever playlist happened to be first,
+                // which is a different action from the label promises. The carousel is the shelf.
                 SectionHeader(
                     title = "精选歌单",
                     subtitle = "为你精选的推荐",
-                    onMore = { onPlaylistClick(feed.featuredPlaylists.first()) },
                     modifier = shelfAppear(),
                 )
             }
