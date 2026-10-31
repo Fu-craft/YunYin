@@ -228,6 +228,22 @@ fun PlaylistShowcaseScreen(
     }
     Box(modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color(0xFF0B0B0D))) {
         if (style == PlaylistShowcase.Ribbon) {
+        // The reference ribbon itself (DepthRibbonView + DepthRibbonPath), not a look-alike.
+        com.yunyin.music.ui.components.shelf.PlaylistDepthRibbon(
+            songs = tracks.map { track ->
+                com.yunyin.music.ui.components.shelf.ShelfSong(
+                    id = track.id,
+                    name = track.name,
+                    artists = track.artists.joinToString("/"),
+                    album = "",
+                    cover = track.coverUrl.orEmpty(),
+                )
+            },
+            canPlay = true,
+            onPlay = { index -> onTrackClick(index) },
+            onPrepare = { { } },
+            onClose = onBack,
+        )
             PlaylistRibbon(covers, loader, pick, Modifier.fillMaxSize().padding(top = 120.dp, bottom = 120.dp))
         } else {
             PlaylistShelf(covers, loader, pick, Modifier.fillMaxSize().padding(top = 120.dp, bottom = 120.dp))
