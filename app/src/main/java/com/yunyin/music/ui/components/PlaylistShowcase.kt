@@ -80,56 +80,31 @@ fun PlaylistShelf(
     modifier: Modifier = Modifier,
 ) {
     if (playlists.isEmpty()) return
-    var entered by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { entered = true }
-    val entry by androidx.compose.animation.core.animateFloatAsState(
-        targetValue = if (entered) 1f else 0f,
-        animationSpec = androidx.compose.animation.core.tween(durationMillis = 720),
-        label = "shelf-entry",
-    )
-    val density = LocalDensity.current
-    BoxWithConstraints(modifier.fillMaxSize().background(AppTheme.palette.background)) {
-        val w = maxWidth
-        val cardW = w * 0.62f
-        val cardH = cardW * 1.02f
-        // Depth ladder: each further card steps right and up, shrinks, turns away and blurs.
-        val pitchX = w * 0.085f
-        val pitchY = w * 0.075f
-        val baseX = -w * 0.10f
-        val baseY = maxHeight * 0.30f
-        playlists.take(9).forEachIndexed { index, playlist ->
-            val depth = index.toFloat()
-            val x = with(density) { (baseX + pitchX * depth).toPx() } + (1f - entry) * with(density) { (w * 0.9f).toPx() }
-            val y = with(density) { (baseY - pitchY * depth).toPx() }
-            val scale = 1f - depth * 0.055f
-            Box(
-                Modifier
-                    .graphicsLayer {
-                        translationX = x
-                        translationY = y
-                        scaleX = scale
-                        scaleY = scale
-                        rotationY = -46f
-                        rotationZ = -14f
-                        cameraDistance = 14f * density.density
-                        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0.5f)
-                        shadowElevation = if (index == 0) 24f else 10f
-                        alpha = (1f - depth * 0.06f).coerceAtLeast(0.35f)
-                    }
-                    // Depth cue: the reference blurs everything behind the front card.
-                    .then(if (index == 0) Modifier else Modifier.blur((depth * 1.6f).dp)),
-            ) {
-                Artwork(
-                    url = playlist.coverUrl,
-                    loader = loader,
-                    corner = 10.dp,
-                    modifier = Modifier
-                        .size(cardW, cardH)
-                        .clickable { onPlaylistClick(playlist) },
+    // The real renderer, ported verbatim from CurrentMusicX (custom View, 37 KB): frame clock,
+    // quad paths, shadow plane, AGSL lighting, depth-of-field. Wrapped rather than reimplemented —
+    // that is the only way the shelf actually looks like theirs.
+    androidx.compose.ui.viewinterop.AndroidView(
+        modifier = modifier.fillMaxSize(),
+        factory = { context ->
+            com.yunyin.music.ui.components.shelf.RecordShelfView(context).apply {
+                topInset = 0f
+                bottomInset = 0f
+            }
+        },
+        update = { view ->
+            view.onActivate = { index -> playlists.getOrNull(index)?.let(onPlaylistClick) }
+            val songs = playlists.map { playlist ->
+                com.yunyin.music.ui.components.shelf.ShelfSong(
+                    id = playlist.id,
+                    name = playlist.name,
+                    artists = "",
+                    album = "",
+                    cover = playlist.coverUrl.orEmpty(),
                 )
             }
-        }
-    }
+            view.configure(songs)
+        },
+    )
 }
 
 /** 立体缎带 — the reference's loop, screen-scaled, draggable. */
