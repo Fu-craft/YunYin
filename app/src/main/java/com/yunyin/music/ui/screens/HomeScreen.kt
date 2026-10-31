@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -28,6 +29,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.LazyRow
@@ -120,97 +122,83 @@ private fun DailyRecommendationCard(
         animationSpec = spring(dampingRatio = 1f, stiffness = 900f),
         label = "daily-hero-press",
     )
-    Row(
+    // Artwork-first card: the covers fill the surface and the type sits on a scrim. The bottom
+    // padding belongs to the card, not to the next shelf — a hero needs air under it or the next
+    // header reads as its caption.
+    Box(
         modifier
             .fillMaxWidth()
-            .padding(start = 16.dp, end = 16.dp, top = 14.dp)
+            .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 22.dp)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
             }
-            .clip(ContinuousRoundedRectangle(AppleShapes.card))
-            .background(AppTheme.palette.secondaryBackground)
-            .border(
-                width = 0.5.dp,
-                color = AppTheme.palette.separator,
-                shape = ContinuousRoundedRectangle(AppleShapes.card),
-            )
+            .clip(ContinuousRoundedRectangle(AppleShapes.cardLarge))
             .clickable(
                 interactionSource = interaction,
                 indication = rememberControlRipple(),
                 onClick = onPlayAll,
             )
-            .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .aspectRatio(16f / 10f),
     ) {
-        // A 2×2 collage rather than one cover: the card is a *set* of songs, and four sleeves read as
-        // a mix where a single square just reads as one more list row.
-        Box(Modifier.size(112.dp)) {
-            DailyCollage(tracks = tracks, loader = loader)
-            // Count pill, scrim-backed because it sits on artwork whose brightness we cannot predict.
-            Box(
-                Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(6.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(Color.Black.copy(alpha = 0.42f))
-                    .padding(horizontal = 8.dp, vertical = 3.dp),
-            ) {
-                Text(
-                    text = "${tracks.size} 首",
-                    fontFamily = SFPro,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color.White,
-                )
-            }
-        }
-        Spacer(Modifier.width(14.dp))
-        Column(Modifier.weight(1f)) {
+        DailyCollage(tracks = tracks, loader = loader)
+        Box(
+            Modifier
+                .matchParentSize()
+                .background(
+                    Brush.verticalGradient(
+                        0.35f to Color.Transparent,
+                        1f to Color.Black.copy(alpha = 0.78f),
+                    ),
+                ),
+        )
+        Column(
+            Modifier
+                .align(Alignment.BottomStart)
+                .padding(start = 16.dp, end = 84.dp, bottom = 14.dp),
+        ) {
             Text(
-                text = "每日推荐",
+                text = "每日推荐 · ${tracks.size} 首",
                 fontFamily = SFPro,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
-                letterSpacing = 0.4.sp,
-                color = AppTheme.palette.secondaryLabel,
+                letterSpacing = 0.6.sp,
+                color = Color.White.copy(alpha = 0.82f),
             )
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(3.dp))
             Text(
                 text = dailyDateLabel(),
                 fontFamily = SFPro,
-                fontSize = 25.sp,
+                fontSize = 28.sp,
                 fontWeight = FontWeight.Bold,
-                letterSpacing = (-0.7).sp,
-                color = AppTheme.palette.label,
+                letterSpacing = (-0.8).sp,
+                color = Color.White,
                 maxLines = 1,
             )
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(2.dp))
             Text(
                 text = "根据你的口味生成",
                 fontFamily = SFPro,
                 fontSize = 13.sp,
-                color = AppTheme.palette.secondaryLabel,
-                maxLines = 1,
+                color = Color.White.copy(alpha = 0.78f),
             )
         }
-        // A filled play affordance, not a floating glyph: this is the primary action of the card.
         Box(
             Modifier
-                .padding(start = 8.dp)
-                .size(34.dp)
+                .align(Alignment.BottomEnd)
+                .padding(end = 14.dp, bottom = 14.dp)
+                .size(46.dp)
                 .clip(RoundedCornerShape(50))
-                .background(AppTheme.palette.label.copy(alpha = 0.10f)),
+                .background(Color.White),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 imageVector = SfIcons.Play,
                 contentDescription = "播放每日推荐",
-                tint = AppTheme.palette.label,
-                modifier = Modifier.size(17.dp),
+                tint = Color.Black,
+                modifier = Modifier.size(19.dp),
             )
         }
-        Spacer(Modifier.width(4.dp))
     }
 }
 
@@ -232,7 +220,7 @@ private fun DailyCollage(tracks: List<Track>, loader: ArtworkLoader) {
                         url = track?.coverUrl,
                         loader = loader,
                         corner = 0.dp,
-                        modifier = Modifier.weight(1f).aspectRatio(1f),
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
                     )
                 }
             }
@@ -412,17 +400,6 @@ fun HomeScreen(
             item("fm") { HomeFmRow(onClick = onStartFm, modifier = shelfAppear()) }
         }
 
-        if (feed.dailySongs.isNotEmpty()) {
-            item("daily-header") { SectionHeader(title = "每日推荐", modifier = shelfAppear()) }
-            item("daily") {
-                TrackCarousel(
-                    tracks = feed.dailySongs,
-                    loader = loader,
-                    onTrackClick = { onTrackClick(it, feed.dailySongs) },
-                    modifier = shelfAppear(),
-                )
-            }
-        }
 
         if (feed.recommendedPlaylists.isNotEmpty()) {
             item("recommended-header") { SectionHeader(title = "为你推荐", modifier = shelfAppear()) }
