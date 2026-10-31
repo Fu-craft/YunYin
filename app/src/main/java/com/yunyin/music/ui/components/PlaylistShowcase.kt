@@ -86,6 +86,30 @@ fun PlaylistShelf(
     androidx.compose.ui.viewinterop.AndroidView(
         modifier = modifier.fillMaxSize(),
         factory = { context ->
+            // coil3 ships no network fetcher by default: `coil-compose` alone can only decode local
+            // files, so every sleeve silently failed and the shelf drew empty cases.
+            coil3.SingletonImageLoader.setSafe { ctx ->
+                coil3.ImageLoader.Builder(ctx)
+                    .components {
+                        add(
+                            coil3.network.okhttp.OkHttpNetworkFetcherFactory(
+                                callFactory = {
+                                    okhttp3.OkHttpClient.Builder()
+                                        .addInterceptor { chain ->
+                                            chain.proceed(
+                                                chain.request().newBuilder()
+                                                    .header("User-Agent", "Mozilla/5.0 (Linux; Android 14)")
+                                                    .header("Referer", "https://music.163.com/")
+                                                    .build(),
+                                            )
+                                        }
+                                        .build()
+                                },
+                            ),
+                        )
+                    }
+                    .build()
+            }
             com.yunyin.music.ui.components.shelf.RecordShelfView(context).apply {
                 topInset = 0f
                 bottomInset = 0f
