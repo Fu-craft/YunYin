@@ -260,6 +260,11 @@ fun PlaylistShowcaseScreen(
             }.getOrDefault(androidx.compose.ui.graphics.Color(0xFF0B0B0D))
         }
     }
+    val scene: androidx.compose.ui.graphics.Color by androidx.compose.animation.animateColorAsState(
+        targetValue = sceneColor,
+        animationSpec = androidx.compose.animation.core.tween(600),
+        label = "scene-color",
+    )
     val covers = visible.map { Playlist(id = it.id, name = it.name, coverUrl = it.coverUrl) }
     val pick: (Playlist) -> Unit = { playlist ->
         onTrackClick(tracks.indexOfFirst { it.id == playlist.id })
@@ -269,7 +274,7 @@ fun PlaylistShowcaseScreen(
             .fillMaxSize()
             .background(
                 androidx.compose.ui.graphics.Brush.verticalGradient(
-                    listOf(sceneColor, androidx.compose.ui.graphics.Color(0xFF06060A)),
+                    listOf(scene, androidx.compose.ui.graphics.Color(0xFF06060A)),
                 ),
             ),
     ) {
