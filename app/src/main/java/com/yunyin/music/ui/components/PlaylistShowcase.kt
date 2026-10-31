@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -110,10 +111,22 @@ fun PlaylistShelf(
             cover = playlist.coverUrl.orEmpty(),
         )
     }
-    SideEffect {
-        renderer.onSelection = { index -> onSelected(index) }
+    // Verbatim structure of the reference (PlaylistRecordShelf): callbacks live in a
+    // DisposableEffect keyed on the renderer, with rememberUpdatedState so they always see the
+    // latest Compose state; configure() runs in a SideEffect after that.
+    val currentSelection by androidx.compose.runtime.rememberUpdatedState<(Int) -> Unit> { index ->
+        onSelected(index)
+    }
+    DisposableEffect(renderer) {
+        renderer.onSelection = { index -> currentSelection(index) }
         renderer.onActivate = { index -> playlists.getOrNull(index)?.let(onPlaylistClick) }
+        onDispose { }
+    }
+    SideEffect {
         renderer.configure(songs)
+    }
+    LaunchedEffect(pickIndex) {
+        if (pickIndex in playlists.indices) renderer.pick(pickIndex)
     }
     LaunchedEffect(pickIndex) {
         if (pickIndex in playlists.indices) renderer.pick(pickIndex)
