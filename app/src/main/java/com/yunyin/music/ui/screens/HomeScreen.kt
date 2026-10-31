@@ -200,105 +200,99 @@ private fun DailyRecommendationCard(
     onPlayAll: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (pressed) 0.985f else 1f,
-        animationSpec = spring(dampingRatio = 1f, stiffness = 900f),
-        label = "daily-hero-press",
-    )
     Box(
         modifier
             .fillMaxWidth()
             .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 22.dp)
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-            }
             .shadow(10.dp, ContinuousRoundedRectangle(AppleShapes.cardLarge), clip = false)
-            .clip(ContinuousRoundedRectangle(AppleShapes.cardLarge))
-            .clickable(
-                interactionSource = interaction,
-                indication = rememberControlRipple(),
-                onClick = onPlayAll,
-            )
-            .aspectRatio(16f / 10f),
+            .clip(ContinuousRoundedRectangle(AppleShapes.cardLarge)),
     ) {
-        // Backdrop: the whole mosaic, blurred into an ambient wash. You still see that it is built
-        // from several sleeves, but the seams and tiny crops stop competing with the type — the
-        // "busy collage" look is what made the sharp six-tile version read as a photo sheet.
-        Box(Modifier.matchParentSize().graphicsLayer { scaleX = 1.12f; scaleY = 1.12f }) {
+        // Ambient layer: the set of covers, blurred, tinted down. It gives the card a colour that
+        // belongs to today's songs without any cropped thumbnail competing with the artwork strip.
+        Box(Modifier.matchParentSize().graphicsLayer { scaleX = 1.15f; scaleY = 1.15f }) {
             DailyCollage(tracks = tracks, loader = loader)
         }
-        Box(Modifier.matchParentSize().blur(26.dp))
+        Box(Modifier.matchParentSize().blur(30.dp))
         Box(
             Modifier
                 .matchParentSize()
                 .background(
                     Brush.verticalGradient(
-                        0f to Color.Black.copy(alpha = 0.10f),
-                        0.45f to Color.Black.copy(alpha = 0.35f),
-                        1f to Color.Black.copy(alpha = 0.82f),
+                        0f to Color.Black.copy(alpha = 0.34f),
+                        1f to Color.Black.copy(alpha = 0.62f),
                     ),
                 ),
         )
-        // One sharp sleeve in front: the card needs a single, readable object, and a sleeve with a
-        // soft shadow is that object. The blurred backdrop carries the rest of the set.
-        Artwork(
-            url = tracks.firstOrNull()?.coverUrl,
-            loader = loader,
-            corner = AppleShapes.control,
-            modifier = Modifier
-                .padding(start = 16.dp, top = 16.dp)
-                .size(76.dp)
-                .shadow(12.dp, ContinuousRoundedRectangle(AppleShapes.control)),
-        )
-        Column(
-            Modifier
-                .align(Alignment.BottomStart)
-                .padding(start = 16.dp, end = 84.dp, bottom = 14.dp),
-        ) {
-            Text(
-                text = "每日推荐 · ${tracks.size} 首",
-                fontFamily = SFPro,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = 0.6.sp,
-                color = Color.White.copy(alpha = 0.82f),
-            )
-            Spacer(Modifier.height(3.dp))
-            Text(
-                text = dailyDateLabel(),
-                fontFamily = SFPro,
-                fontSize = 26.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = (-0.8).sp,
-                color = Color.White,
-                maxLines = 1,
-            )
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text = "根据你的口味生成",
-                fontFamily = SFPro,
-                fontSize = 13.sp,
-                color = Color.White.copy(alpha = 0.78f),
-            )
-        }
-        Box(
-            Modifier
-                .align(Alignment.BottomEnd)
-                .padding(end = 14.dp, bottom = 14.dp)
-                .size(46.dp)
-                .clip(RoundedCornerShape(50))
-                .background(Color.White),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = SfIcons.Play,
-                contentDescription = "播放每日推荐",
-                tint = Color.Black,
-                modifier = Modifier.size(19.dp),
-            )
+        Column(Modifier.fillMaxWidth()) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 14.dp, top = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = "每日推荐 · ${tracks.size} 首",
+                        fontFamily = SFPro,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        letterSpacing = 0.6.sp,
+                        color = Color.White.copy(alpha = 0.82f),
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = dailyDateLabel(),
+                        fontFamily = SFPro,
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = (-0.7).sp,
+                        color = Color.White,
+                        maxLines = 1,
+                    )
+                }
+                Box(
+                    Modifier
+                        .size(38.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(Color.White)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = rememberControlRipple(),
+                            onClick = onPlayAll,
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = SfIcons.Play,
+                        contentDescription = "播放每日推荐",
+                        tint = Color.Black,
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            // The scroll: the covers themselves are the content, so the card behaves like a shelf
+            // instead of a poster. One swipe browses today's set; a tap on any sleeve starts it.
+            LazyRow(
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(bottom = 14.dp),
+            ) {
+                items(tracks.take(24), key = { "daily-${it.id}" }) { track ->
+                    Artwork(
+                        url = track.coverUrl,
+                        loader = loader,
+                        corner = AppleShapes.control,
+                        modifier = Modifier
+                            .size(92.dp)
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = rememberControlRipple(),
+                                onClick = onPlayAll,
+                            ),
+                    )
+                }
+            }
         }
     }
 }
