@@ -89,6 +89,7 @@ fun PlaylistShelf(
     modifier: Modifier = Modifier,
 ) {
     if (playlists.isEmpty()) return
+    var lastPick by remember { androidx.compose.runtime.mutableIntStateOf(-1) }
     // The real renderer, ported verbatim from CurrentMusicX (custom View, 37 KB): frame clock,
     // quad paths, shadow plane, AGSL lighting, depth-of-field. Wrapped rather than reimplemented —
     // that is the only way the shelf actually looks like theirs.
@@ -128,7 +129,12 @@ fun PlaylistShelf(
             }
         },
         update = { view ->
-            if (pickIndex in playlists.indices) view.pick(pickIndex)
+            // One-shot: a retained pickIndex made every recomposition re-pick the same record,
+            // which dragged the shelf back and froze the title on that track.
+            if (pickIndex != lastPick) {
+                lastPick = pickIndex
+                if (pickIndex in playlists.indices) view.pick(pickIndex)
+            }
             view.onSelection = { index -> onSelected(index) }
             view.onActivate = { index -> playlists.getOrNull(index)?.let(onPlaylistClick) }
             val songs = playlists.map { playlist ->
@@ -357,25 +363,17 @@ fun PlaylistShowcaseScreen(
                 .padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(
-                Modifier.size(40.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(50))
-                    .clickable(onClick = onBack),
-                contentAlignment = Alignment.Center,
+            Column(
+                Modifier.weight(1f).padding(horizontal = 60.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Icon(
-                    imageVector = com.yunyin.music.ui.icons.SfIcons.ChevronLeft,
-                    contentDescription = "返回",
-                    tint = androidx.compose.ui.graphics.Color.White,
-                )
-            }
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f)) {
                 Text(
                     text = visible.getOrNull(current)?.name ?: title,
                     fontFamily = SFPro,
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = (-0.5).sp,
+                    textAlign = TextAlign.Center,
                     color = androidx.compose.ui.graphics.Color.White,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -384,6 +382,7 @@ fun PlaylistShowcaseScreen(
                     text = visible.getOrNull(current)?.artists?.joinToString("/") ?: "${tracks.size} 首",
                     fontFamily = SFPro,
                     fontSize = 13.sp,
+                    textAlign = TextAlign.Center,
                     color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.6f),
                 )
             }
