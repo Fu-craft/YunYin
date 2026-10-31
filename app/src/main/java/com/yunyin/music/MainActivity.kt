@@ -37,6 +37,7 @@ import com.yunyin.music.ui.icons.SfIcons
 import com.yunyin.music.ui.theme.AppleShapes
 import com.yunyin.music.ui.theme.SFPro
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.draw.alpha
 import androidx.compose.material3.Text
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -1275,7 +1276,13 @@ class MainActivity : ComponentActivity() {
                     // Inset once, here, rather than on each panel: both rows — the now-playing capsule and
                     // the tab bar — fill this same margin, so the two panels line up edge to edge.
                     .padding(horizontal = TabBarInset)
-                    .padding(bottom = FloatingChromeBottomGap),
+                    .padding(bottom = FloatingChromeBottomGap)
+                    // The player is a full-screen surface *above* this chrome, but the glass panels
+                    // still draw their own material over it (and the recorded backdrop keeps the
+                    // last frame), which left the tab icons ghosting through the player. Hiding the
+                    // whole chrome while the player is open removes the source entirely; the player
+                    // is the only thing on screen at that point anyway.
+                    .alpha(if (showPlayer) 0f else 1f),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(FloatingChromeGap),
             ) {
