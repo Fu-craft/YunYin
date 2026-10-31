@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -89,71 +90,37 @@ fun PlaylistShelf(
     modifier: Modifier = Modifier,
 ) {
     if (playlists.isEmpty()) return
-    var lastPick by remember { androidx.compose.runtime.mutableIntStateOf(-1) }
-    // The real renderer, ported verbatim from CurrentMusicX (custom View, 37 KB): frame clock,
-    // quad paths, shadow plane, AGSL lighting, depth-of-field. Wrapped rather than reimplemented —
-    // that is the only way the shelf actually looks like theirs.
+    val context = androidx.compose.ui.platform.LocalContext.current
+    // Same structure as the reference (PlaylistRecordShelf): the renderer is created once, its
+    // callbacks are installed in a SideEffect *before* the first frame, and configure() also runs in
+    // a SideEffect. Wiring inside AndroidView's update happens too late — that is why the header
+    // never跟随 the shelf.
+    val renderer = remember(context) {
+        com.yunyin.music.ui.components.shelf.RecordShelfView(context).apply {
+            bottomInset = 0f
+            setRunning(true)
+        }
+    }
+    val songs = playlists.map { playlist ->
+        com.yunyin.music.ui.components.shelf.ShelfSong(
+            id = playlist.id,
+            name = playlist.name,
+            artists = "",
+            album = "",
+            cover = playlist.coverUrl.orEmpty(),
+        )
+    }
+    SideEffect {
+        renderer.onSelection = { index -> onSelected(index) }
+        renderer.onActivate = { index -> playlists.getOrNull(index)?.let(onPlaylistClick) }
+        renderer.configure(songs)
+    }
+    LaunchedEffect(pickIndex) {
+        if (pickIndex in playlists.indices) renderer.pick(pickIndex)
+    }
     androidx.compose.ui.viewinterop.AndroidView(
         modifier = modifier.fillMaxSize(),
-        factory = { context ->
-            // coil3 ships no network fetcher by default: `coil-compose` alone can only decode local
-            // files, so every sleeve silently failed and the shelf drew empty cases.
-            coil3.SingletonImageLoader.setSafe { ctx ->
-                coil3.ImageLoader.Builder(ctx)
-                    .components {
-                        add(
-                            coil3.network.okhttp.OkHttpNetworkFetcherFactory(
-                                callFactory = {
-                                    okhttp3.OkHttpClient.Builder()
-                                        .addInterceptor { chain ->
-                                            chain.proceed(
-                                                chain.request().newBuilder()
-                                                    .header("User-Agent", "Mozilla/5.0 (Linux; Android 14)")
-                                                    .header("Referer", "https://music.163.com/")
-                                                    .build(),
-                                            )
-                                        }
-                                        .build()
-                                },
-                            ),
-                        )
-                    }
-                    .build()
-            }
-            com.yunyin.music.ui.components.shelf.RecordShelfView(context).apply {
-                topInset = 0f
-                topInset = 0f
-                bottomInset = 0f
-                // Without this the shelf never leaves its intro state, so nothing ever slides out.
-                setRunning(true)
-                // Wired in the factory as well as in update: the View only ever calls this once per
-                // change, and a callback installed after its first frame was being missed.
-                onSelection = { index -> onSelected(index) }
-            }
-        },
-        update = { view ->
-            // One-shot: a retained pickIndex made every recomposition re-pick the same record,
-            // which dragged the shelf back and froze the title on that track.
-            if (pickIndex != lastPick) {
-                lastPick = pickIndex
-                if (pickIndex in playlists.indices) view.pick(pickIndex)
-            }
-            view.onSelection = { index -> onSelected(index) }
-            view.onActivate = { index -> playlists.getOrNull(index)?.let(onPlaylistClick) }
-            val songs = playlists.map { playlist ->
-                com.yunyin.music.ui.components.shelf.ShelfSong(
-                    id = playlist.id,
-                    name = playlist.name,
-                    artists = "",
-                    album = "",
-                    cover = playlist.coverUrl.orEmpty(),
-                )
-            }
-            if (view.tag != playlists.size to playlists.firstOrNull()?.id) {
-                view.tag = playlists.size to playlists.firstOrNull()?.id
-                view.configure(songs)
-            }
-        },
+        factory = { renderer },
     )
 }
 
