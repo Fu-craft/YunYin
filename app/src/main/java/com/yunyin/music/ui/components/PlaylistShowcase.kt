@@ -3,6 +3,7 @@
 
 package com.yunyin.music.ui.components
 
+import coil3.request.allowHardware
 import coil3.toBitmap
 import androidx.compose.foundation.background
 import androidx.compose.ui.input.pointer.pointerInput
@@ -237,6 +238,7 @@ fun PlaylistShowcaseScreen(
             runCatching {
                 val request = coil3.request.ImageRequest.Builder(context)
                     .data(url)
+                    .allowHardware(false)
                     .build()
                 val result = coil3.SingletonImageLoader.get(context).execute(request)
                 val image = (result as? coil3.request.SuccessResult)?.image
@@ -345,9 +347,15 @@ fun PlaylistShowcaseScreen(
                 .clip(androidx.compose.foundation.shape.RoundedCornerShape(50))
                 .background(androidx.compose.ui.graphics.Color.White.copy(alpha = 0.92f))
                 .clickable {
-                    onShufflePick()
-                    // Slide to a record first, as the reference does; the visual pick is the point.
-                    if (visible.isNotEmpty()) pickRequest = visible.indices.random()
+                    // One index for both: previously the shelf slid to one record while playback
+                    // started a different one, because each side rolled its own random.
+                    val index = visible.indices.randomOrNull()
+                    if (index != null) {
+                        pickRequest = index
+                        onTrackClick(index)
+                    } else {
+                        onShufflePick()
+                    }
                 }
                 .padding(horizontal = 28.dp, vertical = 14.dp),
         ) {
