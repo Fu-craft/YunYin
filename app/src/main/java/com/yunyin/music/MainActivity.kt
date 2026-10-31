@@ -32,6 +32,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.material3.Icon
+import com.yunyin.music.ui.icons.SfIcons
+import com.yunyin.music.ui.theme.AppleShapes
+import com.yunyin.music.ui.theme.SFPro
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.material3.Text
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -185,6 +190,12 @@ class MainActivity : ComponentActivity() {
         val configuration = LocalConfiguration.current
         val density = LocalDensity.current
         val windowWidthDp = configuration.screenWidthDp.toFloat()
+        // Tablet / foldable layout: expanded windows get a navigation rail and a centred measure.
+        val expandedLayout = com.yunyin.music.ui.TabletLayout.isExpanded(windowWidthDp)
+        val railWidth = if (expandedLayout) com.yunyin.music.ui.TabletLayout.RAIL_WIDTH else 0.dp
+        val contentSideInset = com.yunyin.music.ui.TabletLayout
+            .sideInsetDp(windowWidthDp, railWidth.value)
+            .dp
         val fold = windowInfo.displayFeatures.filterIsInstance<FoldingFeature>()
             .firstOrNull { it.isSeparating }
         val hingeDp = fold?.let {
@@ -1073,14 +1084,29 @@ class MainActivity : ComponentActivity() {
 
 
         Box(Modifier.fillMaxSize().background(AppTheme.palette.background)) {
+            if (expandedLayout) {
+                TabletNavRail(
+                    selected = tab,
+                    onSelect = { tab = it; showSettings = false },
+                    onBeatMode = { openBeatMode() },
+                    beatModeSignedIn = beatModeActions.signedIn,
+                    modifier = Modifier.align(Alignment.CenterStart),
+                )
+            }
+
             // ------------------------------------------------ primary content
-            Box(Modifier.fillMaxSize().layerBackdrop(bottomBackdrop)) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .padding(start = railWidth)
+                    .layerBackdrop(bottomBackdrop),
+            ) {
                 // The chrome's now-playing row exists only while a track is loaded (see the chrome block
                 // below); the screens read that through `chromeContentBottomPadding()`, which then reserves
                 // one row instead of two. Provided here, around the tab screens, because that is where the
                 // padding is read.
                 CompositionLocalProvider(LocalChromeTopRowVisible provides hasTrack) {
-                Box(Modifier.fillMaxSize()) {
+                Box(Modifier.fillMaxSize().padding(horizontal = contentSideInset)) {
                     // Cross-fade between screens. Kept — an instant swap read as a flicker — but
                     // short: switching is a tens-of-times-a-day action, so it must not read as a
                     // transition. 120ms in / 60ms out keeps the overlap of two screens below the
@@ -1289,13 +1315,15 @@ class MainActivity : ComponentActivity() {
                 // Bottom row: the tab bar fills the same width as the capsule above it (the column applies
                 // the screen inset) and its four slots (主页 / 歌单广场 / 资料库 / 心动模式) divide that width
                 // equally.
-                FloatingTabBar(
-                    selected = tab,
-                    onSelect = { tab = if (showSettings) tab else it; showSettings = false },
-                    onBeatMode = { openBeatMode() },
-                    beatModeSignedIn = beatModeActions.signedIn,
-                    backdrop = bottomBackdrop,
-                )
+                if (!expandedLayout) {
+                    FloatingTabBar(
+                        selected = tab,
+                        onSelect = { tab = if (showSettings) tab else it; showSettings = false },
+                        onBeatMode = { openBeatMode() },
+                        beatModeSignedIn = beatModeActions.signedIn,
+                        backdrop = bottomBackdrop,
+                    )
+                }
             }
 
             AnimatedVisibility(
@@ -2464,5 +2492,94 @@ private fun viewModelFactory(container: AppContainer) = object : androidx.lifecy
             modelClass.isAssignableFrom(AppViewModel::class.java) -> AppViewModel(container) as T
             else -> error("Unknown ViewModel: ${modelClass.name}")
         }
+    }
+}
+
+/**
+ * Tablet navigation rail.
+ *
+ * On an expanded window the floating bottom bar is the wrong shape: it is designed to sit under a
+ * thumb, and on a 1000 dp-wide screen it floats in a band of empty space while the content behind it
+ * keeps scrolling. A left rail keeps navigation permanently visible, leaves the bottom edge to the
+ * now-playing capsule, and matches how iPad-class music apps are laid out.
+ *
+ * Items mirror [BarSlots] exactly (主页 / 歌单广场 / 资料库 + 心动模式) so the two navigations never
+ * disagree about what exists.
+ */
+@Composable
+private fun TabletNavRail(
+    selected: PlayerTab,
+    onSelect: (PlayerTab) -> Unit,
+    onBeatMode: () -> Unit,
+    beatModeSignedIn: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val items = listOf(
+        Triple(PlayerTab.Home, "主页", SfIcons.House),
+        Triple(PlayerTab.PlaylistSquare, "歌单广场", SfIcons.SquareGrid2x2),
+        Triple(PlayerTab.Library, "资料库", SfIcons.PersonOutline),
+    )
+    Column(
+        modifier
+            .fillMaxHeight()
+            .width(com.yunyin.music.ui.TabletLayout.RAIL_WIDTH)
+            .background(AppTheme.palette.background)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .padding(vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Spacer(Modifier.height(8.dp))
+        items.forEach { (tab, label, icon) ->
+            TabletRailItem(
+                icon = icon,
+                label = label,
+                selected = selected == tab,
+                onClick = { onSelect(tab) },
+            )
+        }
+        TabletRailItem(
+            icon = com.yunyin.music.ui.icons.SfIcons.Heart,
+            label = "心动模式",
+            selected = false,
+            enabled = beatModeSignedIn,
+            onClick = onBeatMode,
+        )
+        Spacer(Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun TabletRailItem(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    selected: Boolean,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    val tint = when {
+        !enabled -> AppTheme.palette.tertiaryLabel
+        selected -> AppTheme.palette.accent
+        else -> AppTheme.palette.label.copy(alpha = 0.72f)
+    }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(com.mocharealm.gaze.capsule.ContinuousRoundedRectangle(AppleShapes.card))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(24.dp))
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = label,
+            fontFamily = SFPro,
+            fontSize = 11.sp,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            color = tint,
+            maxLines = 1,
+        )
     }
 }
