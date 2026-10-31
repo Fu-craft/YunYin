@@ -2041,7 +2041,7 @@ class MainActivity : ComponentActivity() {
             ) {
                 val state = lastCollection
                 val showcase = com.yunyin.music.ui.components.PlaylistShowcase.of(playlistShowcase)
-                if (state != null && showcase != com.yunyin.music.ui.components.PlaylistShowcase.Off && state.tracks.isNotEmpty()) {
+                if (state != null && showcase != com.yunyin.music.ui.components.PlaylistShowcase.Off) {
                     // Full-screen, as in the reference: the ribbon / shelf replaces the playlist page entirely.
                     Surface(Modifier.fillMaxSize(), color = AppTheme.palette.background) {
                         com.yunyin.music.ui.components.PlaylistShowcaseScreen(

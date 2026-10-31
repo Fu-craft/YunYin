@@ -597,14 +597,6 @@ fun HomeScreen(
                     // 继续播放: the fastest possible "resume" entry, and one Apple Music does not
                     // have. Only shown when the player actually holds a track.
                     if (continueTrack != null) {
-                        item("continue") {
-                            ContinueListeningRow(
-                                track = continueTrack,
-                                loader = loader,
-                                onClick = onContinueListening,
-                                modifier = shelfAppear(),
-                            )
-                        }
                     }
 
                     // 每日推荐 leads the page: the one shelf that answers "what should I play?"
