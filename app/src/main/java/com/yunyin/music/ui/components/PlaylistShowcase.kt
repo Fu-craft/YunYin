@@ -10,6 +10,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -57,8 +62,8 @@ enum class PlaylistShowcase(val key: String, val label: String) {
 }
 
 /** The reference's ribbon path, sampled into 2D screen positions with a perspective divide. */
-private fun ribbonPoint(index: Int, count: Int, radiusPx: Float): Triple<Float, Float, Float> {
-    val t = (index.toFloat() / count) * 2f * PI.toFloat()
+private fun ribbonPoint(index: Int, count: Int, radiusPx: Float, phase: Float = 0f): Triple<Float, Float, Float> {
+    val t = ((index + phase) / count) * 2f * PI.toFloat()
     val x = sin(t)
     val y = cos(t) * 0.28f
     val z = sin(2 * t) * 0.62f
@@ -77,20 +82,30 @@ fun PlaylistRibbon(
     if (playlists.isEmpty()) return
     val size = 92.dp
     val count = playlists.size.coerceAtMost(18)
+    // Dragging turns the loop. The reference uses an arc-length parameterisation so a finger travel
+    // maps to a constant distance along the ribbon; with a single circle-ish path a phase in *items*
+    // is enough, and inertia is left to the fling of `draggable`.
+    var phase by androidx.compose.runtime.remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
     Box(
         modifier
             .fillMaxWidth()
             .height(196.dp)
-            .clip(androidx.compose.foundation.shape.RoundedCornerShape(0.dp)),
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(0.dp))
+            .draggable(
+                orientation = androidx.compose.foundation.gestures.Orientation.Horizontal,
+                state = androidx.compose.foundation.gestures.rememberDraggableState { delta ->
+                    phase -= delta / 90f
+                },
+            ),
     ) {
         val centerX = 210f
         val centerY = 96f
         // Draw far-to-near so a sleeve that passes "behind" is correctly occluded by nearer ones.
         playlists.take(count)
             .mapIndexed { index, playlist -> index to playlist }
-            .sortedByDescending { (index, _) -> ribbonPoint(index, count, 150f).third }
+            .sortedByDescending { (index, _) -> ribbonPoint(index, count, 150f, phase).third }
             .forEach { (index, playlist) ->
-                val (x, y, depth) = ribbonPoint(index, count, 150f)
+                val (x, y, depth) = ribbonPoint(index, count, 150f, phase)
                 val scale = (1f / depth).coerceIn(0.45f, 1.15f)
                 val alpha = ((1.25f - depth) * 1.4f).coerceIn(0.25f, 1f)
                 Box(
@@ -125,6 +140,14 @@ fun PlaylistShelf(
     if (playlists.isEmpty()) return
     val widthDp = 92.dp
     val lean = 7f
+    // Entrance: the reference slides each case in from beyond the right edge with a 2.7-power ease.
+    var entered by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(Unit) { entered = true }
+    val entry by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (entered) 1f else 0f,
+        animationSpec = androidx.compose.animation.core.tween(durationMillis = 640),
+        label = "shelf-entry",
+    )
     Box(
         modifier
             .fillMaxWidth()
@@ -137,7 +160,7 @@ fun PlaylistShelf(
             val pitch = widthDp * 0.069f * 6.4f
             Box(
                 Modifier
-                    .offset(x = 16.dp + pitch * index)
+                    .offset(x = 16.dp + pitch * index + 260.dp * ((1f - entry) * (1f - entry) * (1f - entry)))
                     .graphicsLayer {
                         rotationZ = -lean
                         rotationY = 10f
