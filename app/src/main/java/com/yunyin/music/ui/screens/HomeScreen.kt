@@ -18,6 +18,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.LazyRow
@@ -88,6 +94,159 @@ private fun LazyItemScope.shelfAppear(): Modifier = Modifier.animateItem(
     placementSpec = null,
 )
 
+/**
+ * 每日推荐 hero — the date, the count and the first cover; one tap plays the whole set.
+ *
+ * Apple-design pass: hierarchy comes from size and weight (12 sp eyebrow, 20 sp date with negative
+ * tracking, one secondary line); the card is a single solid surface rather than translucent, because
+ * a light material over the blurred album backdrop loses legibility and this is the interactive
+ * element; and it scales on press so the tap is acknowledged before the transition starts.
+ */
+@Composable
+private fun DailyRecommendationCard(
+    tracks: List<Track>,
+    loader: ArtworkLoader,
+    onPlayAll: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.985f else 1f,
+        animationSpec = spring(dampingRatio = 1f, stiffness = 900f),
+        label = "daily-hero-press",
+    )
+    Row(
+        modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clip(ContinuousRoundedRectangle(AppleShapes.card))
+            .background(AppTheme.palette.secondaryBackground)
+            .clickable(
+                interactionSource = interaction,
+                indication = rememberControlRipple(),
+                onClick = onPlayAll,
+            )
+            .padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Artwork(
+            url = tracks.firstOrNull()?.coverUrl,
+            loader = loader,
+            corner = AppleShapes.control,
+            modifier = Modifier.size(88.dp),
+        )
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = "每日推荐",
+                fontFamily = SFPro,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 0.3.sp,
+                color = AppTheme.palette.secondaryLabel,
+            )
+            Spacer(Modifier.height(3.dp))
+            Text(
+                text = dailyDateLabel(),
+                fontFamily = SFPro,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = (-0.4).sp,
+                color = AppTheme.palette.label,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "根据你的口味生成 · ${tracks.size} 首",
+                fontFamily = SFPro,
+                fontSize = 13.sp,
+                color = AppTheme.palette.secondaryLabel,
+                maxLines = 1,
+            )
+        }
+        Icon(
+            imageVector = SfIcons.Play,
+            contentDescription = "播放每日推荐",
+            tint = AppTheme.palette.label,
+            modifier = Modifier.size(22.dp),
+        )
+        Spacer(Modifier.width(8.dp))
+    }
+}
+
+/** `11月1日` — the card title, so the shelf reads as "today". */
+private fun dailyDateLabel(): String {
+    val today = java.time.LocalDate.now()
+    return "${today.monthValue}月${today.dayOfMonth}日"
+}
+
+/**
+ * Cold-start skeleton that mirrors the real blocks (hero, section title, tile row) so the page does
+ * not reflow when content lands. Static on purpose: a shimmer is motion for its own sake on a screen
+ * that is only visible for a fraction of a second.
+ */
+@Composable
+private fun HomeSkeleton(modifier: Modifier = Modifier) {
+    Column(
+        modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clip(ContinuousRoundedRectangle(AppleShapes.card))
+                .background(AppTheme.palette.secondaryBackground)
+                .padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier
+                    .size(88.dp)
+                    .clip(ContinuousRoundedRectangle(AppleShapes.control))
+                    .background(AppTheme.palette.tertiaryBackground),
+            )
+            Spacer(Modifier.width(14.dp))
+            Column {
+                HomeSkeletonBar(width = 56.dp, height = 10.dp)
+                Spacer(Modifier.height(8.dp))
+                HomeSkeletonBar(width = 108.dp, height = 18.dp)
+                Spacer(Modifier.height(8.dp))
+                HomeSkeletonBar(width = 140.dp, height = 10.dp)
+            }
+        }
+        HomeSkeletonBar(width = 88.dp, height = 16.dp)
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            repeat(3) {
+                Column {
+                    Box(
+                        Modifier
+                            .size(104.dp)
+                            .clip(ContinuousRoundedRectangle(AppleShapes.card))
+                            .background(AppTheme.palette.tertiaryBackground),
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    HomeSkeletonBar(width = 76.dp, height = 10.dp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeSkeletonBar(width: androidx.compose.ui.unit.Dp, height: androidx.compose.ui.unit.Dp) {
+    Box(
+        Modifier
+            .width(width)
+            .height(height)
+            .clip(RoundedCornerShape(height / 2))
+            .background(AppTheme.palette.tertiaryBackground),
+    )
+}
+
 @Composable
 fun HomeScreen(
     state: HomeUiState,
@@ -123,17 +282,19 @@ fun HomeScreen(
                 // empty for a moment. Without this the page was a blank field under the search strip
                 // with no sign that anything was loading.
                 if (state.loading && feed.featuredPlaylists.isEmpty()) {
-                    item("loading") {
-                        Box(
-                            Modifier.fillMaxWidth().padding(vertical = 28.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            CircularProgressIndicator(
-                                color = AppTheme.palette.accent,
-                                strokeWidth = 2.5.dp,
-                                modifier = Modifier.size(26.dp),
-                            )
-                        }
+                    item("loading") { HomeSkeleton(modifier = Modifier.fillMaxWidth()) }
+                }
+
+                // 每日推荐 leads the page: the one shelf that answers "what should I play?" without
+                // scrolling, and one tap starts listening.
+                if (feed.dailySongs.isNotEmpty()) {
+                    item("daily-hero") {
+                        DailyRecommendationCard(
+                            tracks = feed.dailySongs,
+                            loader = loader,
+                            onPlayAll = { onTrackClick(feed.dailySongs.first(), feed.dailySongs) },
+                            modifier = shelfAppear(),
+                        )
                     }
                 }
                 if (feed.featuredPlaylists.isNotEmpty()) {
