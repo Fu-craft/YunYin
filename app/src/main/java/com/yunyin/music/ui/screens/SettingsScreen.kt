@@ -126,6 +126,9 @@ fun SettingsScreen(
     /** Overlap length in seconds for the dual-player crossfade. */
     crossfadeSeconds: Int = 6,
     onCycleCrossfadeSeconds: () -> Unit = {},
+    /** Playlist showcase for the home shelf: off / ribbon / shelf. */
+    playlistShowcaseLabel: String = "关闭",
+    onCyclePlaylistShowcase: () -> Unit = {},
     /** Settings → 播放 → 测试状态栏歌词 (cycles four recipes). */
     onTestFlymeLyric: () -> Unit = {},
     /** Whether the lyrics page auto-hides the chrome after the idle delay (default off). */
@@ -244,6 +247,8 @@ fun SettingsScreen(
                 LinkRow("定时关闭", sleepTimerLabel, onShowSleepTimer, "到点后自动停止播放")
                 RowDivider()
                 LinkRow("播放器界面", playerStyle.label, onShowPlayerStyle, "播放页展示封面或唱片")
+                RowDivider()
+                LinkRow("歌单展示", playlistShowcaseLabel, onCyclePlaylistShowcase, "首页歌单用立体缎带或CD唱片架")
         RowDivider()
 
         LinkRow("封面动效手感", "暂停与恢复的弹簧", onShowCoverMotionTuner, "调整封面缩小与回弹的软硬")

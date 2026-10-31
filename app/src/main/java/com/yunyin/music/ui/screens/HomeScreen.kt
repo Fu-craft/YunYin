@@ -549,6 +549,8 @@ fun HomeScreen(
     userName: String = "",
     /** Expanded window (tablet / unfolded foldable): shelves become grids, the hero grows. */
     expanded: Boolean = false,
+    /** off / ribbon / shelf — see [com.yunyin.music.ui.components.PlaylistShowcase]. */
+    playlistShowcase: String = "off",
     loader: ArtworkLoader,
     onSearchClick: () -> Unit,
     onTrackClick: (Track, List<Track>) -> Unit,
@@ -654,9 +656,25 @@ fun HomeScreen(
                 )
             }
             item("featured") {
-                if (expanded) {
-                    // Two columns on a tablet: the width the window actually has, instead of a
-                    // carousel that hides most of the shelf behind a horizontal scroll.
+                val showcase = com.yunyin.music.ui.components.PlaylistShowcase.of(playlistShowcase)
+                if (showcase == com.yunyin.music.ui.components.PlaylistShowcase.Ribbon) {
+                    // The showcase replaces the shelf rather than sitting above it: both show the same
+                    // eight playlists, and stacking a ribbon over a carousel is two answers to one
+                    // question.
+                    com.yunyin.music.ui.components.PlaylistRibbon(
+                        playlists = feed.featuredPlaylists,
+                        loader = loader,
+                        onPlaylistClick = onPlaylistClick,
+                        modifier = shelfAppear(),
+                    )
+                } else if (showcase == com.yunyin.music.ui.components.PlaylistShowcase.Shelf) {
+                    com.yunyin.music.ui.components.PlaylistShelf(
+                        playlists = feed.featuredPlaylists,
+                        loader = loader,
+                        onPlaylistClick = onPlaylistClick,
+                        modifier = shelfAppear(),
+                    )
+                } else if (expanded) {
                     PlaylistGrid(
                         playlists = feed.featuredPlaylists,
                         loader = loader,

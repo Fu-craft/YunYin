@@ -204,6 +204,16 @@ class SettingsStore(context: Context) {
             .putString(KEY_NOW_PLAYING_BACKGROUND_STYLE, normalizeNowPlayingBackgroundStyle(value))
             .apply()
 
+    /**
+     * Playlist showcase for the home shelf: `off` (flat), `ribbon` or `shelf`.
+     *
+     * A string so an unknown value degrades to `off` instead of throwing during composition.
+     * Default off — both showcases are stylistic and the flat shelf is the readable default.
+     */
+    var playlistShowcase: String
+        get() = prefs.getString(KEY_PLAYLIST_SHOWCASE, "off") ?: "off"
+        set(value) = prefs.edit().putString(KEY_PLAYLIST_SHOWCASE, value).apply()
+
     // ------------------------------------------------------------ updates
 
     /**
@@ -382,6 +392,7 @@ class SettingsStore(context: Context) {
         private const val KEY_NOW_PLAYING_AUDIO_REACTIVE = "now_playing_audio_reactive"
         private const val KEY_NOW_PLAYING_DYNAMIC = "now_playing_dynamic_background"
         private const val KEY_NOW_PLAYING_BACKGROUND_STYLE = "now_playing_background_style"
+private const val KEY_PLAYLIST_SHOWCASE = "playlist_showcase"
         private const val KEY_NOW_PLAYING_ANIMATED_COVER = "now_playing_animated_cover"
     private const val KEY_COVER_PAUSE_DAMPING = "cover_motion_pause_damping"
     private const val KEY_COVER_PAUSE_STIFFNESS = "cover_motion_pause_stiffness"

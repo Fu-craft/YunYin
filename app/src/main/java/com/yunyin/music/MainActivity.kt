@@ -286,6 +286,7 @@ class MainActivity : ComponentActivity() {
         var beatModeActive by remember { mutableStateOf(false) }
         var showSettings by remember { mutableStateOf(false) }
         var showStyleBrowser by remember { mutableStateOf(false) }
+        var playlistShowcase by remember { mutableStateOf(container.settings.playlistShowcase) }
         var cloudRecentSongs by remember { mutableStateOf<List<com.yunyin.music.core.Track>>(emptyList()) }
         var cloudRecentAlbumIds by remember { mutableStateOf<List<Long>>(emptyList()) }
         var cloudRecentPlaylistIds by remember { mutableStateOf<List<Long>>(emptyList()) }
@@ -1131,6 +1132,7 @@ class MainActivity : ComponentActivity() {
                             state = homeState,
                             userName = displayName,
                             expanded = expandedLayout,
+                            playlistShowcase = playlistShowcase,
                             refreshing = homeState.loading,
                             onRefresh = appViewModel::refreshHome,
                             continueTrack = continueTrack,
@@ -1493,6 +1495,12 @@ class MainActivity : ComponentActivity() {
                         }
                         crossfadeSeconds = next
                         container.settings.crossfadeSeconds = next
+                    },
+                    playlistShowcaseLabel = com.yunyin.music.ui.components.PlaylistShowcase.of(playlistShowcase).label,
+                    onCyclePlaylistShowcase = {
+                        val next = com.yunyin.music.ui.components.PlaylistShowcase.next(playlistShowcase)
+                        playlistShowcase = next.key
+                        container.settings.playlistShowcase = next.key
                     },
                     // The crash file is app-private, so on an unrooted device it is unreachable without
                     // adb — and when the crash is on *launch*, adb is the only other route, which is no
