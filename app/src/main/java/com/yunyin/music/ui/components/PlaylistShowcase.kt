@@ -222,11 +222,19 @@ fun PlaylistShowcaseScreen(
     onShufflePick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val covers = tracks.map { Playlist(id = it.id, name = it.name, coverUrl = it.coverUrl) }
+    val visible = tracks.take(60)
+    val covers = visible.map { Playlist(id = it.id, name = it.name, coverUrl = it.coverUrl) }
     val pick: (Playlist) -> Unit = { playlist ->
         onTrackClick(tracks.indexOfFirst { it.id == playlist.id })
     }
     Box(modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color(0xFF0B0B0D))) {
+        if (tracks.isEmpty()) {
+            androidx.compose.material3.CircularProgressIndicator(
+                color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.7f),
+                strokeWidth = 2.dp,
+                modifier = Modifier.align(Alignment.Center).size(28.dp),
+            )
+        }
         if (style == PlaylistShowcase.Ribbon) {
         // The reference ribbon itself (DepthRibbonView + DepthRibbonPath), not a look-alike.
         com.yunyin.music.ui.components.shelf.PlaylistDepthRibbon(
