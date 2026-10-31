@@ -12,6 +12,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -226,6 +227,7 @@ fun PlaylistShowcaseScreen(
     onBack: () -> Unit,
     onTrackClick: (index: Int) -> Unit,
     onShufflePick: () -> Unit,
+    onSearch: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val visible = tracks.take(60)
@@ -315,6 +317,31 @@ fun PlaylistShowcaseScreen(
         // Shelf only: the ported ribbon draws its own title and transport, and our pill was
         // covering them (which is why playback looked dead there).
         if (style == PlaylistShowcase.Shelf) {
+        // Round controls over the scene: back left, search right. Translucent white on the
+        // cover-derived backdrop, which is the same material language as the rest of the app.
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ShowcaseCircleButton(onClick = onBack) {
+                Icon(
+                    imageVector = com.yunyin.music.ui.icons.SfIcons.ChevronLeft,
+                    contentDescription = "返回",
+                    tint = androidx.compose.ui.graphics.Color.White,
+                )
+            }
+            ShowcaseCircleButton(onClick = onSearch) {
+                Icon(
+                    imageVector = com.yunyin.music.ui.icons.SfIcons.MagnifyingGlass,
+                    contentDescription = "搜索歌单",
+                    tint = androidx.compose.ui.graphics.Color.White,
+                )
+            }
+        }
         // Header: back + title + subtitle, as in the reference's top row.
         Row(
             Modifier
@@ -395,4 +422,16 @@ fun PlaylistShowcaseScreen(
         }
         }
     }
+}
+
+@Composable
+private fun ShowcaseCircleButton(onClick: () -> Unit, content: @Composable () -> Unit) {
+    Box(
+        Modifier
+            .size(44.dp)
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(50))
+            .background(androidx.compose.ui.graphics.Color.White.copy(alpha = 0.14f))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) { content() }
 }
