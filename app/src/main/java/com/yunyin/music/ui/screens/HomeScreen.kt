@@ -205,29 +205,42 @@ private fun DailyRecommendationCard(
 /** Four covers in a 2×2 grid, rounded as one block; empty slots stay as quiet placeholders. */
 @Composable
 private fun DailyCollage(tracks: List<Track>, loader: ArtworkLoader) {
+    // One dominant cover on the left, three stacked on the right: an asymmetric mosaic reads as
+    // "designed" where an even grid reads as a photo dump, and it gives each sleeve enough area to be
+    // recognised. Covers are de-duplicated per album, because four songs from one album would repeat
+    // the same sleeve and the collage would look like two images tiled.
+    val covers = tracks
+        .filter { !it.coverUrl.isNullOrBlank() }
+        .distinctBy { if (it.albumId != 0L) "id:${it.albumId}" else "name:${it.albumName}" }
+        .take(4)
     val gutter = 3.dp
-    Column(
+    Row(
         Modifier
             .fillMaxSize()
             .clip(ContinuousRoundedRectangle(AppleShapes.control)),
-        verticalArrangement = Arrangement.spacedBy(gutter),
+        horizontalArrangement = Arrangement.spacedBy(gutter),
     ) {
-        for (row in 0 until 2) {
-            Row(horizontalArrangement = Arrangement.spacedBy(gutter)) {
-                for (column in 0 until 2) {
-                    val track = tracks.getOrNull(row * 2 + column)
-                    Artwork(
-                        url = track?.coverUrl,
-                        loader = loader,
-                        corner = 0.dp,
-                        modifier = Modifier.weight(1f).fillMaxHeight(),
-                    )
-                }
+        Artwork(
+            url = covers.getOrNull(0)?.coverUrl,
+            loader = loader,
+            corner = 0.dp,
+            modifier = Modifier.weight(1.55f).fillMaxHeight(),
+        )
+        Column(
+            Modifier.weight(1f).fillMaxHeight(),
+            verticalArrangement = Arrangement.spacedBy(gutter),
+        ) {
+            for (index in 1..3) {
+                Artwork(
+                    url = covers.getOrNull(index)?.coverUrl,
+                    loader = loader,
+                    corner = 0.dp,
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                )
             }
         }
     }
 }
-
 /** `11月1日` — the card title, so the shelf reads as "today". */
 private fun dailyDateLabel(): String {
     val today = java.time.LocalDate.now()
