@@ -1819,35 +1819,6 @@ class MainActivity : ComponentActivity() {
                     onCycleRepeat = { container.player.cycleRepeat() },
                     onToggleShuffle = { container.player.toggleShuffle() },
                     onShowQueue = { showQueue = true },
-                    onOpenSimilar = { id, title ->
-                        // Prefetch so an empty answer is *visible*: opening an empty page looked like a dead tap.
-                        scope.launch {
-                            val result = container.music.similarSongs(id)
-                            val list = (result as? com.yunyin.music.core.NetResult.Ok)?.value.orEmpty()
-                            if (list.isEmpty()) {
-                                val why = (result as? com.yunyin.music.core.NetResult.Err)?.message ?: "没有相似歌曲"
-                                android.widget.Toast.makeText(context, why, android.widget.Toast.LENGTH_SHORT).show()
-                            } else {
-                                showPlayer = false
-                                appViewModel.openSimilarSongs(id, title, preloaded = list)
-                            }
-                        }
-                    },
-                    onOpenWiki = { id ->
-                        scope.launch {
-                            val result = container.music.songWiki(id)
-                            val link = (result as? com.yunyin.music.core.NetResult.Ok)?.value?.linkUrl
-                            if (link != null) {
-                                openUrl(link)
-                            } else {
-                                android.widget.Toast.makeText(context, "暂无百科条目", android.widget.Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    },
-                    onOpenSimilarArtists = { id ->
-                        similarArtistTrackId = id
-                        showSimilarArtists = true
-                    },
                     onShowSettings = { showSettings = true; showPlayer = false },
                     onArtistClick = { name ->
                         // The artist page sits above the player: closing it returns to where the tap

@@ -24,6 +24,10 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.LazyRow
@@ -126,6 +130,11 @@ private fun DailyRecommendationCard(
             }
             .clip(ContinuousRoundedRectangle(AppleShapes.card))
             .background(AppTheme.palette.secondaryBackground)
+            .border(
+                width = 0.5.dp,
+                color = AppTheme.palette.separator,
+                shape = ContinuousRoundedRectangle(AppleShapes.card),
+            )
             .clickable(
                 interactionSource = interaction,
                 indication = rememberControlRipple(),
@@ -134,47 +143,100 @@ private fun DailyRecommendationCard(
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Artwork(
-            url = tracks.firstOrNull()?.coverUrl,
-            loader = loader,
-            corner = AppleShapes.control,
-            modifier = Modifier.size(112.dp),
-        )
-        Spacer(Modifier.width(16.dp))
+        // A 2×2 collage rather than one cover: the card is a *set* of songs, and four sleeves read as
+        // a mix where a single square just reads as one more list row.
+        Box(Modifier.size(112.dp)) {
+            DailyCollage(tracks = tracks, loader = loader)
+            // Count pill, scrim-backed because it sits on artwork whose brightness we cannot predict.
+            Box(
+                Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(6.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(Color.Black.copy(alpha = 0.42f))
+                    .padding(horizontal = 8.dp, vertical = 3.dp),
+            ) {
+                Text(
+                    text = "${tracks.size} 首",
+                    fontFamily = SFPro,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White,
+                )
+            }
+        }
+        Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(
                 text = "每日推荐",
                 fontFamily = SFPro,
-                fontSize = 13.sp,
+                fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
-                letterSpacing = 0.3.sp,
+                letterSpacing = 0.4.sp,
                 color = AppTheme.palette.secondaryLabel,
-            )
-            Spacer(Modifier.height(3.dp))
-            Text(
-                text = dailyDateLabel(),
-                fontFamily = SFPro,
-                fontSize = 26.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = (-0.7).sp,
-                color = AppTheme.palette.label,
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                text = "根据你的口味生成 · ${tracks.size} 首",
+                text = dailyDateLabel(),
                 fontFamily = SFPro,
-                fontSize = 14.sp,
+                fontSize = 25.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = (-0.7).sp,
+                color = AppTheme.palette.label,
+                maxLines = 1,
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = "根据你的口味生成",
+                fontFamily = SFPro,
+                fontSize = 13.sp,
                 color = AppTheme.palette.secondaryLabel,
                 maxLines = 1,
             )
         }
-        Icon(
-            imageVector = SfIcons.Play,
-            contentDescription = "播放每日推荐",
-            tint = AppTheme.palette.label,
-            modifier = Modifier.size(24.dp),
-        )
-        Spacer(Modifier.width(10.dp))
+        // A filled play affordance, not a floating glyph: this is the primary action of the card.
+        Box(
+            Modifier
+                .padding(start = 8.dp)
+                .size(34.dp)
+                .clip(RoundedCornerShape(50))
+                .background(AppTheme.palette.label.copy(alpha = 0.10f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = SfIcons.Play,
+                contentDescription = "播放每日推荐",
+                tint = AppTheme.palette.label,
+                modifier = Modifier.size(17.dp),
+            )
+        }
+        Spacer(Modifier.width(4.dp))
+    }
+}
+
+/** Four covers in a 2×2 grid, rounded as one block; empty slots stay as quiet placeholders. */
+@Composable
+private fun DailyCollage(tracks: List<Track>, loader: ArtworkLoader) {
+    val gutter = 3.dp
+    Column(
+        Modifier
+            .fillMaxSize()
+            .clip(ContinuousRoundedRectangle(AppleShapes.control)),
+        verticalArrangement = Arrangement.spacedBy(gutter),
+    ) {
+        for (row in 0 until 2) {
+            Row(horizontalArrangement = Arrangement.spacedBy(gutter)) {
+                for (column in 0 until 2) {
+                    val track = tracks.getOrNull(row * 2 + column)
+                    Artwork(
+                        url = track?.coverUrl,
+                        loader = loader,
+                        corner = 0.dp,
+                        modifier = Modifier.weight(1f).aspectRatio(1f),
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -249,6 +311,8 @@ private fun HomeSkeletonBar(width: androidx.compose.ui.unit.Dp, height: androidx
 
 @Composable
 fun HomeScreen(
+    /** Greeting name; blank renders a plain 「你好」. */
+    userName: String = "",
     state: HomeUiState,
     loader: ArtworkLoader,
     onSearchClick: () -> Unit,
@@ -288,6 +352,31 @@ fun HomeScreen(
                 // 每日推荐 leads the page: the one shelf that answers "what should I play?" without
                 // scrolling, and one tap starts listening.
                 if (feed.dailySongs.isNotEmpty()) {
+                    item("greeting") {
+                        Column(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 2.dp),
+                        ) {
+                            Text(
+                                text = if (userName.isBlank()) "你好" else "你好，$userName",
+                                fontFamily = SFPro,
+                                fontSize = 30.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = (-0.8).sp,
+                                color = AppTheme.palette.label,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            )
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                text = "今天想听点什么？",
+                                fontFamily = SFPro,
+                                fontSize = 14.sp,
+                                color = AppTheme.palette.secondaryLabel,
+                            )
+                        }
+                    }
                     item("daily-hero") {
                         DailyRecommendationCard(
                             tracks = feed.dailySongs,
