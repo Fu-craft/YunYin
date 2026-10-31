@@ -240,7 +240,7 @@ fun PlaylistShowcaseScreen(
     val context = androidx.compose.ui.platform.LocalContext.current
     var sceneColor by remember { androidx.compose.runtime.mutableStateOf(androidx.compose.ui.graphics.Color(0xFF0B0B0D)) }
     var pickRequest by remember { androidx.compose.runtime.mutableIntStateOf(-1) }
-    var current by remember { androidx.compose.runtime.mutableIntStateOf(-1) }
+    var current by remember { androidx.compose.runtime.mutableIntStateOf(0) }
     // Sliding onto a record starts it, without a second tap. A short dwell keeps a flick from
     // firing a burst of tracks on the way past.
     androidx.compose.runtime.LaunchedEffect(current) {
@@ -381,7 +381,7 @@ fun PlaylistShowcaseScreen(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = "${tracks.size} 首",
+                    text = visible.getOrNull(current)?.artists?.joinToString("/") ?: "${tracks.size} 首",
                     fontFamily = SFPro,
                     fontSize = 13.sp,
                     color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.6f),
