@@ -1311,6 +1311,12 @@ fun PlayerScreen(
                             Modifier
                                 .align(Alignment.BottomCenter)
                                 .fillMaxWidth()
+                                // The artwork branch lifts its controls with `navigationBarsPadding()`
+                                // on the enclosing column; this panel had none, so the same
+                                // `PlayerControls` sat one nav-bar inset lower on the lyrics page.
+                                // Switching presentations therefore *moved* the control bar instead of
+                                // cross-fading it in place, which is what read as "flashing in".
+                                .navigationBarsPadding()
                                 .onSizeChanged { panelHeightPx = it.height }
                                 .chromeSlide(chromeProgress, ChromeEdge.Bottom)
                                 .then(wakeOnTap),
