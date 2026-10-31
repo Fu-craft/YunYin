@@ -119,7 +119,7 @@ private fun DailyRecommendationCard(
     Row(
         modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp)
+            .padding(start = 16.dp, end = 16.dp, top = 14.dp)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
@@ -131,21 +131,21 @@ private fun DailyRecommendationCard(
                 indication = rememberControlRipple(),
                 onClick = onPlayAll,
             )
-            .padding(10.dp),
+            .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Artwork(
             url = tracks.firstOrNull()?.coverUrl,
             loader = loader,
             corner = AppleShapes.control,
-            modifier = Modifier.size(88.dp),
+            modifier = Modifier.size(112.dp),
         )
-        Spacer(Modifier.width(14.dp))
+        Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f)) {
             Text(
                 text = "每日推荐",
                 fontFamily = SFPro,
-                fontSize = 12.sp,
+                fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
                 letterSpacing = 0.3.sp,
                 color = AppTheme.palette.secondaryLabel,
@@ -154,16 +154,16 @@ private fun DailyRecommendationCard(
             Text(
                 text = dailyDateLabel(),
                 fontFamily = SFPro,
-                fontSize = 20.sp,
+                fontSize = 26.sp,
                 fontWeight = FontWeight.Bold,
-                letterSpacing = (-0.4).sp,
+                letterSpacing = (-0.7).sp,
                 color = AppTheme.palette.label,
             )
             Spacer(Modifier.height(4.dp))
             Text(
                 text = "根据你的口味生成 · ${tracks.size} 首",
                 fontFamily = SFPro,
-                fontSize = 13.sp,
+                fontSize = 14.sp,
                 color = AppTheme.palette.secondaryLabel,
                 maxLines = 1,
             )
@@ -172,9 +172,9 @@ private fun DailyRecommendationCard(
             imageVector = SfIcons.Play,
             contentDescription = "播放每日推荐",
             tint = AppTheme.palette.label,
-            modifier = Modifier.size(22.dp),
+            modifier = Modifier.size(24.dp),
         )
-        Spacer(Modifier.width(8.dp))
+        Spacer(Modifier.width(10.dp))
     }
 }
 
@@ -192,7 +192,7 @@ private fun dailyDateLabel(): String {
 @Composable
 private fun HomeSkeleton(modifier: Modifier = Modifier) {
     Column(
-        modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+        modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 10.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Row(
@@ -205,7 +205,7 @@ private fun HomeSkeleton(modifier: Modifier = Modifier) {
         ) {
             Box(
                 Modifier
-                    .size(88.dp)
+                    .size(112.dp)
                     .clip(ContinuousRoundedRectangle(AppleShapes.control))
                     .background(AppTheme.palette.tertiaryBackground),
             )
@@ -213,7 +213,7 @@ private fun HomeSkeleton(modifier: Modifier = Modifier) {
             Column {
                 HomeSkeletonBar(width = 56.dp, height = 10.dp)
                 Spacer(Modifier.height(8.dp))
-                HomeSkeletonBar(width = 108.dp, height = 18.dp)
+                HomeSkeletonBar(width = 120.dp, height = 22.dp)
                 Spacer(Modifier.height(8.dp))
                 HomeSkeletonBar(width = 140.dp, height = 10.dp)
             }
@@ -467,7 +467,7 @@ fun SearchBar(
             tint = AppTheme.palette.secondaryLabel,
             modifier = Modifier.size(18.dp),
         )
-        Spacer(Modifier.width(8.dp))
+        Spacer(Modifier.width(10.dp))
         Text(
             text = placeholder,
             fontFamily = SFPro,
@@ -529,7 +529,7 @@ private fun HomeFmRow(onClick: () -> Unit, modifier: Modifier = Modifier) {
             Text(
                 text = "根据你的口味持续播放",
                 fontFamily = SFPro,
-                fontSize = 12.sp,
+                fontSize = 13.sp,
                 color = palette.secondaryLabel,
                 maxLines = 1,
                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
