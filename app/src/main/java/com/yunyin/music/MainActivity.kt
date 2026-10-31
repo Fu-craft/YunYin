@@ -2050,6 +2050,11 @@ class MainActivity : ComponentActivity() {
                             tracks = state.tracks,
                             loader = container.artwork,
                             onBack = appViewModel::closeCollection,
+                            onShufflePick = {
+                                state.tracks.randomOrNull()?.let { track ->
+                                    play(track, state.tracks, state.id.takeIf { state.canBeatMode })
+                                }
+                            },
                             onTrackClick = { index ->
                                 state.tracks.getOrNull(index)?.let { track -> play(track, state.tracks, state.id.takeIf { state.canBeatMode }) }
                             },

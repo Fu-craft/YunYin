@@ -4,14 +4,17 @@
 package com.yunyin.music.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -21,17 +24,17 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -40,9 +43,6 @@ import com.yunyin.music.core.Track
 import com.yunyin.music.data.ArtworkLoader
 import com.yunyin.music.ui.theme.AppTheme
 import com.yunyin.music.ui.theme.SFPro
-import kotlin.math.PI
-import kotlin.math.cos
-import kotlin.math.sin
 
 /** Current showcase choice, published by the host so the playlist page can read it. */
 val LocalPlaylistShowcase = androidx.compose.runtime.staticCompositionLocalOf { "off" }
@@ -60,24 +60,79 @@ enum class PlaylistShowcase(val key: String, val label: String) {
 }
 
 /**
- * Ribbon geometry, ported from CurrentMusicX `DepthRibbonGeometry`.
+ * CD 唱片架 — the reference's real shape, not a leaning row.
  *
- * Sample: `(sin t, cos t · 0.28, sin 2t · 0.62)` — an ellipse whose z crosses zero twice, which is
- * what makes the loop pass behind itself. Positions are scaled by a radius and projected with a
- * perspective divide.
+ * Looking at the reference screenshots: the covers are **cards standing in perspective**, receding
+ * into the distance along a diagonal, each turned away from the viewer (`rotationY`) and tilted
+ * (`rotationZ`), with the nearest card large and sharp and the far ones small and blurred. A flat row
+ * with a small Z-rotation — what the previous version did — cannot look like this, because the
+ * defining cue is the perspective turn plus the depth blur.
  *
- * The earlier version used a fixed radius and small covers, which packed the sleeves into a knot in
- * the middle of the frame. The radius now follows the frame, as the reference's does.
+ * Built with `graphicsLayer { rotationY / rotationZ / cameraDistance }`: `cameraDistance` is the
+ * lens-to-plane distance, so shrinking it (relative to the card) is what produces the strong
+ * foreshortening the reference has.
  */
-private fun ribbonPosition(index: Int, count: Int, radius: Float, phase: Float): Triple<Float, Float, Float> {
-    val t = ((index + phase) / count) * 2f * PI.toFloat()
-    val x = sin(t)
-    val y = cos(t) * 0.28f
-    val z = sin(2 * t) * 0.62f
-    val depth = (z + 2.2f).coerceAtLeast(0.35f)
-    return Triple(x * radius / depth, y * radius / depth, depth)
+@Composable
+fun PlaylistShelf(
+    playlists: List<Playlist>,
+    loader: ArtworkLoader,
+    onPlaylistClick: (Playlist) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (playlists.isEmpty()) return
+    var entered by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { entered = true }
+    val entry by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (entered) 1f else 0f,
+        animationSpec = androidx.compose.animation.core.tween(durationMillis = 720),
+        label = "shelf-entry",
+    )
+    val density = LocalDensity.current
+    BoxWithConstraints(modifier.fillMaxSize().background(AppTheme.palette.background)) {
+        val w = maxWidth
+        val cardW = w * 0.62f
+        val cardH = cardW * 1.02f
+        // Depth ladder: each further card steps right and up, shrinks, turns away and blurs.
+        val pitchX = w * 0.085f
+        val pitchY = w * 0.075f
+        val baseX = -w * 0.10f
+        val baseY = maxHeight * 0.30f
+        playlists.take(9).forEachIndexed { index, playlist ->
+            val depth = index.toFloat()
+            val x = with(density) { (baseX + pitchX * depth).toPx() } + (1f - entry) * with(density) { (w * 0.9f).toPx() }
+            val y = with(density) { (baseY - pitchY * depth).toPx() }
+            val scale = 1f - depth * 0.055f
+            Box(
+                Modifier
+                    .graphicsLayer {
+                        translationX = x
+                        translationY = y
+                        scaleX = scale
+                        scaleY = scale
+                        rotationY = -46f
+                        rotationZ = -14f
+                        cameraDistance = 14f * density.density
+                        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0.5f)
+                        shadowElevation = if (index == 0) 24f else 10f
+                        alpha = (1f - depth * 0.06f).coerceAtLeast(0.35f)
+                    }
+                    // Depth cue: the reference blurs everything behind the front card.
+                    .then(if (index == 0) Modifier else Modifier.blur((depth * 1.6f).dp)),
+            ) {
+                Artwork(
+                    url = playlist.coverUrl,
+                    loader = loader,
+                    corner = 10.dp,
+                    modifier = Modifier
+                        .size(cardW, cardH)
+                        .clickable { onPlaylistClick(playlist) },
+                )
+            }
+        }
+    }
 }
 
+/** 立体缎带 — the reference's loop, screen-scaled, draggable. */
 @Composable
 fun PlaylistRibbon(
     playlists: List<Playlist>,
@@ -87,36 +142,36 @@ fun PlaylistRibbon(
 ) {
     if (playlists.isEmpty()) return
     val count = playlists.size.coerceAtMost(20)
-    var phase by remember { mutableFloatStateOf(0f) }
+    var phase by androidx.compose.runtime.mutableFloatStateOf(0f)
     val density = LocalDensity.current
     BoxWithConstraints(
         modifier
             .fillMaxSize()
+            .background(AppTheme.palette.background)
             .pointerInput(Unit) {
-                detectHorizontalDragGestures { _, delta -> phase -= delta / 120f }
+                detectHorizontalDragGestures { _, delta ->
+                    phase -= delta / 120f
+                }
             },
     ) {
         val shortSide = minOf(maxWidth, maxHeight)
-        val coverSize = shortSide * 0.34f
-        val radiusPx = with(density) { shortSide.toPx() } * 1.4f
-        val radiusDp = with(density) { radiusPx.toDp() }.value
+        val coverSize = shortSide * 0.36f
+        val radiusDp = shortSide.value * 1.4f
         val centerX = maxWidth.value * 0.5f
-        val centerY = maxHeight.value * 0.5f
-        // px→dp for the projected offsets: the projection output is in the same units as the radius.
-        val unit = radiusDp / radiusPx
+        val centerY = maxHeight.value * 0.52f
         playlists.take(count)
             .mapIndexed { index, playlist -> index to playlist }
-            .sortedByDescending { (index, _) -> ribbonPosition(index, count, radiusDp, phase).third }
+            .sortedByDescending { (index, _) -> ribbonDepth(index, count, phase) }
             .forEach { (index, playlist) ->
-                val (x, y, depth) = ribbonPosition(index, count, radiusDp, phase)
-                val scale = (1.7f / depth).coerceIn(0.55f, 1.4f)
+                val (x, y, depth) = ribbonPoint(index, count, radiusDp, phase)
+                val scale = (1.7f / depth).coerceIn(0.5f, 1.45f)
                 Box(
                     Modifier.graphicsLayer {
-                        translationX = with(density) { ((centerX + x * unit)).dp.toPx() }
-                        translationY = with(density) { ((centerY + y * unit)).dp.toPx() }
+                        translationX = with(density) { (centerX + x).dp.toPx() }
+                        translationY = with(density) { (centerY + y).dp.toPx() }
                         scaleX = scale
                         scaleY = scale
-                        alpha = ((1.9f - depth) * 0.8f).coerceIn(0.3f, 1f)
+                        alpha = ((1.9f - depth) * 0.8f).coerceIn(0.28f, 1f)
                     },
                 ) {
                     Artwork(
@@ -132,68 +187,25 @@ fun PlaylistRibbon(
     }
 }
 
-/**
- * CD shelf, ported from CurrentMusicX `RecordShelfGeometry`.
- *
- * Its measured ratios are kept and expressed against the frame width `W`: case width `0.435 W`,
- * pitch `0.069 W`, leading margin `0.12 W`, and each further case rises `0.046 W`. The rise is what
- * makes the row read as cases leaning in a rack; without it the covers sit in a straight line and
- * look like a scaled-up carousel.
- */
-@Composable
-fun PlaylistShelf(
-    playlists: List<Playlist>,
-    loader: ArtworkLoader,
-    onPlaylistClick: (Playlist) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    if (playlists.isEmpty()) return
-    var entered by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { entered = true }
-    val entry by androidx.compose.animation.core.animateFloatAsState(
-        targetValue = if (entered) 1f else 0f,
-        animationSpec = androidx.compose.animation.core.tween(durationMillis = 680),
-        label = "shelf-entry",
-    )
-    val density = LocalDensity.current
-    BoxWithConstraints(
-        modifier
-            .fillMaxSize()
-            .background(AppTheme.palette.background),
-    ) {
-        val w = maxWidth
-        val caseW = w * 0.435f
-        val caseH = w * 0.45f
-        val pitch = w * 0.069f
-        val lead = w * 0.12f
-        val rise = w * 0.046f
-        val top = maxHeight * 0.34f
-        val slide = with(density) { (w * 1.1f).toPx() } * (1f - entry)
-        playlists.take(14).forEachIndexed { index, playlist ->
-            val x = with(density) { (lead + pitch * index).toPx() }
-            val y = with(density) { (top - rise * index).toPx() }
-            Box(
-                Modifier.graphicsLayer {
-                    translationX = x + slide
-                    translationY = y
-                    rotationZ = -9f
-                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 1f)
-                    shadowElevation = 16f
-                },
-            ) {
-                Artwork(
-                    url = playlist.coverUrl,
-                    loader = loader,
-                    corner = 4.dp,
-                    modifier = Modifier
-                        .size(caseW, caseH)
-                        .clickable { onPlaylistClick(playlist) },
-                )
-            }
-        }
-    }
+private fun ribbonDepth(index: Int, count: Int, phase: Float): Float {
+    val t = ((index + phase) / count) * 2f * kotlin.math.PI.toFloat()
+    return (kotlin.math.sin(2 * t) * 0.62f + 2.2f).coerceAtLeast(0.35f)
 }
 
+private fun ribbonPoint(index: Int, count: Int, radius: Float, phase: Float): Triple<Float, Float, Float> {
+    val t = ((index + phase) / count) * 2f * kotlin.math.PI.toFloat()
+    val x = kotlin.math.sin(t)
+    val y = kotlin.math.cos(t) * 0.28f
+    val depth = ribbonDepth(index, count, phase)
+    return Triple(x * radius / depth, y * radius / depth, depth)
+}
+
+/**
+ * Full-screen showcase: title header, the scene, and the reference's 「帮我挑一首」 action.
+ *
+ * The reference's page is *only* the scene plus chrome — no track list underneath — so this replaces
+ * the playlist page rather than decorating it.
+ */
 @Composable
 fun PlaylistShowcaseScreen(
     style: PlaylistShowcase,
@@ -202,39 +214,30 @@ fun PlaylistShowcaseScreen(
     loader: ArtworkLoader,
     onBack: () -> Unit,
     onTrackClick: (index: Int) -> Unit,
+    onShufflePick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val covers = tracks.map { Playlist(id = it.id, name = it.name, coverUrl = it.coverUrl) }
+    val pick: (Playlist) -> Unit = { playlist ->
+        onTrackClick(tracks.indexOfFirst { it.id == playlist.id })
+    }
     Box(modifier.fillMaxSize().background(AppTheme.palette.background)) {
-        val pick: (Playlist) -> Unit = { playlist ->
-            onTrackClick(tracks.indexOfFirst { it.id == playlist.id })
-        }
         if (style == PlaylistShowcase.Ribbon) {
-            PlaylistRibbon(
-                playlists = covers,
-                loader = loader,
-                onPlaylistClick = pick,
-                modifier = Modifier.fillMaxSize().padding(top = 72.dp),
-            )
+            PlaylistRibbon(covers, loader, pick, Modifier.fillMaxSize().padding(top = 120.dp, bottom = 120.dp))
         } else {
-            PlaylistShelf(
-                playlists = covers,
-                loader = loader,
-                onPlaylistClick = pick,
-                modifier = Modifier.fillMaxSize().padding(top = 72.dp),
-            )
+            PlaylistShelf(covers, loader, pick, Modifier.fillMaxSize().padding(top = 120.dp, bottom = 120.dp))
         }
+
+        // Header: back + title + subtitle, as in the reference's top row.
         Row(
             Modifier
                 .fillMaxWidth()
                 .statusBarsPadding()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
+                .padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
-                Modifier
-                    .size(40.dp)
-                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(50))
+                Modifier.size(40.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(50))
                     .clickable(onClick = onBack),
                 contentAlignment = Alignment.Center,
             ) {
@@ -244,16 +247,54 @@ fun PlaylistShowcaseScreen(
                     tint = AppTheme.palette.label,
                 )
             }
-            Spacer(Modifier.width(4.dp))
-            Text(
-                text = title,
-                fontFamily = SFPro,
-                fontSize = 17.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = AppTheme.palette.label,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    fontFamily = SFPro,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = (-0.5).sp,
+                    color = AppTheme.palette.label,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = "${tracks.size} 首",
+                    fontFamily = SFPro,
+                    fontSize = 13.sp,
+                    color = AppTheme.palette.secondaryLabel,
+                )
+            }
+        }
+
+        // Footer: the reference's shuffle action, in a pill.
+        Box(
+            Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 40.dp)
+                .clip(androidx.compose.foundation.shape.RoundedCornerShape(50))
+                .background(AppTheme.palette.secondaryBackground)
+                .clickable(onClick = onShufflePick)
+                .padding(horizontal = 28.dp, vertical = 14.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = com.yunyin.music.ui.icons.SfIcons.Shuffle,
+                    contentDescription = null,
+                    tint = AppTheme.palette.label,
+                    modifier = Modifier.size(20.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "帮我挑一首",
+                    fontFamily = SFPro,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = AppTheme.palette.label,
+                    textAlign = TextAlign.Center,
+                )
+            }
         }
     }
 }
