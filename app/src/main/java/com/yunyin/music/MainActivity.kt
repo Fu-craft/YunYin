@@ -1126,6 +1126,7 @@ class MainActivity : ComponentActivity() {
                         PlayerTab.Home -> HomeScreen(
                             state = homeState,
                             userName = displayName,
+                            expanded = expandedLayout,
                             refreshing = homeState.loading,
                             onRefresh = appViewModel::refreshHome,
                             continueTrack = continueTrack,

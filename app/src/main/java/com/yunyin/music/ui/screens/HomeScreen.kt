@@ -52,6 +52,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kyant.backdrop.Backdrop
@@ -60,6 +61,8 @@ import com.yunyin.music.core.Playlist
 import com.yunyin.music.core.Track
 import com.yunyin.music.data.ArtworkLoader
 import com.yunyin.music.ui.HomeUiState
+import com.yunyin.music.ui.components.PlaylistCard
+import com.yunyin.music.ui.components.TrackCard
 import com.yunyin.music.ui.components.Artwork
 import com.yunyin.music.ui.components.ChartRow
 import com.yunyin.music.ui.components.GlassTopBar
@@ -214,13 +217,15 @@ private fun DailyRecommendationCard(
     tracks: List<Track>,
     loader: ArtworkLoader,
     onPlayAll: () -> Unit,
+    /** Expanded windows get a taller card and a wider wall; phones keep the compact one. */
+    expanded: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     Box(
         modifier
             .fillMaxWidth()
             .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 22.dp)
-            .height(CARD_HEIGHT)
+            .height(if (expanded) CARD_HEIGHT_EXPANDED else CARD_HEIGHT)
             .shadow(10.dp, ContinuousRoundedRectangle(AppleShapes.cardLarge), clip = false)
             .clip(ContinuousRoundedRectangle(AppleShapes.cardLarge))
             .clickable(
@@ -230,7 +235,7 @@ private fun DailyRecommendationCard(
             ),
     ) {
         // 唱片墙: covers stitched edge to edge, rolling upward and looping without a seam.
-        CoverWall(tracks = tracks, loader = loader)
+        CoverWall(tracks = tracks, loader = loader, columns = if (expanded) WALL_COLUMNS_EXPANDED else WALL_COLUMNS)
         Box(
             Modifier
                 .matchParentSize()
@@ -302,6 +307,73 @@ private fun DailyRecommendationCard(
 }
 
 /**
+ * Tablet shelf: the same cards as the carousel, laid out in `columns` equal tracks.
+ *
+ * On an expanded window a horizontal carousel wastes the width it was given — it shows four cards and
+ * hides the rest behind a scroll that a mouse or a two-handed hold makes awkward. A grid uses the
+ * width the screen actually has, and every card stays the same size because the tracks are weighted.
+ */
+@Composable
+private fun PlaylistGrid(
+    playlists: List<Playlist>,
+    loader: ArtworkLoader,
+    onPlaylistClick: (Playlist) -> Unit,
+    columns: Int,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier.fillMaxWidth().padding(horizontal = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        playlists.chunked(columns).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                row.forEach { playlist ->
+                    PlaylistCard(
+                        playlist = playlist,
+                        loader = loader,
+                        onClick = { onPlaylistClick(playlist) },
+                        modifier = Modifier.weight(1f),
+                        width = Dp.Unspecified,
+                    )
+                }
+                // Keep the last row aligned with the grid instead of stretching its single card.
+                repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
+    }
+}
+
+/** Song shelf for tablets; the same call-to-action as [TrackCarousel], in a grid. */
+@Composable
+private fun TrackGrid(
+    tracks: List<Track>,
+    loader: ArtworkLoader,
+    onTrackClick: (Track) -> Unit,
+    columns: Int,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier.fillMaxWidth().padding(horizontal = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        tracks.chunked(columns).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                row.forEach { track ->
+                    TrackCard(
+                        track = track,
+                        loader = loader,
+                        onClick = { onTrackClick(track) },
+                        modifier = Modifier.weight(1f),
+                        width = Dp.Unspecified,
+                    )
+                }
+                repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
+    }
+}
+
+/**
  * The stitched wall behind the card: a static 4 × 3 mosaic, edge to edge.
  *
  * Tiles come from the tracks in list order, one sleeve per song, cycling when the grid needs more
@@ -309,7 +381,7 @@ private fun DailyRecommendationCard(
  * repeated images; per-song ordering keeps the wall tied to what was actually recommended.
  */
 @Composable
-private fun CoverWall(tracks: List<Track>, loader: ArtworkLoader) {
+private fun CoverWall(tracks: List<Track>, loader: ArtworkLoader, columns: Int) {
     if (tracks.isEmpty()) {
         Box(Modifier.fillMaxSize().background(AppTheme.palette.tertiaryBackground))
         return
@@ -336,7 +408,9 @@ private fun CoverWall(tracks: List<Track>, loader: ArtworkLoader) {
 }
 
 private val CARD_HEIGHT = 232.dp
+private val CARD_HEIGHT_EXPANDED = 300.dp
 private const val WALL_COLUMNS = 4
+private const val WALL_COLUMNS_EXPANDED = 8
 private const val WALL_ROWS = 3
 
 
@@ -473,6 +547,8 @@ fun HomeScreen(
     state: HomeUiState,
     /** Greeting name; blank renders a plain 「你好」. */
     userName: String = "",
+    /** Expanded window (tablet / unfolded foldable): shelves become grids, the hero grows. */
+    expanded: Boolean = false,
     loader: ArtworkLoader,
     onSearchClick: () -> Unit,
     onTrackClick: (Track, List<Track>) -> Unit,
@@ -562,6 +638,7 @@ fun HomeScreen(
                                 tracks = feed.dailySongs,
                                 loader = loader,
                                 onPlayAll = { onTrackClick(feed.dailySongs.first(), feed.dailySongs) },
+                                expanded = expanded,
                                 modifier = shelfAppear(),
                             )
                         }
@@ -577,12 +654,24 @@ fun HomeScreen(
                 )
             }
             item("featured") {
-                PlaylistCarousel(
-                    playlists = feed.featuredPlaylists,
-                    loader = loader,
-                    onPlaylistClick = onPlaylistClick,
-                    modifier = shelfAppear(),
-                )
+                if (expanded) {
+                    // Two columns on a tablet: the width the window actually has, instead of a
+                    // carousel that hides most of the shelf behind a horizontal scroll.
+                    PlaylistGrid(
+                        playlists = feed.featuredPlaylists,
+                        loader = loader,
+                        onPlaylistClick = onPlaylistClick,
+                        columns = 2,
+                        modifier = shelfAppear(),
+                    )
+                } else {
+                    PlaylistCarousel(
+                        playlists = feed.featuredPlaylists,
+                        loader = loader,
+                        onPlaylistClick = onPlaylistClick,
+                        modifier = shelfAppear(),
+                    )
+                }
             }
         }
 
@@ -597,12 +686,22 @@ fun HomeScreen(
         if (feed.recommendedPlaylists.isNotEmpty()) {
             item("recommended-header") { SectionHeader(title = "为你推荐", modifier = shelfAppear()) }
             item("recommended") {
-                PlaylistCarousel(
-                    playlists = feed.recommendedPlaylists,
-                    loader = loader,
-                    onPlaylistClick = onPlaylistClick,
-                    modifier = shelfAppear(),
-                )
+                if (expanded) {
+                    PlaylistGrid(
+                        playlists = feed.recommendedPlaylists,
+                        loader = loader,
+                        onPlaylistClick = onPlaylistClick,
+                        columns = 2,
+                        modifier = shelfAppear(),
+                    )
+                } else {
+                    PlaylistCarousel(
+                        playlists = feed.recommendedPlaylists,
+                        loader = loader,
+                        onPlaylistClick = onPlaylistClick,
+                        modifier = shelfAppear(),
+                    )
+                }
             }
         }
 
@@ -611,12 +710,22 @@ fun HomeScreen(
             // previously labelled 最近播放, which the data never was.
             item("new-header") { SectionHeader(title = "新歌速递", modifier = shelfAppear()) }
             item("new") {
-                TrackCarousel(
-                    tracks = feed.newSongs,
-                    loader = loader,
-                    onTrackClick = { onTrackClick(it, feed.newSongs) },
-                    modifier = shelfAppear(),
-                )
+                if (expanded) {
+                    TrackGrid(
+                        tracks = feed.newSongs,
+                        loader = loader,
+                        onTrackClick = { onTrackClick(it, feed.newSongs) },
+                        columns = 2,
+                        modifier = shelfAppear(),
+                    )
+                } else {
+                    TrackCarousel(
+                        tracks = feed.newSongs,
+                        loader = loader,
+                        onTrackClick = { onTrackClick(it, feed.newSongs) },
+                        modifier = shelfAppear(),
+                    )
+                }
             }
         }
 
