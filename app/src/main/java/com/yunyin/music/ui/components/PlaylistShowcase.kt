@@ -248,6 +248,9 @@ fun PlaylistShowcaseScreen(
             PlaylistShelf(covers, loader, pick, Modifier.fillMaxSize().padding(top = 120.dp, bottom = 120.dp))
         }
 
+        // Shelf only: the ported ribbon draws its own title and transport, and our pill was
+        // covering them (which is why playback looked dead there).
+        if (style == PlaylistShowcase.Shelf) {
         // Header: back + title + subtitle, as in the reference's top row.
         Row(
             Modifier
@@ -275,7 +278,7 @@ fun PlaylistShowcaseScreen(
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = (-0.5).sp,
-                    color = AppTheme.palette.label,
+                    color = androidx.compose.ui.graphics.Color.White,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -294,7 +297,7 @@ fun PlaylistShowcaseScreen(
                 .align(Alignment.BottomCenter)
                 .padding(bottom = 40.dp)
                 .clip(androidx.compose.foundation.shape.RoundedCornerShape(50))
-                .background(AppTheme.palette.secondaryBackground)
+                .background(androidx.compose.ui.graphics.Color.White.copy(alpha = 0.92f))
                 .clickable(onClick = onShufflePick)
                 .padding(horizontal = 28.dp, vertical = 14.dp),
         ) {
@@ -302,7 +305,7 @@ fun PlaylistShowcaseScreen(
                 Icon(
                     imageVector = com.yunyin.music.ui.icons.SfIcons.Shuffle,
                     contentDescription = null,
-                    tint = androidx.compose.ui.graphics.Color.White,
+                    tint = androidx.compose.ui.graphics.Color(0xFF111111),
                     modifier = Modifier.size(20.dp),
                 )
                 Spacer(Modifier.width(8.dp))
@@ -311,10 +314,11 @@ fun PlaylistShowcaseScreen(
                     fontFamily = SFPro,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = AppTheme.palette.label,
+                    color = androidx.compose.ui.graphics.Color(0xFF111111),
                     textAlign = TextAlign.Center,
                 )
             }
+        }
         }
     }
 }
