@@ -84,8 +84,19 @@ class MusicRepository(
      * Sections are independent, so they are fetched concurrently and each is allowed
      * to fail on its own: a logged-out user still sees featured playlists and charts.
      */
-    suspend fun loadHome(): NetResult<HomeFeed> = coroutineScope {
-        val featured = async { client.personalizedPlaylists(limit = 10).listOrEmpty() }
+    /**
+     * The home feed.
+     *
+     * @param rotate when true, 精选歌单 is re-rolled from the playlist square instead of the fixed
+     *   `/personalized` set. Pulling to refresh otherwise did nothing visible: `/recommend/songs` is
+     *   a **daily** list and `/personalized` changes at most once a day, so a refresh legitimately
+     *   returned the same shelves. Rotating one shelf gives the gesture an observable result without
+     *   faking the daily recommendations (they are the same 30 songs for everyone, all day).
+     */
+    suspend fun loadHome(rotate: Boolean = false): NetResult<HomeFeed> = coroutineScope {
+        val featured = async {
+            if (rotate) rotatedPlaylists() else client.personalizedPlaylists(limit = 10).listOrEmpty()
+        }
         val daily = async { client.dailySongs().listOrEmpty() }
         val recommended = async { client.recommendedPlaylists().listOrEmpty() }
         val fresh = async { client.newSongs(limit = 10).listOrEmpty() }
@@ -103,6 +114,31 @@ class MusicRepository(
             NetResult.Err("无法连接音乐服务")
         } else {
             NetResult.Ok(feed)
+        }
+    }
+
+    /**
+     * A different page of the playlist square on every call: random category, random offset.
+     *
+     * `/top/playlist` is cache-busted by the client, so this genuinely changes each time it is asked.
+     */
+    private suspend fun rotatedPlaylists(): List<Playlist> {
+        val categories = listOf("华语", "流行", "摇滚", "民谣", "电子", "轻音乐", "爵士", "古典", "说唱")
+        val category = categories.random()
+        val offset = (0..6).random() * 20
+        val page = client.topPlaylists(cat = category, offset = offset, limit = 10)
+        val found = (page as? NetResult.Ok)?.value?.playlists.orEmpty()
+        // The square returns its own row type; the feed speaks `Playlist`, so map it here instead of
+        // leaking a UI-layer model into the home state.
+        return found.map { item ->
+            Playlist(
+                id = item.id,
+                name = item.name,
+                coverUrl = item.coverUrl,
+                trackCount = item.trackCount,
+                playCount = item.playCount,
+                description = item.description,
+            )
         }
     }
 
