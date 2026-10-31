@@ -244,6 +244,11 @@ class MainActivity : ComponentActivity() {
         }.collectAsState(initial = null)
 
         val homeState by appViewModel.home.collectAsState()
+        // Home only needs the identity of the current track for 「继续播放」; position changes four
+        // times a second and would recompose the whole feed.
+        val continueTrack by remember {
+            playerState.map { it.current }.distinctUntilChanged()
+        }.collectAsState(initial = null)
         val searchState by appViewModel.search.collectAsState()
         val collectionState by appViewModel.collection.collectAsState()
         val artistState by appViewModel.artist.collectAsState()

@@ -103,6 +103,89 @@ private fun LazyItemScope.shelfAppear(): Modifier = Modifier.animateItem(
 )
 
 /**
+ * 「继续播放」 row — the fastest resume there is: one tap puts you back in the player.
+ *
+ * Kept deliberately small and quiet (44 dp artwork, one title line, one artist line). It sits above
+ * the daily hero rather than below it: it is a *returning* action, not a recommendation, so it should
+ * be reachable without reading anything.
+ */
+@Composable
+private fun ContinueListeningRow(
+    track: Track,
+    loader: ArtworkLoader,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.985f else 1f,
+        animationSpec = spring(dampingRatio = 1f, stiffness = 900f),
+        label = "continue-press",
+    )
+    Row(
+        modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, top = 10.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clip(ContinuousRoundedRectangle(AppleShapes.card))
+            .background(AppTheme.palette.secondaryBackground)
+            .clickable(
+                interactionSource = interaction,
+                indication = rememberControlRipple(),
+                onClick = onClick,
+            )
+            .padding(horizontal = 10.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Artwork(
+            url = track.coverUrl,
+            loader = loader,
+            corner = AppleShapes.control,
+            modifier = Modifier.size(44.dp),
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = "继续播放",
+                fontFamily = SFPro,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 0.4.sp,
+                color = AppTheme.palette.secondaryLabel,
+            )
+            Text(
+                text = track.name,
+                fontFamily = SFPro,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Medium,
+                color = AppTheme.palette.label,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            )
+        }
+        Box(
+            Modifier
+                .size(30.dp)
+                .clip(RoundedCornerShape(50))
+                .background(AppTheme.palette.label.copy(alpha = 0.10f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = SfIcons.Play,
+                contentDescription = "继续播放",
+                tint = AppTheme.palette.label,
+                modifier = Modifier.size(15.dp),
+            )
+        }
+        Spacer(Modifier.width(2.dp))
+    }
+}
+
+/**
  * 每日推荐 hero — the date, the count and the first cover; one tap plays the whole set.
  *
  * Apple-design pass: hierarchy comes from size and weight (12 sp eyebrow, 20 sp date with negative
@@ -343,11 +426,12 @@ private fun HomeSkeletonBar(width: androidx.compose.ui.unit.Dp, height: androidx
     )
 }
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
+    state: HomeUiState,
     /** Greeting name; blank renders a plain 「你好」. */
     userName: String = "",
-    state: HomeUiState,
     loader: ArtworkLoader,
     onSearchClick: () -> Unit,
     onTrackClick: (Track, List<Track>) -> Unit,
@@ -357,6 +441,12 @@ fun HomeScreen(
     onStartFm: () -> Unit = {},
     /** Retries the feed after the error state; the host owns the request. */
     onRetry: () -> Unit = {},
+    /** Pull-to-refresh state; the host owns the request. */
+    refreshing: Boolean = false,
+    onRefresh: () -> Unit = {},
+    /** Track to resume, shown as a 「继续播放」 row above the daily hero when the player has one. */
+    continueTrack: Track? = null,
+    onContinueListening: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val feed = state.feed
@@ -369,58 +459,73 @@ fun HomeScreen(
 
     Box(modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().layerBackdrop(topBarBackdrop)) {
-            LazyColumn(
+            androidx.compose.material3.pulltorefresh.PullToRefreshBox(
+                isRefreshing = refreshing,
+                onRefresh = onRefresh,
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(
-                    top = glassTopBarTopPadding(),
-                    bottom = chromeContentBottomPadding(),
-                ),
             ) {
-                // Cold start: the feed is requested when Home first appears, so the shelves are all
-                // empty for a moment. Without this the page was a blank field under the search strip
-                // with no sign that anything was loading.
-                if (state.loading && feed.featuredPlaylists.isEmpty()) {
-                    item("loading") { HomeSkeleton(modifier = Modifier.fillMaxWidth()) }
-                }
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(
+                        top = glassTopBarTopPadding(),
+                        bottom = chromeContentBottomPadding(),
+                    ),
+                ) {
+                    if (state.loading && feed.featuredPlaylists.isEmpty()) {
+                        item("loading") { HomeSkeleton(modifier = Modifier.fillMaxWidth()) }
+                    }
 
-                // 每日推荐 leads the page: the one shelf that answers "what should I play?" without
-                // scrolling, and one tap starts listening.
-                if (feed.dailySongs.isNotEmpty()) {
-                    item("greeting") {
-                        Column(
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 2.dp),
-                        ) {
-                            Text(
-                                text = if (userName.isBlank()) "你好" else "你好，$userName",
-                                fontFamily = SFPro,
-                                fontSize = 30.sp,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = (-0.8).sp,
-                                color = AppTheme.palette.label,
-                                maxLines = 1,
-                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                            )
-                            Spacer(Modifier.height(2.dp))
-                            Text(
-                                text = "今天想听点什么？",
-                                fontFamily = SFPro,
-                                fontSize = 14.sp,
-                                color = AppTheme.palette.secondaryLabel,
+                    // 继续播放: the fastest possible "resume" entry, and one Apple Music does not
+                    // have. Only shown when the player actually holds a track.
+                    if (continueTrack != null) {
+                        item("continue") {
+                            ContinueListeningRow(
+                                track = continueTrack,
+                                loader = loader,
+                                onClick = onContinueListening,
+                                modifier = shelfAppear(),
                             )
                         }
                     }
-                    item("daily-hero") {
-                        DailyRecommendationCard(
-                            tracks = feed.dailySongs,
-                            loader = loader,
-                            onPlayAll = { onTrackClick(feed.dailySongs.first(), feed.dailySongs) },
-                            modifier = shelfAppear(),
-                        )
+
+                    // 每日推荐 leads the page: the one shelf that answers "what should I play?"
+                    // without scrolling, and one tap starts listening.
+                    if (feed.dailySongs.isNotEmpty()) {
+                        item("greeting") {
+                            Column(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 2.dp),
+                            ) {
+                                Text(
+                                    text = if (userName.isBlank()) "你好" else "你好，$userName",
+                                    fontFamily = SFPro,
+                                    fontSize = 30.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = (-0.8).sp,
+                                    color = AppTheme.palette.label,
+                                    maxLines = 1,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                )
+                                Spacer(Modifier.height(2.dp))
+                                Text(
+                                    text = "今天想听点什么？",
+                                    fontFamily = SFPro,
+                                    fontSize = 14.sp,
+                                    color = AppTheme.palette.secondaryLabel,
+                                )
+                            }
+                        }
+                        item("daily-hero") {
+                            DailyRecommendationCard(
+                                tracks = feed.dailySongs,
+                                loader = loader,
+                                onPlayAll = { onTrackClick(feed.dailySongs.first(), feed.dailySongs) },
+                                modifier = shelfAppear(),
+                            )
+                        }
                     }
-                }
-                if (feed.featuredPlaylists.isNotEmpty()) {
+            if (feed.featuredPlaylists.isNotEmpty()) {
             item("featured-header") {
                 // No 「更多」 affordance: it used to open whichever playlist happened to be first,
                 // which is a different action from the label promises. The carousel is the shelf.
@@ -534,6 +639,7 @@ fun HomeScreen(
                 }
             }
         }
+            }
             }
         }
 
