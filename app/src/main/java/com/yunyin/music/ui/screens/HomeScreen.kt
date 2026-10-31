@@ -719,12 +719,19 @@ fun HomeScreen(
                         modifier = shelfAppear(),
                     )
                 } else {
-                    TrackCarousel(
-                        tracks = feed.newSongs,
-                        loader = loader,
-                        onTrackClick = { onTrackClick(it, feed.newSongs) },
-                        modifier = shelfAppear(),
-                    )
+                    // A compact list instead of another carousel: the page above is all big cards,
+                    // and a dense block here gives the scroll a change of rhythm (and shows six
+                    // songs where the carousel showed two and a half).
+                    Column(modifier = shelfAppear()) {
+                        feed.newSongs.take(6).forEachIndexed { index, track ->
+                            TrackRow(
+                                track = track,
+                                loader = loader,
+                                onClick = { onTrackClick(track, feed.newSongs) },
+                            )
+                            if (index != feed.newSongs.take(6).lastIndex) InsetSeparator()
+                        }
+                    }
                 }
             }
         }
@@ -743,19 +750,9 @@ fun HomeScreen(
             }
         }
 
-        if (feed.dailySongs.isNotEmpty()) {
-            item("explore-header") { SectionHeader(title = "探索更多", modifier = shelfAppear()) }
-            items(feed.dailySongs.take(8), key = { "explore-${it.id}" }) { track ->
-                TrackRow(
-                    track = track,
-                    loader = loader,
-                    onClick = { onTrackClick(track, feed.dailySongs) },
-                    // No trailing ellipsis: it looked like a working "more" affordance but there is
-                    // no per-row action here, so the row is simply a song.
-                )
-                InsetSeparator()
-            }
-        }
+        // 「探索更多」 used to sit here and listed the first eight daily songs again — the same
+        // content as the hero card above, occupying a third of the page. The page reads better with
+        // fewer, more distinct shelves than with one repeat.
 
         if (state.error != null && feed.featuredPlaylists.isEmpty()) {
             item("error") {
