@@ -200,12 +200,6 @@ fun PlayerScreen(
     onCycleRepeat: () -> Unit,
     onToggleShuffle: () -> Unit,
     onShowQueue: () -> Unit,
-    /** Opens 相似歌曲 for the playing track (null hides the row). */
-    onOpenSimilar: ((trackId: Long, title: String) -> Unit)? = null,
-    /** Opens the 音乐百科 article for the playing track (null hides the row). */
-    onOpenWiki: ((trackId: Long) -> Unit)? = null,
-    /** Opens 相似歌手 for the playing track (null hides the row). */
-    onOpenSimilarArtists: ((trackId: Long) -> Unit)? = null,
     /** Opens the lyric-card share flow; null keeps the row hidden (e.g. no lyrics/current track). */
     onShareLyrics: (() -> Unit)? = null,
     onPlayNext: (() -> Unit)? = null,
@@ -1095,20 +1089,28 @@ fun PlayerScreen(
                             // version put the padding on the enclosing row) made the scrim stop dead
                             // at the status bar and nav bar, which read as a hard horizontal step
                             // across the panel — the "layering" this fixes.
+                            // The scrim is wider than the rail and eases out over that extra width, so
+                            // it reads as the backdrop getting deeper toward the edge instead of a
+                            // black panel sitting on top of it. The hard stop at the rail's edge was
+                            // what made the controls look like a separate, mismatched surface.
                             Box(
                                 Modifier
-                                    .matchParentSize()
+                                    .align(if (railOnLeft) Alignment.CenterStart else Alignment.CenterEnd)
+                                    .width(railWidth * RAIL_SCRIM_REACH)
+                                    .fillMaxHeight()
                                     .background(
                                         if (railOnLeft) {
                                             Brush.horizontalGradient(
                                                 0f to Color.Black.copy(alpha = CONTROL_BAR_TINT),
-                                                0.80f to Color.Black.copy(alpha = CONTROL_BAR_TINT),
+                                                0.34f to Color.Black.copy(alpha = CONTROL_BAR_TINT * 0.72f),
+                                                0.62f to Color.Black.copy(alpha = CONTROL_BAR_TINT * 0.34f),
                                                 1f to Color.Transparent,
                                             )
                                         } else {
                                             Brush.horizontalGradient(
                                                 0f to Color.Transparent,
-                                                0.20f to Color.Black.copy(alpha = CONTROL_BAR_TINT),
+                                                0.38f to Color.Black.copy(alpha = CONTROL_BAR_TINT * 0.34f),
+                                                0.66f to Color.Black.copy(alpha = CONTROL_BAR_TINT * 0.72f),
                                                 1f to Color.Black.copy(alpha = CONTROL_BAR_TINT),
                                             )
                                         },
@@ -1475,11 +1477,6 @@ fun PlayerScreen(
                 onDismiss = { showActions = false },
                 onShare = onShareTrack,
                 onShareLyrics = onShareLyrics,
-                onOpenSimilar = onOpenSimilar?.let { open ->
-                    { id, name -> interaction++; open(id, name) }
-                },
-                onOpenWiki = onOpenWiki,
-                onOpenSimilarArtists = onOpenSimilarArtists,
                 onShowQueue = {
                     interaction++
                     onShowQueue()
@@ -2415,9 +2412,6 @@ private fun TrackActionsSheet(
     onShare: () -> Unit,
     onShowQueue: () -> Unit,
     onShareLyrics: (() -> Unit)? = null,
-    onOpenSimilar: ((Long, String) -> Unit)? = null,
-    onOpenWiki: ((Long) -> Unit)? = null,
-    onOpenSimilarArtists: ((Long) -> Unit)? = null,
 ) {
     AnimatedSheet(
         onDismissed = onDismiss,
@@ -3527,6 +3521,9 @@ private val CHROME_BOTTOM_FADE = 300.dp
  * still reads through the bottom of the page.
  */
 private const val CONTROL_BAR_TINT = 0.38f
+
+/** How far past the rail the edge scrim reaches, as a multiple of the rail width. */
+private const val RAIL_SCRIM_REACH = 1.7f
 
 /**
  * Share of the screen height covered by the soft bottom scrim.
