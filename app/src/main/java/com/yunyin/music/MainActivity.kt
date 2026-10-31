@@ -2058,6 +2058,13 @@ class MainActivity : ComponentActivity() {
                             onTrackClick = { index ->
                                 state.tracks.getOrNull(index)?.let { track -> play(track, state.tracks, state.id.takeIf { state.canBeatMode }) }
                             },
+                            // Search leaves the scene and opens the search tab: the playlist is gone
+                            // from view at that point, which is what a search entry means here.
+                            onSearch = {
+                                appViewModel.closeCollection()
+                                tab = PlayerTab.Search
+                                showSettings = false
+                            },
                         )
                     }
                 } else if (state != null) {
