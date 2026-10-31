@@ -226,7 +226,7 @@ fun PlaylistShowcaseScreen(
     val pick: (Playlist) -> Unit = { playlist ->
         onTrackClick(tracks.indexOfFirst { it.id == playlist.id })
     }
-    Box(modifier.fillMaxSize().background(AppTheme.palette.background)) {
+    Box(modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color(0xFF0B0B0D))) {
         if (style == PlaylistShowcase.Ribbon) {
             PlaylistRibbon(covers, loader, pick, Modifier.fillMaxSize().padding(top = 120.dp, bottom = 120.dp))
         } else {
@@ -249,7 +249,7 @@ fun PlaylistShowcaseScreen(
                 Icon(
                     imageVector = com.yunyin.music.ui.icons.SfIcons.ChevronLeft,
                     contentDescription = "返回",
-                    tint = AppTheme.palette.label,
+                    tint = androidx.compose.ui.graphics.Color.White,
                 )
             }
             Spacer(Modifier.width(10.dp))
@@ -268,7 +268,7 @@ fun PlaylistShowcaseScreen(
                     text = "${tracks.size} 首",
                     fontFamily = SFPro,
                     fontSize = 13.sp,
-                    color = AppTheme.palette.secondaryLabel,
+                    color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.6f),
                 )
             }
         }
@@ -287,7 +287,7 @@ fun PlaylistShowcaseScreen(
                 Icon(
                     imageVector = com.yunyin.music.ui.icons.SfIcons.Shuffle,
                     contentDescription = null,
-                    tint = AppTheme.palette.label,
+                    tint = androidx.compose.ui.graphics.Color.White,
                     modifier = Modifier.size(20.dp),
                 )
                 Spacer(Modifier.width(8.dp))
