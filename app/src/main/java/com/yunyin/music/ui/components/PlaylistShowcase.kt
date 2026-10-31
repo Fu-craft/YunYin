@@ -77,6 +77,7 @@ enum class PlaylistShowcase(val key: String, val label: String) {
 @Composable
 fun PlaylistShelf(
     playlists: List<Playlist>,
+    onSelected: (Int) -> Unit = {},
     pickIndex: Int = -1,
     loader: ArtworkLoader,
     onPlaylistClick: (Playlist) -> Unit,
@@ -123,6 +124,7 @@ fun PlaylistShelf(
         },
         update = { view ->
             if (pickIndex in playlists.indices) view.pick(pickIndex)
+            view.onSelection = { index -> onSelected(index) }
             view.onActivate = { index -> playlists.getOrNull(index)?.let(onPlaylistClick) }
             val songs = playlists.map { playlist ->
                 com.yunyin.music.ui.components.shelf.ShelfSong(
@@ -232,6 +234,15 @@ fun PlaylistShowcaseScreen(
     val context = androidx.compose.ui.platform.LocalContext.current
     var sceneColor by remember { androidx.compose.runtime.mutableStateOf(androidx.compose.ui.graphics.Color(0xFF0B0B0D)) }
     var pickRequest by remember { androidx.compose.runtime.mutableIntStateOf(-1) }
+    var current by remember { androidx.compose.runtime.mutableIntStateOf(-1) }
+    // Sliding onto a record starts it, without a second tap. A short dwell keeps a flick from
+    // firing a burst of tracks on the way past.
+    androidx.compose.runtime.LaunchedEffect(current) {
+        if (current in visible.indices) {
+            kotlinx.coroutines.delay(1800)
+            onTrackClick(current)
+        }
+    }
     androidx.compose.runtime.LaunchedEffect(visible.firstOrNull()?.coverUrl) {
         val url = visible.firstOrNull()?.coverUrl ?: return@LaunchedEffect
         sceneColor = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
@@ -321,7 +332,7 @@ fun PlaylistShowcaseScreen(
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 Text(
-                    text = title,
+                    text = visible.getOrNull(current)?.name ?: title,
                     fontFamily = SFPro,
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Bold,
