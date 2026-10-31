@@ -112,7 +112,10 @@ fun PlaylistShelf(
             }
             com.yunyin.music.ui.components.shelf.RecordShelfView(context).apply {
                 topInset = 0f
+                topInset = 0f
                 bottomInset = 0f
+                // Without this the shelf never leaves its intro state, so nothing ever slides out.
+                setRunning(true)
             }
         },
         update = { view ->
@@ -126,7 +129,10 @@ fun PlaylistShelf(
                     cover = playlist.coverUrl.orEmpty(),
                 )
             }
-            view.configure(songs)
+            if (view.tag != playlists.size to playlists.firstOrNull()?.id) {
+                view.tag = playlists.size to playlists.firstOrNull()?.id
+                view.configure(songs)
+            }
         },
     )
 }
