@@ -1110,6 +1110,7 @@ class MainActivity : ComponentActivity() {
                 CompositionLocalProvider(
                     LocalChromeTopRowVisible provides hasTrack,
                     com.yunyin.music.ui.LocalExpandedLayout provides expandedLayout,
+                    com.yunyin.music.ui.components.LocalPlaylistShowcase provides playlistShowcase,
                 ) {
                 Box(Modifier.fillMaxSize().padding(horizontal = contentSideInset)) {
                     // Cross-fade between screens. Kept — an instant swap read as a flicker — but

@@ -656,25 +656,10 @@ fun HomeScreen(
                 )
             }
             item("featured") {
-                val showcase = com.yunyin.music.ui.components.PlaylistShowcase.of(playlistShowcase)
-                if (showcase == com.yunyin.music.ui.components.PlaylistShowcase.Ribbon) {
-                    // The showcase replaces the shelf rather than sitting above it: both show the same
-                    // eight playlists, and stacking a ribbon over a carousel is two answers to one
-                    // question.
-                    com.yunyin.music.ui.components.PlaylistRibbon(
-                        playlists = feed.featuredPlaylists,
-                        loader = loader,
-                        onPlaylistClick = onPlaylistClick,
-                        modifier = shelfAppear(),
-                    )
-                } else if (showcase == com.yunyin.music.ui.components.PlaylistShowcase.Shelf) {
-                    com.yunyin.music.ui.components.PlaylistShelf(
-                        playlists = feed.featuredPlaylists,
-                        loader = loader,
-                        onPlaylistClick = onPlaylistClick,
-                        modifier = shelfAppear(),
-                    )
-                } else if (expanded) {
+                // The ribbon / CD shelf belongs to the opened playlist, not to this shelf: here the
+                // job is to browse, and a showcase replaces the browsing affordance instead of
+                // decorating what was opened.
+                if (expanded) {
                     PlaylistGrid(
                         playlists = feed.featuredPlaylists,
                         loader = loader,

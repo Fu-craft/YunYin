@@ -204,6 +204,11 @@ fun CollectionScreen(
     val barBottomPx = WindowInsets.systemBars.getTop(density) + with(density) { TopBarHeight.toPx() }
     val barSolidThreshold = (headerHeightPx - fadePx - barBottomPx).coerceAtLeast(0f)
 
+    // Read once, in composable scope: the LazyColumn block below is not composable at its top level.
+    val showcaseStyle = com.yunyin.music.ui.components.PlaylistShowcase.of(
+        com.yunyin.music.ui.components.LocalPlaylistShowcase.current,
+    )
+
     Box(modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().layerBackdrop(topBarBackdrop)) {
             LazyColumn(
@@ -223,6 +228,47 @@ fun CollectionScreen(
                     onMoreClick = { showMenu = true },
                     onHeightChanged = { headerHeightPx = it },
                 )
+            }
+
+            // Playlist showcase (opt-in, see PlaylistShowcase): the ribbon / CD-shelf belongs here,
+            // on the playlist the user just opened — not on the home shelf, where it replaced the
+            // browsing affordance instead of decorating the thing being opened.
+            if (showcaseStyle != com.yunyin.music.ui.components.PlaylistShowcase.Off && state.tracks.isNotEmpty()
+            ) {
+                item("showcase") {
+                    val showcase = showcaseStyle
+
+
+                    if (showcase == com.yunyin.music.ui.components.PlaylistShowcase.Ribbon) {
+                        com.yunyin.music.ui.components.PlaylistRibbon(
+                            playlists = listOf(com.yunyin.music.core.Playlist(
+                                id = state.id,
+                                name = state.title,
+                                coverUrl = state.coverUrl,
+                            )) + state.tracks.take(17).map { track ->
+                                com.yunyin.music.core.Playlist(
+                                    id = track.id,
+                                    name = track.name,
+                                    coverUrl = track.coverUrl,
+                                )
+                            },
+                            loader = loader,
+                            onPlaylistClick = { },
+                        )
+                    } else {
+                        com.yunyin.music.ui.components.PlaylistShelf(
+                            playlists = state.tracks.take(8).map { track ->
+                                com.yunyin.music.core.Playlist(
+                                    id = track.id,
+                                    name = track.name,
+                                    coverUrl = track.coverUrl,
+                                )
+                            },
+                            loader = loader,
+                            onPlaylistClick = { },
+                        )
+                    }
+                }
             }
 
             if (state.loading) {
@@ -1240,4 +1286,3 @@ internal fun ArtistLine(
  */
 private fun artistSpans(line: String, artists: List<String>): List<Pair<IntRange, Int>> =
     ArtistSegments.segments(line, artists).map { it.range to it.index }
-

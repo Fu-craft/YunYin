@@ -44,6 +44,9 @@ import kotlin.math.sin
  * Both are opt-in (`SettingsStore.playlistShowcase`), default off: they are a stylistic flourish and
  * the flat shelf remains the readable default.
  */
+/** Current showcase choice, published once by the host so the playlist page can read it. */
+val LocalPlaylistShowcase = androidx.compose.runtime.staticCompositionLocalOf { "off" }
+
 enum class PlaylistShowcase(val key: String, val label: String) {
     Off("off", "关闭"),
     Ribbon("ribbon", "立体缎带"),
