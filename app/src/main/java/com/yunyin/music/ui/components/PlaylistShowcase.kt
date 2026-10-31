@@ -5,6 +5,10 @@ package com.yunyin.music.ui.components
 
 import coil3.request.allowHardware
 import coil3.toBitmap
+import androidx.compose.foundation.shape.CircleShape
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.lens
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.background
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -267,6 +271,9 @@ fun PlaylistShowcaseScreen(
         animationSpec = androidx.compose.animation.core.tween(600),
         label = "scene-color",
     )
+    // Recorded layer behind the controls: liquid glass needs a backdrop to refract, otherwise the
+    // buttons render as flat grey circles.
+    val sceneBackdrop = com.kyant.backdrop.backdrops.rememberLayerBackdrop { drawRect(androidx.compose.ui.graphics.Color.Black); drawContent() }
     val covers = visible.map { Playlist(id = it.id, name = it.name, coverUrl = it.coverUrl) }
     val pick: (Playlist) -> Unit = { playlist ->
         onTrackClick(tracks.indexOfFirst { it.id == playlist.id })
@@ -426,11 +433,16 @@ fun PlaylistShowcaseScreen(
 
 @Composable
 private fun ShowcaseCircleButton(onClick: () -> Unit, content: @Composable () -> Unit) {
+    val backdrop = com.kyant.backdrop.backdrops.rememberLayerBackdrop { drawRect(Color.Black); drawContent() }
     Box(
         Modifier
             .size(44.dp)
-            .clip(androidx.compose.foundation.shape.RoundedCornerShape(50))
-            .background(androidx.compose.ui.graphics.Color.White.copy(alpha = 0.14f))
+            .drawBackdrop(
+                backdrop = backdrop,
+                shape = { CircleShape },
+                effects = { lens(12f.dp.toPx(), 24f.dp.toPx()) },
+                onDrawSurface = { drawRect(Color.White.copy(alpha = 0.16f)) },
+            )
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) { content() }
