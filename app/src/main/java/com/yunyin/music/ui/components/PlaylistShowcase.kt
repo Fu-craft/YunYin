@@ -244,7 +244,6 @@ fun PlaylistShowcaseScreen(
             onPrepare = { { } },
             onClose = onBack,
         )
-            PlaylistRibbon(covers, loader, pick, Modifier.fillMaxSize().padding(top = 120.dp, bottom = 120.dp))
         } else {
             PlaylistShelf(covers, loader, pick, Modifier.fillMaxSize().padding(top = 120.dp, bottom = 120.dp))
         }
