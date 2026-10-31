@@ -3,6 +3,7 @@
 
 package com.yunyin.music.ui.components
 
+import coil3.toBitmap
 import androidx.compose.foundation.background
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -75,6 +76,7 @@ enum class PlaylistShowcase(val key: String, val label: String) {
 @Composable
 fun PlaylistShelf(
     playlists: List<Playlist>,
+    pickIndex: Int = -1,
     loader: ArtworkLoader,
     onPlaylistClick: (Playlist) -> Unit,
     modifier: Modifier = Modifier,
@@ -119,6 +121,7 @@ fun PlaylistShelf(
             }
         },
         update = { view ->
+            if (pickIndex in playlists.indices) view.pick(pickIndex)
             view.onActivate = { index -> playlists.getOrNull(index)?.let(onPlaylistClick) }
             val songs = playlists.map { playlist ->
                 com.yunyin.music.ui.components.shelf.ShelfSong(
@@ -223,11 +226,40 @@ fun PlaylistShowcaseScreen(
     modifier: Modifier = Modifier,
 ) {
     val visible = tracks.take(60)
+    // Background colour is sampled from the first cover, like the reference: a fixed dark plate made
+    // the scene look pasted on rather than lit by the album art.
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var sceneColor by remember { androidx.compose.runtime.mutableStateOf(androidx.compose.ui.graphics.Color(0xFF0B0B0D)) }
+    var pickRequest by remember { androidx.compose.runtime.mutableIntStateOf(-1) }
+    androidx.compose.runtime.LaunchedEffect(visible.firstOrNull()?.coverUrl) {
+        val url = visible.firstOrNull()?.coverUrl ?: return@LaunchedEffect
+        sceneColor = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                val request = coil3.request.ImageRequest.Builder(context)
+                    .data(url)
+                    .build()
+                val result = coil3.SingletonImageLoader.get(context).execute(request)
+                val image = (result as? coil3.request.SuccessResult)?.image
+                    ?: return@runCatching androidx.compose.ui.graphics.Color(0xFF0B0B0D)
+                @Suppress("NAME_SHADOWING") val bitmap: android.graphics.Bitmap = image.toBitmap()
+                val palette = androidx.palette.graphics.Palette.Builder(bitmap).generate()
+                androidx.compose.ui.graphics.Color(palette.getDarkMutedColor(-0xF4F4F3))
+            }.getOrDefault(androidx.compose.ui.graphics.Color(0xFF0B0B0D))
+        }
+    }
     val covers = visible.map { Playlist(id = it.id, name = it.name, coverUrl = it.coverUrl) }
     val pick: (Playlist) -> Unit = { playlist ->
         onTrackClick(tracks.indexOfFirst { it.id == playlist.id })
     }
-    Box(modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color(0xFF0B0B0D))) {
+    Box(
+        modifier
+            .fillMaxSize()
+            .background(
+                androidx.compose.ui.graphics.Brush.verticalGradient(
+                    listOf(sceneColor, androidx.compose.ui.graphics.Color(0xFF06060A)),
+                ),
+            ),
+    ) {
         if (tracks.isEmpty()) {
             androidx.compose.material3.CircularProgressIndicator(
                 color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.7f),
@@ -253,7 +285,13 @@ fun PlaylistShowcaseScreen(
             onClose = onBack,
         )
         } else {
-            PlaylistShelf(covers, loader, pick, Modifier.fillMaxSize().padding(top = 120.dp, bottom = 120.dp))
+            PlaylistShelf(
+                playlists = covers,
+                pickIndex = pickRequest,
+                loader = loader,
+                onPlaylistClick = pick,
+                modifier = Modifier.fillMaxSize().padding(top = 120.dp, bottom = 120.dp),
+            )
         }
 
         // Shelf only: the ported ribbon draws its own title and transport, and our pill was
@@ -306,7 +344,11 @@ fun PlaylistShowcaseScreen(
                 .padding(bottom = 40.dp)
                 .clip(androidx.compose.foundation.shape.RoundedCornerShape(50))
                 .background(androidx.compose.ui.graphics.Color.White.copy(alpha = 0.92f))
-                .clickable(onClick = onShufflePick)
+                .clickable {
+                    onShufflePick()
+                    // Slide to a record first, as the reference does; the visual pick is the point.
+                    if (visible.isNotEmpty()) pickRequest = visible.indices.random()
+                }
                 .padding(horizontal = 28.dp, vertical = 14.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
