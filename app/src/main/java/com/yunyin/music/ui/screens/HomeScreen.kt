@@ -246,11 +246,7 @@ private fun DailyRecommendationCard(
             com.yunyin.music.ui.components.RecommendationCoverFlow(
                 songs = songs,
                 selected = selectedIndex,
-                onSelect = { index ->
-                    selectedState.intValue = index
-                    // Tapping another sleeve used to only move the selection; it has to play.
-                    onPlayTrack(index)
-                },
+                onSelect = { index -> selectedState.intValue = index },
                 showRecord = false,
                 onPlay = { onPlayTrack(selectedState.intValue) },
                 canPlay = true,
