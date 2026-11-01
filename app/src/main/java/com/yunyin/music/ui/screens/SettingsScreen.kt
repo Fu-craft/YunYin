@@ -514,6 +514,7 @@ private fun updateRowValue(state: UpdateUiState): String = when (state) {
 }
 
 /** A card-less group: header, rows directly on the page background, optional footnote. */
+/** A group of rows rendered as one rounded card, with the section title above it. */
 @Composable
 private fun SettingsSection(
     title: String,
@@ -524,18 +525,25 @@ private fun SettingsSection(
     Column(
         Modifier
             .fillMaxWidth()
-            .then(if (first) Modifier else Modifier.padding(top = 28.dp)),
+            .then(if (first) Modifier else Modifier.padding(top = 26.dp)),
     ) {
         Text(
             title,
             fontFamily = SFPro,
             fontSize = 13.sp,
             fontWeight = FontWeight.SemiBold,
+            letterSpacing = 0.2.sp,
             color = AppTheme.palette.secondaryLabel,
-            modifier = Modifier.padding(start = 16.dp),
+            modifier = Modifier.padding(start = 20.dp, bottom = 7.dp),
         )
-        Spacer(Modifier.height(6.dp))
-        Column(Modifier.fillMaxWidth(), content = content)
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(AppTheme.palette.secondaryBackground),
+            content = content,
+        )
         if (footnote != null) {
             Text(
                 footnote,
@@ -543,7 +551,7 @@ private fun SettingsSection(
                 fontSize = 11.sp,
                 lineHeight = 15.sp,
                 color = AppTheme.palette.tertiaryLabel,
-                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 6.dp),
+                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 6.dp),
             )
         }
     }
