@@ -646,11 +646,20 @@ private fun ToggleRow(
     enabled: Boolean,
     onChange: (Boolean) -> Unit,
 ) {
-    top.yukonga.miuix.kmp.preference.SwitchPreference(
+    SettingsRow(
         title = title,
-        summary = subtitle,
-        checked = enabled,
-        onCheckedChange = onChange,
+        subtitle = subtitle,
+        onClick = { onChange(!enabled) },
+        trailing = {
+            Switch(
+                checked = enabled,
+                onCheckedChange = null,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = androidx.compose.ui.graphics.Color.White,
+                    checkedTrackColor = AppTheme.palette.accent,
+                ),
+            )
+        },
     )
 }
 
@@ -667,11 +676,12 @@ private fun LinkRow(
     onClick: () -> Unit,
     subtitle: String? = null,
 ) {
-    // Miuix row, the same component the reference settings screen uses.
-    top.yukonga.miuix.kmp.preference.ArrowPreference(
+    SettingsRow(
         title = text,
-        summary = subtitle ?: value.ifBlank { null },
+        subtitle = subtitle,
+        value = value.ifBlank { null },
         onClick = onClick,
+        showChevron = true,
     )
 }
 
