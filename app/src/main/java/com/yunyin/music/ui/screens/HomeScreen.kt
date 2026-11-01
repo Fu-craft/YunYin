@@ -221,61 +221,43 @@ private fun DailyRecommendationCard(
     modifier: Modifier = Modifier,
 ) {
     if (tracks.isEmpty()) return
+    val selectedState = androidx.compose.runtime.remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    val selected = selectedState.intValue
+    val songs = remember(tracks) {
+        tracks.take(9).map { track ->
+            com.yunyin.music.ui.components.shelf.ShelfSong(
+                id = track.id,
+                name = track.name,
+                artists = track.artists.joinToString("/"),
+                album = "",
+                cover = track.coverUrl.orEmpty(),
+            )
+        }
+    }
     Box(
         modifier
             .fillMaxWidth()
             .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 18.dp)
             .clip(ContinuousRoundedRectangle(AppleShapes.cardLarge))
             .background(AppTheme.palette.secondaryBackground)
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = rememberControlRipple(),
-                onClick = onPlayAll,
-            )
-            .padding(vertical = if (expanded) 34.dp else 26.dp),
+            .padding(vertical = if (expanded) 30.dp else 22.dp),
     ) {
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-            // Fanned sleeves: the reference's daily card shows five covers spread across a shallow
-            // arc, centre one flat and largest, the rest turned away and stepped out.
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(if (expanded) 220.dp else 168.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                val shown = tracks.take(5)
-                val centre = shown.size / 2
-                shown.forEachIndexed { index, track ->
-                    val offset = index - centre
-                    val cardW = if (expanded) 190.dp else 150.dp
-                    Box(
-                        Modifier.graphicsLayer {
-                            translationX = offset * cardW.toPx() * 0.52f
-                            translationY = kotlin.math.abs(offset) * cardW.toPx() * 0.09f
-                            rotationY = -offset * 14f
-                            rotationZ = offset * 1.2f
-                            scaleX = 1f - kotlin.math.abs(offset) * 0.10f
-                            scaleY = 1f - kotlin.math.abs(offset) * 0.10f
-                            alpha = 1f - kotlin.math.abs(offset) * 0.16f
-                            cameraDistance = 16f * density
-                            shadowElevation = if (offset == 0) 18f else 8f
-                        },
-                    ) {
-                        Artwork(
-                            url = track.coverUrl,
-                            loader = loader,
-                            corner = 14.dp,
-                            requestSize = 600,
-                            modifier = Modifier.size(cardW, cardW),
-                        )
-                    }
-                }
-            }
-            Spacer(Modifier.height(if (expanded) 26.dp else 20.dp))
+            // The reference's cover deck, ported verbatim (DailyRecommendationHero.RecommendationCoverFlow).
+            com.yunyin.music.ui.components.RecommendationCoverFlow(
+                songs = songs,
+                selected = selected,
+                onSelect = { selectedState.intValue = it },
+                showRecord = false,
+                onPlay = onPlayAll,
+                canPlay = true,
+                playLabel = "播放每日推荐",
+            )
+            Spacer(Modifier.height(if (expanded) 20.dp else 14.dp))
             Text(
-                text = tracks.first().name,
+                text = songs.getOrNull(selected)?.name.orEmpty(),
                 fontFamily = SFPro,
-                fontSize = if (expanded) 26.sp else 22.sp,
+                fontSize = if (expanded) 24.sp else 20.sp,
                 fontWeight = FontWeight.Bold,
                 color = AppTheme.palette.label,
                 maxLines = 1,
@@ -283,7 +265,7 @@ private fun DailyRecommendationCard(
                 modifier = Modifier.padding(horizontal = 24.dp),
             )
             Text(
-                text = tracks.first().artists.joinToString("/"),
+                text = songs.getOrNull(selected)?.artists.orEmpty(),
                 fontFamily = SFPro,
                 fontSize = 14.sp,
                 color = AppTheme.palette.secondaryLabel,
