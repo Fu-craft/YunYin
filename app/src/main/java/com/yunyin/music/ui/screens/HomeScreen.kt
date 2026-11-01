@@ -238,9 +238,7 @@ private fun DailyRecommendationCard(
         modifier
             .fillMaxWidth()
             .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 18.dp)
-            .clip(ContinuousRoundedRectangle(AppleShapes.cardLarge))
-            .background(AppTheme.palette.secondaryBackground)
-            .padding(vertical = if (expanded) 30.dp else 22.dp),
+            .padding(vertical = if (expanded) 18.dp else 10.dp),
     ) {
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
             // The reference's cover deck, ported verbatim (DailyRecommendationHero.RecommendationCoverFlow).
@@ -595,6 +593,36 @@ fun HomeScreen(
                                     fontFamily = SFPro,
                                     fontSize = 14.sp,
                                     color = AppTheme.palette.secondaryLabel,
+                                )
+                            }
+                        }
+                        item("daily-header") {
+                            val today = java.time.LocalDate.now()
+                            Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 2.dp)) {
+                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = "每日推荐",
+                                        fontFamily = SFPro,
+                                        fontSize = 22.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = AppTheme.palette.label,
+                                    )
+                                    Spacer(Modifier.weight(1f))
+                                    Text(
+                                        text = "全部 ›",
+                                        fontFamily = SFPro,
+                                        fontSize = 16.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = AppTheme.palette.accent,
+                                        modifier = Modifier.clickable { onTrackClick(feed.dailySongs.first(), feed.dailySongs) },
+                                    )
+                                }
+                                Text(
+                                    text = "${today.monthValue}月${today.dayOfMonth}日 · ${feed.dailySongs.size} 首为你精选",
+                                    fontFamily = SFPro,
+                                    fontSize = 13.sp,
+                                    color = AppTheme.palette.secondaryLabel,
+                                    modifier = Modifier.padding(top = 2.dp),
                                 )
                             }
                         }
