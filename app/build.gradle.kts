@@ -35,8 +35,8 @@ android {
         // versionCode must increase for Android to accept a build as an update over a previous one;
         // versionName is what the user sees. Bumped together: a version name change with an unchanged
         // code would install as a downgrade and be rejected.
-        versionCode = 364
-        versionName = "4.71.0"
+        versionCode = 365
+        versionName = "4.72.0"
         vectorDrawables { useSupportLibrary = true }
 
         // The API endpoint is injected at build time rather than baked into the sources, so the
@@ -153,6 +153,9 @@ android {
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.coil3.compose)
+    // Miuix: the component library the reference settings UI is built on.
+    implementation("top.yukonga.miuix.kmp:miuix-ui-android:0.9.3")
+    implementation("top.yukonga.miuix.kmp:miuix-preference-android:0.9.3")
     implementation(libs.coil3.network.okhttp)
     implementation(libs.androidx.palette)
     implementation(libs.androidx.activity.compose)
