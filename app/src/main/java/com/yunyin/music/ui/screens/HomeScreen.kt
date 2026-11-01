@@ -556,7 +556,7 @@ fun HomeScreen(
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(
-                        top = glassTopBarTopPadding() + 16.dp,
+                        top = glassTopBarTopPadding(),
                         bottom = chromeContentBottomPadding(),
                     ),
                 ) {
@@ -573,30 +573,26 @@ fun HomeScreen(
                     // without scrolling, and one tap starts listening.
                     if (feed.dailySongs.isNotEmpty()) {
                         item("greeting") {
-                            // Plain capsule, not the glass field: this row lives inside the scrolling
-                            // list, and sampling the top bar backdrop from here crashed on launch.
-                            Row(
+                            // The greeting scrolls with the page: it is content, not chrome.
+                            Column(
                                 Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 6.dp)
-                                    .height(44.dp)
-                                    .clip(ContinuousRoundedRectangle(AppleShapes.pill))
-                                    .background(AppTheme.palette.secondaryBackground)
-                                    .clickable(onClick = onSearchClick)
-                                    .padding(horizontal = 14.dp),
-                                verticalAlignment = Alignment.CenterVertically,
+                                    .padding(start = 20.dp, end = 20.dp, top = 6.dp, bottom = 6.dp),
                             ) {
-                                Icon(
-                                    SfIcons.MagnifyingGlass,
-                                    contentDescription = null,
-                                    tint = AppTheme.palette.secondaryLabel,
-                                    modifier = Modifier.size(18.dp),
-                                )
-                                Spacer(Modifier.width(10.dp))
                                 Text(
-                                    text = "搜索",
+                                    text = if (userName.isBlank()) "你好" else "你好，$userName",
                                     fontFamily = SFPro,
-                                    fontSize = 16.sp,
+                                    fontSize = 28.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = (-0.6).sp,
+                                    color = AppTheme.palette.label,
+                                    maxLines = 1,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    text = "今天想听点什么？",
+                                    fontFamily = SFPro,
+                                    fontSize = 13.sp,
                                     color = AppTheme.palette.secondaryLabel,
                                 )
                             }
@@ -767,27 +763,10 @@ fun HomeScreen(
         // liquid-glass capsule on top of that strip, sampling the same recorded layer.
         GlassTopBar(
             backdrop = topBarBackdrop,
-            contentHeight = 66.dp,
+            modifier = Modifier.align(Alignment.TopCenter),
         ) {
-            // The greeting takes the pinned strip's place: it is the page title, so it stays put.
-            Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp)) {
-                Text(
-                    text = if (userName.isBlank()) "你好" else "你好，$userName",
-                    fontFamily = SFPro,
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = (-0.6).sp,
-                    color = AppTheme.palette.label,
-                    maxLines = 1,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = "今天想听点什么？",
-                    fontFamily = SFPro,
-                    fontSize = 12.sp,
-                    color = AppTheme.palette.secondaryLabel,
-                )
-            }
+            // Search lives in the pinned strip; the greeting is content and scrolls away.
+            SearchBar(onClick = onSearchClick, backdrop = topBarBackdrop)
         }
     }
 }
