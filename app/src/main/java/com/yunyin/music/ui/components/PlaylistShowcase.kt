@@ -103,7 +103,7 @@ fun PlaylistShelf(
     // the selected slot changes.
     LaunchedEffect(renderer) {
         while (true) {
-            kotlinx.coroutines.delay(100)
+            kotlinx.coroutines.delay(60)
             onCurrent(renderer.currentName, renderer.currentArtists, renderer.currentIndex)
         }
     }
@@ -259,12 +259,17 @@ fun PlaylistShowcaseScreen(
             ),
     ) {
         coil3.compose.AsyncImage(
-            model = visible.getOrNull(current)?.coverUrl,
+            // A 256 px request keeps the blur cheap: blurring a full-size cover cost so much per change
+            // that the backdrop only caught up after the drag stopped.
+            model = coil3.request.ImageRequest.Builder(context)
+                .data(visible.getOrNull(current)?.coverUrl)
+                .size(256)
+                .build(),
             contentDescription = null,
             contentScale = androidx.compose.ui.layout.ContentScale.Crop,
             modifier = Modifier
                 .matchParentSize()
-                .blur(48.dp)
+                .blur(28.dp)
                 .graphicsLayer { alpha = 0.55f },
         )
         if (tracks.isEmpty()) {
