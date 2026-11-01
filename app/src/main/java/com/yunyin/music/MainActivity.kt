@@ -1489,13 +1489,11 @@ class MainActivity : ComponentActivity() {
                         container.tickerLyrics.runSelfTest()
                         Toast.makeText(context, "已发送测试歌词，请看状态栏是否滚动", Toast.LENGTH_LONG).show()
                     },
-                    onCycleCrossfadeSeconds = {
-                        val next = com.yunyin.music.playback.CrossfadeRules.DURATIONS_SECONDS.let { list ->
-                            val i = list.indexOf(crossfadeSeconds).coerceAtLeast(0)
-                            list[(i + 1) % list.size]
-                        }
-                        crossfadeSeconds = next
-                        container.settings.crossfadeSeconds = next
+                    // The row is a slider now, so the value is set directly instead of stepped through
+                    // the supported durations one tap at a time; the store write is the same either way.
+                    onCrossfadeSecondsChange = { seconds ->
+                        crossfadeSeconds = seconds
+                        container.settings.crossfadeSeconds = seconds
                     },
                     playlistShowcaseLabel = com.yunyin.music.ui.components.PlaylistShowcase.of(playlistShowcase).label,
                     onCyclePlaylistShowcase = {
