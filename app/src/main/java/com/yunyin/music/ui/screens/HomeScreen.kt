@@ -573,12 +573,33 @@ fun HomeScreen(
                     // without scrolling, and one tap starts listening.
                     if (feed.dailySongs.isNotEmpty()) {
                         item("greeting") {
-                            // Search now sits in the feed, under the greeting, instead of in the pinned
-                            // strip: the greeting is the page title, the search is an action.
-                            SearchBar(
-                                onClick = onSearchClick,
-                                backdrop = topBarBackdrop,
-                            )
+                            // Plain capsule, not the glass field: this row lives inside the scrolling
+                            // list, and sampling the top bar backdrop from here crashed on launch.
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 6.dp)
+                                    .height(44.dp)
+                                    .clip(ContinuousRoundedRectangle(AppleShapes.pill))
+                                    .background(AppTheme.palette.secondaryBackground)
+                                    .clickable(onClick = onSearchClick)
+                                    .padding(horizontal = 14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(
+                                    SfIcons.MagnifyingGlass,
+                                    contentDescription = null,
+                                    tint = AppTheme.palette.secondaryLabel,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                                Spacer(Modifier.width(10.dp))
+                                Text(
+                                    text = "搜索",
+                                    fontFamily = SFPro,
+                                    fontSize = 16.sp,
+                                    color = AppTheme.palette.secondaryLabel,
+                                )
+                            }
                         }
                         item("daily-hero") {
                             DailyRecommendationCard(
