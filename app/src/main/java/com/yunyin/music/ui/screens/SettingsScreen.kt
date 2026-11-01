@@ -682,12 +682,11 @@ private fun LinkRow(
     onClick: () -> Unit,
     subtitle: String? = null,
 ) {
-    SettingsRow(
+    // Miuix row, the same component the reference settings screen uses.
+    top.yukonga.miuix.kmp.preference.ArrowPreference(
         title = text,
-        subtitle = subtitle,
-        value = value.ifBlank { null },
+        summary = subtitle ?: value.ifBlank { null },
         onClick = onClick,
-        showChevron = true,
     )
 }
 
