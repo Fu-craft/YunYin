@@ -212,11 +212,11 @@ fun PlaylistShowcaseScreen(
     var current by remember { androidx.compose.runtime.mutableIntStateOf(0) }
     var songTitle by remember { androidx.compose.runtime.mutableStateOf(title) }
     var songArtists by remember { androidx.compose.runtime.mutableStateOf(visible.size.toString() + " 首") }
-    // Sliding onto a record starts it, without a second tap. A short dwell keeps a flick from
-    // firing a burst of tracks on the way past.
+    // Sliding onto a record plays it: no dwell, no second tap. The 300 ms guard only exists so a
+    // fast fling does not fire one play per record it passes; the last one still wins.
     androidx.compose.runtime.LaunchedEffect(current) {
         if (current in visible.indices) {
-            kotlinx.coroutines.delay(1800)
+            kotlinx.coroutines.delay(300)
             onTrackClick(current)
         }
     }
