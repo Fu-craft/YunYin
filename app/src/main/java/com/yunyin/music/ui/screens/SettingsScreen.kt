@@ -514,8 +514,6 @@ private fun updateRowValue(state: UpdateUiState): String = when (state) {
 }
 
 /** A card-less group: header, rows directly on the page background, optional footnote. */
-/** A settings group. The rows themselves are miuix preferences, which carry their own surface,
- *  so the group only supplies the title, the gutter and the gap to the next group. */
 @Composable
 private fun SettingsSection(
     title: String,
@@ -531,13 +529,20 @@ private fun SettingsSection(
         Text(
             title,
             fontFamily = SFPro,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Medium,
-            letterSpacing = 0.1.sp,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 0.2.sp,
             color = AppTheme.palette.secondaryLabel,
-            modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp),
+            modifier = Modifier.padding(start = 20.dp, bottom = 7.dp),
         )
-        Column(Modifier.fillMaxWidth(), content = content)
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(AppTheme.palette.secondaryBackground),
+            content = content,
+        )
         if (footnote != null) {
             Text(
                 footnote,
@@ -545,7 +550,7 @@ private fun SettingsSection(
                 fontSize = 11.sp,
                 lineHeight = 15.sp,
                 color = AppTheme.palette.tertiaryLabel,
-                modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 6.dp),
+                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 6.dp),
             )
         }
     }
