@@ -573,29 +573,12 @@ fun HomeScreen(
                     // without scrolling, and one tap starts listening.
                     if (feed.dailySongs.isNotEmpty()) {
                         item("greeting") {
-                            Column(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 2.dp),
-                            ) {
-                                Text(
-                                    text = if (userName.isBlank()) "你好" else "你好，$userName",
-                                    fontFamily = SFPro,
-                                    fontSize = 30.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    letterSpacing = (-0.8).sp,
-                                    color = AppTheme.palette.label,
-                                    maxLines = 1,
-                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                                )
-                                Spacer(Modifier.height(2.dp))
-                                Text(
-                                    text = "今天想听点什么？",
-                                    fontFamily = SFPro,
-                                    fontSize = 14.sp,
-                                    color = AppTheme.palette.secondaryLabel,
-                                )
-                            }
+                            // Search now sits in the feed, under the greeting, instead of in the pinned
+                            // strip: the greeting is the page title, the search is an action.
+                            SearchBar(
+                                onClick = onSearchClick,
+                                backdrop = topBarBackdrop,
+                            )
                         }
                         item("daily-hero") {
                             DailyRecommendationCard(
@@ -765,7 +748,25 @@ fun HomeScreen(
             backdrop = topBarBackdrop,
             modifier = Modifier.align(Alignment.TopCenter),
         ) {
-            SearchBar(onClick = onSearchClick, backdrop = topBarBackdrop)
+            // The greeting takes the pinned strip's place: it is the page title, so it stays put.
+            Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp)) {
+                Text(
+                    text = if (userName.isBlank()) "你好" else "你好，$userName",
+                    fontFamily = SFPro,
+                    fontSize = 28.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = (-0.6).sp,
+                    color = AppTheme.palette.label,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = "今天想听点什么？",
+                    fontFamily = SFPro,
+                    fontSize = 13.sp,
+                    color = AppTheme.palette.secondaryLabel,
+                )
+            }
         }
     }
 }
