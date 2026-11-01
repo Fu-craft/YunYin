@@ -123,6 +123,31 @@ class CurrentMusicApi(
     suspend fun syncRoom(token: String, id: String): Result<Long> =
         post("/rooms/$id/sync", JSONObject(), token).map { it.optLong("serverNow") }
 
+    data class RoomDetail(
+        val nowPlayingName: String,
+        val nowPlayingArtist: String,
+        val queue: List<String>,
+    )
+
+    suspend fun roomDetail(token: String, id: String): Result<RoomDetail> =
+        get("/rooms/$id", token).map { body ->
+            val room = body.optJSONObject("room") ?: body
+            val current = room.optJSONObject("current")
+                ?: room.optJSONObject("nowPlaying")
+                ?: room.optJSONObject("playing")
+            val queueArray = room.optJSONArray("queue")
+                ?: room.optJSONArray("tracks")
+                ?: org.json.JSONArray()
+            RoomDetail(
+                nowPlayingName = current?.optString("name").orEmpty(),
+                nowPlayingArtist = current?.optString("artists").orEmpty(),
+                queue = (0 until queueArray.length()).mapNotNull { index ->
+                    val item = queueArray.optJSONObject(index) ?: return@mapNotNull null
+                    val track = item.optJSONObject("meta") ?: item
+                    track.optString("name").takeIf { it.isNotBlank() }
+                },
+            )
+        }
     private fun JSONObject.toRoom(): Room = Room(
         id = optString("id").ifBlank { optString("roomId") },
         name = optString("name"),

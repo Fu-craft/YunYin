@@ -65,6 +65,7 @@ fun CurrentMusicAccountPanel(
             Spacer(Modifier.height(8.dp))
             var rooms by remember { mutableStateOf<List<CurrentMusicApi.Room>>(emptyList()) }
             var roomMessage by remember { mutableStateOf("") }
+            var openRoom by remember { mutableStateOf<CurrentMusicApi.Room?>(null) }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = "刷新房间",
@@ -126,11 +127,18 @@ fun CurrentMusicAccountPanel(
                             scope.launch {
                                 val api = CurrentMusicApi(baseUrl = settings.currentMusicBaseUrl)
                                 roomMessage = api.joinRoom(settings.currentMusicToken, room.id)
-                                    .fold({ "已加入 ${room.name}" }, { "加入失败：${it.message}" })
+                                    .fold({ openRoom = room; "已加入 ${room.name}" }, { "加入失败：${it.message}" })
                             }
                         },
                     )
                 }
+            }
+            openRoom?.let { active ->
+                CurrentMusicRoomDialog(
+                    settings = settings,
+                    room = active,
+                    onDismiss = { openRoom = null },
+                )
             }
             Spacer(Modifier.height(8.dp))
             Text(
