@@ -258,6 +258,15 @@ fun PlaylistShowcaseScreen(
                 ),
             ),
     ) {
+        coil3.compose.AsyncImage(
+            model = visible.getOrNull(current)?.coverUrl,
+            contentDescription = null,
+            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+            modifier = Modifier
+                .matchParentSize()
+                .blur(48.dp)
+                .graphicsLayer { alpha = 0.55f },
+        )
         if (tracks.isEmpty()) {
             androidx.compose.material3.CircularProgressIndicator(
                 color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.7f),
