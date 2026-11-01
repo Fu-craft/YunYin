@@ -83,59 +83,37 @@ enum class PlaylistShowcase(val key: String, val label: String) {
  */
 @Composable
 fun PlaylistShelf(
-    playlists: List<Playlist>,
-    onSelected: (Int) -> Unit = {},
-    /** Current song name and artists, mirrored straight from the renderer. */
-    onCurrent: (String, String) -> Unit = { _, _ -> },
+    songsIn: List<com.yunyin.music.ui.components.shelf.ShelfSong>,
     pickIndex: Int = -1,
-    loader: ArtworkLoader,
-    onPlaylistClick: (Playlist) -> Unit,
+    /** Current song name, artists and slot, mirrored from the renderer. */
+    onCurrent: (String, String, Int) -> Unit = { _, _, _ -> },
+    onActivate: (Int) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    if (playlists.isEmpty()) return
+    if (songsIn.isEmpty()) return
     val context = androidx.compose.ui.platform.LocalContext.current
-    // Same structure as the reference (PlaylistRecordShelf): the renderer is created once, its
-    // callbacks are installed in a SideEffect *before* the first frame, and configure() also runs in
-    // a SideEffect. Wiring inside AndroidView's update happens too late — that is why the header
-    // never跟随 the shelf.
     val renderer = remember(context) {
         com.yunyin.music.ui.components.shelf.RecordShelfView(context).apply {
             bottomInset = 0f
             setRunning(true)
         }
     }
-    val songs = playlists.map { playlist ->
-        com.yunyin.music.ui.components.shelf.ShelfSong(
-            id = playlist.id,
-            name = playlist.name,
-            artists = "",
-            album = "",
-            cover = playlist.coverUrl.orEmpty(),
-        )
-    }
-    // Verbatim structure of the reference (PlaylistRecordShelf): callbacks live in a
-    // DisposableEffect keyed on the renderer, with rememberUpdatedState so they always see the
-    // latest Compose state; configure() runs in a SideEffect after that.
-    val currentSelection by androidx.compose.runtime.rememberUpdatedState<(Int) -> Unit> { index ->
-        onSelected(index)
-    }
-    DisposableEffect(renderer) {
-        renderer.onSelection = { index -> currentSelection(index) }
-        renderer.onActivate = { index -> playlists.getOrNull(index)?.let(onPlaylistClick) }
-        onDispose { }
-    }
-    SideEffect {
-        renderer.configure(songs)
+    SideEffect { renderer.configure(songsIn) }
+    // Sampling, not the callback: the header must never depend on a callback that fires only when
+    // the selected slot changes.
+    LaunchedEffect(renderer) {
+        while (true) {
+            kotlinx.coroutines.delay(100)
+            onCurrent(renderer.currentName, renderer.currentArtists, renderer.currentIndex)
+        }
     }
     LaunchedEffect(pickIndex) {
-        if (pickIndex in playlists.indices) renderer.pick(pickIndex)
-    }
-    LaunchedEffect(pickIndex) {
-        if (pickIndex in playlists.indices) renderer.pick(pickIndex)
+        if (pickIndex in songsIn.indices) renderer.pick(pickIndex)
     }
     androidx.compose.ui.viewinterop.AndroidView(
         modifier = modifier.fillMaxSize(),
         factory = { renderer },
+        update = { it.onActivate = { index -> onActivate(index) } },
     )
 }
 
@@ -306,10 +284,22 @@ fun PlaylistShowcaseScreen(
         )
         } else {
             PlaylistShelf(
-                playlists = covers,
+                songsIn = visible.map { track ->
+                    com.yunyin.music.ui.components.shelf.ShelfSong(
+                        id = track.id,
+                        name = track.name,
+                        artists = track.artists.joinToString("/"),
+                        album = "",
+                        cover = track.coverUrl.orEmpty(),
+                    )
+                },
                 pickIndex = pickRequest,
-                loader = loader,
-                onPlaylistClick = pick,
+                onCurrent = { name, artists, index ->
+                    songTitle = name.ifBlank { title }
+                    songArtists = artists.ifBlank { visible.size.toString() + " 首" }
+                    if (index >= 0) current = index
+                },
+                onActivate = { index -> if (index in visible.indices) onTrackClick(index) },
                 modifier = Modifier.fillMaxSize().padding(top = 120.dp, bottom = 120.dp),
             )
         }

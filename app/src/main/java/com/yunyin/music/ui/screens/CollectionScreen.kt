@@ -257,15 +257,15 @@ fun CollectionScreen(
                         )
                     } else {
                         com.yunyin.music.ui.components.PlaylistShelf(
-                            playlists = state.tracks.take(8).map { track ->
-                                com.yunyin.music.core.Playlist(
+                            songsIn = state.tracks.take(60).map { track ->
+                                com.yunyin.music.ui.components.shelf.ShelfSong(
                                     id = track.id,
                                     name = track.name,
-                                    coverUrl = track.coverUrl,
+                                    artists = track.artists.joinToString("/"),
+                                    album = "",
+                                    cover = track.coverUrl.orEmpty(),
                                 )
                             },
-                            loader = loader,
-                            onPlaylistClick = { },
                         )
                     }
                 }
