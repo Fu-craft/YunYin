@@ -217,91 +217,80 @@ private fun DailyRecommendationCard(
     tracks: List<Track>,
     loader: ArtworkLoader,
     onPlayAll: () -> Unit,
-    /** Expanded windows get a taller card and a wider wall; phones keep the compact one. */
     expanded: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
+    if (tracks.isEmpty()) return
     Box(
         modifier
             .fillMaxWidth()
-            .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 22.dp)
-            .height(if (expanded) CARD_HEIGHT_EXPANDED else CARD_HEIGHT)
-            .shadow(10.dp, ContinuousRoundedRectangle(AppleShapes.cardLarge), clip = false)
+            .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 18.dp)
             .clip(ContinuousRoundedRectangle(AppleShapes.cardLarge))
+            .background(AppTheme.palette.secondaryBackground)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = rememberControlRipple(),
                 onClick = onPlayAll,
-            ),
+            )
+            .padding(vertical = if (expanded) 34.dp else 26.dp),
     ) {
-        // 唱片墙: covers stitched edge to edge, rolling upward and looping without a seam.
-        CoverWall(tracks = tracks, loader = loader, columns = if (expanded) WALL_COLUMNS_EXPANDED else WALL_COLUMNS)
-        Box(
-            Modifier
-                .matchParentSize()
-                .background(
-                    Brush.verticalGradient(
-                        0f to Color.Black.copy(alpha = 0.22f),
-                        0.55f to Color.Transparent,
-                        1f to Color.Black.copy(alpha = 0.72f),
-                    ),
-                ),
-        )
-        // Copy sits bottom-left: the wall reads top-down, and a title in the top-left corner fought the
-        // artwork for the first thing the eye lands on.
-        Column(
-            Modifier
-                .align(Alignment.BottomStart)
-                .padding(start = 16.dp, end = 96.dp, bottom = 14.dp),
-        ) {
-            Text(
-                text = "每日推荐",
-                fontFamily = SFPro,
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = (-0.8).sp,
-                color = Color.White,
-                maxLines = 1,
-            )
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text = dailyDateLabel() + " · 根据你的口味生成",
-                fontFamily = SFPro,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Medium,
-                color = Color.White.copy(alpha = 0.85f),
-                maxLines = 1,
-            )
-        }
-        Row(
-            Modifier
-                .align(Alignment.BottomEnd)
-                .padding(end = 14.dp, bottom = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = "${tracks.size} 首",
-                fontFamily = SFPro,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = (-0.4).sp,
-                color = Color.White,
-            )
-            Spacer(Modifier.width(8.dp))
+        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+            // Fanned sleeves: the reference's daily card shows five covers spread across a shallow
+            // arc, centre one flat and largest, the rest turned away and stepped out.
             Box(
                 Modifier
-                    .size(38.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(Color.White),
+                    .fillMaxWidth()
+                    .height(if (expanded) 220.dp else 168.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(
-                    imageVector = SfIcons.Play,
-                    contentDescription = "播放每日推荐",
-                    tint = Color.Black,
-                    modifier = Modifier.size(16.dp),
-                )
+                val shown = tracks.take(5)
+                val centre = shown.size / 2
+                shown.forEachIndexed { index, track ->
+                    val offset = index - centre
+                    val cardW = if (expanded) 190.dp else 150.dp
+                    Box(
+                        Modifier.graphicsLayer {
+                            translationX = offset * cardW.toPx() * 0.52f
+                            translationY = kotlin.math.abs(offset) * cardW.toPx() * 0.09f
+                            rotationY = -offset * 14f
+                            rotationZ = offset * 1.2f
+                            scaleX = 1f - kotlin.math.abs(offset) * 0.10f
+                            scaleY = 1f - kotlin.math.abs(offset) * 0.10f
+                            alpha = 1f - kotlin.math.abs(offset) * 0.16f
+                            cameraDistance = 16f * density
+                            shadowElevation = if (offset == 0) 18f else 8f
+                        },
+                    ) {
+                        Artwork(
+                            url = track.coverUrl,
+                            loader = loader,
+                            corner = 14.dp,
+                            requestSize = 600,
+                            modifier = Modifier.size(cardW, cardW),
+                        )
+                    }
+                }
             }
+            Spacer(Modifier.height(if (expanded) 26.dp else 20.dp))
+            Text(
+                text = tracks.first().name,
+                fontFamily = SFPro,
+                fontSize = if (expanded) 26.sp else 22.sp,
+                fontWeight = FontWeight.Bold,
+                color = AppTheme.palette.label,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(horizontal = 24.dp),
+            )
+            Text(
+                text = tracks.first().artists.joinToString("/"),
+                fontFamily = SFPro,
+                fontSize = 14.sp,
+                color = AppTheme.palette.secondaryLabel,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 2.dp, start = 24.dp, end = 24.dp),
+            )
         }
     }
 }
