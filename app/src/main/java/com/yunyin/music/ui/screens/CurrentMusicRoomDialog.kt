@@ -66,7 +66,15 @@ fun CurrentMusicRoomDialog(
         }
     }
 
-    LaunchedEffect(room.id) { refresh() }
+    LaunchedEffect(room.id) {
+        refresh()
+        // Live updates: any server event refreshes the snapshot (play/pause/next/queue change).
+        runCatching {
+            api.roomEvents(token, room.id).collect { event ->
+                if (event.contains("play") || event.contains("queue") || event.contains("sync")) refresh()
+            }
+        }
+    }
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(

@@ -3,6 +3,8 @@
 
 package com.yunyin.music.data.currentmusic
 
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -128,6 +130,33 @@ class CurrentMusicApi(
         val nowPlayingArtist: String,
         val queue: List<String>,
     )
+
+    /** 把一首歌加入房间队列：POST /rooms/{id}/queue { meta }（meta 为歌曲元数据）。 */
+    suspend fun addToQueue(token: String, id: String, meta: JSONObject): Result<Unit> =
+        post("/rooms/$id/queue", JSONObject().put("meta", meta), token).map { }
+
+    /**
+     * 房间事件流（SSE）：`GET /rooms/{id}/events`。
+     *
+     * 服务端按 `data: {...}` 逐行推送；这里只把每行的 JSON 交给调用方，由它决定刷新哪些状态，
+     * 免得把服务端的事件名硬编码进网络层。
+     */
+    fun roomEvents(token: String, id: String): kotlinx.coroutines.flow.Flow<String> =
+        kotlinx.coroutines.flow.flow {
+            val request = Request.Builder()
+                .url("$base/rooms/$id/events")
+                .header("Authorization", "Bearer $token")
+                .header("Accept", "text/event-stream")
+                .build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) error("SSE HTTP ${response.code}")
+                val source = response.body?.source() ?: error("SSE 无响应体")
+                while (!source.exhausted()) {
+                    val line = source.readUtf8Line() ?: break
+                    if (line.startsWith("data:")) emit(line.removePrefix("data:").trim())
+                }
+            }
+        }.flowOn(Dispatchers.IO)
 
     suspend fun roomDetail(token: String, id: String): Result<RoomDetail> =
         get("/rooms/$id", token).map { body ->
