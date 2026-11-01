@@ -214,6 +214,11 @@ class SettingsStore(context: Context) {
         get() = prefs.getString(KEY_PLAYLIST_SHOWCASE, "off") ?: "off"
         set(value) = prefs.edit().putString(KEY_PLAYLIST_SHOWCASE, value).apply()
 
+    /** 上次播放队列快照；空表示没有可恢复的内容。 */
+    var playbackSnapshot: String
+        get() = prefs.getString(KEY_PLAYBACK_SNAPSHOT, "").orEmpty()
+        set(value) = prefs.edit().putString(KEY_PLAYBACK_SNAPSHOT, value).apply()
+
     /** CurrentMusic 站内账号 token；空表示未登录。 */
     var currentMusicToken: String
         get() = prefs.getString(KEY_CURRENT_MUSIC_TOKEN, "").orEmpty()
@@ -408,6 +413,7 @@ class SettingsStore(context: Context) {
         private const val KEY_NOW_PLAYING_DYNAMIC = "now_playing_dynamic_background"
         private const val KEY_NOW_PLAYING_BACKGROUND_STYLE = "now_playing_background_style"
 private const val KEY_PLAYLIST_SHOWCASE = "playlist_showcase"
+private const val KEY_PLAYBACK_SNAPSHOT = "playback_snapshot"
 private const val KEY_CURRENT_MUSIC_TOKEN = "current_music_token"
 private const val KEY_CURRENT_MUSIC_BASE = "current_music_base"
 private const val KEY_CURRENT_MUSIC_ROOM = "current_music_room"
