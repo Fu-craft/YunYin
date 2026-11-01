@@ -237,7 +237,7 @@ fun SettingsScreen(
                 text = "设置",
                 fontFamily = SFPro,
                 fontWeight = FontWeight.Bold,
-                fontSize = 34.sp,
+                fontSize = 32.sp,
                 color = AppTheme.palette.label,
             )
             Spacer(Modifier.height(20.dp))
@@ -652,20 +652,11 @@ private fun ToggleRow(
     enabled: Boolean,
     onChange: (Boolean) -> Unit,
 ) {
-    SettingsRow(
+    top.yukonga.miuix.kmp.preference.SwitchPreference(
         title = title,
-        subtitle = subtitle,
-        onClick = { onChange(!enabled) },
-        trailing = {
-            Switch(
-                checked = enabled,
-                onCheckedChange = null,
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = androidx.compose.ui.graphics.Color.White,
-                    checkedTrackColor = AppTheme.palette.accent,
-                ),
-            )
-        },
+        summary = subtitle,
+        checked = enabled,
+        onCheckedChange = onChange,
     )
 }
 
