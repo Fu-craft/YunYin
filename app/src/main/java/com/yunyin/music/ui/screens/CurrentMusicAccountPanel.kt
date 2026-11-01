@@ -63,6 +63,76 @@ fun CurrentMusicAccountPanel(
                 color = AppTheme.palette.secondaryLabel,
             )
             Spacer(Modifier.height(8.dp))
+            var rooms by remember { mutableStateOf<List<CurrentMusicApi.Room>>(emptyList()) }
+            var roomMessage by remember { mutableStateOf("") }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "刷新房间",
+                    fontFamily = SFPro,
+                    fontSize = 14.sp,
+                    color = AppTheme.palette.accent,
+                    modifier = Modifier.clickable {
+                        busy = true
+                        scope.launch {
+                            val api = CurrentMusicApi(baseUrl = settings.currentMusicBaseUrl)
+                            rooms = api.rooms(settings.currentMusicToken).getOrElse {
+                                roomMessage = "房间列表失败：${it.message}"
+                                emptyList()
+                            }
+                            busy = false
+                        }
+                    },
+                )
+                Spacer(Modifier.width(16.dp))
+                Text(
+                    text = "建房",
+                    fontFamily = SFPro,
+                    fontSize = 14.sp,
+                    color = AppTheme.palette.accent,
+                    modifier = Modifier.clickable {
+                        busy = true
+                        scope.launch {
+                            val api = CurrentMusicApi(baseUrl = settings.currentMusicBaseUrl)
+                            roomMessage = api.createRoom(settings.currentMusicToken, "云音的一起听")
+                                .fold({ "房间已创建：${it.code}" }, { "建房失败：${it.message}" })
+                            busy = false
+                        }
+                    },
+                )
+            }
+            if (roomMessage.isNotBlank()) {
+                Text(roomMessage, fontFamily = SFPro, fontSize = 12.sp, color = AppTheme.palette.secondaryLabel)
+            }
+            rooms.forEach { room ->
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(room.name, fontFamily = SFPro, fontSize = 15.sp, color = AppTheme.palette.label)
+                        Text(
+                            text = "${room.members} 人 · 房间码 ${room.code}",
+                            fontFamily = SFPro,
+                            fontSize = 12.sp,
+                            color = AppTheme.palette.secondaryLabel,
+                        )
+                    }
+                    Text(
+                        text = "加入",
+                        fontFamily = SFPro,
+                        fontSize = 14.sp,
+                        color = AppTheme.palette.accent,
+                        modifier = Modifier.clickable {
+                            scope.launch {
+                                val api = CurrentMusicApi(baseUrl = settings.currentMusicBaseUrl)
+                                roomMessage = api.joinRoom(settings.currentMusicToken, room.id)
+                                    .fold({ "已加入 ${room.name}" }, { "加入失败：${it.message}" })
+                            }
+                        },
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
             Text(
                 text = "退出登录",
                 fontFamily = SFPro,

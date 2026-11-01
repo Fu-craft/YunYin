@@ -81,6 +81,57 @@ class CurrentMusicApi(
         (body.optJSONObject("user") ?: body).toAccount()
     }
 
+    // ---------------------------------------------------------------- rooms（一起听）
+
+    data class Room(
+        val id: String,
+        val name: String,
+        val code: String,
+        val members: Int,
+        val playing: Boolean,
+        val public: Boolean,
+    )
+
+    suspend fun rooms(token: String, query: String = "", offset: Int = 0): Result<List<Room>> =
+        get("/rooms?query=$query&limit=20&offset=$offset", token).map { body ->
+            val array = body.optJSONArray("rooms") ?: body.optJSONArray("items") ?: org.json.JSONArray()
+            (0 until array.length()).mapNotNull { index ->
+                val item = array.optJSONObject(index) ?: return@mapNotNull null
+                item.toRoom()
+            }
+        }
+
+    suspend fun createRoom(token: String, name: String, password: String = "", public: Boolean = true): Result<Room> =
+        post(
+            "/rooms",
+            JSONObject()
+                .put("name", name)
+                .put("password", password)
+                .put("isPublic", public)
+                .put("freeMode", true)
+                .put("needApproval", false),
+            token,
+        ).map { it.optJSONObject("room")?.toRoom() ?: it.toRoom() }
+
+    suspend fun joinRoom(token: String, id: String, password: String = ""): Result<Unit> =
+        post("/rooms/$id/join", JSONObject().put("password", password), token).map { }
+
+    suspend fun roomAction(token: String, id: String, action: String): Result<Unit> =
+        post("/rooms/$id/$action", JSONObject(), token).map { }
+
+    /** 时钟对齐：返回服务器当前毫秒时间戳。 */
+    suspend fun syncRoom(token: String, id: String): Result<Long> =
+        post("/rooms/$id/sync", JSONObject(), token).map { it.optLong("serverNow") }
+
+    private fun JSONObject.toRoom(): Room = Room(
+        id = optString("id").ifBlank { optString("roomId") },
+        name = optString("name"),
+        code = optString("code"),
+        members = optInt("members").takeIf { it > 0 } ?: optJSONArray("members")?.length() ?: 0,
+        playing = optBoolean("playing"),
+        public = optBoolean("isPublic", true),
+    )
+
     // ---------------------------------------------------------------- transport
 
     private suspend fun post(path: String, body: JSONObject, token: String? = null): Result<JSONObject> =
