@@ -50,6 +50,9 @@ fun CurrentMusicRoomDialog(
     var busy by remember { mutableStateOf(false) }
     var nowPlaying by remember { mutableStateOf("等待点歌") }
     var nowArtist by remember { mutableStateOf("所有成员都可以点歌") }
+    var query by remember { mutableStateOf("") }
+    var hits by remember { mutableStateOf<List<CurrentMusicApi.SongHit>>(emptyList()) }
+    var searching by remember { mutableStateOf(false) }
 
     fun refresh() {
         scope.launch {
@@ -153,7 +156,7 @@ fun CurrentMusicRoomDialog(
                 Text(nowArtist, fontFamily = SFPro, fontSize = 14.sp, color = AppTheme.palette.secondaryLabel)
                 Spacer(Modifier.height(10.dp))
                 Row {
-                    RoomAction("点歌") { status = "在搜索页长按歌曲 → 加入队列（下一步接）" }
+                    RoomAction("点歌") { searching = !searching }
                     Spacer(Modifier.width(20.dp))
                     RoomAction("播放器") { status = "已打开播放器" }
                     Spacer(Modifier.width(20.dp))
@@ -191,6 +194,54 @@ fun CurrentMusicRoomDialog(
                 }
             }
 
+            if (searching) {
+                Spacer(Modifier.height(14.dp))
+                androidx.compose.material3.OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    label = { Text("搜索歌曲点歌", fontFamily = SFPro, fontSize = 13.sp) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+                RoomAction("搜索") {
+                    if (query.isNotBlank()) {
+                        scope.launch {
+                            busy = true
+                            hits = api.searchSongs(query).getOrElse {
+                                status = "搜索失败：${it.message}"
+                                emptyList()
+                            }
+                            busy = false
+                        }
+                    }
+                }
+                hits.forEach { hit ->
+                    Row(
+                        Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(hit.name, fontFamily = SFPro, fontSize = 15.sp, color = AppTheme.palette.label)
+                            Text(hit.artists, fontFamily = SFPro, fontSize = 12.sp, color = AppTheme.palette.secondaryLabel)
+                        }
+                        RoomAction("加入队列") {
+                            scope.launch {
+                                val meta = org.json.JSONObject()
+                                    .put("id", hit.id)
+                                    .put("name", hit.name)
+                                    .put("artists", hit.artists)
+                                    .put("album", "")
+                                    .put("cover", hit.cover)
+                                    .put("duration", 0L)
+                                status = api.addToQueue(token, room.id, meta)
+                                    .fold({ "已点歌：${hit.name}" }, { "点歌失败：${it.message}" })
+                                refresh()
+                            }
+                        }
+                    }
+                }
+            }
             Spacer(Modifier.height(18.dp))
             Text(
                 text = "点歌队列 ${queue.size}",

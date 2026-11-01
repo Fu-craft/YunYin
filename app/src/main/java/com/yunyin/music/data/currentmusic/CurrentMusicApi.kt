@@ -125,6 +125,22 @@ class CurrentMusicApi(
     suspend fun syncRoom(token: String, id: String): Result<Long> =
         post("/rooms/$id/sync", JSONObject(), token).map { it.optLong("serverNow") }
 
+    data class SongHit(val id: Long, val name: String, val artists: String, val cover: String)
+
+    /** 搜索歌曲：`GET /ncm/search?keywords=&limit=`（返回归一化的 songs 数组）。 */
+    suspend fun searchSongs(keywords: String, limit: Int = 20): Result<List<SongHit>> =
+        get("/ncm/search?keywords=$keywords&limit=$limit&offset=0").map { body ->
+            val array = body.optJSONArray("songs") ?: org.json.JSONArray()
+            (0 until array.length()).mapNotNull { index ->
+                val item = array.optJSONObject(index) ?: return@mapNotNull null
+                SongHit(
+                    id = item.optLong("id").takeIf { it > 0 } ?: item.optLong("ncm_id"),
+                    name = item.optString("name"),
+                    artists = item.optString("artists"),
+                    cover = item.optString("cover"),
+                )
+            }
+        }
     data class RoomDetail(
         val nowPlayingName: String,
         val nowPlayingArtist: String,
