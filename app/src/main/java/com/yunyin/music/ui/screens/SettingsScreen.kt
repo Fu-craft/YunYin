@@ -566,7 +566,7 @@ private fun SettingsRow(
     Row(
         Modifier
             .fillMaxWidth()
-            .heightIn(min = if (subtitle == null) 52.dp else 64.dp)
+            .heightIn(min = if (subtitle == null) 54.dp else 68.dp)
             .graphicsLayer {
                 alpha = appear.value
                 translationY = (1f - appear.value) * 6f
@@ -582,13 +582,13 @@ private fun SettingsRow(
                     Modifier
                 },
             )
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(start = 18.dp, end = 14.dp, top = 11.dp, bottom = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
             Text(
                 title,
-                fontFamily = SFPro,
+                fontWeight = FontWeight.Medium,
                 fontSize = 16.sp,
                 color = if (destructive) AppTheme.palette.accent else AppTheme.palette.label,
             )
@@ -606,7 +606,7 @@ private fun SettingsRow(
         }
         if (value != null) {
             Spacer(Modifier.width(8.dp))
-            Text(value, fontFamily = SFPro, fontSize = 13.sp, color = AppTheme.palette.secondaryLabel)
+            Text(value, fontFamily = SFPro, fontSize = 14.sp, color = AppTheme.palette.secondaryLabel)
         }
         if (showChevron) {
             Spacer(Modifier.width(4.dp))
@@ -614,7 +614,7 @@ private fun SettingsRow(
                 SfIcons.ChevronRight,
                 contentDescription = null,
                 tint = AppTheme.palette.tertiaryLabel,
-                modifier = Modifier.size(12.dp),
+                modifier = Modifier.size(13.dp),
             )
         }
         if (trailing != null) {
