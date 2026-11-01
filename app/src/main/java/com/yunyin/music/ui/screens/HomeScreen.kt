@@ -217,12 +217,13 @@ private fun DailyRecommendationCard(
     tracks: List<Track>,
     loader: ArtworkLoader,
     onPlayAll: () -> Unit,
+    onPlayTrack: (Int) -> Unit = {},
     expanded: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     if (tracks.isEmpty()) return
     val selectedState = androidx.compose.runtime.remember { androidx.compose.runtime.mutableIntStateOf(0) }
-    val selected = selectedState.intValue
+    val selectedIndex = selectedState.intValue
     val songs = remember(tracks) {
         tracks.take(9).map { track ->
             com.yunyin.music.ui.components.shelf.ShelfSong(
@@ -244,16 +245,20 @@ private fun DailyRecommendationCard(
             // The reference's cover deck, ported verbatim (DailyRecommendationHero.RecommendationCoverFlow).
             com.yunyin.music.ui.components.RecommendationCoverFlow(
                 songs = songs,
-                selected = selected,
-                onSelect = { selectedState.intValue = it },
+                selected = selectedIndex,
+                onSelect = { index ->
+                    selectedState.intValue = index
+                    // Tapping another sleeve used to only move the selection; it has to play.
+                    onPlayTrack(index)
+                },
                 showRecord = false,
-                onPlay = onPlayAll,
+                onPlay = { onPlayTrack(selectedState.intValue) },
                 canPlay = true,
                 playLabel = "播放每日推荐",
             )
             Spacer(Modifier.height(if (expanded) 20.dp else 14.dp))
             Text(
-                text = songs.getOrNull(selected)?.name.orEmpty(),
+                text = songs.getOrNull(selectedIndex)?.name.orEmpty(),
                 fontFamily = SFPro,
                 fontSize = if (expanded) 24.sp else 20.sp,
                 fontWeight = FontWeight.Bold,
@@ -263,7 +268,7 @@ private fun DailyRecommendationCard(
                 modifier = Modifier.padding(horizontal = 24.dp),
             )
             Text(
-                text = songs.getOrNull(selected)?.artists.orEmpty(),
+                text = songs.getOrNull(selectedIndex)?.artists.orEmpty(),
                 fontFamily = SFPro,
                 fontSize = 14.sp,
                 color = AppTheme.palette.secondaryLabel,
@@ -596,41 +601,16 @@ fun HomeScreen(
                                 )
                             }
                         }
-                        item("daily-header") {
-                            val today = java.time.LocalDate.now()
-                            Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 2.dp)) {
-                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = "每日推荐",
-                                        fontFamily = SFPro,
-                                        fontSize = 22.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = AppTheme.palette.label,
-                                    )
-                                    Spacer(Modifier.weight(1f))
-                                    Text(
-                                        text = "全部 ›",
-                                        fontFamily = SFPro,
-                                        fontSize = 16.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = AppTheme.palette.accent,
-                                        modifier = Modifier.clickable { onTrackClick(feed.dailySongs.first(), feed.dailySongs) },
-                                    )
-                                }
-                                Text(
-                                    text = "${today.monthValue}月${today.dayOfMonth}日 · ${feed.dailySongs.size} 首为你精选",
-                                    fontFamily = SFPro,
-                                    fontSize = 13.sp,
-                                    color = AppTheme.palette.secondaryLabel,
-                                    modifier = Modifier.padding(top = 2.dp),
-                                )
-                            }
-                        }
                         item("daily-hero") {
                             DailyRecommendationCard(
                                 tracks = feed.dailySongs,
                                 loader = loader,
                                 onPlayAll = { onTrackClick(feed.dailySongs.first(), feed.dailySongs) },
+                                onPlayTrack = { index ->
+                                    feed.dailySongs.getOrNull(index)?.let { track ->
+                                        onTrackClick(track, feed.dailySongs)
+                                    }
+                                },
                                 expanded = expanded,
                                 modifier = shelfAppear(),
                             )
