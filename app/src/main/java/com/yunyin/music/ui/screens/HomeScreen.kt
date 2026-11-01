@@ -830,23 +830,23 @@ private fun HomeRoamCard(onClick: () -> Unit, modifier: Modifier = Modifier) {
                 indication = rememberControlRipple(),
                 onClick = onClick,
             )
-            .padding(horizontal = 20.dp, vertical = 20.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
             Text(
                 text = "私人漫游",
                 fontFamily = SFPro,
-                fontWeight = FontWeight.Bold,
-                fontSize = 22.sp,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 17.sp,
                 color = palette.label,
                 maxLines = 1,
             )
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(2.dp))
             Text(
                 text = "按你的喜好，连续听点好音乐",
                 fontFamily = SFPro,
-                fontSize = 14.sp,
+                fontSize = 12.5.sp,
                 color = palette.secondaryLabel,
                 maxLines = 1,
                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
@@ -857,7 +857,7 @@ private fun HomeRoamCard(onClick: () -> Unit, modifier: Modifier = Modifier) {
             imageVector = SfIcons.Play,
             contentDescription = "开始私人漫游",
             tint = palette.label,
-            modifier = Modifier.size(30.dp),
+            modifier = Modifier.size(22.dp),
         )
     }
 }
