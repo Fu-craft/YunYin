@@ -126,6 +126,8 @@ fun SettingsScreen(
     /** Overlap length in seconds for the dual-player crossfade. */
     crossfadeSeconds: Int = 6,
     onCycleCrossfadeSeconds: () -> Unit = {},
+    /** CurrentMusic 账号区块；由宿主注入，避免这里依赖 SettingsStore。 */
+    currentMusicSection: @Composable () -> Unit = {},
     /** Playlist showcase for the home shelf: off / ribbon / shelf. */
     playlistShowcaseLabel: String = "关闭",
     onCyclePlaylistShowcase: () -> Unit = {},
@@ -249,6 +251,9 @@ fun SettingsScreen(
                 LinkRow("播放器界面", playerStyle.label, onShowPlayerStyle, "播放页展示封面或唱片")
                 RowDivider()
                 LinkRow("歌单展示", playlistShowcaseLabel, onCyclePlaylistShowcase, "首页歌单用立体缎带或CD唱片架")
+                Spacer(Modifier.height(12.dp))
+                Text("一起听", fontFamily = com.yunyin.music.ui.theme.SFPro, fontSize = 13.sp, color = AppTheme.palette.secondaryLabel, modifier = Modifier.padding(start = 20.dp, top = 4.dp, bottom = 4.dp))
+                currentMusicSection()
         RowDivider()
 
         LinkRow("封面动效手感", "暂停与恢复的弹簧", onShowCoverMotionTuner, "调整封面缩小与回弹的软硬")
