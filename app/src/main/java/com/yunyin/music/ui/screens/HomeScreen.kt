@@ -611,6 +611,10 @@ fun HomeScreen(
                                 modifier = shelfAppear(),
                             )
                         }
+
+                        if (feed.dailySongs.isNotEmpty()) {
+                            item("fm") { HomeRoamCard(onClick = onStartFm, modifier = shelfAppear()) }
+                        }
                     }
             if (feed.featuredPlaylists.isNotEmpty()) {
             item("featured-header") {
@@ -645,12 +649,6 @@ fun HomeScreen(
             }
         }
 
-        // 私人 FM sits inside the shelf rhythm, after the first content shelf: content leads, the entry
-        // follows it (hierarchy), and because it only exists once the feed has content it never pushes
-        // the cold-start loading state down.
-        if (feed.featuredPlaylists.isNotEmpty() || feed.dailySongs.isNotEmpty()) {
-            item("fm") { HomeFmRow(onClick = onStartFm, modifier = shelfAppear()) }
-        }
 
 
         if (feed.recommendedPlaylists.isNotEmpty()) {
@@ -812,70 +810,54 @@ fun SearchBar(
         )
     }
 }
-
 /**
- * 私人 FM entry, integrated with the shelves rather than pinned above them.
+ * 私人漫游 — the reference's personal-radio card.
  *
- * Reads as a shelf row (20 dp gutter, 56 dp height, 15 sp title + 12 sp subtitle) instead of a
- * banner: no filled card, no competing full-width block — just an icon, the action's name, one line
- * of what it does, and the chevron that says it navigates. Unbounded ripple so the press feedback is
- * a water ripple rather than a rectangle (design skill: shelf typography/rhythm, 44 dp+ target,
- * visible feedback without a filled surface).
+ * A filled white card with the title, one line of what it does, and a play triangle on the right.
+ * It sits directly under the daily card, which is where the reference puts it.
  */
 @Composable
-private fun HomeFmRow(onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun HomeRoamCard(onClick: () -> Unit, modifier: Modifier = Modifier) {
     val palette = AppTheme.palette
     Row(
         modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 4.dp)
-            .height(56.dp)
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .clip(ContinuousRoundedRectangle(AppleShapes.cardLarge))
+            .background(palette.secondaryBackground)
             .clickable(
-                indication = rememberControlRipple(bounded = false),
-                interactionSource = null,
+                interactionSource = remember { MutableInteractionSource() },
+                indication = rememberControlRipple(),
                 onClick = onClick,
-            ),
+            )
+            .padding(horizontal = 20.dp, vertical = 20.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            Modifier
-                .size(34.dp)
-                .clip(ContinuousRoundedRectangle(AppleShapes.pill))
-                .background(palette.accent.copy(alpha = 0.14f)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                SfIcons.SpeakerWave,
-                contentDescription = null,
-                tint = palette.accent,
-                modifier = Modifier.size(19.dp),
-            )
-        }
-        Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
-                text = "私人 FM",
+                text = "私人漫游",
                 fontFamily = SFPro,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                fontSize = 22.sp,
                 color = palette.label,
                 maxLines = 1,
             )
-            Spacer(Modifier.height(1.dp))
+            Spacer(Modifier.height(4.dp))
             Text(
-                text = "根据你的口味持续播放",
+                text = "按你的喜好，连续听点好音乐",
                 fontFamily = SFPro,
-                fontSize = 13.sp,
+                fontSize = 14.sp,
                 color = palette.secondaryLabel,
                 maxLines = 1,
                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
             )
         }
+        Spacer(Modifier.width(12.dp))
         Icon(
-            SfIcons.ChevronRight,
-            contentDescription = null,
-            tint = palette.tertiaryLabel,
-            modifier = Modifier.size(18.dp),
+            imageVector = SfIcons.Play,
+            contentDescription = "开始私人漫游",
+            tint = palette.label,
+            modifier = Modifier.size(30.dp),
         )
     }
 }
