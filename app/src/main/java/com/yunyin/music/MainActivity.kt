@@ -1503,12 +1503,6 @@ class MainActivity : ComponentActivity() {
                         playlistShowcase = next.key
                         container.settings.playlistShowcase = next.key
                     },
-                    currentMusicSection = {
-                        com.yunyin.music.ui.screens.CurrentMusicAccountPanel(
-                            settings = container.settings,
-                            modifier = Modifier.padding(vertical = 6.dp),
-                        )
-                    },
                     // The crash file is app-private, so on an unrooted device it is unreachable without
                     // adb — and when the crash is on *launch*, adb is the only other route, which is no
                     // help to whoever is holding the phone. Copying it to the clipboard turns "it
