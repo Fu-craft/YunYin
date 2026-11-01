@@ -224,6 +224,11 @@ class SettingsStore(context: Context) {
         get() = prefs.getString(KEY_CURRENT_MUSIC_BASE, "https://music.20110208.xyz/cm").orEmpty()
         set(value) = prefs.edit().putString(KEY_CURRENT_MUSIC_BASE, value).apply()
 
+    /** 当前一起听房间 id；空表示没有在房间里。 */
+    var currentMusicRoomId: String
+        get() = prefs.getString(KEY_CURRENT_MUSIC_ROOM, "").orEmpty()
+        set(value) = prefs.edit().putString(KEY_CURRENT_MUSIC_ROOM, value).apply()
+
     // ------------------------------------------------------------ updates
 
     /**
@@ -405,6 +410,7 @@ class SettingsStore(context: Context) {
 private const val KEY_PLAYLIST_SHOWCASE = "playlist_showcase"
 private const val KEY_CURRENT_MUSIC_TOKEN = "current_music_token"
 private const val KEY_CURRENT_MUSIC_BASE = "current_music_base"
+private const val KEY_CURRENT_MUSIC_ROOM = "current_music_room"
         private const val KEY_NOW_PLAYING_ANIMATED_COVER = "now_playing_animated_cover"
     private const val KEY_COVER_PAUSE_DAMPING = "cover_motion_pause_damping"
     private const val KEY_COVER_PAUSE_STIFFNESS = "cover_motion_pause_stiffness"

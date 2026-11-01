@@ -66,6 +66,10 @@ fun CurrentMusicRoomDialog(
         }
     }
 
+    LaunchedEffect(room.id) { settings.currentMusicRoomId = room.id }
+    androidx.compose.runtime.DisposableEffect(room.id) {
+        onDispose { if (settings.currentMusicRoomId == room.id) settings.currentMusicRoomId = "" }
+    }
     LaunchedEffect(room.id) {
         refresh()
         // Live updates: any server event refreshes the snapshot (play/pause/next/queue change).
