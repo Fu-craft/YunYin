@@ -366,7 +366,38 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        // Cold-start restore: put the last queue back, paused, at the position it was left at.`n        // Saving is throttled to one write every five seconds while something is playing.`n        LaunchedEffect(Unit) {`n            com.yunyin.music.data.PlaybackSnapshot.decode(container.settings.playbackSnapshot)`n                ?.let { snapshot ->`n                    runCatching {`n                        container.player.playQueue(snapshot.tracks, snapshot.index, autoPlay = false)`n                        if (snapshot.positionMs > 0) container.player.seekTo(snapshot.positionMs)`n                    }`n                }`n            while (true) {`n                kotlinx.coroutines.delay(5_000)`n                val state = container.player.state.value`n                val queue = state.queue`n                if (queue.isNotEmpty() && state.current != null) {`n                    container.settings.playbackSnapshot = com.yunyin.music.data.PlaybackSnapshot(`n                        tracks = queue,`n                        index = queue.indexOfFirst { it.id == state.current?.id }.coerceAtLeast(0),`n                        positionMs = container.player.positionMsNow(),`n                    ).encode()`n                }`n            }`n        }
+        // Cold-start restore: put the last queue back, paused, at the position it was left at.
+        LaunchedEffect(Unit) {
+            val snapshot = com.yunyin.music.data.PlaybackSnapshot.decode(container.settings.playbackSnapshot)
+            if (snapshot != null) {
+                // The media controller is not connected yet on the first composition; playQueue()
+                // silently returns until it is, so retry briefly instead of dropping the restore.
+                repeat(40) {
+                    if (container.player.state.value.queue.isEmpty()) {
+                        runCatching {
+                            container.player.playQueue(snapshot.tracks, snapshot.index, autoPlay = false)
+                        }
+                        kotlinx.coroutines.delay(250)
+                    }
+                }
+                if (container.player.state.value.queue.isNotEmpty() && snapshot.positionMs > 0) {
+                    runCatching { container.player.seekTo(snapshot.positionMs) }
+                }
+            }
+            while (true) {
+                kotlinx.coroutines.delay(5_000)
+                val state = container.player.state.value
+                val queue = state.queue
+                val current = state.current
+                if (queue.isNotEmpty() && current != null) {
+                    container.settings.playbackSnapshot = com.yunyin.music.data.PlaybackSnapshot(
+                        tracks = queue,
+                        index = queue.indexOfFirst { it.id == current.id }.coerceAtLeast(0),
+                        positionMs = container.player.positionMsNow(),
+                    ).encode()
+                }
+            }
+        }
         // Read from the bridge rather than the preference: the bridge is the authority on whether it is
         // publishing, and it mirrors the stored value, so the switch cannot disagree with what is running.
         var lyriconEnabled by remember { mutableStateOf(container.lyricon.enabled) }
