@@ -6,6 +6,7 @@ package com.yunyin.music.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -566,11 +567,11 @@ private fun SettingsRow(
     Row(
         Modifier
             .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 3.dp)
+            .graphicsLayer { alpha = appear.value; translationY = (1f - appear.value) * 6f }
+            .clip(RoundedCornerShape(14.dp))
+            .background(AppTheme.palette.secondaryBackground)
             .heightIn(min = if (subtitle == null) 54.dp else 68.dp)
-            .graphicsLayer {
-                alpha = appear.value
-                translationY = (1f - appear.value) * 6f
-            }
             .then(
                 if (onClick != null) {
                     Modifier.clickable(
@@ -859,4 +860,3 @@ private fun HintRow(text: String) {
             .padding(horizontal = 16.dp, vertical = 10.dp),
     )
 }
-
