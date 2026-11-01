@@ -556,7 +556,7 @@ fun HomeScreen(
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(
-                        top = glassTopBarTopPadding(),
+                        top = glassTopBarTopPadding() + 16.dp,
                         bottom = chromeContentBottomPadding(),
                     ),
                 ) {
@@ -767,14 +767,14 @@ fun HomeScreen(
         // liquid-glass capsule on top of that strip, sampling the same recorded layer.
         GlassTopBar(
             backdrop = topBarBackdrop,
-            modifier = Modifier.align(Alignment.TopCenter),
+            contentHeight = 66.dp,
         ) {
             // The greeting takes the pinned strip's place: it is the page title, so it stays put.
             Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp)) {
                 Text(
                     text = if (userName.isBlank()) "你好" else "你好，$userName",
                     fontFamily = SFPro,
-                    fontSize = 28.sp,
+                    fontSize = 24.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = (-0.6).sp,
                     color = AppTheme.palette.label,
@@ -784,7 +784,7 @@ fun HomeScreen(
                 Text(
                     text = "今天想听点什么？",
                     fontFamily = SFPro,
-                    fontSize = 13.sp,
+                    fontSize = 12.sp,
                     color = AppTheme.palette.secondaryLabel,
                 )
             }
