@@ -326,7 +326,7 @@ fun ArtistScreen(
  * purpose: content arriving must not slide around under the user's finger.
  */
 private fun LazyItemScope.appendedRowAppear(): Modifier = Modifier.animateItem(
-    fadeInSpec = tween(Motion.ItemAppearDuration),
+    fadeInSpec = tween(Motion.ItemAppearDuration, easing = Motion.EaseOut),
     fadeOutSpec = null,
     placementSpec = null,
 )

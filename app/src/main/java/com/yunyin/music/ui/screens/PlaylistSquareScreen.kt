@@ -272,7 +272,7 @@ internal fun PlaylistSquareScreen(
                             // Appended rows fade in on the app's token; placement stays instant so
                             // paging never slides the grid under the finger.
                             modifier = Modifier.animateItem(
-                                fadeInSpec = tween(Motion.ItemAppearDuration),
+                                fadeInSpec = tween(Motion.ItemAppearDuration, easing = Motion.EaseOut),
                                 fadeOutSpec = null,
                                 placementSpec = null,
                             ),
