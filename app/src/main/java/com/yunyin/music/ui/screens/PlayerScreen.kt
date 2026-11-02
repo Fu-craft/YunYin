@@ -42,7 +42,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -234,10 +233,6 @@ fun PlayerScreen(
     /** Whether the current track is liked, and its toggle (the heart). */
     liked: Boolean = false,
     onToggleLike: () -> Unit = {},
-    /** 红心总数与评论总数；0 表示未知，不显示。 */
-    likeCount: Int = 0,
-    commentCount: Int = 0,
-    onOpenComments: () -> Unit = {},
     /** Shares the current track: the caller owns the clipboard and the chooser. */
     onShareTrack: () -> Unit = {},
     /** Opens the artist page for the current track's first artist. */
@@ -1164,9 +1159,6 @@ fun PlayerScreen(
                                         track = track,
                                         liked = liked,
                                         onToggleLike = { interaction++; onToggleLike() },
-                            likeCount = likeCount,
-                            commentCount = commentCount,
-                            onOpenComments = onOpenComments,
                                         onMoreClick = {
                                             interaction++
                                             showActions = true
@@ -1439,9 +1431,6 @@ fun PlayerScreen(
                             track = track,
                             liked = liked,
                             onToggleLike = { interaction++; onToggleLike() },
-                            likeCount = likeCount,
-                            commentCount = commentCount,
-                            onOpenComments = onOpenComments,
                             onMoreClick = {
                                 interaction++
                                 showActions = true
@@ -2306,9 +2295,6 @@ private fun LyricsHeader(
     /** Whether this track is in the user's liked songs, and the toggle. */
     liked: Boolean,
     onToggleLike: () -> Unit,
-    likeCount: Int = 0,
-    commentCount: Int = 0,
-    onOpenComments: () -> Unit = {},
     /** Tapping the thumbnail returns to the artwork presentation. */
     onCoverClick: () -> Unit,
     /** Opens the artist page for the track's first artist. */
@@ -2411,11 +2397,9 @@ private fun LyricsHeader(
             )
         }
         Spacer(Modifier.width(10.dp))
-        CountedPill(com.yunyin.music.ui.icons.NetEaseIcons.heartFill, com.yunyin.music.ui.icons.NetEaseIcons.heartLine, liked, likeCount, onToggleLike, 44.dp)
-        Spacer(Modifier.width(8.dp))
-        CountedPill(com.yunyin.music.ui.icons.NetEaseIcons.comment, com.yunyin.music.ui.icons.NetEaseIcons.comment, false, commentCount, onOpenComments, 44.dp)
+        LikeButton(liked = liked, size = 44.dp, onClick = onToggleLike)
         Spacer(Modifier.width(10.dp))
-        BareIconButton(SfIcons.Ellipsis, "更多操作", 44.dp, onMoreClick)
+        CircleGlassIcon(SfIcons.Ellipsis, "更多操作", 44.dp, onClick = onMoreClick)
     }
 }
 
@@ -2831,10 +2815,6 @@ private fun TitleBlock(
     liked: Boolean = false,
     onToggleLike: () -> Unit = {},
     onMoreClick: () -> Unit = {},
-    /** 红心总数与评论总数；0 表示未知，不显示。 */
-    likeCount: Int = 0,
-    commentCount: Int = 0,
-    onOpenComments: () -> Unit = {},
     /** Opens the artist page for the track's first artist; absent when there is nowhere to go. */
     onArtistClick: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -2882,12 +2862,9 @@ private fun TitleBlock(
             }
         }
         Spacer(Modifier.width(14.dp))
-        Spacer(Modifier.width(14.dp))
-        CountedPill(com.yunyin.music.ui.icons.NetEaseIcons.heartFill, com.yunyin.music.ui.icons.NetEaseIcons.heartLine, liked, likeCount, onToggleLike, 36.dp)
-        Spacer(Modifier.width(8.dp))
-        CountedPill(com.yunyin.music.ui.icons.NetEaseIcons.comment, com.yunyin.music.ui.icons.NetEaseIcons.comment, false, commentCount, onOpenComments, 36.dp)
+        LikeButton(liked = liked, size = 36.dp, onClick = onToggleLike)
         Spacer(Modifier.width(10.dp))
-        BareIconButton(SfIcons.Ellipsis, "更多操作", 36.dp, onMoreClick)
+        CircleGlassIcon(SfIcons.Ellipsis, "更多操作", 36.dp, onClick = onMoreClick)
     }
 }
 
@@ -3631,97 +3608,3 @@ private const val BADGE_HOLD_ERROR_MS = 1900L
 /** Fade duration. Two spellings because `tween` takes an Int and `delay` a Long. */
 private const val BADGE_FADE_MS = 320
 private const val BADGE_FADE_MS_L = 260L
-
-/**
- * Icon and count in one capsule, which is how a music player shows "how many people liked this"
- * without a second line of tiny grey text: the number belongs to the control, so it sits inside the
- * control's own surface.
- */
-@Composable
-private fun CountedPill(
-    filledIcon: androidx.compose.ui.graphics.vector.ImageVector,
-    outlineIcon: androidx.compose.ui.graphics.vector.ImageVector,
-    filled: Boolean,
-    count: Int,
-    onClick: () -> Unit,
-    size: androidx.compose.ui.unit.Dp,
-) {
-    // The count sits at the glyph's top-right corner, and the glyph is white: the player chrome
-    // lives over artwork, so the label colour (which flips with the theme) is the wrong tint here.
-    Box(
-        Modifier
-            .size(size)
-            .clip(androidx.compose.foundation.shape.CircleShape)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            imageVector = if (filled) filledIcon else outlineIcon,
-            contentDescription = null,
-            tint = if (filled) AppTheme.palette.accent else androidx.compose.ui.graphics.Color.White,
-            modifier = Modifier.size(size * 0.82f),
-        )
-        if (count > 0) {
-            Text(
-                text = compactCount(count),
-                fontFamily = SFPro,
-                fontSize = 9.sp,
-                lineHeight = 10.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = if (filled) AppTheme.palette.accent else androidx.compose.ui.graphics.Color.White,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .offset(x = size * 0.22f, y = (-2).dp),
-            )
-        }
-    }
-}
-
-/** Icon with the song count underneath — superseded by [CountedPill], kept for other call sites. */
-@Composable
-private fun CountedAction(
-    count: Int,
-    highlighted: Boolean = false,
-    onClick: () -> Unit,
-    content: @Composable () -> Unit,
-) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        content()
-        Text(
-            text = compactCount(count),
-            fontFamily = SFPro,
-            fontSize = 10.sp,
-            lineHeight = 12.sp,
-            color = if (highlighted) AppTheme.palette.accent else AppTheme.palette.secondaryLabel,
-            modifier = Modifier.clickable(onClick = onClick),
-        )
-    }
-}
-
-/** 3500000 → 350w+；12000 → 1.2w+；3207 → 3207。 */
-internal fun compactCount(value: Int): String = when {
-    value >= 100_000_000 -> (value / 100_000_000).toString() + "亿+"
-    value >= 10_000 -> {
-        val w = value / 10_000.0
-        (if (w >= 100) w.toInt().toString() else String.format("%.1f", w)) + "w+"
-    }
-    else -> value.toString()
-}
-
-/** A glyph with no container, matching the counted icons beside it. */
-@Composable
-private fun BareIconButton(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
-    size: androidx.compose.ui.unit.Dp,
-    onClick: () -> Unit,
-) {
-    Box(Modifier.size(size).clip(androidx.compose.foundation.shape.CircleShape).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
-        Icon(
-            imageVector = icon,
-            contentDescription = label,
-            tint = AppTheme.palette.label.copy(alpha = 0.9f),
-            modifier = Modifier.size(size * 0.70f),
-        )
-    }
-}

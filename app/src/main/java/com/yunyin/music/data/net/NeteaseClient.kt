@@ -541,41 +541,6 @@ class NeteaseClient(
     ).map { json -> json.optJSONArray("songs")?.mapDetailTracks().orEmpty() }
 
     /** 相似歌手 (`/simi/artist`); each entry carries a NetEase artist id and a cover. */
-
-    /**
-     * 红心（点赞）数：`/song/red/count` 返回的是 `data: { count, countDesc }`——
-     * 官方给的是「显示用的字符串」（如 `350w+`），所以我们两个都取：数字用于排序/判断，
-     * 字符串直接显示，避免自己再把 3500000 缩写成 350w。
-     */
-    suspend fun redCount(id: Long): NetResult<Pair<Int, String>> = request(
-        "/song/red/count",
-        query = mapOf("ids" to "[$id]"),
-    ).map { json ->
-        val data = json.optJSONObject("data")
-        val count = data?.optInt("count") ?: 0
-        val desc = data?.optString("countDesc").orEmpty()
-        count to desc
-    }
-    /** 红心（点赞）总数，批量：`/song/red/count?ids=[1,2,3]` → `data[].redCount`。 */
-    suspend fun redCounts(ids: List<Long>): NetResult<Map<Long, Int>> = request(
-        "/song/red/count",
-        query = mapOf("ids" to ids.joinToString(",", "[", "]")),
-    ).map { json ->
-        val array = json.optJSONArray("data") ?: return@map emptyMap()
-        buildMap {
-            for (index in 0 until array.length()) {
-                val item = array.optJSONObject(index) ?: continue
-                val id = item.optLong("songId").takeIf { it > 0 } ?: item.optLong("id")
-                if (id > 0) put(id, item.optInt("redCount"))
-            }
-        }
-    }
-
-    /** 评论总数：`/comment/music?id=&limit=0` → `total`。 */
-    suspend fun commentCount(id: Long): NetResult<Int> = request(
-        "/comment/music",
-        query = mapOf("id" to "$id", "limit" to "0", "offset" to "0"),
-    ).map { json -> json.optInt("total") }
     suspend fun similarArtists(id: Long): NetResult<List<ArtistInfo>> = request(
         "/simi/artist",
         query = mapOf("id" to "$id"),
