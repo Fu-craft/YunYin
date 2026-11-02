@@ -28,6 +28,9 @@ androidx.palette — Apache-2.0 — https://developer.android.com/jetpack/androi
 以下文件为 CurrentMusicX 的移植/改编（GPLv3 §13 允许与 AGPLv3 合并，合并后的作品继续以 AGPL-3.0-only 发布）：
 https://github.com/currencortex/CurrentMusicX
 
+app/src/main/java/com/yunyin/music/playback/PlaybackPauseFade.kt
+  移植自 core/media/PlaybackPauseFade.kt（暂停/恢复增益包；原文件另注 Folia 的 playbackFade.ts，AGPL）
+  差别：增益不写 ExoPlayer.volume（本项目交叉淡化已占用该属性），改由音频处理器逐样本相乘
 app/src/main/java/com/yunyin/music/playback/MusicTransitionAnalysis.kt
   移植自 core/media/MusicTransitionAnalysis.kt（智能过渡的能量分析、时长判定与等功率增益）
 app/src/main/java/com/yunyin/music/audio/EqualizerSettings.kt

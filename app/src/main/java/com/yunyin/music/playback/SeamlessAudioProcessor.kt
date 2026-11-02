@@ -61,6 +61,13 @@ class SeamlessAudioProcessor(
      * the profile that accumulates from them. Null disables the measurement entirely (fixed crossfade).
      */
     private val probe: TrackEnergyProbe? = null,
+    /**
+     * Transport envelope gain (pause/resume), read per buffer.
+     *
+     * Kept out of `ExoPlayer.volume` on purpose: the crossfade owns that property, and two writers
+     * ramping the same value would produce a fade that neither one intended.
+     */
+    private val transportGain: () -> Float = { 1f },
 ) : BaseAudioProcessor() {
 
     /** Length of the head taper, in milliseconds. Zero disables it. */
@@ -127,23 +134,27 @@ class SeamlessAudioProcessor(
         val source = inputBuffer.duplicate().order(ByteOrder.nativeOrder())
         val target = out.order(ByteOrder.nativeOrder())
 
-        if (fadeFrames <= 0 || framesEmitted >= fadeFrames) {
-            // Past the taper: straight copy, and no per-sample work at all. This is the path taken for
-            // essentially the whole of every track, so it must not pay for the fade.
+        val bus = transportGain().coerceIn(0f, 1f)
+        val tapering = fadeFrames > 0 && framesEmitted < fadeFrames
+
+        if (!tapering && bus >= 0.999f) {
+            // Past the taper with unity transport gain: straight copy, and no per-sample work at all.
+            // This is the path taken for essentially the whole of every track, so it must not pay for
+            // the fade — or for the pause envelope.
             target.put(source)
         } else {
             // The gain is per *frame*, not per sample, or the channels would fade independently and the
             // stereo image would shift during the taper.
             var channel = 0
-            var gain = nextFrameGain()
-            val scaled = gain < 1f
+            var gain = if (tapering) nextFrameGain() else 1f
             while (source.remaining() >= 2) {
                 val sample = source.short
-                target.putShort(if (scaled) (sample.toFloat() * gain).roundToInt().toShort() else sample)
+                val scaled = if (tapering) sample.toFloat() * gain else sample.toFloat()
+                target.putShort((scaled * bus).roundToInt().toShort())
                 channel++
                 if (channel == channels) {
                     channel = 0
-                    gain = nextFrameGain()
+                    if (tapering) gain = nextFrameGain()
                 }
             }
         }

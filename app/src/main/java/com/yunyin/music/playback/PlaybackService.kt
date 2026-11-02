@@ -17,6 +17,7 @@ import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.yunyin.music.AppContainer
 import com.yunyin.music.R
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 
 /**
@@ -36,6 +37,14 @@ class PlaybackService : MediaSessionService() {
     private var crossfadeCoordinator: CrossfadeCoordinator? = null
     private var equalizer: com.yunyin.music.audio.PlaybackEqualizer? = null
     private var equalizerWatcher: android.content.SharedPreferences.OnSharedPreferenceChangeListener? = null
+
+    /** Pause/resume envelope: written on the main thread, multiplied in by the audio processor. */
+    private val transportGain = TransportGain()
+    private lateinit var transportScope: kotlinx.coroutines.CoroutineScope
+    private var pauseFade: PlaybackPauseFade? = null
+    private var transportListener: Player.Listener? = null
+    private var transportPlayer: ExoPlayer? = null
+
     private lateinit var container: AppContainer
 
     override fun onCreate() {
@@ -101,6 +110,7 @@ class PlaybackService : MediaSessionService() {
                     SeamlessAudioProcessor(
                         enabled = { container.settings.seamlessTransition },
                         probe = probe,
+                        transportGain = { transportGain.value },
                     ),
                 ),
             )
@@ -129,6 +139,20 @@ class PlaybackService : MediaSessionService() {
         val player = createPlayer(initialProbe)
         mediaSession = MediaSession.Builder(this, player).build()
 
+        // Pause/resume envelope (ported from CurrentMusicX). The pause itself cannot be delayed here —
+        // it may arrive from the notification or the lock screen, after the audio has already stopped —
+        // so what this guarantees is the **resume**: every start ramps 0 → 1 over 200 ms instead of
+        // snapping on. The gain rides in the audio processor, not on `volume`, which the crossfade owns.
+        transportScope = kotlinx.coroutines.CoroutineScope(
+            kotlinx.coroutines.Dispatchers.Main + kotlinx.coroutines.SupervisorJob(),
+        )
+        pauseFade = PlaybackPauseFade(
+            scope = transportScope,
+            applyGain = { gain -> transportGain.value = gain },
+            pausePlayer = { /* the player has already stopped; nothing to wait for */ },
+        )
+        attachTransport(player)
+
         // Equaliser: the ported controller attaches to this app's own audio session only. The audible
         // player is replaced at every crossfade handover, so it is re-attached on each swap.
         val eq = com.yunyin.music.audio.PlaybackEqualizer { message ->
@@ -154,9 +178,34 @@ class PlaybackService : MediaSessionService() {
             createPlayer = createPlayer,
             settings = container.settings,
             log = container.lxLog,
-            onAudibleChanged = { next -> applyEqualizer(next) },
+            onAudibleChanged = { next ->
+                applyEqualizer(next)
+                // A handover swaps the player under the session: the envelope has to follow it.
+                attachTransport(next)
+            },
         )
 
+    }
+
+    /**
+     * Keeps the pause/resume envelope pointed at whichever player is currently audible.
+     *
+     * Re-attached at every crossfade handover, because the coordinator replaces the session's player.
+     */
+    private fun attachTransport(player: ExoPlayer) {
+        val fade = pauseFade ?: return
+        transportPlayer?.let { previous -> transportListener?.let { previous.removeListener(it) } }
+        val listener = object : Player.Listener {
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                if (playWhenReady) fade.resume() else fade.pause(audible = false)
+            }
+        }
+        transportListener = listener
+        transportPlayer = player
+        player.addListener(listener)
+        // Seed the envelope from the player's current state, so a handover mid-playback does not leave
+        // the gain stuck at 0.
+        if (player.playWhenReady) fade.resume() else fade.pause(audible = false)
     }
 
     /** Reads the stored curve; the five bands are kept as a comma-separated string. */
@@ -190,6 +239,10 @@ class PlaybackService : MediaSessionService() {
         equalizerWatcher = null
         runCatching { equalizer?.close() }
         equalizer = null
+        transportPlayer?.let { p -> transportListener?.let { p.removeListener(it) } }
+        transportListener = null
+        transportPlayer = null
+        runCatching { transportScope.cancel() }
         mediaSession?.run {
             runCatching { player.release() }
             release()
