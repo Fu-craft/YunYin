@@ -32,6 +32,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
+import com.yunyin.music.ui.theme.Motion
 import kotlinx.coroutines.delay
 
 /**
@@ -240,10 +241,14 @@ fun AnimatedArtworkPlayer(
         if (playing) host?.setPlaying(true) else host?.setPlaying(false)
     }
 
-    // Reveal only once a frame exists (state is set by the listener above).
+    // Reveal only once a frame exists (state is set by the listener above). Eased out so the reveal
+    // decelerates into place instead of fading in on a straight line.
     val revealAlpha by androidx.compose.animation.core.animateFloatAsState(
         targetValue = if (revealed) 1f else 0f,
-        animationSpec = androidx.compose.animation.core.tween(durationMillis = 160),
+        animationSpec = androidx.compose.animation.core.tween(
+            durationMillis = 160,
+            easing = Motion.EaseOut,
+        ),
         label = "animated-cover-reveal",
     )
 

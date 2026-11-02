@@ -51,6 +51,7 @@ import com.yunyin.music.core.Playlist
 import com.yunyin.music.core.Track
 import com.yunyin.music.data.ArtworkLoader
 import com.yunyin.music.ui.theme.AppTheme
+import com.yunyin.music.ui.theme.Motion
 import com.yunyin.music.ui.theme.SFPro
 
 /** Current showcase choice, published by the host so the playlist page can read it. */
@@ -239,7 +240,9 @@ fun PlaylistShowcaseScreen(
     }
     val scene: androidx.compose.ui.graphics.Color by androidx.compose.animation.animateColorAsState(
         targetValue = sceneColor,
-        animationSpec = androidx.compose.animation.core.tween(600),
+        // A colour cross-fade is morph-like, so it takes the in-out curve; without an explicit easing
+        // this ran on LinearEasing and the scene colour arrived with a visible "step" at the end.
+        animationSpec = androidx.compose.animation.core.tween(600, easing = Motion.EaseInOut),
         label = "scene-color",
     )
     // Recorded layer behind the controls: liquid glass needs a backdrop to refract, otherwise the

@@ -1849,7 +1849,12 @@ private fun ArtworkWithGestures(
                 // visible until the first frame arrived again.
                 val videoAlpha by androidx.compose.animation.core.animateFloatAsState(
                     targetValue = if (coverTransitioning) 0f else 1f,
-                    animationSpec = androidx.compose.animation.core.tween(durationMillis = 180),
+                    // Fade, so it settles: 180 ms stays as tuned (this one is part of the cover/lyrics
+                    // hand-off), but it must not run on the default linear curve.
+                    animationSpec = androidx.compose.animation.core.tween(
+                        durationMillis = 180,
+                        easing = Motion.EaseOut,
+                    ),
                     label = "animated-cover-alpha",
                 )
                 // Immersive edge dissolve. The backdrop is a full-screen vertical gradient, so the
@@ -2899,8 +2904,10 @@ private fun LikeButton(
         // an intermediate opacity that would look like a half-filled heart.
         androidx.compose.animation.AnimatedVisibility(
             visible = liked,
-            enter = fadeIn(tween(Motion.SmallDuration)),
-            exit = fadeOut(tween(Motion.SmallDuration)),
+            // Entering settles, leaving accelerates: without an explicit easing both sides fall back to
+            // LinearEasing, which is what made the heart swap read as a mechanical blink.
+            enter = fadeIn(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
+            exit = fadeOut(tween(Motion.SmallDuration, easing = Motion.EaseIn)),
         ) {
             CircleGlassIcon(SfIcons.HeartFill, "取消喜欢", size, onClick = onClick)
         }

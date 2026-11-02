@@ -51,6 +51,15 @@ object Motion {
     /** cubic-bezier(0.23, 1, 0.32, 1) — strong ease-out, for anything entering or leaving. */
     val EaseOut: Easing = CubicBezierEasing(0.23f, 1f, 0.32f, 1f)
 
+    /**
+     * cubic-bezier(0.4, 0, 1, 1) — strong ease-in, for anything **leaving**.
+     *
+     * The counterpart to [EaseOut]: something that is going away should start slowly and accelerate
+     * out, so the exit reads as "done" instead of competing with whatever is arriving to replace it.
+     * Only for exits — an entrance on this curve looks like it is hesitating.
+     */
+    val EaseIn: Easing = CubicBezierEasing(0.4f, 0f, 1f, 1f)
+
     /** cubic-bezier(0.77, 0, 0.175, 1) — strong ease-in-out, for on-screen movement. */
     val EaseInOut: Easing = CubicBezierEasing(0.77f, 0f, 0.175f, 1f)
 
