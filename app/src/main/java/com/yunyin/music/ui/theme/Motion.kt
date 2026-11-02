@@ -22,6 +22,32 @@ import androidx.compose.animation.core.spring
  *  - springs follow Apple's `duration 0.5 / bounce 0.2`: dampingRatio 0.8 is a subtle overshoot.
  */
 object Motion {
+    // ---------------------------------------------------------------------------------------------
+    // Duration tiers
+    //
+    // Three durations cover every UI interaction; the named constants below (PressDuration,
+    // ItemAppearDuration, SheetEnterDuration…) keep their historical values so already-tuned surfaces
+    // do not move. New interaction code picks a tier, not a number:
+    //
+    //   Fast — press feedback, switches, glyph and icon swaps. Under one "beat", never noticeable.
+    //   Base — row entrances, cross-fades, colour transitions. The default for anything that changes
+    //          content in place.
+    //   Slow — sheet entrances, page-level transitions. Modal-scale surfaces only.
+    //
+    // Anything above Slow is either a sustained/looping animation (lyrics breathing, karaoke blur) or
+    // a deliberately tuned travel curve with its reason written next to it — neither belongs to an
+    // interaction, and neither is a tier.
+    // ---------------------------------------------------------------------------------------------
+
+    /** 150 ms — press feedback, switch/icon swaps. */
+    const val Fast = 150
+
+    /** 220 ms — row entrance, fade, colour transition: the default for in-place content changes. */
+    const val Base = 220
+
+    /** 320 ms — sheet entrance and page-level transitions; the ceiling for an interaction. */
+    const val Slow = 320
+
     /** cubic-bezier(0.23, 1, 0.32, 1) — strong ease-out, for anything entering or leaving. */
     val EaseOut: Easing = CubicBezierEasing(0.23f, 1f, 0.32f, 1f)
 

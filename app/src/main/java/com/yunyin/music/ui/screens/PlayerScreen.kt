@@ -280,7 +280,7 @@ fun PlayerScreen(
     LaunchedEffect(showLyrics) {
         if (showLyrics) {
             sheetBlur.snapTo(11f)
-            sheetBlur.animateTo(0f, androidx.compose.animation.core.tween(220, easing = Motion.EaseOut))
+            sheetBlur.animateTo(0f, androidx.compose.animation.core.tween(Motion.Base, easing = Motion.EaseOut))
         } else {
             sheetBlur.snapTo(0f)
         }
