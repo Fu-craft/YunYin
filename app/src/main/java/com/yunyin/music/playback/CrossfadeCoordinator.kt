@@ -57,8 +57,32 @@ class CrossfadeCoordinator(
         override fun run() = tick()
     }
 
+    /**
+     * The transition clock.
+     *
+     * This is the piece that was missing: `evaluate()` used to run only from `Player.Listener.onEvents`,
+     * and ExoPlayer emits **no events during steady playback** — so the one-second window in which the
+     * preload has to start was never observed, no overlap was ever armed, and tracks simply ended. The
+     * upstream service drives its transition from a 40 ms loop for exactly this reason; 100 ms is enough
+     * for a decision that only needs to notice "the end is near", and leaves the 40 ms fade tick to
+     * `ticker` alone.
+     */
+    private val poller = object : Runnable {
+        override fun run() {
+            runCatching { evaluate() }
+            handler.postDelayed(this, POLL_MS)
+        }
+    }
+
+    /** Preload deadline; a named runnable so [abort] can cancel it without clearing the poller. */
+    private val deadline = Runnable {
+        deadlinePassed = true
+        runCatching { evaluate() }
+    }
+
     init {
         audible.addListener(this)
+        handler.post(poller)
     }
 
     override fun onEvents(player: Player, events: Player.Events) {
@@ -161,10 +185,10 @@ class CrossfadeCoordinator(
             lastPosition = audible.currentPosition
             fadeFromIndex = index
             trace("preload", "next=$next audible=$index")
-            handler.postDelayed({
-                deadlinePassed = true
-                runCatching { evaluate() }
-            }, CrossfadeRules.PRELOAD_DEADLINE_MS)
+            handler.postDelayed(
+                deadline,
+                CrossfadeRules.PRELOAD_DEADLINE_MS,
+            )
         }.onFailure {
             trace("abort", "preload-exception=${it.message}")
             abort("preload-exception")
@@ -273,7 +297,10 @@ class CrossfadeCoordinator(
         }
         state = State.IDLE
         handler.removeCallbacks(ticker)
-        handler.removeCallbacksAndMessages(null)
+        // Only the preload deadline is cancelled here; clearing *all* callbacks (as this used to) also
+        // removed the poller, which left the coordinator unable to arm another overlap until the next
+        // player event — i.e. until something unrelated happened.
+        handler.removeCallbacks(deadline)
         secondary?.let {
             runCatching {
                 it.stop()
@@ -290,6 +317,7 @@ class CrossfadeCoordinator(
 
     /** Releases both players/session participation; called from the service's onDestroy. */
     fun release() {
+        runCatching { handler.removeCallbacks(poller) }
         runCatching { abort("release") }
         runCatching { audible.removeListener(this) }
     }
@@ -302,5 +330,10 @@ class CrossfadeCoordinator(
                     "seconds=${settings.crossfadeSeconds}",
             )
         }
+    }
+
+    private companion object {
+        /** How often the coordinator checks whether it is time to preload or fade (see [poller]). */
+        const val POLL_MS = 100L
     }
 }
