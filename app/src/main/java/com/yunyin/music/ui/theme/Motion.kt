@@ -157,7 +157,16 @@ object Motion {
 
     /** Sheets and drawers: modals are allowed 200-500ms (was 320 / 260). */
     const val SheetEnterDuration = 420
-    const val SheetExitDuration = 340
+
+    /**
+     * Exit is deliberately faster than entry — the user has already decided to leave, so the sheet
+     * should get out of the way rather than replay its entrance backwards.
+     *
+     * Expressed as **0.7 × [SheetEnterDuration]** instead of a second hardcoded number: this is the
+     * rule, and keeping it as arithmetic is what stops the two values drifting apart again (they had:
+     * 420 / 340 is 0.81×, and one host even used the *enter* duration on its exit path).
+     */
+    const val SheetExitDuration = SheetEnterDuration * 7 / 10
 
     /**
      * Pushed subpages (资料库 subpages, 本地音乐, 下载中心): the same 420/340 tempo as sheets because a
