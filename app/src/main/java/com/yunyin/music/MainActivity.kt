@@ -230,9 +230,15 @@ class MainActivity : ComponentActivity() {
         // own branch instead, so the invalidation is scoped to the component that actually uses it.
         val playerState = container.player.state
         // 播放页的红心/评论数：跟着当前曲目走，切歌即刷新。
+        // 播放页的红心/评论数：跟着当前曲目走，切歌即刷新。
+        // 注意必须收集成 State —— 直接读 state.value 拿不到重组，效果只会跑一次（曲目还是 null）。
+        val currentTrackId by container.player.state
+            .map { it.current?.id }
+            .distinctUntilChanged()
+            .collectAsState(initial = container.player.state.value.current?.id)
         var songStats by remember { mutableStateOf(0 to 0) }
-        LaunchedEffect(container.player.state.value.current?.id) {
-            val id = container.player.state.value.current?.id ?: return@LaunchedEffect
+        LaunchedEffect(currentTrackId) {
+            val id = currentTrackId ?: return@LaunchedEffect
             songStats = runCatching { container.music.songStats(id) }.getOrDefault(0 to 0)
         }
 
