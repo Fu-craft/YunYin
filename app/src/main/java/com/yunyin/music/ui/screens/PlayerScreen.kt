@@ -2414,7 +2414,7 @@ private fun LyricsHeader(
         Spacer(Modifier.width(8.dp))
         CountedPill(SfIcons.BubbleLeft, SfIcons.BubbleLeft, false, commentCount, onOpenComments, 44.dp)
         Spacer(Modifier.width(10.dp))
-        CircleGlassIcon(SfIcons.Ellipsis, "更多操作", 44.dp, onClick = onMoreClick)
+        BareIconButton(SfIcons.Ellipsis, "更多操作", 44.dp, onMoreClick)
     }
 }
 
@@ -2886,7 +2886,7 @@ private fun TitleBlock(
         Spacer(Modifier.width(8.dp))
         CountedPill(SfIcons.BubbleLeft, SfIcons.BubbleLeft, false, commentCount, onOpenComments, 36.dp)
         Spacer(Modifier.width(10.dp))
-        CircleGlassIcon(SfIcons.Ellipsis, "更多操作", 36.dp, onClick = onMoreClick)
+        BareIconButton(SfIcons.Ellipsis, "更多操作", 36.dp, onMoreClick)
     }
 }
 
@@ -3658,7 +3658,7 @@ private fun CountedPill(
             modifier = Modifier.size(size * 0.78f),
         )
         if (count > 0) {
-            Spacer(Modifier.width(3.dp))
+            Spacer(Modifier.width(4.dp))
             Text(
                 text = compactCount(count),
                 fontFamily = SFPro,
@@ -3699,4 +3699,22 @@ internal fun compactCount(value: Int): String = when {
         (if (w >= 100) w.toInt().toString() else String.format("%.1f", w)) + "w+"
     }
     else -> value.toString()
+}
+
+/** A glyph with no container, matching the counted icons beside it. */
+@Composable
+private fun BareIconButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    size: androidx.compose.ui.unit.Dp,
+    onClick: () -> Unit,
+) {
+    Box(Modifier.size(size).clip(androidx.compose.foundation.shape.CircleShape).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            tint = AppTheme.palette.label.copy(alpha = 0.9f),
+            modifier = Modifier.size(size * 0.70f),
+        )
+    }
 }
