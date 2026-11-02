@@ -427,6 +427,9 @@ private fun ArtistHeaderBlock(
             loader = loader,
             corner = 64.dp,
             requestSize = 320,
+            // A singer without artwork is a person, not a note: the default (MusicNote) read as a
+            // broken song row in the middle of an artist page.
+            placeholderIcon = SfIcons.Person,
             modifier = Modifier.size(128.dp).clip(CircleShape),
         )
         Spacer(Modifier.height(12.dp))
