@@ -134,7 +134,7 @@ fun AnimatedSheet(
                 AnimatedVisibility(
                     visible = visible,
                     enter = fadeIn(tween(Motion.duration(Motion.ScrimDuration), easing = Motion.EaseOut)),
-                    exit = fadeOut(tween(Motion.duration(Motion.ScrimDuration), easing = Motion.EaseOut)),
+                    exit = fadeOut(tween(Motion.duration(Motion.ScrimDuration), easing = Motion.EaseIn)),
                 ) {
                     Box(
                         Modifier
@@ -152,11 +152,15 @@ fun AnimatedSheet(
                     fadeIn(tween(Motion.duration(Motion.SheetEnterDuration), easing = Motion.EaseOut)) +
                         scaleIn(tween(Motion.duration(Motion.SheetEnterDuration), easing = Motion.EaseOut), initialScale = 0.94f)
                 },
+                // Exits accelerate: an EaseOut fade decelerates into nothing and reads as the panel
+                // "dissolving in slow motion" — most obvious on the centred profile sheet, which has
+                // no scrim to carry the motion. EaseIn + a slightly deeper scale (0.92) gives the
+                // dismissal a direction.
                 exit = if (placement == SheetPlacement.Bottom) {
-                    slideOutVertically(tween(Motion.duration(Motion.SheetExitDuration), easing = Motion.EaseDrawer)) { it }
+                    slideOutVertically(tween(Motion.duration(Motion.SheetExitDuration), easing = Motion.EaseIn)) { it }
                 } else {
-                    fadeOut(tween(Motion.duration(Motion.SheetExitDuration), easing = Motion.EaseOut)) +
-                        scaleOut(tween(Motion.duration(Motion.SheetExitDuration), easing = Motion.EaseOut), targetScale = 0.94f)
+                    fadeOut(tween(Motion.duration(Motion.SheetExitDuration), easing = Motion.EaseIn)) +
+                        scaleOut(tween(Motion.duration(Motion.SheetExitDuration), easing = Motion.EaseIn), targetScale = 0.92f)
                 },
             ) {
                 Column(modifier = sheetModifier) {
