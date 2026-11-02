@@ -34,6 +34,8 @@ class PlaybackService : MediaSessionService() {
 
     private var mediaSession: MediaSession? = null
     private var crossfadeCoordinator: CrossfadeCoordinator? = null
+    private var equalizer: com.yunyin.music.audio.PlaybackEqualizer? = null
+    private var equalizerWatcher: android.content.SharedPreferences.OnSharedPreferenceChangeListener? = null
     private lateinit var container: AppContainer
 
     override fun onCreate() {
@@ -85,12 +87,22 @@ class PlaybackService : MediaSessionService() {
             }
         }
 
-        val createPlayer: () -> ExoPlayer = {
+        // One probe per player instance, handed to the audio processor: the smart transition measures the
+        // two sides' energy while they overlap. Created inside `createPlayer` so each ExoPlayer owns its own.
+        var lastProbe: TrackEnergyProbe? = null
+        val createPlayer: (TrackEnergyProbe) -> ExoPlayer = { probe ->
+            lastProbe = probe
             ExoPlayer.Builder(
                 this,
                 // The preference is read live by the processor, so the Settings switch takes effect without
                 // reaching across the session — `Player`/`MediaController` expose no audio-processing control.
-                ReactiveRenderersFactory(this, SeamlessAudioProcessor { container.settings.seamlessTransition }),
+                ReactiveRenderersFactory(
+                    this,
+                    SeamlessAudioProcessor(
+                        enabled = { container.settings.seamlessTransition },
+                        probe = probe,
+                    ),
+                ),
             )
                 .setMediaSourceFactory(DefaultMediaSourceFactory(resolvingFactory))
                 .setHandleAudioBecomingNoisy(true)
@@ -113,18 +125,51 @@ class PlaybackService : MediaSessionService() {
                     volume = 1f
                 }
         }
-        val player = createPlayer()
+        val initialProbe = TrackEnergyProbe()
+        val player = createPlayer(initialProbe)
         mediaSession = MediaSession.Builder(this, player).build()
+
+        // Equaliser: the ported controller attaches to this app's own audio session only. The audible
+        // player is replaced at every crossfade handover, so it is re-attached on each swap.
+        val eq = com.yunyin.music.audio.PlaybackEqualizer { message ->
+            android.util.Log.w("YunYinEqualizer", message)
+        }
+        equalizer = eq
+        val applyEqualizer = { target: ExoPlayer ->
+            runCatching {
+                eq.configure(currentEqualizerSettings())
+                eq.attach(target.audioSessionId)
+            }
+            Unit
+        }
+        applyEqualizer(player)
+        equalizerWatcher = container.settings.watchEqualizer { applyEqualizer(mediaSession?.player as? ExoPlayer ?: player) }
+
         // The Flyme ticker rides on the media notification (NeriPlayer's approach); a separate ticker
         // notification is not used. The provider mutates only ticker fields/flags, never the media content.
         crossfadeCoordinator = CrossfadeCoordinator(
             session = mediaSession!!,
             initial = player,
+            initialProbe = initialProbe,
             createPlayer = createPlayer,
             settings = container.settings,
             log = container.lxLog,
+            onAudibleChanged = { next -> applyEqualizer(next) },
         )
 
+    }
+
+    /** Reads the stored curve; the five bands are kept as a comma-separated string. */
+    private fun currentEqualizerSettings(): com.yunyin.music.audio.EqualizerSettings {
+        val preset = com.yunyin.music.audio.EqualizerPreset.entries
+            .firstOrNull { it.name == container.settings.equalizerPreset }
+            ?: com.yunyin.music.audio.EqualizerPreset.FLAT
+        val gains = container.settings.equalizerBands.split(',').mapNotNull { it.trim().toIntOrNull() }
+        return com.yunyin.music.audio.EqualizerSettings(
+            enabled = container.settings.equalizerEnabled,
+            preset = preset,
+            gains = gains,
+        ).normalized()
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession
@@ -141,6 +186,10 @@ class PlaybackService : MediaSessionService() {
     override fun onDestroy() {
         runCatching { crossfadeCoordinator?.release() }
         crossfadeCoordinator = null
+        equalizerWatcher?.let { runCatching { container.settings.stopWatchingEqualizer(it) } }
+        equalizerWatcher = null
+        runCatching { equalizer?.close() }
+        equalizer = null
         mediaSession?.run {
             runCatching { player.release() }
             release()

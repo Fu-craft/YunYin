@@ -404,6 +404,17 @@ class MainActivity : ComponentActivity() {
         var seamlessTransition by remember { mutableStateOf(container.settings.seamlessTransition) }
         var downloadWifiOnly by remember { mutableStateOf(container.settings.downloadWifiOnly) }
         var crossfadeSeconds by remember { mutableStateOf(container.settings.crossfadeSeconds) }
+        // Ported from CurrentMusicX: smart overlap length + the platform equaliser. The service reads the
+        // store, so writing it here is all a toggle has to do.
+        var smartTransition by remember { mutableStateOf(container.settings.smartTransition) }
+        var equalizerEnabled by remember { mutableStateOf(container.settings.equalizerEnabled) }
+        var equalizerPreset by remember { mutableStateOf(container.settings.equalizerPreset) }
+        var equalizerBands by remember {
+            mutableStateOf(
+                container.settings.equalizerBands.split(',').mapNotNull { it.trim().toIntOrNull() }
+                    .let { if (it.size == 5) it else listOf(0, 0, 0, 0, 0) },
+            )
+        }
         var autoImmersiveLyrics by remember { mutableStateOf(container.settings.autoImmersiveLyrics) }
         // The three now-playing background switches. Compose state + the store, same arrangement as
         // the other settings: the player reads the state so a toggle takes effect immediately, and
@@ -1526,6 +1537,40 @@ class MainActivity : ComponentActivity() {
                     onCrossfadeSecondsChange = { seconds ->
                         crossfadeSeconds = seconds
                         container.settings.crossfadeSeconds = seconds
+                    },
+                    smartTransition = smartTransition,
+                    onSmartTransitionChange = { enabled ->
+                        smartTransition = enabled
+                        container.settings.smartTransition = enabled
+                    },
+                    equalizerEnabled = equalizerEnabled,
+                    onEqualizerEnabledChange = { enabled ->
+                        equalizerEnabled = enabled
+                        container.settings.equalizerEnabled = enabled
+                    },
+                    equalizerPreset = equalizerPreset,
+                    onEqualizerPresetChange = { name ->
+                        equalizerPreset = name
+                        container.settings.equalizerPreset = name
+                        // Selecting a preset replaces the curve; the service re-applies on the write.
+                        com.yunyin.music.audio.EqualizerPreset.entries
+                            .firstOrNull { it.name == name }
+                            ?.takeIf { it.gains.isNotEmpty() }
+                            ?.let { preset ->
+                                equalizerBands = preset.gains
+                                container.settings.equalizerBands = preset.gains.joinToString(",")
+                            }
+                    },
+                    equalizerBands = equalizerBands,
+                    onEqualizerBandChange = { index, gain ->
+                        val next = equalizerBands.toMutableList().also {
+                            if (index in it.indices) it[index] = gain.coerceIn(-1200, 1200)
+                        }
+                        equalizerBands = next
+                        container.settings.equalizerBands = next.joinToString(",")
+                        // A manual band edit is a custom curve, by definition.
+                        equalizerPreset = "CUSTOM"
+                        container.settings.equalizerPreset = "CUSTOM"
                     },
                     playlistShowcaseLabel = com.yunyin.music.ui.components.PlaylistShowcase.of(playlistShowcase).label,
                     onCyclePlaylistShowcase = {

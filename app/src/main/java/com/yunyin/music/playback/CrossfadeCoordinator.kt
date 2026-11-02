@@ -26,15 +26,25 @@ import com.yunyin.music.data.lxsource.LxSourceLog
 class CrossfadeCoordinator(
     private val session: MediaSession,
     initial: ExoPlayer,
-    private val createPlayer: () -> ExoPlayer,
+    initialProbe: TrackEnergyProbe,
+    private val createPlayer: (TrackEnergyProbe) -> ExoPlayer,
     private val settings: SettingsStore,
     private val log: LxSourceLog?,
+    /** Called whenever the audible player changes (handover), so listeners can re-attach per-session effects. */
+    private val onAudibleChanged: (ExoPlayer) -> Unit = {},
 ) : Player.Listener {
 
     private enum class State { IDLE, PRELOAD, FADE }
 
     private var audible: ExoPlayer = initial
+
+    /** Energy meter attached to the audible player; feeds the smart-transition analysis. */
+    private var audibleProbe: TrackEnergyProbe = initialProbe
     private var secondary: ExoPlayer? = null
+    private var secondaryProbe: TrackEnergyProbe? = null
+
+    /** Plan chosen when the overlap starts; null means "use the fixed slider duration". */
+    private var fadePlan: MusicTransitionPlan? = null
     private var state = State.IDLE
     private var fadeStartedAt = 0L
     private var deadlinePassed = false
@@ -59,8 +69,11 @@ class CrossfadeCoordinator(
         if (state != State.IDLE && !audible.playWhenReady) abort("paused")
     }
 
-    private fun fadeMs(): Long =
-        if (settings.seamlessTransition) CrossfadeRules.durationMs(settings.crossfadeSeconds) else 0L
+    /** Overlap length: the smart plan's duration while one is active, otherwise the slider's value. */
+    private fun fadeMs(): Long {
+        if (!settings.seamlessTransition) return 0L
+        return fadePlan?.durationMs ?: CrossfadeRules.durationMs(settings.crossfadeSeconds)
+    }
 
     private fun remainingMs(): Long {
         val duration = audible.duration
@@ -123,12 +136,16 @@ class CrossfadeCoordinator(
         ) return
         runCatching {
             val items = (0 until audible.mediaItemCount).map { audible.getMediaItemAt(it) }
-            val player = createPlayer()
+            // One probe per player: the meter of the outgoing track answers "how much tail is left",
+            // the meter of the incoming one answers "how it starts". Enabled only in smart mode.
+            val nextProbe = TrackEnergyProbe().apply { enabled = settings.smartTransition }
+            val player = createPlayer(nextProbe)
             player.setMediaItems(items, next, 0L)
             player.volume = 0f
             player.playWhenReady = true
             player.prepare()
             secondary = player
+            secondaryProbe = nextProbe
             state = State.PRELOAD
             deadlinePassed = false
             lastPosition = audible.currentPosition
@@ -153,9 +170,17 @@ class CrossfadeCoordinator(
             fadeStartedAt = SystemClock.elapsedRealtime()
             fadeFromIndex = audible.currentMediaItemIndex
             lastPosition = audible.currentPosition
+            // Ported smart transition: the two profiles decide the duration and a gain correction for the
+            // incoming side. Fixed mode keeps the slider's seconds and unity gain.
+            audibleProbe.enabled = settings.smartTransition
+            fadePlan = if (settings.smartTransition) {
+                smartMusicTransition(audibleProbe.profile(), secondaryProbe?.profile())
+            } else {
+                null
+            }
             next.volume = 0f
             next.playWhenReady = true
-            trace("fade", "fadeMs=$fade index=$fadeFromIndex")
+            trace("fade", "fadeMs=$fade plan=${fadePlan?.let { "${it.durationMs}/${it.incomingGain}" } ?: "fixed"} index=$fadeFromIndex")
             handler.post(ticker)
         }.onFailure {
             trace("abort", "fade-exception=${it.message}")
@@ -169,7 +194,8 @@ class CrossfadeCoordinator(
         runCatching {
             val fade = fadeMs().coerceAtLeast(1L)
             val progress = ((SystemClock.elapsedRealtime() - fadeStartedAt).toFloat() / fade).coerceIn(0f, 1f)
-            val (out, incoming) = CrossfadeRules.gains(progress)
+            // Equal-power with the plan's incoming-gain correction (unity when the plan has none).
+            val (out, incoming) = musicTransitionGains(progress, fadePlan?.incomingGain ?: 1f)
             audible.volume = out
             next.volume = incoming
             lastPosition = audible.currentPosition
@@ -193,12 +219,17 @@ class CrossfadeCoordinator(
             session.setPlayer(next)
             old.removeListener(this)
             audible = next
+            audibleProbe = secondaryProbe ?: audibleProbe
+            audibleProbe.enabled = settings.smartTransition
             audible.addListener(this)
             secondary = null
+            secondaryProbe = null
+            fadePlan = null
             state = State.IDLE
             old.stop()
             old.clearMediaItems()
             old.release()
+            runCatching { onAudibleChanged(audible) }
             trace("handover", "index=${audible.currentMediaItemIndex} items=${audible.mediaItemCount}")
         }.onFailure {
             trace("abort", "handover-exception=${it.message}")
@@ -222,6 +253,8 @@ class CrossfadeCoordinator(
             }
         }
         secondary = null
+        secondaryProbe = null
+        fadePlan = null
         runCatching { audible.volume = 1f }
         trace("abort", reason)
     }

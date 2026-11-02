@@ -91,6 +91,50 @@ class SettingsStore(context: Context) {
         set(value) = prefs.edit().putInt(KEY_CROSSFADE_SECONDS, value.coerceIn(0, 12)).apply()
 
     /**
+     * Smart transition: let the audio decide the overlap instead of the fixed slider.
+     *
+     * Ported from CurrentMusicX's smart-transition analysis: the tail energy, the level of both sides and
+     * the outgoing track's beat period pick a duration (2.5–8 s) and an incoming gain correction. Off by
+     * default, because it changes how a transition *sounds* rather than merely when it happens.
+     */
+    var smartTransition: Boolean
+        get() = prefs.getBoolean(KEY_SMART_TRANSITION, false)
+        set(value) = prefs.edit().putBoolean(KEY_SMART_TRANSITION, value).apply()
+
+    /** Equaliser on/off (Android platform Equalizer on our own audio session). */
+    var equalizerEnabled: Boolean
+        get() = prefs.getBoolean(KEY_EQUALIZER_ENABLED, false)
+        set(value) = prefs.edit().putBoolean(KEY_EQUALIZER_ENABLED, value).apply()
+
+    /** Selected equaliser preset name; [EqualizerPresets.CUSTOM] means "use the stored bands". */
+    var equalizerPreset: String
+        get() = prefs.getString(KEY_EQUALIZER_PRESET, "FLAT") ?: "FLAT"
+        set(value) = prefs.edit().putString(KEY_EQUALIZER_PRESET, value).apply()
+
+    /** The five band gains in millibels, comma separated (`60,230,910,3600,14000` order). */
+    var equalizerBands: String
+        get() = prefs.getString(KEY_EQUALIZER_BANDS, "0,0,0,0,0") ?: "0,0,0,0,0"
+        set(value) = prefs.edit().putString(KEY_EQUALIZER_BANDS, value).apply()
+
+    /**
+     * Listens for writes to the equaliser keys, so the running service can re-apply a curve the user just
+     * changed. Returns the listener; pass it to [stopWatchingEqualizer] to unregister.
+     */
+    fun watchEqualizer(onChange: () -> Unit): SharedPreferences.OnSharedPreferenceChangeListener {
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == KEY_EQUALIZER_ENABLED || key == KEY_EQUALIZER_PRESET || key == KEY_EQUALIZER_BANDS) {
+                onChange()
+            }
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        return listener
+    }
+
+    fun stopWatchingEqualizer(listener: SharedPreferences.OnSharedPreferenceChangeListener) {
+        prefs.unregisterOnSharedPreferenceChangeListener(listener)
+    }
+
+    /**
      * Whether the lyrics page auto-enters immersive mode after [IMMERSIVE_IDLE_MS] of inactivity.
      *
      * Defaults **on** (the user corrected the earlier default). The getter's fallback is the default,
@@ -406,6 +450,10 @@ class SettingsStore(context: Context) {
         private const val KEY_SEAMLESS_TRANSITION = "seamless_transition"
         private const val KEY_DOWNLOAD_WIFI_ONLY = "download_wifi_only"
         private const val KEY_CROSSFADE_SECONDS = "crossfade_seconds"
+        private const val KEY_SMART_TRANSITION = "smart_transition"
+        private const val KEY_EQUALIZER_ENABLED = "equalizer_enabled"
+        private const val KEY_EQUALIZER_PRESET = "equalizer_preset"
+        private const val KEY_EQUALIZER_BANDS = "equalizer_bands"
         private const val KEY_AUTO_IMMERSIVE_LYRICS = "auto_immersive_lyrics"
         private const val KEY_PLAYER_STYLE = "player_style"
         private const val KEY_NOW_PLAYING_COVER_BLUR = "now_playing_cover_blur_background"
