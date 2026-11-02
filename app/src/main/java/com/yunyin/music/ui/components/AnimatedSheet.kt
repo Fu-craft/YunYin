@@ -86,14 +86,19 @@ fun AnimatedSheet(
 
     // Exit timing, shared by the panel and the scrim so they land on the same frame.
     //
-    // The fade is deliberately *late* and short (the last ~55 % of the exit): fading a large white card
-    // over a busy page from the first frame is what made the dismissal read as a ghost — the profile
-    // sheet's text stayed legible through its own background while the page showed through. Holding
-    // full opacity while the panel scales away, then dropping the alpha quickly, keeps the surface
-    // solid for as long as it is visible.
+    // Measured from a frame-by-frame capture of 4.81.0: the card faded over the whole exit while the
+    // scrim held full strength, so the card turned into a ghost over a still-dimmed page, and *then*
+    // the dim lifted on its own a couple of frames later. Two artefacts, one cause — the two exits had
+    // different lengths (294 / 360 ms) and both started at t=0.
+    //
+    // Now: the card keeps its surface for the first ~45 % (while the scale carries the motion) and
+    // fades over the last 55 %; the scrim starts a little later and is shorter, so the page brightens
+    // under a card that is already almost gone, and both land on the same final frame.
     val exitMs = Motion.duration(Motion.SheetExitDuration)
     val panelFadeMs = (exitMs * 55) / 100
     val panelFadeDelayMs = exitMs - panelFadeMs
+    val scrimFadeMs = (exitMs * 45) / 100
+    val scrimFadeDelayMs = exitMs - scrimFadeMs
 
     // Host-driven dismissal runs through the same exit as a user's close(): the Dialog stays composed
     // until [onDismissed], so the exit animates on the real content instead of snapping away.
@@ -145,9 +150,15 @@ fun AnimatedSheet(
                 AnimatedVisibility(
                     visible = visible,
                     enter = fadeIn(tween(Motion.duration(Motion.ScrimDuration), easing = Motion.EaseOut)),
-                    // The dim must leave with the panel, not drag on behind it: a scrim that outlives
-                    // the card is a page sitting dimmed over nothing for a beat.
-                    exit = fadeOut(tween(exitMs, easing = Motion.EaseIn)),
+                    // The dim leaves *with* the panel and never after it: same end frame, slightly later
+                    // start, so the page does not brighten under a card that is still legible.
+                    exit = fadeOut(
+                        tween(
+                            durationMillis = scrimFadeMs,
+                            delayMillis = scrimFadeDelayMs,
+                            easing = Motion.EaseIn,
+                        ),
+                    ),
                 ) {
                     Box(
                         Modifier
@@ -172,13 +183,16 @@ fun AnimatedSheet(
                 exit = if (placement == SheetPlacement.Bottom) {
                     slideOutVertically(tween(exitMs, easing = Motion.EaseIn)) { it }
                 } else {
+                    // Centred cards get a direction instead of a dissolve: the scale and the small lift
+                    // run for the whole exit, the alpha only in the last 55 %.
                     fadeOut(
                         tween(
                             durationMillis = panelFadeMs,
                             delayMillis = panelFadeDelayMs,
                             easing = Motion.EaseIn,
                         ),
-                    ) + scaleOut(tween(exitMs, easing = Motion.EaseIn), targetScale = 0.94f)
+                    ) + scaleOut(tween(exitMs, easing = Motion.EaseIn), targetScale = 0.96f) +
+                        slideOutVertically(tween(exitMs, easing = Motion.EaseIn)) { -it / 60 }
                 },
             ) {
                 Column(modifier = sheetModifier) {
