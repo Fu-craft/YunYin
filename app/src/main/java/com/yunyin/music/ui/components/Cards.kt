@@ -317,6 +317,9 @@ fun EmptyState(
     Column(
         modifier = modifier
             .fillMaxWidth()
+            // Nothing to cross-fade around: the block arrives once, with a 160 ms fade and an 8 dp
+            // rise, so "there is nothing here" is not the one screen that appears with a hard cut.
+            .enterOnceRise()
             .padding(40.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp),

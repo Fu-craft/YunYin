@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.yunyin.music.core.ArtistInfo
 import com.yunyin.music.core.NetResult
+import com.yunyin.music.ui.components.enterOnceRise
 import com.yunyin.music.ui.theme.AppTheme
 import com.yunyin.music.ui.theme.SFPro
 
@@ -100,7 +101,10 @@ fun SimilarArtistsScreen(
             error != null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(error.orEmpty(), fontFamily = SFPro, color = AppTheme.palette.secondaryLabel)
             }
-            artists.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            artists.isEmpty() -> Box(
+                Modifier.fillMaxSize().enterOnceRise(),
+                contentAlignment = Alignment.Center,
+            ) {
                 Text("没有相似歌手", fontFamily = SFPro, color = AppTheme.palette.secondaryLabel)
             }
             else -> LazyColumn(contentPadding = PaddingValues(bottom = 32.dp)) {

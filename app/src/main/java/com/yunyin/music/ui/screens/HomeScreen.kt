@@ -126,7 +126,7 @@ private fun ContinueListeningRow(
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(
-        targetValue = if (pressed) 0.985f else 1f,
+        targetValue = if (pressed) 0.97f else 1f,
         // A press spring cannot be shortened, so it is routed through springOrSnap: with the system's
         // "remove animations" setting on, the row simply sits at its target scale.
         animationSpec = Motion.springOrSnap(spring(dampingRatio = 1f, stiffness = 900f)),

@@ -1694,6 +1694,33 @@ private fun ArtworkWithGestures(
     onCoverCenter: ((Offset) -> Unit)? = null,
 ) {
     var animatedVideoReady by remember(track?.id) { mutableStateOf(false) }
+    // Track identity change: the artwork returns with a 120 ms fade and a 4 dp rise instead of being
+    // replaced in a single frame, which is what made a track change read as "a different picture
+    // appeared" rather than "this cover became that cover". Keyed on the track id, so pausing,
+    // seeking or any recomposition never replays it; the first track of a session is not a change.
+    val coverSwap = remember { androidx.compose.animation.core.Animatable(0f) }
+    var lastCoverTrackId by remember { mutableStateOf<Long?>(null) }
+    LaunchedEffect(track?.id) {
+        val id = track?.id
+        if (lastCoverTrackId == null || id == lastCoverTrackId) {
+            lastCoverTrackId = id
+            coverSwap.snapTo(0f)
+            return@LaunchedEffect
+        }
+        lastCoverTrackId = id
+        if (!Motion.animatorsEnabled()) {
+            coverSwap.snapTo(0f)
+            return@LaunchedEffect
+        }
+        coverSwap.snapTo(1f)
+        coverSwap.animateTo(
+            targetValue = 0f,
+            animationSpec = androidx.compose.animation.core.tween(
+                durationMillis = 120,
+                easing = Motion.EaseOut,
+            ),
+        )
+    }
     // The video square's own bounds in the window, for sampling the immersive backdrop gradient at
     // its edges.
     var videoBounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
@@ -1754,7 +1781,8 @@ private fun ArtworkWithGestures(
                         scaleY = scale
                         // The paused dim is derived from the very same scale, so the record recedes
                         // with the cover instead of only shrinking.
-                        alpha = sharedCoverPausedAlpha(scale)
+                        alpha = sharedCoverPausedAlpha(scale) * (1f - coverSwap.value)
+                        translationY = coverSwap.value * 4.dp.toPx()
                     }
                     .shadow(14.dp, CircleShape),
             )
@@ -1807,7 +1835,10 @@ private fun ArtworkWithGestures(
                         val hideForVideo = animatedCoverEnabled && animatedUrl != null &&
                             playerStyle != PlayerStyle.Vinyl && !coverTransitioning &&
                             (animatedPoster != null || animatedVideoReady)
-                        alpha = if (hideForVideo) 0f else sharedCoverPausedAlpha(scale)
+                        alpha = if (hideForVideo) 0f else sharedCoverPausedAlpha(scale) * (1f - coverSwap.value)
+                        // Same 4 dp rise as the record: the cover arrives from slightly below rather
+                        // than switching on.
+                        translationY = coverSwap.value * 4.dp.toPx()
                     }
                     .then(
                         if (flat) Modifier
@@ -2886,18 +2917,33 @@ private fun LikeButton(
     size: androidx.compose.ui.unit.Dp,
     onClick: () -> Unit,
 ) {
-    val scale by animateFloatAsState(
-        targetValue = if (liked) 1.12f else 1f,
-        animationSpec = androidx.compose.animation.core.spring(
-            dampingRatio = 0.42f,
+    // A one-shot 1 → 1.12 → 1 pulse rather than a resting scale: the filled glyph already carries the
+    // "liked" state, so the size only has to acknowledge the tap — and a liked track should not sit
+    // permanently larger than an unliked one. The overshoot is the one place in the player where a
+    // little celebration is earned, so it is under-damped (0.6) on purpose.
+    val pop = remember { androidx.compose.animation.core.Animatable(1f) }
+    var armed by remember { mutableStateOf(false) }
+    LaunchedEffect(liked) {
+        if (!armed) {
+            armed = true
+            return@LaunchedEffect
+        }
+        if (!Motion.animatorsEnabled()) {
+            pop.snapTo(1f)
+            return@LaunchedEffect
+        }
+        val spec = androidx.compose.animation.core.spring<Float>(
+            dampingRatio = 0.6f,
             stiffness = 900f,
-        ),
-        label = "like-pop",
-    )
+        )
+        pop.snapTo(1f)
+        pop.animateTo(1.12f, spec)
+        pop.animateTo(1f, spec)
+    }
     Box(
         Modifier
             .size(size)
-            .graphicsLayer { scaleX = scale; scaleY = scale },
+            .graphicsLayer { scaleX = pop.value; scaleY = pop.value },
     ) {
         CircleGlassIcon(SfIcons.Heart, "喜欢", size, onClick = onClick)
         // The filled heart is drawn on top and cross-faded in, so the two glyphs never both show at
