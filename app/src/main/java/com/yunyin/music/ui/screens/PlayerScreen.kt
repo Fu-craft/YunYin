@@ -2410,9 +2410,9 @@ private fun LyricsHeader(
             )
         }
         Spacer(Modifier.width(10.dp))
-        CountedPill(SfIcons.HeartFill, SfIcons.Heart, liked, likeCount, onToggleLike, 44.dp)
+        CountedPill(com.yunyin.music.ui.icons.NetEaseIcons.heartFill, com.yunyin.music.ui.icons.NetEaseIcons.heartLine, liked, likeCount, onToggleLike, 44.dp)
         Spacer(Modifier.width(8.dp))
-        CountedPill(SfIcons.BubbleLeft, SfIcons.BubbleLeft, false, commentCount, onOpenComments, 44.dp)
+        CountedPill(com.yunyin.music.ui.icons.NetEaseIcons.comment, com.yunyin.music.ui.icons.NetEaseIcons.comment, false, commentCount, onOpenComments, 44.dp)
         Spacer(Modifier.width(10.dp))
         BareIconButton(SfIcons.Ellipsis, "更多操作", 44.dp, onMoreClick)
     }
@@ -2882,9 +2882,9 @@ private fun TitleBlock(
         }
         Spacer(Modifier.width(14.dp))
         Spacer(Modifier.width(14.dp))
-        CountedPill(SfIcons.HeartFill, SfIcons.Heart, liked, likeCount, onToggleLike, 36.dp)
+        CountedPill(com.yunyin.music.ui.icons.NetEaseIcons.heartFill, com.yunyin.music.ui.icons.NetEaseIcons.heartLine, liked, likeCount, onToggleLike, 36.dp)
         Spacer(Modifier.width(8.dp))
-        CountedPill(SfIcons.BubbleLeft, SfIcons.BubbleLeft, false, commentCount, onOpenComments, 36.dp)
+        CountedPill(com.yunyin.music.ui.icons.NetEaseIcons.comment, com.yunyin.music.ui.icons.NetEaseIcons.comment, false, commentCount, onOpenComments, 36.dp)
         Spacer(Modifier.width(10.dp))
         BareIconButton(SfIcons.Ellipsis, "更多操作", 36.dp, onMoreClick)
     }
