@@ -84,6 +84,17 @@ fun AnimatedSheet(
     var closing by remember { mutableStateOf(false) }
     var afterDismiss by remember { mutableStateOf<(() -> Unit)?>(null) }
 
+    // Exit timing, shared by the panel and the scrim so they land on the same frame.
+    //
+    // The fade is deliberately *late* and short (the last ~55 % of the exit): fading a large white card
+    // over a busy page from the first frame is what made the dismissal read as a ghost — the profile
+    // sheet's text stayed legible through its own background while the page showed through. Holding
+    // full opacity while the panel scales away, then dropping the alpha quickly, keeps the surface
+    // solid for as long as it is visible.
+    val exitMs = Motion.duration(Motion.SheetExitDuration)
+    val panelFadeMs = (exitMs * 55) / 100
+    val panelFadeDelayMs = exitMs - panelFadeMs
+
     // Host-driven dismissal runs through the same exit as a user's close(): the Dialog stays composed
     // until [onDismissed], so the exit animates on the real content instead of snapping away.
     LaunchedEffect(closeRequest) {
@@ -104,10 +115,10 @@ fun AnimatedSheet(
     LaunchedEffect(closing) {
         if (!closing) return@LaunchedEffect
         visible = false
-        // Wait for the slower of the two exits: the scrim fades for ScrimDuration, which is longer
-        // than the panel's SheetExitDuration. Unmounting at the panel's duration cut the last frames
-        // of the scrim off every dismissal.
-        delay(maxOf(Motion.SheetExitDuration, Motion.ScrimDuration).toLong())
+        // Wait for the slower of the two exits, plus a frame. Both exits are the sheet's own duration
+        // (the scrim no longer outlives the panel — that mismatch left the page dimmed for ~70 ms
+        // *after* the panel had gone, which reads as a grey flash on dismissal).
+        delay(Motion.duration(Motion.SheetExitDuration).toLong() + 32L)
         val action = afterDismiss
         afterDismiss = null
         onDismissed()
@@ -134,7 +145,9 @@ fun AnimatedSheet(
                 AnimatedVisibility(
                     visible = visible,
                     enter = fadeIn(tween(Motion.duration(Motion.ScrimDuration), easing = Motion.EaseOut)),
-                    exit = fadeOut(tween(Motion.duration(Motion.ScrimDuration), easing = Motion.EaseIn)),
+                    // The dim must leave with the panel, not drag on behind it: a scrim that outlives
+                    // the card is a page sitting dimmed over nothing for a beat.
+                    exit = fadeOut(tween(exitMs, easing = Motion.EaseIn)),
                 ) {
                     Box(
                         Modifier
@@ -154,13 +167,18 @@ fun AnimatedSheet(
                 },
                 // Exits accelerate: an EaseOut fade decelerates into nothing and reads as the panel
                 // "dissolving in slow motion" — most obvious on the centred profile sheet, which has
-                // no scrim to carry the motion. EaseIn + a slightly deeper scale (0.92) gives the
-                // dismissal a direction.
+                // no scrim to carry the motion. EaseIn + a late, short fade gives the dismissal a
+                // direction without ever turning the card into a see-through ghost.
                 exit = if (placement == SheetPlacement.Bottom) {
-                    slideOutVertically(tween(Motion.duration(Motion.SheetExitDuration), easing = Motion.EaseIn)) { it }
+                    slideOutVertically(tween(exitMs, easing = Motion.EaseIn)) { it }
                 } else {
-                    fadeOut(tween(Motion.duration(Motion.SheetExitDuration), easing = Motion.EaseIn)) +
-                        scaleOut(tween(Motion.duration(Motion.SheetExitDuration), easing = Motion.EaseIn), targetScale = 0.92f)
+                    fadeOut(
+                        tween(
+                            durationMillis = panelFadeMs,
+                            delayMillis = panelFadeDelayMs,
+                            easing = Motion.EaseIn,
+                        ),
+                    ) + scaleOut(tween(exitMs, easing = Motion.EaseIn), targetScale = 0.94f)
                 },
             ) {
                 Column(modifier = sheetModifier) {

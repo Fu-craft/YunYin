@@ -628,14 +628,19 @@ object SfIcons {
         }
     }
 
+    /**
+     * `arrow.down.circle` — the 下载全部 affordance in a playlist's menu.
+     *
+     * The ring is **stroked**, not a filled disc. A filled circle drawn under the same tint as the
+     * arrow inside it renders as one solid dot: the arrow vanishes and the row reads as a placeholder.
+     * That is why every other glyph in this file is `mono` only, and why this one is too.
+     */
     val ArrowDownCircle: ImageVector = icon("arrow.down.circle") {
-        path(fill = SolidColor(Color.Black)) {
-            moveTo(12f, 2.4f)
-            curveTo(17.3f, 2.4f, 21.6f, 6.7f, 21.6f, 12f)
-            curveTo(21.6f, 17.3f, 17.3f, 21.6f, 12f, 21.6f)
-            curveTo(6.7f, 21.6f, 2.4f, 17.3f, 2.4f, 12f)
-            curveTo(2.4f, 6.7f, 6.7f, 2.4f, 12f, 2.4f)
-            close()
+        mono("arrow.down.circle.ring", width = 1.9f) {
+            moveTo(12f, 21f)
+            curveTo(16.97f, 21f, 21f, 16.97f, 21f, 12f)
+            curveTo(21f, 7.03f, 16.97f, 3f, 12f, 3f)
+            curveTo(7.03f, 3f, 3f, 7.03f, 3f, 12f)
         }
         mono("arrow.down.circle.glyph", width = 1.9f) {
             moveTo(12f, 7.2f)
