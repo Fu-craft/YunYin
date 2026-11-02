@@ -2305,6 +2305,9 @@ private fun LyricsHeader(
     /** Whether this track is in the user's liked songs, and the toggle. */
     liked: Boolean,
     onToggleLike: () -> Unit,
+    likeCount: Int = 0,
+    commentCount: Int = 0,
+    onOpenComments: () -> Unit = {},
     /** Tapping the thumbnail returns to the artwork presentation. */
     onCoverClick: () -> Unit,
     /** Opens the artist page for the track's first artist. */
@@ -2407,7 +2410,13 @@ private fun LyricsHeader(
             )
         }
         Spacer(Modifier.width(10.dp))
-        LikeButton(liked = liked, size = 44.dp, onClick = onToggleLike)
+        CountedAction(likeCount, highlighted = liked, onClick = onToggleLike) {
+            LikeButton(liked = liked, size = 44.dp, onClick = onToggleLike)
+        }
+        Spacer(Modifier.width(8.dp))
+        CountedAction(commentCount, onClick = onOpenComments) {
+            CircleGlassIcon(SfIcons.BubbleLeft, "评论", 44.dp, onClick = onOpenComments)
+        }
         Spacer(Modifier.width(10.dp))
         CircleGlassIcon(SfIcons.Ellipsis, "更多操作", 44.dp, onClick = onMoreClick)
     }
@@ -2882,7 +2891,7 @@ private fun TitleBlock(
         }
         Spacer(Modifier.width(10.dp))
         CountedAction(commentCount, onClick = onOpenComments) {
-            CircleGlassIcon(SfIcons.Ellipsis, "评论", 36.dp, onClick = onOpenComments)
+            CircleGlassIcon(SfIcons.BubbleLeft, "评论", 36.dp, onClick = onOpenComments)
         }
         Spacer(Modifier.width(10.dp))
         CircleGlassIcon(SfIcons.Ellipsis, "更多操作", 36.dp, onClick = onMoreClick)
