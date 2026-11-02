@@ -28,6 +28,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -327,6 +328,9 @@ private const val PAUSED_POLL_MS = 100L
  */
 private const val KAOMOJI_LOADING = "♪(｡･ω･｡)"
 
+/** How long the loading kaomoji is allowed to pulse before the placeholder settles into a still frame. */
+private const val PLACEHOLDER_PULSE_MS = 3_000L
+
 /**
  * Empty / loading state.
  *
@@ -336,13 +340,33 @@ private const val KAOMOJI_LOADING = "♪(｡･ω･｡)"
  */
 @Composable
 private fun LyricsPlaceholder(text: String?, loading: Boolean = false) {
-    val transition = rememberInfiniteTransition(label = "placeholder")
-    val pulse by transition.animateFloat(
-        initialValue = 0.45f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(1400, easing = LinearEasing), RepeatMode.Reverse),
-        label = "pulse",
-    )
+    // The kaomoji breathes while we wait — but a track with no lyrics can leave this state on screen
+    // for minutes, and a 1400 ms `Reverse` loop asks for a frame every 16 ms for as long as it lives.
+    // The pulse is a "we are still working" signal, not decoration, so it stops after three seconds
+    // and the skeleton settles; past that point the animation is spending battery to say nothing.
+    var pulsing by remember(loading, text) {
+        mutableStateOf(loading && Motion.animatorsEnabled())
+    }
+    LaunchedEffect(loading, text) {
+        if (!pulsing) return@LaunchedEffect
+        delay(PLACEHOLDER_PULSE_MS)
+        pulsing = false
+    }
+
+    // Composed only while it runs: leaving the infinite transition in composition would keep
+    // requesting frames even with its value unused.
+    val pulseAlpha: Float = if (pulsing) {
+        val transition = rememberInfiniteTransition(label = "placeholder")
+        val pulse by transition.animateFloat(
+            initialValue = 0.45f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(tween(1400, easing = LinearEasing), RepeatMode.Reverse),
+            label = "pulse",
+        )
+        pulse
+    } else {
+        1f
+    }
 
     Column(
         modifier = Modifier
@@ -357,7 +381,7 @@ private fun LyricsPlaceholder(text: String?, loading: Boolean = false) {
                 fontFamily = SFPro,
                 fontSize = 26.sp,
                 color = Color.White.copy(alpha = 0.75f),
-                modifier = Modifier.alpha(pulse),
+                modifier = Modifier.alpha(pulseAlpha),
             )
             Spacer(Modifier.height(6.dp))
             Text(
