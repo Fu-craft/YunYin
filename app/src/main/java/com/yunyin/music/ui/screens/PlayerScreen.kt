@@ -2410,13 +2410,9 @@ private fun LyricsHeader(
             )
         }
         Spacer(Modifier.width(10.dp))
-        CountedAction(likeCount, highlighted = liked, onClick = onToggleLike) {
-            LikeButton(liked = liked, size = 44.dp, onClick = onToggleLike)
-        }
+        CountedPill(SfIcons.HeartFill, SfIcons.Heart, liked, likeCount, onToggleLike, 44.dp)
         Spacer(Modifier.width(8.dp))
-        CountedAction(commentCount, onClick = onOpenComments) {
-            CircleGlassIcon(SfIcons.BubbleLeft, "评论", 44.dp, onClick = onOpenComments)
-        }
+        CountedPill(SfIcons.BubbleLeft, SfIcons.BubbleLeft, false, commentCount, onOpenComments, 44.dp)
         Spacer(Modifier.width(10.dp))
         CircleGlassIcon(SfIcons.Ellipsis, "更多操作", 44.dp, onClick = onMoreClick)
     }
@@ -2886,13 +2882,9 @@ private fun TitleBlock(
         }
         Spacer(Modifier.width(14.dp))
         Spacer(Modifier.width(14.dp))
-        CountedAction(likeCount, highlighted = liked, onClick = onToggleLike) {
-            LikeButton(liked = liked, size = 36.dp, onClick = onToggleLike)
-        }
-        Spacer(Modifier.width(10.dp))
-        CountedAction(commentCount, onClick = onOpenComments) {
-            CircleGlassIcon(SfIcons.BubbleLeft, "评论", 36.dp, onClick = onOpenComments)
-        }
+        CountedPill(SfIcons.HeartFill, SfIcons.Heart, liked, likeCount, onToggleLike, 36.dp)
+        Spacer(Modifier.width(8.dp))
+        CountedPill(SfIcons.BubbleLeft, SfIcons.BubbleLeft, false, commentCount, onOpenComments, 36.dp)
         Spacer(Modifier.width(10.dp))
         CircleGlassIcon(SfIcons.Ellipsis, "更多操作", 36.dp, onClick = onMoreClick)
     }
@@ -3639,7 +3631,48 @@ private const val BADGE_HOLD_ERROR_MS = 1900L
 private const val BADGE_FADE_MS = 320
 private const val BADGE_FADE_MS_L = 260L
 
-/** Icon with the song count underneath, the way NetEase shows 350w+ beside the heart. */
+/**
+ * Icon and count in one capsule, which is how a music player shows "how many people liked this"
+ * without a second line of tiny grey text: the number belongs to the control, so it sits inside the
+ * control's own surface.
+ */
+@Composable
+private fun CountedPill(
+    filledIcon: androidx.compose.ui.graphics.vector.ImageVector,
+    outlineIcon: androidx.compose.ui.graphics.vector.ImageVector,
+    filled: Boolean,
+    count: Int,
+    onClick: () -> Unit,
+    size: androidx.compose.ui.unit.Dp,
+) {
+    Row(
+        Modifier
+            .height(size)
+            .clip(com.mocharealm.gaze.capsule.ContinuousRoundedRectangle(AppleShapes.pill))
+            .background(AppTheme.palette.secondaryBackground)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = if (filled) filledIcon else outlineIcon,
+            contentDescription = null,
+            tint = if (filled) AppTheme.palette.accent else AppTheme.palette.label,
+            modifier = Modifier.size(size * 0.52f),
+        )
+        if (count > 0) {
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = compactCount(count),
+                fontFamily = SFPro,
+                fontSize = 12.sp,
+                color = if (filled) AppTheme.palette.accent else AppTheme.palette.secondaryLabel,
+            )
+        }
+    }
+}
+
+/** Icon with the song count underneath — superseded by [CountedPill], kept for other call sites. */
 @Composable
 private fun CountedAction(
     count: Int,
