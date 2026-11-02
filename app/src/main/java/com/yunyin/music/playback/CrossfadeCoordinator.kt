@@ -172,15 +172,24 @@ class CrossfadeCoordinator(
             lastPosition = audible.currentPosition
             // Ported smart transition: the two profiles decide the duration and a gain correction for the
             // incoming side. Fixed mode keeps the slider's seconds and unity gain.
-            audibleProbe.enabled = settings.smartTransition
+            val outgoingProfile = audibleProbe.profile()
+            val incomingProfile = secondaryProbe?.profile()
             fadePlan = if (settings.smartTransition) {
-                smartMusicTransition(audibleProbe.profile(), secondaryProbe?.profile())
+                smartMusicTransition(outgoingProfile, incomingProfile)
             } else {
                 null
             }
             next.volume = 0f
             next.playWhenReady = true
-            trace("fade", "fadeMs=$fade plan=${fadePlan?.let { "${it.durationMs}/${it.incomingGain}" } ?: "fixed"} index=$fadeFromIndex")
+            // The trace carries the inputs as well as the answer, so "smart did not seem to do anything"
+            // is diagnosable from the log instead of by ear: `plan=5.0/1.0` with null profiles means the
+            // analysis bailed out, not that the two tracks were judged alike.
+            trace(
+                "fade",
+                "fadeMs=$fade plan=${fadePlan?.let { "${it.durationMs}/${it.incomingGain}" } ?: "fixed"} " +
+                    "out=rms=${outgoingProfile?.rms} tail=${outgoingProfile?.tailRatio} beat=${outgoingProfile?.beatPeriodMs} " +
+                    "in=rms=${incomingProfile?.rms} lead=${incomingProfile?.leadingSilenceMs} index=$fadeFromIndex",
+            )
             handler.post(ticker)
         }.onFailure {
             trace("abort", "fade-exception=${it.message}")

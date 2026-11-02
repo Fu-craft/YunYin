@@ -62,6 +62,14 @@ class SeamlessAudioProcessor(
      */
     private val probe: TrackEnergyProbe? = null,
     /**
+     * Whether the probe should be collecting, read per buffer.
+     *
+     * A lambda, not a flag set at construction: the smart-transition switch can be flipped while a track
+     * is already playing, and the analysis needs the *history* of the outgoing track — enabling the probe
+     * only when the fade starts leaves it with zero samples and the plan silently falls back to 5 s.
+     */
+    private val probeEnabled: () -> Boolean = { true },
+    /**
      * Transport envelope gain (pause/resume), read per buffer.
      *
      * Kept out of `ExoPlayer.volume` on purpose: the crossfade owns that property, and two writers
@@ -173,6 +181,7 @@ class SeamlessAudioProcessor(
      */
     private fun measure(buffer: ByteBuffer) {
         val probe = probe ?: return
+        probe.enabled = probeEnabled()
         if (!probe.enabled) return
         val channels = inputAudioFormat.channelCount.coerceAtLeast(1)
         val frameBytes = channels * 2

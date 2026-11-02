@@ -110,6 +110,7 @@ class PlaybackService : MediaSessionService() {
                     SeamlessAudioProcessor(
                         enabled = { container.settings.seamlessTransition },
                         probe = probe,
+                        probeEnabled = { container.settings.smartTransition },
                         transportGain = { transportGain.value },
                     ),
                 ),
@@ -135,7 +136,9 @@ class PlaybackService : MediaSessionService() {
                     volume = 1f
                 }
         }
-        val initialProbe = TrackEnergyProbe()
+        // Enabled up front when the smart transition is on: the probe has to collect while the track
+        // plays, not from the moment the fade begins (it needs the outgoing track's history).
+        val initialProbe = TrackEnergyProbe().apply { enabled = container.settings.smartTransition }
         val player = createPlayer(initialProbe)
         mediaSession = MediaSession.Builder(this, player).build()
 
