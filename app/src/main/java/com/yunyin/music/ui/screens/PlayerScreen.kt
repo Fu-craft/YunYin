@@ -3647,25 +3647,23 @@ private fun CountedPill(
 ) {
     Row(
         Modifier
-            .height(size)
-            .clip(com.mocharealm.gaze.capsule.ContinuousRoundedRectangle(AppleShapes.pill))
-            .background(AppTheme.palette.secondaryBackground)
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp),
+            .padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
             imageVector = if (filled) filledIcon else outlineIcon,
             contentDescription = null,
-            tint = if (filled) AppTheme.palette.accent else AppTheme.palette.label,
-            modifier = Modifier.size(size * 0.52f),
+            tint = if (filled) AppTheme.palette.accent else AppTheme.palette.secondaryLabel,
+            modifier = Modifier.size(size * 0.78f),
         )
         if (count > 0) {
-            Spacer(Modifier.width(6.dp))
+            Spacer(Modifier.width(3.dp))
             Text(
                 text = compactCount(count),
                 fontFamily = SFPro,
                 fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
                 color = if (filled) AppTheme.palette.accent else AppTheme.palette.secondaryLabel,
             )
         }
