@@ -42,6 +42,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -3645,26 +3646,32 @@ private fun CountedPill(
     onClick: () -> Unit,
     size: androidx.compose.ui.unit.Dp,
 ) {
-    Row(
+    // The count sits at the glyph's top-right corner, and the glyph is white: the player chrome
+    // lives over artwork, so the label colour (which flips with the theme) is the wrong tint here.
+    Box(
         Modifier
-            .clickable(onClick = onClick)
-            .padding(vertical = 2.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .size(size)
+            .clip(androidx.compose.foundation.shape.CircleShape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
     ) {
         Icon(
             imageVector = if (filled) filledIcon else outlineIcon,
             contentDescription = null,
-            tint = if (filled) AppTheme.palette.accent else AppTheme.palette.secondaryLabel,
-            modifier = Modifier.size(size * 0.78f),
+            tint = if (filled) AppTheme.palette.accent else androidx.compose.ui.graphics.Color.White,
+            modifier = Modifier.size(size * 0.82f),
         )
         if (count > 0) {
-            Spacer(Modifier.width(4.dp))
             Text(
                 text = compactCount(count),
                 fontFamily = SFPro,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Medium,
-                color = if (filled) AppTheme.palette.accent else AppTheme.palette.secondaryLabel,
+                fontSize = 9.sp,
+                lineHeight = 10.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = if (filled) AppTheme.palette.accent else androidx.compose.ui.graphics.Color.White,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = size * 0.22f, y = (-2).dp),
             )
         }
     }
