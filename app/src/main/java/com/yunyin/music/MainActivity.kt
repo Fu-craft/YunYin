@@ -1336,14 +1336,14 @@ class MainActivity : ComponentActivity() {
                     // added a second, second-order movement that lived inside the expanding clip (so
                     // it was largely invisible) and the exit was as slow as the entrance, unlike every
                     // other chrome overlay here (320/260, 200/160).
-                    enter = fadeIn(tween(Motion.SmallDuration, easing = Motion.EaseOut)) +
+                    enter = fadeIn(tween(Motion.duration(Motion.SmallDuration), easing = Motion.EaseOut)) +
                         expandVertically(
-                            tween(Motion.SmallDuration, easing = Motion.EaseOut),
+                            tween(Motion.duration(Motion.SmallDuration), easing = Motion.EaseOut),
                             expandFrom = Alignment.Bottom,
                         ),
-                    exit = fadeOut(tween(Motion.SmallDuration, easing = Motion.EaseOut)) +
+                    exit = fadeOut(tween(Motion.duration(Motion.SmallDuration), easing = Motion.EaseOut)) +
                         shrinkVertically(
-                            tween(Motion.SmallDuration, easing = Motion.EaseOut),
+                            tween(Motion.duration(Motion.SmallDuration), easing = Motion.EaseOut),
                             shrinkTowards = Alignment.Bottom,
                         ),
                 ) {
@@ -1374,8 +1374,8 @@ class MainActivity : ComponentActivity() {
 
             AnimatedVisibility(
                 visible = showSettings,
-                enter = slideInVertically(tween(Motion.SheetEnterDuration, easing = Motion.EaseOut)) { it },
-                exit = slideOutVertically(tween(Motion.SheetExitDuration, easing = Motion.EaseOut)) { it },
+                enter = slideInVertically(tween(Motion.duration(Motion.SheetEnterDuration), easing = Motion.EaseOut)) { it },
+                exit = slideOutVertically(tween(Motion.duration(Motion.SheetExitDuration), easing = Motion.EaseOut)) { it },
             ) {
                 SettingsScreen(
                     onClearLyricsCache = {
@@ -1799,8 +1799,8 @@ class MainActivity : ComponentActivity() {
 
             AnimatedVisibility(
                 visible = showLogin,
-                enter = slideInVertically(tween(Motion.SheetEnterDuration, easing = Motion.EaseOut)) { it },
-                exit = slideOutVertically(tween(Motion.SheetExitDuration, easing = Motion.EaseOut)) { it },
+                enter = slideInVertically(tween(Motion.duration(Motion.SheetEnterDuration), easing = Motion.EaseOut)) { it },
+                exit = slideOutVertically(tween(Motion.duration(Motion.SheetExitDuration), easing = Motion.EaseOut)) { it },
             ) {                LoginScreen(
                     currentAccount = account,
                     client = container.client,
@@ -1854,8 +1854,8 @@ class MainActivity : ComponentActivity() {
 
             AnimatedVisibility(
                 visible = showPlayer,
-                enter = slideInVertically(tween(Motion.SheetEnterDuration, easing = Motion.EaseOut)) { it } + fadeIn(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
-                exit = slideOutVertically(tween(Motion.SheetEnterDuration, easing = Motion.EaseOut)) { it } + fadeOut(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
+                enter = slideInVertically(tween(Motion.duration(Motion.SheetEnterDuration), easing = Motion.EaseOut)) { it } + fadeIn(tween(Motion.duration(Motion.SmallDuration), easing = Motion.EaseOut)),
+                exit = slideOutVertically(tween(Motion.duration(Motion.SheetEnterDuration), easing = Motion.EaseOut)) { it } + fadeOut(tween(Motion.duration(Motion.SmallDuration), easing = Motion.EaseOut)),
             ) {
                 // Collected here, inside the player's own branch, so the 4x/second position tick
                 // invalidates only the player screen and never the browsing tabs behind it.
@@ -2005,10 +2005,10 @@ class MainActivity : ComponentActivity() {
 
             AnimatedVisibility(
                 visible = artistState != null,
-                enter = slideInVertically(tween(Motion.SheetEnterDuration, easing = Motion.EaseOut)) { it } +
-                    fadeIn(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
-                exit = slideOutVertically(tween(Motion.SheetExitDuration, easing = Motion.EaseOut)) { it } +
-                    fadeOut(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
+                enter = slideInVertically(tween(Motion.duration(Motion.SheetEnterDuration), easing = Motion.EaseOut)) { it } +
+                    fadeIn(tween(Motion.duration(Motion.SmallDuration), easing = Motion.EaseOut)),
+                exit = slideOutVertically(tween(Motion.duration(Motion.SheetExitDuration), easing = Motion.EaseOut)) { it } +
+                    fadeOut(tween(Motion.duration(Motion.SmallDuration), easing = Motion.EaseOut)),
             ) {
                 val artist = lastArtist
                 if (artist != null) {
@@ -2064,10 +2064,10 @@ class MainActivity : ComponentActivity() {
 
             AnimatedVisibility(
                 visible = collectionState != null,
-                enter = slideInVertically(tween(Motion.SheetEnterDuration, easing = Motion.EaseOut)) { it } +
-                    fadeIn(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
-                exit = slideOutVertically(tween(Motion.SheetExitDuration, easing = Motion.EaseOut)) { it } +
-                    fadeOut(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
+                enter = slideInVertically(tween(Motion.duration(Motion.SheetEnterDuration), easing = Motion.EaseOut)) { it } +
+                    fadeIn(tween(Motion.duration(Motion.SmallDuration), easing = Motion.EaseOut)),
+                exit = slideOutVertically(tween(Motion.duration(Motion.SheetExitDuration), easing = Motion.EaseOut)) { it } +
+                    fadeOut(tween(Motion.duration(Motion.SmallDuration), easing = Motion.EaseOut)),
             ) {
                 val state = lastCollection
                 val showcase = com.yunyin.music.ui.components.PlaylistShowcase.of(playlistShowcase)
@@ -2206,10 +2206,10 @@ class MainActivity : ComponentActivity() {
 
             AnimatedVisibility(
                 visible = commentsState.visible,
-                enter = slideInVertically(tween(Motion.SheetEnterDuration, easing = Motion.EaseOut)) { it } +
-                    fadeIn(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
-                exit = slideOutVertically(tween(Motion.SheetExitDuration, easing = Motion.EaseOut)) { it } +
-                    fadeOut(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
+                enter = slideInVertically(tween(Motion.duration(Motion.SheetEnterDuration), easing = Motion.EaseOut)) { it } +
+                    fadeIn(tween(Motion.duration(Motion.SmallDuration), easing = Motion.EaseOut)),
+                exit = slideOutVertically(tween(Motion.duration(Motion.SheetExitDuration), easing = Motion.EaseOut)) { it } +
+                    fadeOut(tween(Motion.duration(Motion.SmallDuration), easing = Motion.EaseOut)),
             ) {
                 val screenState = if (commentsState.visible) commentsState else lastComments
                 if (screenState != null) {
@@ -2288,10 +2288,10 @@ class MainActivity : ComponentActivity() {
             // shared page spec. AnimatedVisibility owns interruption, so back/forward mid-transition is safe.
             AnimatedVisibility(
                 visible = showDownloadCenter,
-                enter = slideInHorizontally(tween(Motion.PageEnterDuration, easing = Motion.EaseOut)) { it } +
-                    fadeIn(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
-                exit = slideOutHorizontally(tween(Motion.PageExitDuration, easing = Motion.EaseOut)) { it } +
-                    fadeOut(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
+                enter = slideInHorizontally(tween(Motion.duration(Motion.PageEnterDuration), easing = Motion.EaseOut)) { it } +
+                    fadeIn(tween(Motion.duration(Motion.SmallDuration), easing = Motion.EaseOut)),
+                exit = slideOutHorizontally(tween(Motion.duration(Motion.PageExitDuration), easing = Motion.EaseOut)) { it } +
+                    fadeOut(tween(Motion.duration(Motion.SmallDuration), easing = Motion.EaseOut)),
             ) {
                 DownloadCenterScreen(
                     states = downloadStatesAll,

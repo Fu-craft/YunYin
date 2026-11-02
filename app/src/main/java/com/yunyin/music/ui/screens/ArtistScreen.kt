@@ -326,7 +326,7 @@ fun ArtistScreen(
  * purpose: content arriving must not slide around under the user's finger.
  */
 private fun LazyItemScope.appendedRowAppear(): Modifier = Modifier.animateItem(
-    fadeInSpec = tween(Motion.ItemAppearDuration, easing = Motion.EaseOut),
+    fadeInSpec = tween(Motion.duration(Motion.ItemAppearDuration), easing = Motion.EaseOut),
     fadeOutSpec = null,
     placementSpec = null,
 )
@@ -456,7 +456,7 @@ private fun ArtistHeaderBlock(
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .animateContentSize(tween(Motion.SmallDuration, easing = Motion.EaseOut))
+                    .animateContentSize(tween(Motion.duration(Motion.SmallDuration), easing = Motion.EaseOut))
                     .clipToBounds(),
             ) {
                 Text(
@@ -479,7 +479,7 @@ private fun ArtistHeaderBlock(
             // LibraryScreen's expandable rows. Read only in the layer phase.
             val chevron by animateFloatAsState(
                 targetValue = if (bioExpanded) 1f else 0f,
-                animationSpec = tween(Motion.SmallDuration, easing = Motion.EaseOut),
+                animationSpec = tween(Motion.duration(Motion.SmallDuration), easing = Motion.EaseOut),
                 label = "bio-chevron",
             )
             Icon(

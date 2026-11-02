@@ -6,6 +6,7 @@ package com.yunyin.music.ui.theme
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 
 /**
@@ -65,6 +66,39 @@ object Motion {
 
     /** cubic-bezier(0.32, 0.72, 0, 1) — the iOS-like drawer curve for sheets. */
     val EaseDrawer: Easing = CubicBezierEasing(0.32f, 0.72f, 0f, 1f)
+
+    // ---------------------------------------------------------------------------------------------
+    // Reduced motion
+    //
+    // Android's "remove animations" accessibility setting is a user statement that motion makes the
+    // interface harder to use. Honouring it is not a nicety: an app that keeps sliding and springing
+    // around under that setting is actively fighting the person using it.
+    //
+    // Tweens ask [duration] for their length (0 = an instant cut). Springs cannot be zeroed, so their
+    // call sites pass the spec through [springOrSnap].
+    // ---------------------------------------------------------------------------------------------
+
+    /**
+     * Whether the platform currently allows motion.
+     *
+     * `runCatching` because this file is also loaded by JVM unit tests, where `ValueAnimator` is a
+     * stub that throws; a test that happens to touch a duration must see the default (motion on), not
+     * a crash.
+     */
+    fun animatorsEnabled(): Boolean =
+        runCatching { android.animation.ValueAnimator.areAnimatorsEnabled() }.getOrDefault(true)
+
+    /**
+     * A duration that respects the animator setting: [base] normally, `0` when motion is off.
+     *
+     * Use it on anything whose *point* is the motion — page switches, sheet entrances, list
+     * entrances. A `0`-duration tween is a cut, which is exactly what the setting asks for.
+     */
+    fun duration(base: Int): Int = if (animatorsEnabled()) base else 0
+
+    /** The spring you asked for, or an instant snap when the platform has motion switched off. */
+    fun <T> springOrSnap(spec: FiniteAnimationSpec<T>): FiniteAnimationSpec<T> =
+        if (animatorsEnabled()) spec else snap()
 
     /**
      * The Compose form of Apple's `{ type: "spring", duration: 0.5, bounce: 0.2 }`.

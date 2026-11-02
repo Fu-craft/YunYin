@@ -288,10 +288,10 @@ fun LibraryScreen(
     // the frosted strip.
     AnimatedVisibility(
         visible = showLocalMusic,
-        enter = slideInHorizontally(tween(LIB_PAGE_MS, easing = Motion.EaseOut)) { it } +
-            fadeIn(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
-        exit = slideOutHorizontally(tween(LIB_PAGE_EXIT_MS, easing = Motion.EaseOut)) { it } +
-            fadeOut(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
+        enter = slideInHorizontally(tween(Motion.duration(LIB_PAGE_MS), easing = Motion.EaseOut)) { it } +
+            fadeIn(tween(Motion.duration(Motion.SmallDuration), easing = Motion.EaseOut)),
+        exit = slideOutHorizontally(tween(Motion.duration(LIB_PAGE_EXIT_MS), easing = Motion.EaseOut)) { it } +
+            fadeOut(tween(Motion.duration(Motion.SmallDuration), easing = Motion.EaseOut)),
     ) {
         LibrarySubpage(title = "本地音乐", onBack = { showLocalMusic = false }) { topInset ->
             LocalMusicScreen(
@@ -321,10 +321,10 @@ fun LibraryScreen(
     // page's exit invisible).
     AnimatedVisibility(
         visible = openPage == LibraryPage.Playlists,
-        enter = slideInHorizontally(tween(LIB_PAGE_MS, easing = Motion.EaseOut)) { it } +
-            fadeIn(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
-        exit = slideOutHorizontally(tween(LIB_PAGE_EXIT_MS, easing = Motion.EaseOut)) { it } +
-            fadeOut(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
+        enter = slideInHorizontally(tween(Motion.duration(LIB_PAGE_MS), easing = Motion.EaseOut)) { it } +
+            fadeIn(tween(Motion.duration(Motion.SmallDuration), easing = Motion.EaseOut)),
+        exit = slideOutHorizontally(tween(Motion.duration(LIB_PAGE_EXIT_MS), easing = Motion.EaseOut)) { it } +
+            fadeOut(tween(Motion.duration(Motion.SmallDuration), easing = Motion.EaseOut)),
     ) {
         PlaylistsPage(
             playlists = normalPlaylists,
@@ -339,10 +339,10 @@ fun LibraryScreen(
 
     AnimatedVisibility(
         visible = openPage == LibraryPage.Recent,
-        enter = slideInHorizontally(tween(LIB_PAGE_MS, easing = Motion.EaseOut)) { it } +
-            fadeIn(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
-        exit = slideOutHorizontally(tween(LIB_PAGE_EXIT_MS, easing = Motion.EaseOut)) { it } +
-            fadeOut(tween(Motion.SmallDuration, easing = Motion.EaseOut)),
+        enter = slideInHorizontally(tween(Motion.duration(LIB_PAGE_MS), easing = Motion.EaseOut)) { it } +
+            fadeIn(tween(Motion.duration(Motion.SmallDuration), easing = Motion.EaseOut)),
+        exit = slideOutHorizontally(tween(Motion.duration(LIB_PAGE_EXIT_MS), easing = Motion.EaseOut)) { it } +
+            fadeOut(tween(Motion.duration(Motion.SmallDuration), easing = Motion.EaseOut)),
     ) {
         RecentPage(
             tracks = recentTracks,
@@ -805,7 +805,7 @@ private fun LibraryRow(
 ) {
     val rotation by animateFloatAsState(
         targetValue = if (expanded) 90f else 0f,
-        animationSpec = tween(Motion.SmallDuration, easing = Motion.EaseOut),
+        animationSpec = tween(Motion.duration(Motion.SmallDuration), easing = Motion.EaseOut),
         label = "row-chevron",
     )
     Row(

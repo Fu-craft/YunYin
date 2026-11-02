@@ -219,8 +219,8 @@ fun QueueSheet(
                                 .zIndex(if (dragging) 1f else 0f)
                                 .graphicsLayer { translationY = dragY }
                                 .animateItem(
-                                    fadeInSpec = tween(Motion.ItemAppearDuration, easing = Motion.EaseOut),
-                                    fadeOutSpec = tween(Motion.ItemAppearDuration, easing = Motion.EaseOut),
+                                    fadeInSpec = tween(Motion.duration(Motion.ItemAppearDuration), easing = Motion.EaseOut),
+                                    fadeOutSpec = tween(Motion.duration(Motion.ItemAppearDuration), easing = Motion.EaseOut),
                                 )
                                 .clickable { close { onSelect(index) } }
                                 .padding(horizontal = 20.dp, vertical = 8.dp),

@@ -104,7 +104,7 @@ import com.kyant.backdrop.backdrops.layerBackdrop
  * around under the user's finger.
  */
 private fun LazyItemScope.shelfAppear(): Modifier = Modifier.animateItem(
-    fadeInSpec = tween(Motion.ItemAppearDuration, easing = Motion.EaseOut),
+    fadeInSpec = tween(Motion.duration(Motion.ItemAppearDuration), easing = Motion.EaseOut),
     fadeOutSpec = null,
     placementSpec = null,
 )
@@ -127,7 +127,9 @@ private fun ContinueListeningRow(
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(
         targetValue = if (pressed) 0.985f else 1f,
-        animationSpec = spring(dampingRatio = 1f, stiffness = 900f),
+        // A press spring cannot be shortened, so it is routed through springOrSnap: with the system's
+        // "remove animations" setting on, the row simply sits at its target scale.
+        animationSpec = Motion.springOrSnap(spring(dampingRatio = 1f, stiffness = 900f)),
         label = "continue-press",
     )
     Row(
