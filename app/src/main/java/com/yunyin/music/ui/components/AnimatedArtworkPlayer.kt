@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 浜戦煶 / YunYin contributors
+// Copyright (C) 2026 云音 / YunYin contributors
 
 package com.yunyin.music.ui.components
 
@@ -85,7 +85,7 @@ class AnimatedCoverPlayerHost(context: Context) {
     }
 
     /**
-     * Pauses the (possibly still prepared) player while the cover is off screen 鈥?the lyrics page
+     * Pauses the (possibly still prepared) player while the cover is off screen — the lyrics page
      * keeps this host alive, and a looping 1080p decode behind a full-screen lyrics page is pure
      * battery burn.
      */
@@ -345,7 +345,7 @@ private fun createAnimatedCoverPlayer(context: Context): ExoPlayer = ExoPlayer.B
     .setTrackSelector(
         // Belt and braces over the AVC-variant preselection: even if a master playlist slips
         // through, never let the selector climb to a 2160p HEVC rendition the device may be unable
-        // to decode 鈥?that is the "prepares forever, never shows a frame" failure. 1080 is the top
+        // to decode — that is the "prepares forever, never shows a frame" failure. 1080 is the top
         // AVC rung Apple publishes for square artwork, so this does not cost sharpness.
         DefaultTrackSelector(context).apply {
             setParameters(
@@ -404,3 +404,4 @@ private class RoundedTextureView(context: Context, radiusPx: Float) : TextureVie
 }
 
 private const val TAG = "YunYinArtwork"
+
