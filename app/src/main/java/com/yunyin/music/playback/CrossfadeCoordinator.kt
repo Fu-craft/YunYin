@@ -89,6 +89,16 @@ class CrossfadeCoordinator(
                     abort("secondary-not-ready")
                     return
                 }
+                // The plan has to exist *before* the start decision, or the gate would use the slider's
+                // seconds and a longer smart overlap would begin too late — the outgoing track then ends
+                // mid-fade and the transition cuts. Computed once the secondary is ready (the incoming
+                // probe needs the preloaded audio to have produced samples).
+                if (settings.smartTransition && fadePlan == null &&
+                    secondary?.playbackState == Player.STATE_READY
+                ) {
+                    fadePlan = smartMusicTransition(audibleProbe.profile(), secondaryProbe?.profile())
+                    trace("plan", "provisional=${fadePlan?.durationMs} remaining=${remainingMs()}")
+                }
                 if (CrossfadeRules.shouldStartFade(
                         preloadReady = secondary?.playbackState == Player.STATE_READY,
                         fadeStarted = state == State.FADE,
@@ -174,11 +184,18 @@ class CrossfadeCoordinator(
             // incoming side. Fixed mode keeps the slider's seconds and unity gain.
             val outgoingProfile = audibleProbe.profile()
             val incomingProfile = secondaryProbe?.profile()
-            fadePlan = if (settings.smartTransition) {
+            val requested = fadePlan ?: if (settings.smartTransition) {
                 smartMusicTransition(outgoingProfile, incomingProfile)
             } else {
                 null
             }
+            // Clamp to what is actually left of the outgoing track (upstream's `min(duration, remaining - 40)`).
+            // Without it a 7.5 s plan starting at 6 s of remaining lets the old track run out mid-fade,
+            // which is heard as the song stopping dead rather than crossfading.
+            val remaining = remainingMs()
+            fadePlan = requested?.copy(
+                durationMs = requested.durationMs.coerceAtMost((remaining - 40L).coerceAtLeast(200L)),
+            )
             next.volume = 0f
             next.playWhenReady = true
             // The trace carries the inputs as well as the answer, so "smart did not seem to do anything"
@@ -208,7 +225,10 @@ class CrossfadeCoordinator(
             audible.volume = out
             next.volume = incoming
             lastPosition = audible.currentPosition
-            if (CrossfadeRules.isFinished(progress)) {
+            if (audible.playbackState == Player.STATE_ENDED || CrossfadeRules.isFinished(progress)) {
+                // `ended` first: if the outgoing track runs out before the ramp finishes (a plan clamped
+                // at the last moment, a seek near the end), handing over immediately keeps the incoming
+                // side audible instead of leaving the user in silence.
                 handover()
             } else {
                 handler.postDelayed(ticker, 40L)

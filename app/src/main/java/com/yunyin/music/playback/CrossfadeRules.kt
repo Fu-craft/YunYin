@@ -22,8 +22,15 @@ object CrossfadeRules {
     /** Legacy volume-fade length, used only if the overlap path is unavailable. */
     const val FADE_MS = 1_500L
 
-    /** Deadline for the secondary to become READY before the overlap is abandoned. */
-    const val PRELOAD_DEADLINE_MS = 1_500L
+    /**
+     * Deadline for the secondary to become READY before the overlap is abandoned.
+     *
+     * Raised from 1.5 s to 3 s: the secondary has to resolve a short-lived stream URL *and* buffer before
+     * it can be faded in, and any failure here aborts the overlap — which the listener hears as the track
+     * ending hard. The preload still starts `fade + PRELOAD_MARGIN_MS` ahead of the boundary, so 3 s of
+     * allowance only eats margin that was already there.
+     */
+    const val PRELOAD_DEADLINE_MS = 3_000L
 
     /** Start preloading this long before the boundary (fade + margin). */
     const val PRELOAD_MARGIN_MS = 1_000L
