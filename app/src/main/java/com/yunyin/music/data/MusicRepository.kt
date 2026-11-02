@@ -243,8 +243,8 @@ class MusicRepository(
 
     /** 红心总数与评论总数；任何一边失败都退回 0，播放页据此决定显不显示。 */
     suspend fun songStats(id: Long): Pair<Int, Int> {
-        val red = when (val result = client.redCounts(listOf(id))) {
-            is NetResult.Ok -> result.value[id] ?: 0
+        val red = when (val result = client.redCount(id)) {
+            is NetResult.Ok -> result.value.first
             is NetResult.Err -> 0
         }
         val comments = when (val result = client.commentCount(id)) {
