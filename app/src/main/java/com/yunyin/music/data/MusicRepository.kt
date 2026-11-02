@@ -241,6 +241,18 @@ class MusicRepository(
     suspend fun recentCloudPlaylistIds(limit: Int = 100): NetResult<List<Long>> =
         recentPlayed?.playlistIds(limit) ?: NetResult.Ok(emptyList())
 
+    /** 红心总数与评论总数；任何一边失败都退回 0，播放页据此决定显不显示。 */
+    suspend fun songStats(id: Long): Pair<Int, Int> {
+        val red = when (val result = client.redCounts(listOf(id))) {
+            is NetResult.Ok -> result.value[id] ?: 0
+            is NetResult.Err -> 0
+        }
+        val comments = when (val result = client.commentCount(id)) {
+            is NetResult.Ok -> result.value
+            is NetResult.Err -> 0
+        }
+        return red to comments
+    }
     /** 相似歌曲 for the player's 「相似」 entry. */    suspend fun similarSongs(id: Long): NetResult<List<Track>> = client.similarSongs(id)
 
     /** 相似歌手 for the player's 「相似」 entry. */

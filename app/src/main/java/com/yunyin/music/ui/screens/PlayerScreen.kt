@@ -233,6 +233,10 @@ fun PlayerScreen(
     /** Whether the current track is liked, and its toggle (the heart). */
     liked: Boolean = false,
     onToggleLike: () -> Unit = {},
+    /** 红心总数与评论总数；0 表示未知，不显示。 */
+    likeCount: Int = 0,
+    commentCount: Int = 0,
+    onOpenComments: () -> Unit = {},
     /** Shares the current track: the caller owns the clipboard and the chooser. */
     onShareTrack: () -> Unit = {},
     /** Opens the artist page for the current track's first artist. */
@@ -1159,6 +1163,9 @@ fun PlayerScreen(
                                         track = track,
                                         liked = liked,
                                         onToggleLike = { interaction++; onToggleLike() },
+                            likeCount = likeCount,
+                            commentCount = commentCount,
+                            onOpenComments = onOpenComments,
                                         onMoreClick = {
                                             interaction++
                                             showActions = true
@@ -1431,6 +1438,9 @@ fun PlayerScreen(
                             track = track,
                             liked = liked,
                             onToggleLike = { interaction++; onToggleLike() },
+                            likeCount = likeCount,
+                            commentCount = commentCount,
+                            onOpenComments = onOpenComments,
                             onMoreClick = {
                                 interaction++
                                 showActions = true
@@ -2815,6 +2825,10 @@ private fun TitleBlock(
     liked: Boolean = false,
     onToggleLike: () -> Unit = {},
     onMoreClick: () -> Unit = {},
+    /** 红心总数与评论总数；0 表示未知，不显示。 */
+    likeCount: Int = 0,
+    commentCount: Int = 0,
+    onOpenComments: () -> Unit = {},
     /** Opens the artist page for the track's first artist; absent when there is nowhere to go. */
     onArtistClick: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -2862,7 +2876,14 @@ private fun TitleBlock(
             }
         }
         Spacer(Modifier.width(14.dp))
-        LikeButton(liked = liked, size = 36.dp, onClick = onToggleLike)
+        Spacer(Modifier.width(14.dp))
+        CountedAction(likeCount, highlighted = liked, onClick = onToggleLike) {
+            LikeButton(liked = liked, size = 36.dp, onClick = onToggleLike)
+        }
+        Spacer(Modifier.width(10.dp))
+        CountedAction(commentCount, onClick = onOpenComments) {
+            CircleGlassIcon(SfIcons.Ellipsis, "评论", 36.dp, onClick = onOpenComments)
+        }
         Spacer(Modifier.width(10.dp))
         CircleGlassIcon(SfIcons.Ellipsis, "更多操作", 36.dp, onClick = onMoreClick)
     }
@@ -3608,3 +3629,34 @@ private const val BADGE_HOLD_ERROR_MS = 1900L
 /** Fade duration. Two spellings because `tween` takes an Int and `delay` a Long. */
 private const val BADGE_FADE_MS = 320
 private const val BADGE_FADE_MS_L = 260L
+
+/** Icon with the song count underneath, the way NetEase shows 350w+ beside the heart. */
+@Composable
+private fun CountedAction(
+    count: Int,
+    highlighted: Boolean = false,
+    onClick: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        content()
+        Text(
+            text = compactCount(count),
+            fontFamily = SFPro,
+            fontSize = 10.sp,
+            lineHeight = 12.sp,
+            color = if (highlighted) AppTheme.palette.accent else AppTheme.palette.secondaryLabel,
+            modifier = Modifier.clickable(onClick = onClick),
+        )
+    }
+}
+
+/** 3500000 → 350w+；12000 → 1.2w+；3207 → 3207。 */
+internal fun compactCount(value: Int): String = when {
+    value >= 100_000_000 -> (value / 100_000_000).toString() + "亿+"
+    value >= 10_000 -> {
+        val w = value / 10_000.0
+        (if (w >= 100) w.toInt().toString() else String.format("%.1f", w)) + "w+"
+    }
+    else -> value.toString()
+}

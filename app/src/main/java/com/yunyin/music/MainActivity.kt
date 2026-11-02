@@ -229,6 +229,12 @@ class MainActivity : ComponentActivity() {
         // Anything needing the position (the player screen) collects the full state *inside* its
         // own branch instead, so the invalidation is scoped to the component that actually uses it.
         val playerState = container.player.state
+        // 播放页的红心/评论数：跟着当前曲目走，切歌即刷新。
+        var songStats by remember { mutableStateOf(0 to 0) }
+        LaunchedEffect(container.player.state.value.current?.id) {
+            val id = container.player.state.value.current?.id ?: return@LaunchedEffect
+            songStats = runCatching { container.music.songStats(id) }.getOrDefault(0 to 0)
+        }
 
         val hasTrack by remember {
             playerState.map { it.hasTrack }.distinctUntilChanged()
@@ -1930,6 +1936,14 @@ class MainActivity : ComponentActivity() {
                     onDownloadDismissed = playerViewModel::clearDownloadState,
                     liked = playerViewModel.liked,
                     onToggleLike = playerViewModel::toggleLike,
+                    // 红心总数与评论数：曲目变化时各取一次，失败就显示 0（即不显示）。
+                    likeCount = songStats.first,
+                    commentCount = songStats.second,
+                    onOpenComments = {
+                        playback.current?.let { track ->
+                            appViewModel.openComments(track.id, track.name)
+                        }
+                    },
                     onShareTrack = {
                         shareText(playerViewModel.currentShareText(), "分享歌曲")
                     },
