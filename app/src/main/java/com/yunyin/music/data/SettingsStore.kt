@@ -67,39 +67,12 @@ class SettingsStore(context: Context) {
         set(value) = prefs.edit().putBoolean(KEY_DESKTOP_LYRICS, value).apply()
 
     /**
-     * Whether the head of each stream is tapered, so a track begins rather than switching on.
-     *
-     * Defaults on. It is a small, safe improvement: the taper changes amplitude only and cannot affect the
-     * media position, so it cannot desync the lyrics or the progress bar. (Silence trimming was removed
-     * from this feature — it broke seeking; see `SeamlessAudioProcessor`.)
-     */
-    var seamlessTransition: Boolean
-        get() = prefs.getBoolean(KEY_SEAMLESS_TRANSITION, true)
-        set(value) = prefs.edit().putBoolean(KEY_SEAMLESS_TRANSITION, value).apply()
-
-    /**
      * Wi-Fi-only downloads, on by default (the user's data allowance is the thing this protects).
      * Changing it takes effect for the next queued item; a running download is not retroactively paused.
      */
     var downloadWifiOnly: Boolean
         get() = prefs.getBoolean(KEY_DOWNLOAD_WIFI_ONLY, DEFAULT_DOWNLOAD_WIFI_ONLY)
         set(value) = prefs.edit().putBoolean(KEY_DOWNLOAD_WIFI_ONLY, value).apply()
-
-    /** Overlap length for the dual-player crossfade (3/6/9/12 s, default 6). */
-    var crossfadeSeconds: Int
-        get() = prefs.getInt(KEY_CROSSFADE_SECONDS, 6)
-        set(value) = prefs.edit().putInt(KEY_CROSSFADE_SECONDS, value.coerceIn(0, 12)).apply()
-
-    /**
-     * Smart transition: let the audio decide the overlap instead of the fixed slider.
-     *
-     * Ported from CurrentMusicX's smart-transition analysis: the tail energy, the level of both sides and
-     * the outgoing track's beat period pick a duration (2.5–8 s) and an incoming gain correction. Off by
-     * default, because it changes how a transition *sounds* rather than merely when it happens.
-     */
-    var smartTransition: Boolean
-        get() = prefs.getBoolean(KEY_SMART_TRANSITION, false)
-        set(value) = prefs.edit().putBoolean(KEY_SMART_TRANSITION, value).apply()
 
     /** Equaliser on/off (Android platform Equalizer on our own audio session). */
     var equalizerEnabled: Boolean
@@ -447,10 +420,7 @@ class SettingsStore(context: Context) {
         private const val KEY_STATUS_BAR_LYRICS = "status_bar_lyrics"
     private const val KEY_DESKTOP_LYRICS = "desktop_lyrics_enabled"
         private const val KEY_LYRICON_ENABLED = "lyricon_enabled"
-        private const val KEY_SEAMLESS_TRANSITION = "seamless_transition"
         private const val KEY_DOWNLOAD_WIFI_ONLY = "download_wifi_only"
-        private const val KEY_CROSSFADE_SECONDS = "crossfade_seconds"
-        private const val KEY_SMART_TRANSITION = "smart_transition"
         private const val KEY_EQUALIZER_ENABLED = "equalizer_enabled"
         private const val KEY_EQUALIZER_PRESET = "equalizer_preset"
         private const val KEY_EQUALIZER_BANDS = "equalizer_bands"

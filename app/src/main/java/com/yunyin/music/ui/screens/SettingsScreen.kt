@@ -53,7 +53,6 @@ import com.yunyin.music.audio.EqualizerSettings
 import com.yunyin.music.data.lxsource.LxImportedSource
 import com.yunyin.music.data.lxsource.LxSourceKey
 import com.yunyin.music.data.update.UpdateUiState
-import com.yunyin.music.playback.CrossfadeRules
 import com.yunyin.music.ui.PlayerStyle
 import com.yunyin.music.ui.background.BackgroundStyle
 import com.yunyin.music.ui.components.GlassTopBar
@@ -176,24 +175,6 @@ fun SettingsScreen(
     onDesktopLyricsEnabledChange: (Boolean) -> Unit = {},
     overlayPermissionGranted: Boolean = false,
     onRequestOverlayPermission: () -> Unit = {},
-    /** Whether tracks run into each other without the dead air that makes them sound like files. */
-    seamlessTransition: Boolean = true,
-    onSeamlessTransitionChange: (Boolean) -> Unit = {},
-    /**
-     * Overlap length in seconds for the dual-player crossfade.
-     *
-     * Chosen on a slider rather than cycled by tapping: a duration is a value on a scale, so it reads
-     * better as a track under the finger than as four taps to come back to where it started.
-     */
-    crossfadeSeconds: Int = 6,
-    /** Sets the overlap directly; the host persists it and the service picks it up. */
-    onCrossfadeSecondsChange: (Int) -> Unit = {},
-    /**
-     * Smart transition (ported from CurrentMusicX): the overlap duration comes from the two tracks'
-     * measured energy instead of the slider, and the incoming side gets a gain correction.
-     */
-    smartTransition: Boolean = false,
-    onSmartTransitionChange: (Boolean) -> Unit = {},
     /** Platform equaliser on this app's own audio session. */
     equalizerEnabled: Boolean = false,
     onEqualizerEnabledChange: (Boolean) -> Unit = {},
@@ -203,13 +184,6 @@ fun SettingsScreen(
     /** Five band gains in millibels, 60/230/910/3600/14000 Hz order. */
     equalizerBands: List<Int> = listOf(0, 0, 0, 0, 0),
     onEqualizerBandChange: (Int, Int) -> Unit = { _, _ -> },
-    /**
-     * Legacy cycle action, kept so an existing host call site keeps compiling.
-     *
-     * The row that used to cycle through [CrossfadeRules.DURATIONS_SECONDS] is now a
-     * [SliderPreference]; nothing in this screen calls this any more.
-     */
-    onCycleCrossfadeSeconds: () -> Unit = {},
     /**
      * CurrentMusic 账号区块；由宿主注入，避免这里依赖 SettingsStore。
      *
@@ -367,12 +341,7 @@ fun SettingsScreen(
                             onDesktopLyricsEnabledChange = onDesktopLyricsEnabledChange,
                             overlayPermissionGranted = overlayPermissionGranted,
                             onRequestOverlayPermission = onRequestOverlayPermission,
-                            seamlessTransition = seamlessTransition,
-                            onSeamlessTransitionChange = onSeamlessTransitionChange,
-                            crossfadeSeconds = crossfadeSeconds,
-                            onCrossfadeSecondsChange = onCrossfadeSecondsChange,
-                            smartTransition = smartTransition,
-                            onSmartTransitionChange = onSmartTransitionChange,
+
                             onOpenEffects = { page = SettingsPage.Effects },
                             currentMusicSection = currentMusicSection,
                             playlistShowcaseLabel = playlistShowcaseLabel,
@@ -501,12 +470,7 @@ private fun MainPage(
     onDesktopLyricsEnabledChange: (Boolean) -> Unit,
     overlayPermissionGranted: Boolean,
     onRequestOverlayPermission: () -> Unit,
-    seamlessTransition: Boolean,
-    onSeamlessTransitionChange: (Boolean) -> Unit,
-    crossfadeSeconds: Int,
-    onCrossfadeSecondsChange: (Int) -> Unit,
-    smartTransition: Boolean,
-    onSmartTransitionChange: (Boolean) -> Unit,
+
     onOpenEffects: () -> Unit,
     currentMusicSection: (@Composable () -> Unit)?,
     playlistShowcaseLabel: String,
@@ -544,43 +508,6 @@ private fun MainPage(
         // 1 — 播放
         item(key = "play") {
             SettingsSection(title = "播放") {
-                SwitchPreference(
-                    insideMargin = RowInsets,
-                    checked = seamlessTransition,
-                    onCheckedChange = onSeamlessTransitionChange,
-                    title = "无缝衔接",
-                    summary = "切歌时让两首重叠淡入淡出",
-                )
-                GroupDivider()
-                SliderPreference(
-                    insideMargin = RowInsets,
-                    value = crossfadeSeconds.toFloat(),
-                    onValueChange = { raw ->
-                        // The slider is stepped to the four supported durations, so the rounded value is
-                        // always one of them; a repeated value must not write the store on every frame.
-                        val seconds = raw.roundToInt()
-                        if (seconds != crossfadeSeconds) onCrossfadeSecondsChange(seconds)
-                    },
-                    title = "交叉淡化时长",
-                    summary = "切歌重叠的时长",
-                    // The value goes in `endActions` rather than `valueText`: miuix renders `valueText`
-                    // at body size, and the style guide gives right-hand values their own 14 sp role.
-                    endActions = { PreferenceValue("$crossfadeSeconds 秒") },
-                    valueRange = CrossfadeRules.DURATIONS_SECONDS.first().toFloat()..
-                        CrossfadeRules.DURATIONS_SECONDS.last().toFloat(),
-                    steps = (CrossfadeRules.DURATIONS_SECONDS.size - 2).coerceAtLeast(0),
-                )
-                GroupDivider()
-                SwitchPreference(
-                    insideMargin = RowInsets,
-                    checked = smartTransition,
-                    onCheckedChange = onSmartTransitionChange,
-                    title = "智能过渡",
-                    // Ported analysis: tail energy + both sides' level + the outgoing beat period pick
-                    // the overlap (and a gain correction) instead of the slider's fixed seconds.
-                    summary = "按两首歌的实际能量决定重叠长度（2.5–8 秒）",
-                )
-                GroupDivider()
                 ArrowPreference(
                     insideMargin = RowInsets,
                     title = "定时关闭",

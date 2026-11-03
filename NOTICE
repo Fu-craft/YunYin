@@ -28,19 +28,12 @@ androidx.palette — Apache-2.0 — https://developer.android.com/jetpack/androi
 以下文件为 CurrentMusicX 的移植/改编（GPLv3 §13 允许与 AGPLv3 合并，合并后的作品继续以 AGPL-3.0-only 发布）：
 https://github.com/currencortex/CurrentMusicX
 
-app/src/main/java/com/yunyin/music/playback/PlaybackPauseFade.kt
+app/src/main/java/com/yunyin/music/playback/PlaybackPauseFade.kt（暂停/恢复增益包）
   移植自 core/media/PlaybackPauseFade.kt（暂停/恢复增益包；原文件另注 Folia 的 playbackFade.ts，AGPL）
   差别：增益不写 ExoPlayer.volume（本项目交叉淡化已占用该属性），改由音频处理器逐样本相乘
-app/src/main/java/com/yunyin/music/playback/MusicTransitionAnalysis.kt
-  移植自 core/media/MusicTransitionAnalysis.kt（智能过渡的能量分析、时长判定与等功率增益）
 app/src/main/java/com/yunyin/music/audio/EqualizerSettings.kt
   移植自 data/settings/EqualizerSettings.kt（五段均衡器的频段、预设与插值）
 app/src/main/java/com/yunyin/music/audio/PlaybackEqualizer.kt
   移植自 core/media/PlaybackEqualizer.kt（系统 Equalizer 绑定到本应用音频会话）
-app/src/main/java/com/yunyin/music/playback/SeamlessAudioProcessor.kt
-  其中的 RMS/低频能量测量移植自 core/media/DockAudioProcessor.kt
-app/src/main/java/com/yunyin/music/playback/CrossfadeCoordinator.kt
-  智能时长与增益修正接入本项目的双播放器交叉淡化
-
 未移植：CurrentMusicX 的「原声/AI 大师/心境/智能/扬声器」音效套件依赖网易云音乐的加密音效包与私有引擎
 （NcaeDecoder + com.netease.cloudmusic.* 反编译代码），不属于可再分发代码，本仓库不包含。

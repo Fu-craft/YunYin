@@ -88,8 +88,6 @@ class PlayerController(
     private val sourceFailureNote: (Long) -> String? = { null },
     /** Called with a track id when its playback failed, so the resolver can drop a cached (expired) URL. */
     private val onStreamError: (Long) -> Unit = {},
-    /** 歌曲无缝衔接: read live so the Settings switch applies without recreating the player. */
-    private val crossfadeEnabled: () -> Boolean = { true },
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 

@@ -401,12 +401,8 @@ class MainActivity : ComponentActivity() {
         // Read from the bridge rather than the preference: the bridge is the authority on whether it is
         // publishing, and it mirrors the stored value, so the switch cannot disagree with what is running.
         var lyriconEnabled by remember { mutableStateOf(container.lyricon.enabled) }
-        var seamlessTransition by remember { mutableStateOf(container.settings.seamlessTransition) }
         var downloadWifiOnly by remember { mutableStateOf(container.settings.downloadWifiOnly) }
-        var crossfadeSeconds by remember { mutableStateOf(container.settings.crossfadeSeconds) }
-        // Ported from CurrentMusicX: smart overlap length + the platform equaliser. The service reads the
-        // store, so writing it here is all a toggle has to do.
-        var smartTransition by remember { mutableStateOf(container.settings.smartTransition) }
+        // Platform equaliser. The service reads the store, so writing it here is all a toggle has to do.
         var equalizerEnabled by remember { mutableStateOf(container.settings.equalizerEnabled) }
         var equalizerPreset by remember { mutableStateOf(container.settings.equalizerPreset) }
         var equalizerBands by remember {
@@ -1465,8 +1461,6 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                     },
-                    crossfadeSeconds = crossfadeSeconds,
-                    seamlessTransition = seamlessTransition,
                     autoImmersiveLyrics = autoImmersiveLyrics,
                     onAutoImmersiveLyricsChange = { enabled ->
                         // Compose state + the store: the player reads the Compose state, so a toggle
@@ -1520,28 +1514,9 @@ class MainActivity : ComponentActivity() {
                         else -> "关闭"
                     },
                     onShowSleepTimer = { showSleepTimer = true },
-                    onSeamlessTransitionChange = { enabled ->
-                        seamlessTransition = enabled
-                        // Writing the preference is the whole action: the service watches this key and
-                        // applies it to the running player. Reaching the player from here is not possible
-                        // — `Player` and `MediaController` expose no skip-silence control — which is why
-                        // the service owns that half.
-                        container.settings.seamlessTransition = enabled
-                    },
                     onTestFlymeLyric = {
                         container.tickerLyrics.runSelfTest()
                         Toast.makeText(context, "已发送测试歌词，请看状态栏是否滚动", Toast.LENGTH_LONG).show()
-                    },
-                    // The row is a slider now, so the value is set directly instead of stepped through
-                    // the supported durations one tap at a time; the store write is the same either way.
-                    onCrossfadeSecondsChange = { seconds ->
-                        crossfadeSeconds = seconds
-                        container.settings.crossfadeSeconds = seconds
-                    },
-                    smartTransition = smartTransition,
-                    onSmartTransitionChange = { enabled ->
-                        smartTransition = enabled
-                        container.settings.smartTransition = enabled
                     },
                     equalizerEnabled = equalizerEnabled,
                     onEqualizerEnabledChange = { enabled ->

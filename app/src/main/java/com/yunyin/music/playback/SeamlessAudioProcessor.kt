@@ -10,10 +10,7 @@ import androidx.media3.common.audio.BaseAudioProcessor
 import androidx.media3.common.util.UnstableApi
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import kotlin.math.PI
-import kotlin.math.exp
 import kotlin.math.roundToInt
-import kotlin.math.sqrt
 
 /**
  * The audio half of the "seamless" track transition: tapers the head of each stream.
@@ -55,21 +52,6 @@ class SeamlessAudioProcessor(
      */
     private val enabled: () -> Boolean = { true },
     /**
-     * Energy meter for the smart transition, ported with [TrackEnergyProbe].
-     *
-     * Publishes one RMS + one bass-RMS reading per 40 ms window while it is enabled; the crossfade reads
-     * the profile that accumulates from them. Null disables the measurement entirely (fixed crossfade).
-     */
-    private val probe: TrackEnergyProbe? = null,
-    /**
-     * Whether the probe should be collecting, read per buffer.
-     *
-     * A lambda, not a flag set at construction: the smart-transition switch can be flipped while a track
-     * is already playing, and the analysis needs the *history* of the outgoing track — enabling the probe
-     * only when the fade starts leaves it with zero samples and the plan silently falls back to 5 s.
-     */
-    private val probeEnabled: () -> Boolean = { true },
-    /**
      * Transport envelope gain (pause/resume), read per buffer.
      *
      * Kept out of `ExoPlayer.volume` on purpose: the crossfade owns that property, and two writers
@@ -87,13 +69,6 @@ class SeamlessAudioProcessor(
     /** Frames emitted since the last flush; drives the fade's position. */
     private var framesEmitted = 0L
 
-    // Energy meter state (ported from CurrentMusicX's DockAudioProcessor). One reading per 40 ms window.
-    private var meterCount = 0
-    private var meterSquare = 0.0
-    private var meterBassSquare = 0.0
-    private var meterLow = 0.0
-    private var meterCoefficient = 0.0
-    private var meterWindow = 1
 
     /** Sets the head taper length. Call before playback; the value applies from the next flush. */
     fun setFadeDurationMs(ms: Int) {
@@ -112,30 +87,14 @@ class SeamlessAudioProcessor(
         // The switch is read here, so turning it off silences the taper from the next flush onward.
         fadeFrames = if (enabled()) fadeMs * inputAudioFormat.sampleRate / 1000 else 0
         framesEmitted = 0
-        // 180 Hz one-pole low-pass for the "bass" half of the reading, 40 ms windows, both derived from
-        // the real sample rate — identical to the upstream meter so the smart-transition thresholds mean
-        // what they meant there.
-        meterCoefficient = 1.0 - exp(-2.0 * PI * 180.0 / inputAudioFormat.sampleRate.coerceAtLeast(1))
-        meterWindow = (inputAudioFormat.sampleRate / 25).coerceAtLeast(1)
-        meterCount = 0
-        meterSquare = 0.0
-        meterBassSquare = 0.0
-        meterLow = 0.0
-        probe?.reset()
     }
 
     override fun onReset() {
         framesEmitted = 0
-        meterCount = 0
-        meterSquare = 0.0
-        meterBassSquare = 0.0
-        meterLow = 0.0
-        probe?.reset()
     }
 
     override fun queueInput(inputBuffer: ByteBuffer) {
         if (!inputBuffer.hasRemaining()) return
-        measure(inputBuffer)
 
         val channels = inputAudioFormat.channelCount
         val out = replaceOutputBuffer(inputBuffer.remaining())
@@ -171,41 +130,6 @@ class SeamlessAudioProcessor(
         // The buffer is consumed: Media3's processors advance the input to its limit, and the pipeline
         // relies on that to know the data was taken.
         inputBuffer.position(inputBuffer.limit())
-    }
-
-    /**
-     * Publishes one RMS + bass-RMS pair per 40 ms window into the probe.
-     *
-     * Reads a duplicate of the input so the buffer's own position is untouched; it is called before the
-     * copy/taper work below, and only while the probe is enabled (that is, only in smart mode).
-     */
-    private fun measure(buffer: ByteBuffer) {
-        val probe = probe ?: return
-        probe.enabled = probeEnabled()
-        if (!probe.enabled) return
-        val channels = inputAudioFormat.channelCount.coerceAtLeast(1)
-        val frameBytes = channels * 2
-        val source = buffer.duplicate().order(ByteOrder.nativeOrder())
-        while (source.remaining() >= frameBytes) {
-            var mono = 0.0
-            repeat(channels) {
-                val value = source.short / 32768.0
-                meterSquare += value * value / channels
-                mono += value / channels
-            }
-            meterLow += meterCoefficient * (mono - meterLow)
-            meterBassSquare += meterLow * meterLow
-            meterCount++
-            if (meterCount >= meterWindow) {
-                probe.publish(
-                    sqrt(meterSquare / meterCount).toFloat(),
-                    sqrt(meterBassSquare / meterCount).toFloat(),
-                )
-                meterCount = 0
-                meterSquare = 0.0
-                meterBassSquare = 0.0
-            }
-        }
     }
 
     /**

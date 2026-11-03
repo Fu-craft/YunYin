@@ -34,7 +34,6 @@ import kotlinx.coroutines.runBlocking
 class PlaybackService : MediaSessionService() {
 
     private var mediaSession: MediaSession? = null
-    private var crossfadeCoordinator: CrossfadeCoordinator? = null
     private var equalizer: com.yunyin.music.audio.PlaybackEqualizer? = null
     private var equalizerWatcher: android.content.SharedPreferences.OnSharedPreferenceChangeListener? = null
 
@@ -96,21 +95,17 @@ class PlaybackService : MediaSessionService() {
             }
         }
 
-        // One probe per player instance, handed to the audio processor: the smart transition measures the
-        // two sides' energy while they overlap. Created inside `createPlayer` so each ExoPlayer owns its own.
-        var lastProbe: TrackEnergyProbe? = null
-        val createPlayer: (TrackEnergyProbe) -> ExoPlayer = { probe ->
-            lastProbe = probe
+        // Single player. The dual-player overlap (无缝衔接 / 交叉淡化 / 智能过渡) was removed at the
+        // user's request: it never reached a state that sounded right on device, and a broken transition
+        // is worse than the plain one. What the processor still does is the 30 ms head taper — that is
+        // anti-click, not a transition — plus the pause/resume envelope.
+        val createPlayer: () -> ExoPlayer = {
             ExoPlayer.Builder(
                 this,
-                // The preference is read live by the processor, so the Settings switch takes effect without
-                // reaching across the session — `Player`/`MediaController` expose no audio-processing control.
                 ReactiveRenderersFactory(
                     this,
                     SeamlessAudioProcessor(
-                        enabled = { container.settings.seamlessTransition },
-                        probe = probe,
-                        probeEnabled = { container.settings.smartTransition },
+                        enabled = { true },
                         transportGain = { transportGain.value },
                     ),
                 ),
@@ -136,10 +131,7 @@ class PlaybackService : MediaSessionService() {
                     volume = 1f
                 }
         }
-        // Enabled up front when the smart transition is on: the probe has to collect while the track
-        // plays, not from the moment the fade begins (it needs the outgoing track's history).
-        val initialProbe = TrackEnergyProbe().apply { enabled = container.settings.smartTransition }
-        val player = createPlayer(initialProbe)
+        val player = createPlayer()
         mediaSession = MediaSession.Builder(this, player).build()
 
         // Pause/resume envelope (ported from CurrentMusicX). The pause itself cannot be delayed here —
@@ -156,8 +148,7 @@ class PlaybackService : MediaSessionService() {
         )
         attachTransport(player)
 
-        // Equaliser: the ported controller attaches to this app's own audio session only. The audible
-        // player is replaced at every crossfade handover, so it is re-attached on each swap.
+        // Equaliser: the ported controller attaches to this app's own audio session only.
         val eq = com.yunyin.music.audio.PlaybackEqualizer { message ->
             android.util.Log.w("YunYinEqualizer", message)
         }
@@ -170,30 +161,12 @@ class PlaybackService : MediaSessionService() {
             Unit
         }
         applyEqualizer(player)
-        equalizerWatcher = container.settings.watchEqualizer { applyEqualizer(mediaSession?.player as? ExoPlayer ?: player) }
-
-        // The Flyme ticker rides on the media notification (NeriPlayer's approach); a separate ticker
-        // notification is not used. The provider mutates only ticker fields/flags, never the media content.
-        crossfadeCoordinator = CrossfadeCoordinator(
-            session = mediaSession!!,
-            initial = player,
-            initialProbe = initialProbe,
-            createPlayer = createPlayer,
-            settings = container.settings,
-            log = container.lxLog,
-            onAudibleChanged = { next ->
-                applyEqualizer(next)
-                // A handover swaps the player under the session: the envelope has to follow it.
-                attachTransport(next)
-            },
-        )
+        equalizerWatcher = container.settings.watchEqualizer { applyEqualizer(player) }
 
     }
 
     /**
-     * Keeps the pause/resume envelope pointed at whichever player is currently audible.
-     *
-     * Re-attached at every crossfade handover, because the coordinator replaces the session's player.
+     * Keeps the pause/resume envelope pointed at the session's player.
      */
     private fun attachTransport(player: ExoPlayer) {
         val fade = pauseFade ?: return
@@ -236,8 +209,6 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
-        runCatching { crossfadeCoordinator?.release() }
-        crossfadeCoordinator = null
         equalizerWatcher?.let { runCatching { container.settings.stopWatchingEqualizer(it) } }
         equalizerWatcher = null
         runCatching { equalizer?.close() }
