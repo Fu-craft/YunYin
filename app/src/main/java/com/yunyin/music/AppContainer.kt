@@ -68,18 +68,25 @@ class AppContainer(val appContext: Context) {
     private val statsScope = CoroutineScope(SupervisorJob() + kotlinx.coroutines.Dispatchers.Main.immediate)
     private var statsStarted = false
 
-    /** Slow sampler: statistics need real forward listening, not frame precision. */
+    /**
+     * Slow sampler: statistics need real forward listening, not frame precision.
+     *
+     * It runs even though [com.yunyin.music.data.stats.StatsFeature.enabled] is false. That flag gates the
+     * **page** (opening 播放统计 took the app down three releases ago), not the recording: 听歌足迹 reads the
+     * same store and is a plain read-only screen, and a footprint that only ever shows zeros is worse than
+     * no footprint at all. The kill switch stays exactly as it was.
+     *
+     * Cadence is 5 s rather than 1 s: the recorder derives its delta from the player position, so a coarser
+     * tick loses no listening time and keeps the persisted document's writes rare.
+     */
     fun startPlaybackStats() {
         if (statsStarted) return
         statsStarted = true
-        // Playback statistics are disabled (StatsFeature.enabled = false): do not start the sampler at all, so
-        // there are no player reads, no recorder creation and no background writes from this feature.
-        if (!com.yunyin.music.data.stats.StatsFeature.enabled) return
         statsScope.launch {
             // First read is asynchronous: no disk/JSON work during composition or Application init.
             runCatching { playbackStatsRecorder.loadNow() }
             while (true) {
-                kotlinx.coroutines.delay(1_000L)
+                kotlinx.coroutines.delay(5_000L)
                 runCatching {
                     // Player state must be read on the main thread (MediaController construction is main-thread
                     // bound). Only the arithmetic + persistence is moved to a background dispatcher.
