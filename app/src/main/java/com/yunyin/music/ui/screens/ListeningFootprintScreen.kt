@@ -21,7 +21,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.yunyin.music.data.stats.PlaybackStatsStore
+import com.yunyin.music.data.stats.PlaybackStatsRecorder
 import com.yunyin.music.data.stats.StatsBucket
 import com.yunyin.music.ui.theme.AppTheme
 import com.yunyin.music.ui.theme.SFPro
@@ -37,11 +37,11 @@ import kotlin.math.roundToLong
  */
 @Composable
 fun ListeningFootprintScreen(
-    store: PlaybackStatsStore,
+    recorder: PlaybackStatsRecorder,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val snapshot = store.snapshot()
+    val snapshot = recorder.snapshot
 
     val days = remember(snapshot) { snapshot.days.takeLast(42) }
     val peakMs = remember(days) { (days.maxOfOrNull { it.totalMs } ?: 0L).coerceAtLeast(1L) }

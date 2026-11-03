@@ -301,6 +301,7 @@ class MainActivity : ComponentActivity() {
         var importing by remember { mutableStateOf(false) }
         var showDownloadCenter by remember { mutableStateOf(false) }
     var showStats by remember { mutableStateOf(false) }
+        var showFootprint by remember { mutableStateOf(false) }
     var showLyricPicker by remember { mutableStateOf(false) }
     var lyricShareLines by remember { mutableStateOf<List<String>>(emptyList()) }
     var lyricShareStarts by remember { mutableStateOf<List<Int>>(emptyList()) }
@@ -2300,6 +2301,7 @@ class MainActivity : ComponentActivity() {
             if (showStats && com.yunyin.music.data.stats.StatsFeature.enabled) {
                 PlaybackStatsScreen(
                     recorder = container.playbackStatsRecorder,
+                    onOpenFootprint = { showFootprint = true },
                     onBack = { showStats = false },
                     diag = { container.lxLog.recordDiagnostic(it) },
                 )
@@ -2515,6 +2517,13 @@ class MainActivity : ComponentActivity() {
             )
         }
         BackHandler(enabled = showDownloadCenter) { showDownloadCenter = false }
+        if (showFootprint) {
+            com.yunyin.music.ui.screens.ListeningFootprintScreen(
+                recorder = container.playbackStatsRecorder,
+                onBack = { showFootprint = false },
+            )
+        }
+
         BackHandler(enabled = showStats) { showStats = false }
         BackHandler(enabled = showLogin) { showLogin = false }
 

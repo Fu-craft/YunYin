@@ -72,6 +72,8 @@ private enum class StatsTab(val label: String) { Songs("歌曲"), Artists("艺�
 fun PlaybackStatsScreen(
     recorder: PlaybackStatsRecorder,
     onBack: () -> Unit,
+    /** 打开「听歌足迹」（按时间的分布）。 */
+    onOpenFootprint: () -> Unit = {},
     /** Writes the page's progress markers into the same diagnostics log the copy-log action reads. */
     diag: (String) -> Unit = {},
 ) {
@@ -180,6 +182,16 @@ fun PlaybackStatsScreen(
                         fontSize = 24.sp,
                         color = AppTheme.palette.label,
                         modifier = Modifier.padding(start = 6.dp),
+                    )
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        text = "听歌足迹",
+                        fontFamily = SFPro,
+                        fontSize = 15.sp,
+                        color = AppTheme.palette.accent,
+                        modifier = Modifier
+                            .clickable(onClick = onOpenFootprint)
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
                     )
                 }
             }
