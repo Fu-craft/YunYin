@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    One provider, three shapes.
+
+    The picker offers a single entry; the layout is chosen in `NowPlayingWidgetProvider` from the host's
+    option bounds (tall+narrow → 2×2, short → 4×1, otherwise 4×2). Registering three separate providers
+    would put three identical entries in the picker, which reads like three different widgets.
+
+    `updatePeriodMillis` is 0: nothing here should wake the device. Every refresh is pushed by the app when
+    playback actually changes (500 ms throttled).
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:initialLayout="@layout/widget_now_playing_4x2"
+    android:previewLayout="@layout/widget_now_playing_4x2"
+    android:minWidth="110dp"
+    android:minHeight="40dp"
+    android:targetCellWidth="4"
+    android:targetCellHeight="2"
+    android:minResizeWidth="110dp"
+    android:minResizeHeight="40dp"
+    android:resizeMode="horizontal|vertical"
+    android:updatePeriodMillis="0"
+    android:widgetCategory="home_screen" />

@@ -43,6 +43,23 @@
             </intent-filter>
         </activity>
 
+        <!--
+            桌面小组件: now-playing with transport controls. Exported because the launcher has to send
+            APPWIDGET_UPDATE; the provider itself only reads a process-local snapshot and dispatches media
+            keys, so there is no data surface behind it.
+        -->
+        <receiver
+            android:name=".widget.NowPlayingWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_now_playing_info" />
+        </receiver>
+
         <service
             android:name=".playback.DesktopLyricsService"
             android:exported="false"

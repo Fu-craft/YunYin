@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 2 dp track with a 1 dp round cap; the provider only sets a discrete progress value. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:id="@android:id/background">
+        <shape android:shape="rectangle">
+            <solid android:color="#1F000000" />
+            <corners android:radius="1dp" />
+        </shape>
+    </item>
+    <item android:id="@android:id/progress">
+        <clip>
+            <shape android:shape="rectangle">
+                <solid android:color="@color/widget_accent" />
+                <corners android:radius="1dp" />
+            </shape>
+        </clip>
+    </item>
+</layer-list>

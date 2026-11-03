@@ -6,4 +6,17 @@
       draws is already the right colour.
     -->
     <color name="brand_background">#FFFFFFFF</color>
+
+    <!--
+      Desktop widget palette.
+
+      RemoteViews cannot read the Compose palette, so the three roles the widget needs are mirrored here:
+      the card (secondaryBackground), primary ink (label) and quiet ink (secondaryLabel), plus the accent
+      the play button uses. Values are the same Apple system greys AppTheme.palette resolves to.
+    -->
+    <color name="widget_card">#F2F2F7</color>
+    <color name="widget_label">#000000</color>
+    <color name="widget_secondary">#993C3C43</color>
+    <color name="widget_accent">#FA2D48</color>
+    <color name="widget_control_tint">#000000</color>
 </resources>

@@ -230,6 +230,31 @@ class MainActivity : ComponentActivity() {
         // own branch instead, so the invalidation is scoped to the component that actually uses it.
         val playerState = container.player.state
 
+        // 桌面小组件 mirror. Collected here rather than into Compose state on purpose: the widget must
+        // follow playback, but nothing on screen should recompose because a RemoteViews update went out.
+        // The scheduler throttles to 500 ms; identity changes (track / play-pause) bypass it so the widget
+        // is never half a second behind a tap. Percent steps (~1 %) are the only progress signal sent —
+        // the widget never animates, and nothing here runs per frame.
+        LaunchedEffect(Unit) {
+            var lastTitle: String? = null
+            var lastPlaying: Boolean? = null
+            var lastPct = -1
+            playerState.collect { state ->
+                val widgetState = com.yunyin.music.widget.WidgetState.from(state)
+                val identityChanged = widgetState.title != lastTitle || widgetState.playing != lastPlaying
+                val percentChanged = widgetState.progressPct != lastPct
+                if (!identityChanged && !percentChanged) return@collect
+                lastTitle = widgetState.title
+                lastPlaying = widgetState.playing
+                lastPct = widgetState.progressPct
+                com.yunyin.music.widget.WidgetUpdateScheduler.publish(
+                    context,
+                    widgetState,
+                    forced = identityChanged,
+                )
+            }
+        }
+
         val hasTrack by remember {
             playerState.map { it.hasTrack }.distinctUntilChanged()
         }.collectAsState(initial = false)
@@ -274,7 +299,15 @@ class MainActivity : ComponentActivity() {
         val downloadStatesAll by container.downloads.states.collectAsState()
 
         var tab by remember { mutableStateOf(PlayerTab.Home) }
-        var showPlayer by remember { mutableStateOf(false) }
+        // 桌面小组件 taps open the player page itself, not whichever tab was last shown.
+        var showPlayer by remember {
+            mutableStateOf(
+                (context as? android.app.Activity)
+                    ?.intent
+                    ?.getBooleanExtra(com.yunyin.music.widget.NowPlayingWidgetProvider.EXTRA_OPEN_PLAYER, false)
+                    ?: false,
+            )
+        }
         // The playlist the current playback queue was started from, when it was started from one. It is
         // what 心动模式 uses for `pid` when the player is the entry point; null means "not a playlist"
         // and the fallback is the liked-songs playlist (or no pid at all).

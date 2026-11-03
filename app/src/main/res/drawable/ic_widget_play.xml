@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Transport glyphs. RemoteViews needs drawables, so the SfIcons shapes are redrawn here on the same
+     24 dp grid; the layout tints them, which is why every path is a single solid colour. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M8,5.2 L19,12 L8,18.8 Z" />
+</vector>

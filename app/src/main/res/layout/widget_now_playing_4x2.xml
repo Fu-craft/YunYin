@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    4×2: the primary shape. Cover, title/artist over a thin progress line, then the transport row.
+
+    Heights and paddings follow the app's own list rhythm (44 dp touch targets, 12.5/16 sp type), and the
+    progress bar is deliberately non-animating — the provider only sets a discrete value.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_bg"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:padding="14dp">
+
+    <ImageView
+        android:id="@+id/widget_cover"
+        android:layout_width="56dp"
+        android:layout_height="56dp"
+        android:contentDescription="@string/widget_cover_description"
+        android:scaleType="centerCrop"
+        android:src="@drawable/ic_ticker_note_white" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:layout_marginStart="12dp"
+        android:layout_marginEnd="8dp"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/widget_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fontFamily="sans-serif-medium"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:textColor="@color/widget_label"
+            android:textSize="16sp"
+            android:text="@string/widget_idle" />
+
+        <TextView
+            android:id="@+id/widget_artist"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="1dp"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:textColor="@color/widget_secondary"
+            android:textSize="12.5sp" />
+
+        <ProgressBar
+            android:id="@+id/widget_progress"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="2dp"
+            android:layout_marginTop="8dp"
+            android:max="100"
+            android:progress="0"
+            android:progressDrawable="@drawable/widget_progress" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <ImageButton
+            android:id="@+id/widget_prev"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="@android:color/transparent"
+            android:contentDescription="@string/widget_prev"
+            android:padding="10dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_widget_prev"
+            android:tint="@color/widget_control_tint" />
+
+        <ImageButton
+            android:id="@+id/widget_play"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="@android:color/transparent"
+            android:contentDescription="@string/widget_play"
+            android:padding="10dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_widget_play"
+            android:tint="@color/widget_accent" />
+
+        <ImageButton
+            android:id="@+id/widget_next"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="@android:color/transparent"
+            android:contentDescription="@string/widget_next"
+            android:padding="10dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_widget_next"
+            android:tint="@color/widget_control_tint" />
+    </LinearLayout>
+</LinearLayout>

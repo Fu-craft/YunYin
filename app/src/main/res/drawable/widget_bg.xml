@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Card ground for every widget size: one continuous rounded rect, no border, no shadow. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/widget_card" />
+    <corners android:radius="22dp" />
+</shape>

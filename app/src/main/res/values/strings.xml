@@ -2,4 +2,11 @@
     <string name="app_name">云音</string>
     <!-- Channel for the Flyme status-bar lyric notification; silent and low importance. -->
     <string name="ticker_channel_name">状态栏歌词</string>
-</resources>
+    <!-- Desktop widget -->
+    <string name="widget_label">云音 · 正在播放</string>
+    <string name="widget_idle">未在播放</string>
+    <string name="widget_play">播放</string>
+    <string name="widget_pause">暂停</string>
+    <string name="widget_prev">上一首</string>
+    <string name="widget_next">下一首</string>
+    <string name="widget_cover_description">当前封面</string></resources>
