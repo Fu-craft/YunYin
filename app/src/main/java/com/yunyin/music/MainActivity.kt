@@ -1392,6 +1392,7 @@ class MainActivity : ComponentActivity() {
                     },
                     onBack = { showSettings = false },
                     onOpenDownloads = { showDownloadCenter = true },
+                    onOpenFootprint = { showFootprint = true },
                     downloadWifiOnly = downloadWifiOnly,
                     onDownloadWifiOnlyChange = { enabled ->
                         downloadWifiOnly = enabled
@@ -2301,7 +2302,6 @@ class MainActivity : ComponentActivity() {
             if (showStats && com.yunyin.music.data.stats.StatsFeature.enabled) {
                 PlaybackStatsScreen(
                     recorder = container.playbackStatsRecorder,
-                    onOpenFootprint = { showFootprint = true },
                     onBack = { showStats = false },
                     diag = { container.lxLog.recordDiagnostic(it) },
                 )

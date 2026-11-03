@@ -136,6 +136,8 @@ fun SettingsScreen(
     onBack: () -> Unit,
     /** Opens the download centre. */
     onOpenDownloads: () -> Unit = {},
+    /** 打开「听歌足迹」。 */
+    onOpenFootprint: () -> Unit = {},
     /** Wi-Fi-only download switch; default on in the store. */
     downloadWifiOnly: Boolean = true,
     onDownloadWifiOnlyChange: (Boolean) -> Unit = {},
@@ -326,6 +328,7 @@ fun SettingsScreen(
                             onNavigate = { page = it },
                             onClearLyricsCache = onClearLyricsCache,
                             onOpenDownloads = onOpenDownloads,
+                            onOpenFootprint = onOpenFootprint,
                             downloadWifiOnly = downloadWifiOnly,
                             onDownloadWifiOnlyChange = onDownloadWifiOnlyChange,
                             onOpenProject = onOpenProject,
@@ -455,6 +458,7 @@ private fun MainPage(
     onNavigate: (SettingsPage) -> Unit,
     onClearLyricsCache: () -> Unit,
     onOpenDownloads: () -> Unit,
+    onOpenFootprint: () -> Unit,
     downloadWifiOnly: Boolean,
     onDownloadWifiOnlyChange: (Boolean) -> Unit,
     onOpenProject: () -> Unit,
@@ -514,6 +518,13 @@ private fun MainPage(
                     summary = "到点后自动停止播放",
                     endActions = { PreferenceValue(sleepTimerLabel) },
                     onClick = onShowSleepTimer,
+                )
+                GroupDivider()
+                ArrowPreference(
+                    insideMargin = RowInsets,
+                    title = "听歌足迹",
+                    summary = "最近 42 天的收听热力图与每日明细",
+                    onClick = onOpenFootprint,
                 )
                 GroupDivider()
                 ArrowPreference(
