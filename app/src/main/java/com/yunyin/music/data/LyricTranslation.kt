@@ -50,7 +50,10 @@ internal object LyricTranslation {
         // a wrong translation is worse than a missing one.
         var cursor = 0
         val merged = lyrics.lines.map { line ->
-            if (line.translation != null) return@map line
+            if (line.translation != null) {
+                val existing = line.translation!!
+                return@map if (line is SyncedLine && shouldSwapMain(line.content, existing)) line.copy(content = existing, translation = line.content) else line
+            }
             while (cursor < starts.size && starts[cursor] < line.start - toleranceMs) cursor++
             if (cursor >= starts.size) return@map line
             val candidate = starts[cursor]
