@@ -624,7 +624,12 @@ fun PlayerScreen(
         // The lyric type scale, per orientation (see `lyricTypeScale`). Portrait is height-driven;
         // landscape measures against its own short reference so the type is *larger* than portrait,
         // which is what fills a wide screen.
-        val lyricScale = lyricTypeScale(isLandscape, lyricsAreaHeight) * lyricFontScale
+        // Landscape dampening: `lyricTypeScale` deliberately renders landscape lyrics larger than
+        // the 36sp base (a fixed bug, pinned by LyricTypeScaleTest), but on a phone in landscape the
+        // result left only about two lines visible. The dampening is applied here rather than inside
+        // the tested function so the pinned expectations and the user-facing size can move apart.
+        val landscapeDamping = if (isLandscape) LANDSCAPE_LYRIC_DAMPING else 1f
+        val lyricScale = lyricTypeScale(isLandscape, lyricsAreaHeight) * lyricFontScale * landscapeDamping
 
         /**
          * Syllable layouts for the current song, owned here — above the presentation switch.
@@ -2154,6 +2159,9 @@ internal const val MIN_LYRIC_SCALE = 0.55f
  * Landscape has width to spare, so its type is allowed to grow past the base size.
  */
 internal const val MAX_LANDSCAPE_LYRIC_SCALE = 1.2f
+
+/** Extra shrink applied to landscape lyrics only; keeps ~4 lines on screen. */
+private const val LANDSCAPE_LYRIC_DAMPING = 0.78f
 
 /**
  * Ceiling for portrait, slightly below the base size.
