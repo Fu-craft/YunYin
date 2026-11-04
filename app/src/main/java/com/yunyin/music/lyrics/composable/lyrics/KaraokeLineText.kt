@@ -457,6 +457,14 @@ fun KaraokeLineText(
         }
     }
 
+    // 演唱语言判断：有些歌的 yrc 给的是中文，英文在 translation 里。此时把英文提为主行，
+    // 中文降为副行；代价是这一行失去逐字高亮（逐字轴属于被替换掉的那一侧）。
+    val syllableText = remember(line.syllables) { line.syllables.joinToString("") { it.content } }
+    val swapMain = remember(syllableText, line.translation) {
+        val trans = line.translation
+        trans != null && com.yunyin.music.data.LyricTranslation.shouldSwapMain(syllableText, trans)
+    }
+
     val translationTextAlign = remember(isRightAligned) {
         if (isRightAligned) TextAlign.End else TextAlign.Start
     }
@@ -654,23 +662,34 @@ fun KaraokeLineText(
                 height
             }
 
-            Canvas(modifier = Modifier.size(maxWidth, (totalHeight.roundToInt() + 8).toDp())) {
-                val time = currentTimeProvider()
-                drawLyricsLine(
-                    rowRenderData = rowRenderData,
-                    currentTimeMs = time,
+            if (swapMain) {
+                Text(
+                    text = line.translation.orEmpty(),
+                    style = normalLineTextStyle,
                     color = activeColor,
-                    blendMode = blendMode,
-                    isRtl = isLineRtl,
-                    showDebugRectangles = showDebugRectangles,
-                    showPhonetic = showPhonetic,
-                    unsungAlpha = unsungAlpha
+                    modifier = Modifier.graphicsLayer { this.blendMode = blendMode },
+                    textAlign = translationTextAlign
                 )
+            } else {
+                Canvas(modifier = Modifier.size(maxWidth, (totalHeight.roundToInt() + 8).toDp())) {
+                    val time = currentTimeProvider()
+                    drawLyricsLine(
+                        rowRenderData = rowRenderData,
+                        currentTimeMs = time,
+                        color = activeColor,
+                        blendMode = blendMode,
+                        isRtl = isLineRtl,
+                        showDebugRectangles = showDebugRectangles,
+                        showPhonetic = showPhonetic,
+                        unsungAlpha = unsungAlpha
+                    )
+                }
             }
         }
 
         if (showTranslation) {
-            line.translation?.let { translation ->
+            val subLine = if (swapMain) syllableText else line.translation
+            subLine?.let { translation ->
                 Text(
                     text = translation,
                     color = activeColor.copy(0.4f),
