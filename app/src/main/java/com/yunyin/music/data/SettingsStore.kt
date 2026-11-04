@@ -45,6 +45,11 @@ class SettingsStore(context: Context) {
      *
      * Off means the binder connection is dropped, not merely hidden.
      */
+    /** Lyric type scale multiplier chosen by the user (0.8 - 1.6). */
+    var lyricFontScale: Float
+        get() = prefs.getFloat(KEY_LYRIC_FONT_SCALE, 1f)
+        set(value) = prefs.edit().putFloat(KEY_LYRIC_FONT_SCALE, value.coerceIn(0.8f, 1.6f)).apply()
+
     var lyriconEnabled: Boolean
         get() = prefs.getBoolean(KEY_LYRICON_ENABLED, true)
         set(value) = prefs.edit().putBoolean(KEY_LYRICON_ENABLED, value).apply()
@@ -410,7 +415,8 @@ class SettingsStore(context: Context) {
         /** True when this build was configured with an API endpoint. */
         val hasBaseUrl: Boolean get() = BASE_URL.isNotBlank()
 
-        private const val KEY_COOKIE = "cookie"
+        private const val KEY_LYRIC_FONT_SCALE = "lyric_font_scale"
+private const val KEY_COOKIE = "cookie"
         private const val KEY_QUALITY = "quality"
         private const val KEY_USER_ID = "user_id"
         private const val KEY_NICKNAME = "nickname"

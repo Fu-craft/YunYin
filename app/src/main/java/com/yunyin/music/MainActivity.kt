@@ -1426,6 +1426,8 @@ class MainActivity : ComponentActivity() {
                     onBack = { showSettings = false },
                     onOpenDownloads = { showDownloadCenter = true },
                     onOpenFootprint = { showFootprint = true },
+                    lyricFontScale = container.settings.lyricFontScale,
+                    onLyricFontScaleChange = { container.settings.lyricFontScale = it },
                     downloadWifiOnly = downloadWifiOnly,
                     onDownloadWifiOnlyChange = { enabled ->
                         downloadWifiOnly = enabled
@@ -1984,6 +1986,7 @@ class MainActivity : ComponentActivity() {
                     onSaveCover = playerViewModel::saveCover,
                     onDownloadDismissed = playerViewModel::clearDownloadState,
                     liked = playerViewModel.liked,
+                    lyricFontScale = container.settings.lyricFontScale,
                     onToggleLike = playerViewModel::toggleLike,
                     onShareTrack = {
                         shareText(playerViewModel.currentShareText(), "分享歌曲")

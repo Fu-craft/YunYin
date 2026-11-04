@@ -136,7 +136,11 @@ fun SettingsScreen(
     onBack: () -> Unit,
     /** Opens the download centre. */
     onOpenDownloads: () -> Unit = {},
+    /** Lyric type multiplier (0.8-1.6). */
+    lyricFontScale: Float = 1f,
+    onLyricFontScaleChange: (Float) -> Unit = {},
     /** 打开「听歌足迹」。 */
+    /** Opens the listening footprint screen. */
     onOpenFootprint: () -> Unit = {},
     /** Wi-Fi-only download switch; default on in the store. */
     downloadWifiOnly: Boolean = true,
@@ -373,6 +377,8 @@ fun SettingsScreen(
                             onShowPlayerStyle = onShowPlayerStyle,
                             onShowCoverMotionTuner = onShowCoverMotionTuner,
                             lxSourceCount = lxSources.size,
+                            lyricFontScale = lyricFontScale,
+                            onLyricFontScaleChange = onLyricFontScaleChange,
                         )
 
                         SettingsPage.LxSources -> LxSourcesPage(
@@ -503,6 +509,8 @@ private fun MainPage(
     onShowPlayerStyle: () -> Unit,
     onShowCoverMotionTuner: () -> Unit,
     lxSourceCount: Int,
+    lyricFontScale: Float,
+    onLyricFontScaleChange: (Float) -> Unit,
 ) {
     val listState = rememberLazyListState()
     SettingsPageList(
@@ -533,6 +541,18 @@ private fun MainPage(
                     summary = "播放页展示封面或唱片",
                     endActions = { PreferenceValue(playerStyle.label) },
                     onClick = onShowPlayerStyle,
+                )
+                GroupDivider()
+                ArrowPreference(
+                    insideMargin = RowInsets,
+                    title = "\u6B4C\u8BCD\u5B57\u53F7",
+                    summary = "\u6ED1\u52A8\u5FAA\u73AF\uFF1A\u5C0F \u2192 \u5927\uFF08\u5F53\u524D \u00D7" + String.format("%.1f", lyricFontScale) + "\uFF09",
+                    endActions = { PreferenceValue(String.format("\u00D7%.1f", lyricFontScale)) },
+                    onClick = {
+                        val steps = listOf(0.8f, 1.0f, 1.2f, 1.4f, 1.6f)
+                        val next = steps.firstOrNull { it > lyricFontScale + 0.01f } ?: steps.first()
+                        onLyricFontScaleChange(next)
+                    },
                 )
                 GroupDivider()
                 ArrowPreference(

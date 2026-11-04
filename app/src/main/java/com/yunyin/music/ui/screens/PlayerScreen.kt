@@ -233,6 +233,8 @@ fun PlayerScreen(
     /** Whether the current track is liked, and its toggle (the heart). */
     liked: Boolean = false,
     onToggleLike: () -> Unit = {},
+    /** User-chosen lyric type multiplier. */
+    lyricFontScale: Float = 1f,
     /** Shares the current track: the caller owns the clipboard and the chooser. */
     onShareTrack: () -> Unit = {},
     /** Opens the artist page for the current track's first artist. */
@@ -622,7 +624,7 @@ fun PlayerScreen(
         // The lyric type scale, per orientation (see `lyricTypeScale`). Portrait is height-driven;
         // landscape measures against its own short reference so the type is *larger* than portrait,
         // which is what fills a wide screen.
-        val lyricScale = lyricTypeScale(isLandscape, lyricsAreaHeight)
+        val lyricScale = lyricTypeScale(isLandscape, lyricsAreaHeight) * lyricFontScale
 
         /**
          * Syllable layouts for the current song, owned here — above the presentation switch.
@@ -2850,6 +2852,8 @@ private fun TitleBlock(
     track: Track?,
     liked: Boolean = false,
     onToggleLike: () -> Unit = {},
+    /** User-chosen lyric type multiplier. */
+    lyricFontScale: Float = 1f,
     onMoreClick: () -> Unit = {},
     /** Opens the artist page for the track's first artist; absent when there is nowhere to go. */
     onArtistClick: ((String) -> Unit)? = null,
