@@ -58,15 +58,46 @@ internal object LyricTranslation {
             val match = entries[candidate]?.takeIf { it.isNotBlank() } ?: return@map line
             cursor++
 
+            // 主语言判断：NetEase 的 `lrc` 有时是中英混排的"中文版"，而实际演唱是英文。
+            // 逐行看字符集：原文以中文为主、译文以拉丁字母为主时，把英文提到主行。
+            // 逐字歌词（KaraokeLine）不交换——它的词级时间轴属于被演唱的那一行。
             when (line) {
                 is KaraokeLine -> line.copy(translation = match)
-                is SyncedLine -> line.copy(translation = match)
+                is SyncedLine -> if (shouldSwapMain(line.content, match)) {
+                    line.copy(content = match, translation = line.content)
+                } else {
+                    line.copy(translation = match)
+                }
                 else -> line
             }
         }
         return lyrics.copy(lines = merged)
     }
 
+    /**
+     * 该行是否应该把译文提为主行。
+     *
+     * 判据只看字符集，不猜语言名：原文汉字占多数、译文拉丁字母占多数时交换。
+     * 纯中文歌（译文为空或同为中文）不会触发；纯英文歌同理。
+     */
+    internal fun shouldSwapMain(content: String, translation: String): Boolean {
+        val cjkContent = cjkRatio(content)
+        val latinContent = latinRatio(content)
+        val cjkTranslation = cjkRatio(translation)
+        val latinTranslation = latinRatio(translation)
+        return cjkContent >= 0.5f && latinContent < 0.1f &&
+            latinTranslation >= 0.5f && cjkTranslation < 0.1f
+    }
+
+    private fun cjkRatio(text: String): Float = ratio(text) { it.code in 0x4E00..0x9FFF }
+
+    private fun latinRatio(text: String): Float = ratio(text) { it.isLetter() && it.code < 0x250 }
+
+    private fun ratio(text: String, predicate: (Char) -> Boolean): Float {
+        val letters = text.count { it.isLetterOrDigit() }
+        if (letters == 0) return 0f
+        return text.count(predicate).toFloat() / letters
+    }
     /**
      * Parses a translation payload into timestamp → text.
      *
