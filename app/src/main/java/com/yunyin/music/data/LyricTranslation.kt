@@ -36,12 +36,27 @@ internal object LyricTranslation {
         if (entries.isEmpty()) return lyrics
 
         val starts = entries.keys.sorted()
+        // One-to-one, order-preserving matching.
+        //
+        // Nearest-match (the previous approach) had no uniqueness constraint, so on songs whose
+        // `lrc` already contains both the original and a second-language line — bilingual tracks
+        // like PAIN1997, whose payload carries 中文 and English lines in the same document — two
+        // lyric lines could claim the *same* translation entry. The result read as the translation
+        // sitting on the wrong line (visually "翻译跑到上一行"), and every following line shifted.
+        //
+        // A forward cursor fixes both: each translation entry is consumed once, in order, and a
+        // line only takes the entry if it is within the tolerance window. When the two documents
+        // have different line counts the surplus simply stays untranslated, which is correct —
+        // a wrong translation is worse than a missing one.
+        var cursor = 0
         val merged = lyrics.lines.map { line ->
             if (line.translation != null) return@map line
-            val match = nearestWithin(starts, line.start, toleranceMs)
-                ?.let { entries[it] }
-                ?.takeIf { it.isNotBlank() }
-                ?: return@map line
+            while (cursor < starts.size && starts[cursor] < line.start - toleranceMs) cursor++
+            if (cursor >= starts.size) return@map line
+            val candidate = starts[cursor]
+            if (abs(candidate - line.start) > toleranceMs) return@map line
+            val match = entries[candidate]?.takeIf { it.isNotBlank() } ?: return@map line
+            cursor++
 
             when (line) {
                 is KaraokeLine -> line.copy(translation = match)
