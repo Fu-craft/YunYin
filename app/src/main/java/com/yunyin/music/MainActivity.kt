@@ -436,6 +436,9 @@ class MainActivity : ComponentActivity() {
         // publishing, and it mirrors the stored value, so the switch cannot disagree with what is running.
         var lyriconEnabled by remember { mutableStateOf(container.lyricon.enabled) }
         var downloadWifiOnly by remember { mutableStateOf(container.settings.downloadWifiOnly) }
+    // Hoisted into Compose state: writing straight to the store leaves the row showing the old
+    // value until the screen is re-entered, which reads as a tap that did nothing.
+    var lyricFontScale by remember { mutableStateOf(container.settings.lyricFontScale) }
         // Platform equaliser. The service reads the store, so writing it here is all a toggle has to do.
         var equalizerEnabled by remember { mutableStateOf(container.settings.equalizerEnabled) }
         var equalizerPreset by remember { mutableStateOf(container.settings.equalizerPreset) }
@@ -1426,8 +1429,11 @@ class MainActivity : ComponentActivity() {
                     onBack = { showSettings = false },
                     onOpenDownloads = { showDownloadCenter = true },
                     onOpenFootprint = { showFootprint = true },
-                    lyricFontScale = container.settings.lyricFontScale,
-                    onLyricFontScaleChange = { container.settings.lyricFontScale = it },
+                    lyricFontScale = lyricFontScale,
+                    onLyricFontScaleChange = {
+                        lyricFontScale = it
+                        container.settings.lyricFontScale = it
+                    },
                     downloadWifiOnly = downloadWifiOnly,
                     onDownloadWifiOnlyChange = { enabled ->
                         downloadWifiOnly = enabled
@@ -1986,7 +1992,8 @@ class MainActivity : ComponentActivity() {
                     onSaveCover = playerViewModel::saveCover,
                     onDownloadDismissed = playerViewModel::clearDownloadState,
                     liked = playerViewModel.liked,
-                    lyricFontScale = container.settings.lyricFontScale,
+                    lyricFontScale = lyricFontScale,
+
                     onToggleLike = playerViewModel::toggleLike,
                     onShareTrack = {
                         shareText(playerViewModel.currentShareText(), "分享歌曲")
