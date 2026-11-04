@@ -3603,7 +3603,7 @@ private const val RAIL_SCRIM_REACH = 1.7f
 private const val BOTTOM_SCRIM_FRACTION = 0.34f
 
 /** Width of the landscape chrome rail, sized so the transport still fits. */
-private val LANDSCAPE_CONTROLS_WIDTH = 340.dp
+private val LANDSCAPE_CONTROLS_WIDTH = 372.dp
 
 /** Tablet landscape: a wider rail so the transport row does not look cramped next to a large cover. */
 private val LANDSCAPE_CONTROLS_WIDTH_TABLET = 400.dp
