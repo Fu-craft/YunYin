@@ -732,7 +732,9 @@ fun KaraokeLyricsView(
                                     lookaheadScope = this@LookaheadScope,
                                     itemKey = index,
                                     isManualScrolling = isDragging.value,
-                                    stiffness = 300f,
+                                    // 上游：离焦点越远的行，弹簧越软（120 - 距离*20，下限 20）。
+                                    // 常数刚度会让远处的行和当前行同步移动，失去层次。
+                                    stiffness = (120f - distanceWeightState.value * 20f).coerceAtLeast(20f),
                                 ),
                             horizontalAlignment = if (isVisualRightAligned) Alignment.End else Alignment.Start
                         ) {
