@@ -608,6 +608,19 @@ fun KaraokeLyricsView(
                                     )
                                 } finally {
                                     pixelScrollInFlight = false
+                                // Land exactly on the slot, in the same frame the spring ends.
+                                //
+                                // `LyricScrollDecider.decide` only settles a request when
+                                // `firstVisibleItemIndex == index`. A spring stops inside its own
+                                // threshold, so it can come to rest a few pixels short — at which
+                                // point the target is not the first visible item, the decider
+                                // re-issues the scroll, and `animateScrollToItem` performs the
+                                // visible second correction. Snapping here (instant, sub-pixel)
+                                // puts the list on the exact slot before the decider is consulted
+                                // again, so the correction has nothing left to correct.
+                                if (listState.firstVisibleItemIndex != decision.index) {
+                                    listState.scrollToItem(decision.index)
+                                }
                                 }
                             } else {
                                 listState.animateScrollToItem(decision.index)
