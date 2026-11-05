@@ -2562,6 +2562,8 @@ class MainActivity : ComponentActivity() {
         BackHandler(enabled = showDownloadCenter) { showDownloadCenter = false }
         if (showFootprint) {
             com.yunyin.music.ui.screens.StatsScreen(
+                loader = container.artwork,
+                coverUrlFor = { id -> runCatching { container.music.coverUrlFor(id) }.getOrNull() },
                 recorder = container.playbackStatsRecorder,
                 onBack = { showFootprint = false },
             )

@@ -58,6 +58,10 @@ private enum class StatsRange(val label: String, val days: Int) {
 fun StatsScreen(
     recorder: PlaybackStatsRecorder,
     onBack: () -> Unit,
+    /** 取封面；为空时退回占位图标。 */
+    coverUrlFor: (suspend (Long) -> String?)? = null,
+    /** 有了 loader 才能真正把封面画出来。 */
+    loader: com.yunyin.music.data.ArtworkLoader? = null,
     modifier: Modifier = Modifier,
 ) {
     val snapshot = recorder.snapshot
@@ -71,7 +75,14 @@ fun StatsScreen(
     val plays = buckets.sumOf { it.plays }
     val activeDays = buckets.count { it.totalMs > 0 }
     val peak = (buckets.maxOfOrNull { it.totalMs } ?: 0L).coerceAtLeast(1L)
-    val topSong = snapshot.songs.maxByOrNull { it.totalMs }
+    val topSongs = remember(snapshot) { snapshot.songs.sortedByDescending { it.totalMs }.take(5) }
+    var covers by remember { mutableStateOf<Map<Long, String>>(emptyMap()) }
+    androidx.compose.runtime.LaunchedEffect(topSongs, coverUrlFor) {
+        val provider = coverUrlFor ?: return@LaunchedEffect
+        covers = topSongs.mapNotNull { song ->
+            runCatching { provider(song.id) }.getOrNull()?.let { song.id to it }
+        }.toMap()
+    }
 
     LazyColumn(
         modifier
@@ -169,7 +180,7 @@ fun StatsScreen(
                     )
                 }
 
-                if (topSong != null) {
+                if (topSongs.isNotEmpty()) {
                     Spacer(Modifier.height(16.dp))
                     Box(
                         Modifier
@@ -178,26 +189,41 @@ fun StatsScreen(
                             .background(AppTheme.palette.separator.copy(alpha = 0.3f)),
                     )
                     Spacer(Modifier.height(12.dp))
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            Modifier
-                                .width(44.dp)
-                                .height(44.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(AppTheme.palette.tertiaryBackground),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            androidx.compose.material3.Icon(
-                                imageVector = SfIcons.MusicNote,
-                                contentDescription = null,
-                                tint = AppTheme.palette.tertiaryLabel,
-                                modifier = Modifier.width(20.dp).height(20.dp),
+                    Column(Modifier.fillMaxWidth()) {
+                    topSongs.forEach { song ->
+                    Row(
+                        Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (loader != null) {
+                            com.yunyin.music.ui.components.Artwork(
+                                url = covers[song.id],
+                                loader = loader,
+                                corner = 10.dp,
+                                requestSize = 128,
+                                modifier = Modifier.width(44.dp).height(44.dp),
                             )
+                        } else {
+                            Box(
+                                Modifier
+                                    .width(44.dp)
+                                    .height(44.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(AppTheme.palette.tertiaryBackground),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                androidx.compose.material3.Icon(
+                                    imageVector = SfIcons.MusicNote,
+                                    contentDescription = null,
+                                    tint = AppTheme.palette.tertiaryLabel,
+                                    modifier = Modifier.width(20.dp).height(20.dp),
+                                )
+                            }
                         }
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
                             Text(
-                                text = topSong.title,
+                                text = song.title,
                                 fontFamily = SFPro,
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Medium,
@@ -206,7 +232,7 @@ fun StatsScreen(
                                 color = AppTheme.palette.label,
                             )
                             Text(
-                                text = topSong.artist.ifBlank { "未知歌手" },
+                                text = song.artist.ifBlank { "未知歌手" },
                                 fontFamily = SFPro,
                                 fontSize = 12.5.sp,
                                 maxLines = 1,
@@ -215,11 +241,13 @@ fun StatsScreen(
                             )
                         }
                         Text(
-                            text = formatDuration(topSong.totalMs),
+                            text = formatDuration(song.totalMs),
                             fontFamily = SFPro,
                             fontSize = 14.sp,
                             color = AppTheme.palette.secondaryLabel,
                         )
+                    }
+                    }
                     }
                 }
             }
