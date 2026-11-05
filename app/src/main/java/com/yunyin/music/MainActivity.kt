@@ -1393,22 +1393,7 @@ class MainActivity : ComponentActivity() {
                     // Inset once, here, rather than on each panel: both rows — the now-playing capsule and
                     // the tab bar — fill this same margin, so the two panels line up edge to edge.
                     .padding(horizontal = TabBarInset)
-                    .padding(bottom = FloatingChromeBottomGap)
-                    // The player is a full-screen surface *above* this chrome, but the glass panels
-                    // still draw their own material over it (and the recorded backdrop keeps the
-                    // last frame), which left the tab icons ghosting through the player. Hiding the
-                    // whole chrome while the player is open removes the source entirely; the player
-                    // is the only thing on screen at that point anyway.
-                    // Faded and shrunk instead of switched off: as the player grows up from the
-                    // bottom the mini bar recedes into it, so the two read as one continuous motion
-                    // rather than "surface A disappears, surface B appears".
-                    .graphicsLayer {
-                        val p = chromeRecede
-                        alpha = 1f - p
-                        scaleX = 1f - 0.06f * p
-                        scaleY = 1f - 0.06f * p
-                        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f)
-                    },
+                    .padding(bottom = FloatingChromeBottomGap),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(FloatingChromeGap),
             ) {
@@ -1455,6 +1440,17 @@ class MainActivity : ComponentActivity() {
                         onBeatMode = { openBeatMode() },
                         beatModeSignedIn = beatModeActions.signedIn,
                         backdrop = bottomBackdrop,
+                        // The recede moved from the column to the bar. It used to fade the whole chrome,
+                        // which also faded the capsule — and a capsule that is already transparency-0
+                        // cannot show the travel that is now its job. The bar still has to disappear
+                        // under the player (its glass would ghost through), so it keeps the fade+shrink.
+                        modifier = Modifier.graphicsLayer {
+                            val p = chromeRecede
+                            alpha = 1f - p
+                            scaleX = 1f - 0.06f * p
+                            scaleY = 1f - 0.06f * p
+                            transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f)
+                        },
                     )
                 }
             }
@@ -1964,8 +1960,10 @@ class MainActivity : ComponentActivity() {
                 // MiniPlayerChromeMotion above), so the player must not animate in on top of it —
                 // a scale + slide + fade here would be a second, competing choreography for the same
                 // gesture. What is left is the minimum that keeps the swap from being a hard cut:
-                // a short fade in and a slightly shorter one out, no scale, no travel.
-                enter = fadeIn(tween(120)),
+                // a short fade, delayed past the capsule's first spring stage so the travel is seen at
+                // all (an immediate 120 ms fade painted the opaque player over the capsule while it was
+                // still moving, which is why the open read as "no animation").
+                enter = fadeIn(tween(140, delayMillis = 160)),
                 exit = fadeOut(tween(80)),
             ) {
                 // Collected here, inside the player's own branch, so the 4x/second position tick
