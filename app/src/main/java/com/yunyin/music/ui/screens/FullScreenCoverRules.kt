@@ -18,13 +18,14 @@ object FullScreenCoverRules {
     const val FALLBACK_COLOR = 0xFF18181C.toInt()
 
     fun usesOwnBackdrop(style: PlayerStyle, isLandscape: Boolean): Boolean =
-        style == PlayerStyle.Immersive && !isLandscape
+        (style == PlayerStyle.Immersive || style == PlayerStyle.Flamingo) && !isLandscape
 
     fun backgroundStyleComposed(style: PlayerStyle, isLandscape: Boolean): Boolean =
         !usesOwnBackdrop(style, isLandscape)
 
     /** The backdrop is one static brush; it never enters the frame-pump or shader path. */
-    fun backdropIsStatic(style: PlayerStyle): Boolean = style == PlayerStyle.Immersive
+    fun backdropIsStatic(style: PlayerStyle): Boolean =
+        style == PlayerStyle.Immersive || style == PlayerStyle.Flamingo
 
     /** An immersive cover never shrinks on pause; the other styles keep their tuned value. */
     fun pausedScale(style: PlayerStyle, configuredScale: Float): Float =

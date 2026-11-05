@@ -169,6 +169,11 @@ private fun StyleGlyph(style: PlayerStyle, tint: Color) {
                     .background(tint),
             )
 
+            PlayerStyle.Flamingo -> Column(Modifier.size(22.dp).clip(ContinuousRoundedRectangle(6.dp))) {
+                Box(Modifier.fillMaxWidth().weight(0.55f).background(tint))
+                Box(Modifier.fillMaxWidth().weight(0.45f).background(tint.copy(alpha = 0.45f)))
+            }
+
             PlayerStyle.Vinyl -> Box(
                 Modifier
                     .size(22.dp)

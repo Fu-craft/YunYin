@@ -22,6 +22,7 @@ enum class PlayerStyle(
     Classic("classic", "经典封面", "圆角方形封面，Apple Music 风格"),
     Vinyl("vinyl", "黑胶唱片", "唱片随播放旋转，暂停即停"),
     Immersive("immersive", "全屏封面", "封面铺满整屏，信息与控件浮在上面"),
+    Flamingo("flamingo", "沉浸封面", "封面清晰铺满，只有底部控制区磨砂"),
     ;
 
     companion object {
