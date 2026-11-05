@@ -541,6 +541,8 @@ fun KaraokeLyricsView(
     LaunchedEffect(listState) {
         val decider = LyricScrollDecider()
         var lastPositionMs = currentPosition()
+        // True while our own pixel spring owns the list; see the guard below.
+        var pixelScrollInFlight = false
 
         while (true) {
             withFrameNanos { }
@@ -561,6 +563,11 @@ fun KaraokeLyricsView(
             // line already sits at the reading position.
             val target = if (focus.introActive) null else focus.firstIndex
             if (target != null && (target < 0 || target >= lyrics.lines.size)) continue
+
+            // While our own pixel spring is in flight the list is already moving toward the
+            // right slot; asking the decider again would let it issue a correction mid-animation,
+            // which is the residual "glide, then nudge" the user still sees.
+            if (pixelScrollInFlight) continue
 
             when (val decision = decider.decide(
                 index = target,
@@ -590,13 +597,18 @@ fun KaraokeLyricsView(
                                 // top edge instead, and the decider then corrects by snapping —
                                 // the "glide, stall, jump to centre" this replaces.
                                 val centred = listState.layoutInfo.beforeContentPadding
-                                listState.animateScrollBy(
+                                pixelScrollInFlight = true
+                                try {
+                                    listState.animateScrollBy(
                                     value = (centred - targetInfo.offset).toFloat(),
-                                    animationSpec = spring(
-                                        dampingRatio = 0.9f,
-                                        stiffness = 180f,
-                                    ),
-                                )
+                                        animationSpec = spring(
+                                            dampingRatio = 0.9f,
+                                            stiffness = 180f,
+                                        ),
+                                    )
+                                } finally {
+                                    pixelScrollInFlight = false
+                                }
                             } else {
                                 listState.animateScrollToItem(decision.index)
                             }
