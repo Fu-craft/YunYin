@@ -80,8 +80,11 @@ fun lightPalette(accent: Color = AppleColors.musicRed) = AppPalette(
     label = AppleColors.labelLight,
     secondaryLabel = AppleColors.secondaryLabelLight,
     tertiaryLabel = AppleColors.tertiaryLabelLight,
-    background = AppleColors.systemBackgroundLight,
-    secondaryBackground = AppleColors.secondarySystemBackgroundLight,
+    // iOS grouped appearance: the page is the grey system background and cards are pure white.
+    // (The two are swapped relative to the plain iOS naming, which is what makes cards read as
+    // cards: white on grey, not grey on white.)
+    background = AppleColors.secondarySystemBackgroundLight,
+    secondaryBackground = AppleColors.systemBackgroundLight,
     tertiaryBackground = AppleColors.tertiarySystemBackgroundLight,
     separator = AppleColors.separatorLight,
     glass = Color(0x66FFFFFF),

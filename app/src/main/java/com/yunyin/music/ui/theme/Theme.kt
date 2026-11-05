@@ -43,7 +43,9 @@ object AppTheme {
  */
 @Composable
 fun AmllTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    // The app is now uniformly light (iOS grouped style: grey page, white cards). Kept as a
+    // parameter so a future appearance switch only has to pass 	rue here.
+    darkTheme: Boolean = false,
     /** Optional accent override, e.g. a color sampled from the current artwork. */
     accent: Color? = null,
     content: @Composable () -> Unit,
