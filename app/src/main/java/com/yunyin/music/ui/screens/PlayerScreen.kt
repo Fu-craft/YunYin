@@ -655,14 +655,14 @@ fun PlayerScreen(
                 ),
                 accompaniment = TextStyle(
                     fontFamily = SFPro,
-                    fontSize = 24.sp * lyricScale,
-                    lineHeight = 32.sp * lyricScale,
+                    fontSize = 22.sp * lyricScale,   // NeriPlayer: base x 0.62
+                    lineHeight = 30.sp * lyricScale,
                     fontWeight = FontWeight.SemiBold,
                     textMotion = TextMotion.Animated,
                 ),
                 phonetic = TextStyle(
                     fontFamily = SFPro,
-                    fontSize = 14.sp * lyricScale,
+                    fontSize = 25.sp * lyricScale,   // NeriPlayer: base x 0.70
                     fontWeight = FontWeight.Normal,
                 ),
             )
