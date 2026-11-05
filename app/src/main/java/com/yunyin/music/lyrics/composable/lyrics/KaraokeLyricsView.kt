@@ -569,8 +569,48 @@ fun KaraokeLyricsView(
                 is LyricScrollDecider.Decision.Wait -> continue
                 is LyricScrollDecider.Decision.Scroll -> {
                     try {
+                        val centredSlot = listState.layoutInfo.beforeContentPadding
                         if (decision.animate) {
-                            listState.animateScrollToItem(decision.index)
+                            // Continuous follow instead of "issue a scroll, then judge arrival".
+                            //
+                            // The discrete form (animateScrollToItem, or a one-shot spring) has two
+                            // judges of "has it arrived" — the animation and the decider — and they
+                            // disagree by a few pixels, which is the second nudge. Here the list is
+                            // stepped toward the slot every frame by a critically damped follower:
+                            // there is no arrival to disagree about, and the motion is continuous by
+                            // construction. See LyricScrollFollower.
+                            val follower = LyricScrollFollower()
+                            var appliedDelta = 0f
+                            var lastFrameNanos = 0L
+                            while (true) {
+                                var done = false
+                                withFrameNanos { frameNanos ->
+                                    val dt = if (lastFrameNanos == 0L) {
+                                        1f / 60f
+                                    } else {
+                                        (frameNanos - lastFrameNanos) / 1_000_000_000f
+                                    }
+                                    lastFrameNanos = frameNanos
+
+                                    val info = listState.layoutInfo.visibleItemsInfo
+                                        .firstOrNull { it.index == decision.index }
+                                    if (info == null) {
+                                        done = true
+                                        return@withFrameNanos
+                                    }
+                                    val error = (centredSlot - info.offset).toFloat()
+                                    val next = follower.step(error, dt)
+                                    val delta = next - appliedDelta
+                                    appliedDelta = next
+                                    if (delta != 0f) listState.dispatchRawDelta(delta)
+                                    if (kotlin.math.abs(error) < 0.5f &&
+                                        kotlin.math.abs(delta) < 0.5f
+                                    ) {
+                                        done = true
+                                    }
+                                }
+                                if (done) break
+                            }
                         } else {
                             listState.scrollToItem(decision.index)
                         }
