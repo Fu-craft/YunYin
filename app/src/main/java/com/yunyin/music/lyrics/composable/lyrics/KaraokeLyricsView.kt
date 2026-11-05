@@ -18,8 +18,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.animation.core.spring
-import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -541,8 +539,6 @@ fun KaraokeLyricsView(
     LaunchedEffect(listState) {
         val decider = LyricScrollDecider()
         var lastPositionMs = currentPosition()
-        // True while our own pixel spring owns the list; see the guard below.
-        var pixelScrollInFlight = false
 
         while (true) {
             withFrameNanos { }
@@ -564,11 +560,6 @@ fun KaraokeLyricsView(
             val target = if (focus.introActive) null else focus.firstIndex
             if (target != null && (target < 0 || target >= lyrics.lines.size)) continue
 
-            // While our own pixel spring is in flight the list is already moving toward the
-            // right slot; asking the decider again would let it issue a correction mid-animation,
-            // which is the residual "glide, then nudge" the user still sees.
-            if (pixelScrollInFlight) continue
-
             when (val decision = decider.decide(
                 index = target,
                 dragging = isDragging.value,
@@ -579,50 +570,7 @@ fun KaraokeLyricsView(
                 is LyricScrollDecider.Decision.Scroll -> {
                     try {
                         if (decision.animate) {
-                            // Prefer a pixel scroll when the target line is already on screen.
-                            //
-                            // `animateScrollToItem` snaps the target to the content start with a
-                            // fixed internal spec, which is why every line change reads as "move a
-                            // step, then stop" rather than a glide. When the line is already laid out
-                            // we know its pixel offset, so the same destination can be reached with a
-                            // tunable spring — softer launch, slight overshoot, no hard landing.
-                            // Jumps (seek, first placement) still fall back to the item API, which is
-                            // the only correct way to scroll to a row that is not composed yet.
-                            val targetInfo = listState.layoutInfo.visibleItemsInfo
-                                .firstOrNull { it.index == decision.index }
-                            if (targetInfo != null) {
-                                // The slot a line should occupy is the one `scrollToItem` puts it in:
-                                // just past the top content padding (which is symmetric, so that slot
-                                // is the vertical centre). `-offset` alone lands the line at the very
-                                // top edge instead, and the decider then corrects by snapping —
-                                // the "glide, stall, jump to centre" this replaces.
-                                val centred = listState.layoutInfo.beforeContentPadding
-                                pixelScrollInFlight = true
-                                try {
-                                    listState.animateScrollBy(
-                                    value = (centred - targetInfo.offset).toFloat(),
-                                        animationSpec = spring(
-                                            dampingRatio = 1f,
-                                            stiffness = 130f,
-                                        ),
-                                    )
-                                } finally {
-                                    pixelScrollInFlight = false
-                                // Land exactly on the slot, in the same frame the spring ends.
-                                //
-                                // `LyricScrollDecider.decide` only settles a request when
-                                // `firstVisibleItemIndex == index`. A spring stops inside its own
-                                // threshold, so it can come to rest a few pixels short — at which
-                                // point the target is not the first visible item, the decider
-                                // re-issues the scroll, and `animateScrollToItem` performs the
-                                // visible second correction. Snapping here (instant, sub-pixel)
-                                // puts the list on the exact slot before the decider is consulted
-                                // again, so the correction has nothing left to correct.
-                                decider.markArrived(decision.index)
-                                }
-                            } else {
-                                listState.animateScrollToItem(decision.index)
-                            }
+                            listState.animateScrollToItem(decision.index)
                         } else {
                             listState.scrollToItem(decision.index)
                         }
