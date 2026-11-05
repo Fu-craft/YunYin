@@ -185,6 +185,9 @@ dependencies {
     // under `com.yunyin.music.lyrics` so its focus and auto-scroll behaviour could be adapted;
     // it was previously the `lyrics-ui` artifact.
     implementation(libs.lyrics.core)
+    // 只模糊某一区域（Flamingo 同款）：封面作为 source，底部控制区作为 child。
+    implementation(libs.haze)
+    implementation(libs.haze.materials)
     // 上游发布的歌词视图构件：与 NeriPlayer 用的是同一套实现，替代我们自己 fork 的那份。
     implementation(libs.lyrics.ui)
     // iOS-style continuous (squircle) corners.
