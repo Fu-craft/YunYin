@@ -3,6 +3,8 @@
 
 package com.yunyin.music.ui.screens
 
+import com.yunyin.music.lyrics.clock.LyricClock
+
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -190,6 +192,8 @@ fun LyricsView(
             }
         }
         var lastFrameNs = 0L
+            var anchorPositionMs = smoothPositionMs
+            var anchorNanos = 0L
         while (true) {
             var frameNs = 0L
             withFrameNanos { frameNs = it }
@@ -202,10 +206,24 @@ fun LyricsView(
             }
             lastFrameNs = frameNs
             framePositionMs = offsetClock()
-            smoothPositionMs = LyricTimeSmoothing.next(
-                reported = framePositionMs.toInt(),
-                current = smoothPositionMs.toInt(),
-            ).toLong()
+            // Anchored extrapolation instead of easing toward the sample.
+            //
+            // The player reports its position a few times a second; easing toward that sample makes
+            // the karaoke fill and the scroll permanently lag behind the audio, and the lag is
+            // visible at every line change. Here the sample only re-anchors the clock (when it has
+            // genuinely moved, or the user seeked); between samples the position is predicted from
+            // the anchor and the frame timestamp, so it advances smoothly and never pulls back.
+            // Ported from NeriPlayer's LyricPlaybackPosition (see lyrics/clock/LyricClock.kt).
+            val resynced = LyricClock.resync(framePositionMs, smoothPositionMs, isPlaying = true)
+            if (resynced != anchorPositionMs) {
+                anchorPositionMs = resynced
+                anchorNanos = frameNs
+            }
+            smoothPositionMs = LyricClock.predict(
+                anchorPositionMs = anchorPositionMs,
+                elapsedMs = (frameNs - anchorNanos) / 1_000_000,
+                previousRenderedMs = smoothPositionMs,
+            )
         }
     }
 
