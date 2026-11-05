@@ -293,7 +293,7 @@ fun LyricsView(
                         textColor = Color.White,
                         // SrcOver keeps white lyrics readable over a bright, moving
                         // cover; Plus (the default) targets dark static backgrounds.
-                        blendMode = BlendMode.SrcOver,
+                        blendMode = BlendMode.Plus,
                         // Height of the top/bottom fades, sized to cover the floating chrome.
                         topFadeZone = topFadeZone,
                         bottomFadeZone = bottomFadeZone,
