@@ -43,6 +43,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.LookaheadScope
+import com.yunyin.music.lyrics.utils.modifier.springPlacement
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -731,6 +732,7 @@ fun KaraokeLyricsView(
                                     lookaheadScope = this@LookaheadScope,
                                     itemKey = index,
                                     isManualScrolling = isDragging.value,
+                                    stiffness = 300f,
                                 ),
                             horizontalAlignment = if (isVisualRightAligned) Alignment.End else Alignment.Start
                         ) {
