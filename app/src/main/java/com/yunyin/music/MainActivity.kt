@@ -336,7 +336,13 @@ class MainActivity : ComponentActivity() {
         LaunchedEffect(showPlayer) {
             miniChromeMotion.update(
                 compact = showPlayer,
-                playerVisible = showPlayer,
+                // NOT `showPlayer`. In MeiloX this argument is `derivedStateOf { sheet.isContentVisible }`
+                // — "the player content is already on screen" — and the snap branch exists so a *captured
+                // opening* does not replay a cancelled morph. Passing the open flag here would take that
+                // branch on the very frame the capsule should start travelling, teleporting it to the
+                // screen centre. Our player becomes visible *because of* this animation, so the flag is
+                // false for both directions and the two-stage springs run.
+                playerVisible = false,
                 centerTravel = with(density) { miniTravelPx.toDp() },
             )
         }
