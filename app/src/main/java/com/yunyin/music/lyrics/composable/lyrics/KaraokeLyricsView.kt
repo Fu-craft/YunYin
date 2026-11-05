@@ -112,9 +112,6 @@ private const val SEEK_DISCONTINUITY_MS = 800
  */
 private const val FOCUSED_UNSUNG_ALPHA = 0.45f
 
-/** Per-second rate of the lyric scroll's exponential approach to its slot. */
-private const val FOLLOW_RATE = 16f
-
 /**
  * Opacity of a non-focused line's not-yet-sung words.
  *
@@ -572,54 +569,8 @@ fun KaraokeLyricsView(
                 is LyricScrollDecider.Decision.Wait -> continue
                 is LyricScrollDecider.Decision.Scroll -> {
                     try {
-                        val centredSlot = listState.layoutInfo.beforeContentPadding
                         if (decision.animate) {
-                            // Continuous follow instead of "issue a scroll, then judge arrival".
-                            //
-                            // The discrete form (animateScrollToItem, or a one-shot spring) has two
-                            // judges of "has it arrived" — the animation and the decider — and they
-                            // disagree by a few pixels, which is the second nudge. Here the list is
-                            // stepped toward the slot every frame by a critically damped follower:
-                            // there is no arrival to disagree about, and the motion is continuous by
-                            // construction. See LyricScrollFollower.
-                            // Exponential approach, stateless.
-                            //
-                            // The previous version fed a stateful spring a *fresh* error every
-                            // frame while also dispatching the spring's absolute offset, so the two
-                            // accumulated and the list kept travelling downward instead of settling
-                            // on the slot. Each frame here moves a fixed fraction of the remaining
-                            // distance — no stored velocity, no accumulation, and it stops exactly
-                            // when the error reaches zero.
-                            var lastFrameNanos = 0L
-                            var previousError = Float.MAX_VALUE
-                            while (true) {
-                                var done = false
-                                withFrameNanos { frameNanos ->
-                                    val dt = if (lastFrameNanos == 0L) {
-                                        1f / 60f
-                                    } else {
-                                        (frameNanos - lastFrameNanos) / 1_000_000_000f
-                                    }
-                                    lastFrameNanos = frameNanos
-
-                                    val info = listState.layoutInfo.visibleItemsInfo
-                                        .firstOrNull { it.index == decision.index }
-                                    if (info == null) {
-                                        done = true
-                                        return@withFrameNanos
-                                    }
-                                    val error = (centredSlot - info.offset).toFloat()
-                                    // 1 - e^(-rate*dt): smooth, frame-rate independent, never overshoots.
-                                    val fraction = 1f - kotlin.math.exp(-FOLLOW_RATE * dt.coerceAtMost(1f / 30f))
-                                    val delta = error * fraction
-                                    if (delta != 0f) listState.dispatchRawDelta(delta)
-                                    val settled = kotlin.math.abs(error) < 0.5f ||
-                                        kotlin.math.abs(error) >= previousError
-                                    previousError = kotlin.math.abs(error)
-                                    if (settled) done = true
-                                }
-                                if (done) break
-                            }
+                            listState.animateScrollToItem(decision.index)
                         } else {
                             listState.scrollToItem(decision.index)
                         }
