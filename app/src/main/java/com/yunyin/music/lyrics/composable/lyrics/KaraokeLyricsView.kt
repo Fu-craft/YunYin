@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -570,7 +572,28 @@ fun KaraokeLyricsView(
                 is LyricScrollDecider.Decision.Scroll -> {
                     try {
                         if (decision.animate) {
-                            listState.animateScrollToItem(decision.index)
+                            // Prefer a pixel scroll when the target line is already on screen.
+                            //
+                            // `animateScrollToItem` snaps the target to the content start with a
+                            // fixed internal spec, which is why every line change reads as "move a
+                            // step, then stop" rather than a glide. When the line is already laid out
+                            // we know its pixel offset, so the same destination can be reached with a
+                            // tunable spring — softer launch, slight overshoot, no hard landing.
+                            // Jumps (seek, first placement) still fall back to the item API, which is
+                            // the only correct way to scroll to a row that is not composed yet.
+                            val targetInfo = listState.layoutInfo.visibleItemsInfo
+                                .firstOrNull { it.index == decision.index }
+                            if (targetInfo != null) {
+                                listState.animateScrollBy(
+                                    value = -targetInfo.offset.toFloat(),
+                                    animationSpec = spring(
+                                        dampingRatio = 0.9f,
+                                        stiffness = 180f,
+                                    ),
+                                )
+                            } else {
+                                listState.animateScrollToItem(decision.index)
+                            }
                         } else {
                             listState.scrollToItem(decision.index)
                         }
