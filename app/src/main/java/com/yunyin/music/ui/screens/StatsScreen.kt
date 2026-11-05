@@ -26,6 +26,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -39,6 +41,19 @@ import com.yunyin.music.data.stats.StatsBucket
 import com.yunyin.music.ui.icons.SfIcons
 import com.yunyin.music.ui.theme.AppTheme
 import com.yunyin.music.ui.theme.SFPro
+
+/** 进程内的封面地址缓存：歌曲 -> 封面 URL。 */
+internal object StatsCoverCache {
+    private val map = java.util.concurrent.ConcurrentHashMap<Long, String>()
+
+    operator fun contains(id: Long): Boolean = map.containsKey(id)
+
+    fun putAll(entries: List<Pair<Long, String>>) {
+        entries.forEach { (id, url) -> map[id] = url }
+    }
+
+    fun snapshot(): Map<Long, String> = HashMap(map)
+}
 
 private enum class StatsRange(val label: String, val days: Int) {
     Week("本周", 7),
@@ -76,12 +91,26 @@ fun StatsScreen(
     val activeDays = buckets.count { it.totalMs > 0 }
     val peak = (buckets.maxOfOrNull { it.totalMs } ?: 0L).coerceAtLeast(1L)
     val topSongs = remember(snapshot) { snapshot.songs.sortedByDescending { it.totalMs }.take(5) }
-    var covers by remember { mutableStateOf<Map<Long, String>>(emptyMap()) }
+    // 封面地址是网络请求，一首次序请求 5 首要好几秒。两处改进：
+    //  1. 命中进程内缓存直接出图（同一首歌第二次进入是 0 延迟）；
+    //  2. 未命中的并发请求，而不是 forEach 串行等待。
+    var covers by remember { mutableStateOf(StatsCoverCache.snapshot()) }
     androidx.compose.runtime.LaunchedEffect(topSongs, coverUrlFor) {
         val provider = coverUrlFor ?: return@LaunchedEffect
-        covers = topSongs.mapNotNull { song ->
-            runCatching { provider(song.id) }.getOrNull()?.let { song.id to it }
-        }.toMap()
+        val missing = topSongs.map { it.id }.filter { it !in StatsCoverCache }
+        if (missing.isEmpty()) {
+            covers = StatsCoverCache.snapshot()
+            return@LaunchedEffect
+        }
+        val fetched = kotlinx.coroutines.coroutineScope {
+            missing.map { id ->
+                async(kotlinx.coroutines.Dispatchers.IO) {
+                    runCatching { provider(id) }.getOrNull()?.let { id to it }
+                }
+            }.mapNotNull { it.await() }
+        }
+        StatsCoverCache.putAll(fetched)
+        covers = StatsCoverCache.snapshot()
     }
 
     LazyColumn(
