@@ -104,6 +104,10 @@ import androidx.compose.ui.text.style.TextMotion
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeEffect
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.Player
@@ -640,6 +644,9 @@ fun PlayerScreen(
          * track *and* the type scale, so a rotation starts from a clean cache rather than reusing
          * layouts measured at the other orientation's size.
          */
+        // 全屏封面：封面作为模糊来源，底部控制区显示磨砂（Flamingo 同款做法）。
+        val hazeState = rememberHazeState()
+
         val lyricLayoutCache = remember(track?.id, lyricScale) {
             mutableStateMapOf<Int, List<com.yunyin.music.lyrics.composable.lyrics.SyllableLayout>>()
         }
@@ -1379,7 +1386,11 @@ fun PlayerScreen(
                         BoxWithConstraints(
                             Modifier
                                 .weight(1f, fill = false)
-                                .fillMaxWidth(),
+                                .fillMaxWidth()
+                                .then(
+                                    if (fullScreenCover) Modifier.hazeSource(hazeState)
+                                    else Modifier,
+                                ),
                             contentAlignment = Alignment.TopCenter,
                         ) {
                             // `fill = false`: the region is measured against the height left after
@@ -1434,44 +1445,62 @@ fun PlayerScreen(
                             ),
                         )
 
-                        TitleBlock(
-                            track = track,
-                            liked = liked,
-                            onToggleLike = { interaction++; onToggleLike() },
-                            onMoreClick = {
-                                interaction++
-                                showActions = true
-                            },
-                            onArtistClick = onArtistClick,
-                            modifier = Modifier.padding(horizontal = 24.dp),
-                        )
-                        Spacer(Modifier.height(18.dp))
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .then(
+                                    if (fullScreenCover) {
+                                        Modifier.hazeEffect(state = hazeState) {
+                                            blurRadius = 32.dp
+                                            backgroundColor = androidx.compose.ui.graphics.Color.Transparent
+                                            noiseFactor = 0f
+                                        }
+                                    } else {
+                                        Modifier
+                                    },
+                                ),
+                        ) {
+                            Column(Modifier.fillMaxWidth()) {
+                            TitleBlock(
+                                track = track,
+                                liked = liked,
+                                onToggleLike = { interaction++; onToggleLike() },
+                                onMoreClick = {
+                                    interaction++
+                                    showActions = true
+                                },
+                                onArtistClick = onArtistClick,
+                                modifier = Modifier.padding(horizontal = 24.dp),
+                            )
+                            Spacer(Modifier.height(18.dp))
 
-                        PlayerControls(
-                            state = state,
-                            displayedPosition = displayedPosition,
-                            positionProvider = positionProvider,
-                            quality = quality,
-                            onQualityClick = {
-                                interaction++
-                                showQuality = true
-                            },
-                            showLyrics = showLyrics,
-                            onSeek = { fraction ->
-                                interaction++
-                                onSeek((state.durationMs * fraction).toLong())
-                            },
-                            onTogglePlay = { interaction++; onTogglePlay() },
-                            onNext = { interaction++; onNext() },
-                            onPrevious = { interaction++; onPrevious() },
-                            onCycleRepeat = {
-                                interaction++
-                                if (state.shuffle) onToggleShuffle() else onCycleRepeat()
-                            },
-                            onToggleShuffle = { interaction++; onToggleShuffle() },
-                            onToggleLyrics = { interaction++; togglePresentation() },
-                            onShowQueue = { interaction++; onShowQueue() },
-                        )
+                            PlayerControls(
+                                state = state,
+                                displayedPosition = displayedPosition,
+                                positionProvider = positionProvider,
+                                quality = quality,
+                                onQualityClick = {
+                                    interaction++
+                                    showQuality = true
+                                },
+                                showLyrics = showLyrics,
+                                onSeek = { fraction ->
+                                    interaction++
+                                    onSeek((state.durationMs * fraction).toLong())
+                                },
+                                onTogglePlay = { interaction++; onTogglePlay() },
+                                onNext = { interaction++; onNext() },
+                                onPrevious = { interaction++; onPrevious() },
+                                onCycleRepeat = {
+                                    interaction++
+                                    if (state.shuffle) onToggleShuffle() else onCycleRepeat()
+                                },
+                                onToggleShuffle = { interaction++; onToggleShuffle() },
+                                onToggleLyrics = { interaction++; togglePresentation() },
+                                onShowQueue = { interaction++; onShowQueue() },
+                            )
+                            }
+                        }
                     }
                 }
             }
