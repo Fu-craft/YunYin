@@ -602,8 +602,8 @@ fun KaraokeLyricsView(
                                     listState.animateScrollBy(
                                     value = (centred - targetInfo.offset).toFloat(),
                                         animationSpec = spring(
-                                            dampingRatio = 0.9f,
-                                            stiffness = 180f,
+                                            dampingRatio = 1f,
+                                            stiffness = 130f,
                                         ),
                                     )
                                 } finally {
