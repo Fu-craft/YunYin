@@ -17,6 +17,10 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.expandVertically
@@ -57,11 +61,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -299,13 +306,38 @@ class MainActivity : ComponentActivity() {
         val downloadStatesAll by container.downloads.states.collectAsState()
 
         var tab by remember { mutableStateOf(PlayerTab.Home) }
-        // 桌面小组件 taps open the player page itself, not whichever tab was last shown.
+
         var showPlayer by remember {
             mutableStateOf(
                 (context as? android.app.Activity)
                     ?.intent
                     ?.getBooleanExtra(com.yunyin.music.widget.NowPlayingWidgetProvider.EXTRA_OPEN_PLAYER, false)
                     ?: false,
+            )
+        }
+
+        // 0 = mini bar present, 1 = player fully expanded. Drives the bar receding into the player.
+        val chromeRecede by androidx.compose.animation.core.animateFloatAsState(
+            targetValue = if (showPlayer) 1f else 0f,
+            animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.86f, stiffness = 420f),
+            label = "chrome-recede",
+        )
+
+        // 迷你条展开/收起的三通道动画(移植自 MeiloX 的 MiniPlayerChromeMotion,数值见其单测)。
+        // 它只在 showPlayer 变化时被推一次:播放位置和音量每帧都在变,放进重组路径就等于每帧重起弹簧。
+        val miniChromeMotion = remember {
+            com.yunyin.music.ui.sheet.MiniPlayerChromeMotion(compact = showPlayer)
+        }
+        // 迷你条静止时的中心到屏幕中心的纵向距离;由迷你条自己的 onGloballyPositioned 写入。
+        var miniTravelPx by remember { mutableStateOf(0f) }
+        // Hoisted because `onGloballyPositioned` is not composable — reading LocalView inside its lambda
+        // would be a composition call from a layout callback.
+        val rootView = LocalView.current
+        LaunchedEffect(showPlayer) {
+            miniChromeMotion.update(
+                compact = showPlayer,
+                playerVisible = showPlayer,
+                centerTravel = with(density) { miniTravelPx.toDp() },
             )
         }
         // The playlist the current playback queue was started from, when it was started from one. It is
@@ -1361,7 +1393,16 @@ class MainActivity : ComponentActivity() {
                     // last frame), which left the tab icons ghosting through the player. Hiding the
                     // whole chrome while the player is open removes the source entirely; the player
                     // is the only thing on screen at that point anyway.
-                    .alpha(if (showPlayer) 0f else 1f),
+                    // Faded and shrunk instead of switched off: as the player grows up from the
+                    // bottom the mini bar recedes into it, so the two read as one continuous motion
+                    // rather than "surface A disappears, surface B appears".
+                    .graphicsLayer {
+                        val p = chromeRecede
+                        alpha = 1f - p
+                        scaleX = 1f - 0.06f * p
+                        scaleY = 1f - 0.06f * p
+                        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f)
+                    },
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(FloatingChromeGap),
             ) {
@@ -1370,27 +1411,11 @@ class MainActivity : ComponentActivity() {
                 // does not want the "未在播放" placeholder. The chrome column is bottom-anchored, so the
                 // tab bar's screen position does not change when the row appears or goes away.
                 //
-                // Entrance/exit is the theme's small-motion budget: fade + a short rise/drop, with the
-                // row's own height expanding/shrinking under it so the space above the tab row does not
-                // pop. The chrome's *total* height is not animated against the content padding — the
-                // padding follows the row count, not this animation.
-                androidx.compose.animation.AnimatedVisibility(
-                    visible = hasTrack,
-                    // One kind of travel only: the row's own height expands under the fade. The slide
-                    // added a second, second-order movement that lived inside the expanding clip (so
-                    // it was largely invisible) and the exit was as slow as the entrance, unlike every
-                    // other chrome overlay here (320/260, 200/160).
-                    enter = fadeIn(tween(Motion.duration(Motion.SmallDuration), easing = Motion.EaseOut)) +
-                        expandVertically(
-                            tween(Motion.duration(Motion.SmallDuration), easing = Motion.EaseOut),
-                            expandFrom = Alignment.Bottom,
-                        ),
-                    exit = fadeOut(tween(Motion.duration(Motion.SmallDuration), easing = Motion.EaseOut)) +
-                        shrinkVertically(
-                            tween(Motion.duration(Motion.SmallDuration), easing = Motion.EaseOut),
-                            shrinkTowards = Alignment.Bottom,
-                        ),
-                ) {
+                // The entrance is owned by MiniPlayerChromeMotion now, not by an AnimatedVisibility: the
+                // capsule travels up by its own measured distance (and fades under the chrome's recede)
+                // while the player fades in over it. `AnimatedVisibility` cannot express "two springs
+                // with a 50 ms hand-off", which is the whole point of the ported model.
+                if (hasTrack) {
                     Box(Modifier.fillMaxWidth()) {
                         FloatingMiniPlayer(
                             state = if (hasTrack) miniPlayerState else lastMiniPlayerState,
@@ -1398,6 +1423,18 @@ class MainActivity : ComponentActivity() {
                             backdrop = bottomBackdrop,
                             onExpand = { showPlayer = true },
                             onTogglePlay = { container.player.togglePlayPause() },
+                            progress = { miniChromeMotion.verticalProgress.value },
+                            travelPx = { miniTravelPx },
+                            modifier = Modifier.onGloballyPositioned { coordinates ->
+                                // Travel = how far this capsule's centre sits below the screen centre.
+                                // Measured, not assumed: the chrome sits above the tab bar, and the tab
+                                // bar's height depends on the layout (rail / expanded tablet / phone).
+                                val rootHeight = rootView.height.toFloat()
+                                if (rootHeight > 0f) {
+                                    val centerY = coordinates.boundsInRoot().center.y
+                                    miniTravelPx = (centerY - rootHeight / 2f).coerceAtLeast(0f)
+                                }
+                            },
                         )
                     }
                 }
@@ -1917,8 +1954,13 @@ class MainActivity : ComponentActivity() {
 
             AnimatedVisibility(
                 visible = showPlayer,
-                enter = slideInVertically(tween(Motion.duration(Motion.SheetEnterDuration), easing = Motion.EaseOut)) { it } + fadeIn(tween(Motion.duration(Motion.SmallDuration), easing = Motion.EaseOut)),
-                exit = slideOutVertically(tween(Motion.duration(Motion.SheetEnterDuration), easing = Motion.EaseOut)) { it } + fadeOut(tween(Motion.duration(Motion.SmallDuration), easing = Motion.EaseOut)),
+                // The expansion is carried by the mini capsule's own three-channel motion (see
+                // MiniPlayerChromeMotion above), so the player must not animate in on top of it —
+                // a scale + slide + fade here would be a second, competing choreography for the same
+                // gesture. What is left is the minimum that keeps the swap from being a hard cut:
+                // a short fade in and a slightly shorter one out, no scale, no travel.
+                enter = fadeIn(tween(120)),
+                exit = fadeOut(tween(80)),
             ) {
                 // Collected here, inside the player's own branch, so the 4x/second position tick
                 // invalidates only the player screen and never the browsing tabs behind it.

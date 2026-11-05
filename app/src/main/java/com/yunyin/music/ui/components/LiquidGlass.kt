@@ -87,6 +87,7 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -148,6 +149,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.fastCoerceIn
@@ -1446,6 +1448,20 @@ fun FloatingMiniPlayer(
     backdrop: Backdrop,
     onExpand: () -> Unit,
     onTogglePlay: () -> Unit,
+    /**
+     * 0 = 迷你态, 1 = 展开态.
+     *
+     * Read inside the layout/draw lambdas below, never captured into state: this value is driven by the
+     * two-stage spring in `MiniPlayerChromeMotion`, so reading it in composition would re-run this whole
+     * capsule every frame of the expansion.
+     */
+    progress: () -> Float = { 0f },
+    /**
+     * 迷你条静止时中心到屏幕中心的纵向距离(px).
+     *
+     * Measured by the host (`onGloballyPositioned`), because only the host knows the window height.
+     */
+    travelPx: () -> Float = { 0f },
     modifier: Modifier = Modifier,
 ) {
     val track = state.current ?: return
@@ -1466,9 +1482,14 @@ fun FloatingMiniPlayer(
         modifier = modifier
             .fillMaxWidth()
             .height(FloatingChromeHeight)
+            // 展开时整条迷你条**自己**向上走完这段行程,而不是被另一个容器替换掉。位移走 layout 阶段的
+            // lambda,透明度走 draw 阶段,两者都不触发重组——弹簧每帧都在改这两个值。
+            .offset { IntOffset(0, -(progress() * travelPx()).roundToInt()) }
             .graphicsLayer {
                 scaleX = press.scaleX
                 scaleY = press.scaleY
+                // 只做轻微淡出:主要的那次淡出由宿主的 chromeRecede 负责,这里再加满就会变成闪一下。
+                alpha = 1f - progress() * 0.15f
             }
             ,
     ) {
