@@ -185,6 +185,8 @@ dependencies {
     // under `com.yunyin.music.lyrics` so its focus and auto-scroll behaviour could be adapted;
     // it was previously the `lyrics-ui` artifact.
     implementation(libs.lyrics.core)
+    // 上游发布的歌词视图构件：与 NeriPlayer 用的是同一套实现，替代我们自己 fork 的那份。
+    implementation(libs.lyrics.ui)
     // iOS-style continuous (squircle) corners.
     implementation(libs.gaze.capsule)
 
