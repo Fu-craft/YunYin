@@ -584,8 +584,14 @@ fun KaraokeLyricsView(
                             val targetInfo = listState.layoutInfo.visibleItemsInfo
                                 .firstOrNull { it.index == decision.index }
                             if (targetInfo != null) {
+                                // The slot a line should occupy is the one `scrollToItem` puts it in:
+                                // just past the top content padding (which is symmetric, so that slot
+                                // is the vertical centre). `-offset` alone lands the line at the very
+                                // top edge instead, and the decider then corrects by snapping —
+                                // the "glide, stall, jump to centre" this replaces.
+                                val centred = listState.layoutInfo.beforeContentPadding
                                 listState.animateScrollBy(
-                                    value = -targetInfo.offset.toFloat(),
+                                    value = (centred - targetInfo.offset).toFloat(),
                                     animationSpec = spring(
                                         dampingRatio = 0.9f,
                                         stiffness = 180f,
