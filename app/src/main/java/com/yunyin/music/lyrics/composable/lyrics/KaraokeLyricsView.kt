@@ -570,7 +570,7 @@ fun KaraokeLyricsView(
                 is LyricScrollDecider.Decision.Scroll -> {
                     try {
                         if (decision.animate) {
-                            listState.animateScrollToItem(decision.index)
+                            listState.scrollToItem(decision.index)
                         } else {
                             listState.scrollToItem(decision.index)
                         }
@@ -719,7 +719,19 @@ fun KaraokeLyricsView(
                             // animation at the start of a song, and a further source of
                             // erratic scrolling on line/song changes. The LazyColumn already
                             // scrolls smoothly on its own.
-                            modifier = Modifier.fillMaxWidth(),
+                            // 每行自己的 placement 弹簧（上游机制）。
+                            //
+                            // 之前这里被去掉过，理由是"每行独立滑动导致文字整体下移"。那个现象
+                            // 的真正前提是**列表滚动本身也在做动画**——两个动画叠加才会互相追。
+                            // 现在滚动改成瞬时落位（scrollToItem），位移只由这一层弹簧提供，
+                            // 所以既丝滑又没有第二段修正。
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .springPlacement(
+                                    lookaheadScope = this@LookaheadScope,
+                                    itemKey = index,
+                                    isManualScrolling = isDragging.value,
+                                ),
                             horizontalAlignment = if (isVisualRightAligned) Alignment.End else Alignment.Start
                         ) {
                             val animDuration = 600
