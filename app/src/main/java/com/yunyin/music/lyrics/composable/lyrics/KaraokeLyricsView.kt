@@ -112,6 +112,9 @@ private const val SEEK_DISCONTINUITY_MS = 800
  */
 private const val FOCUSED_UNSUNG_ALPHA = 0.45f
 
+/** Per-second rate of the lyric scroll's exponential approach to its slot. */
+private const val FOLLOW_RATE = 16f
+
 /**
  * Opacity of a non-focused line's not-yet-sung words.
  *
@@ -579,9 +582,16 @@ fun KaraokeLyricsView(
                             // stepped toward the slot every frame by a critically damped follower:
                             // there is no arrival to disagree about, and the motion is continuous by
                             // construction. See LyricScrollFollower.
-                            val follower = LyricScrollFollower()
-                            var appliedDelta = 0f
+                            // Exponential approach, stateless.
+                            //
+                            // The previous version fed a stateful spring a *fresh* error every
+                            // frame while also dispatching the spring's absolute offset, so the two
+                            // accumulated and the list kept travelling downward instead of settling
+                            // on the slot. Each frame here moves a fixed fraction of the remaining
+                            // distance — no stored velocity, no accumulation, and it stops exactly
+                            // when the error reaches zero.
                             var lastFrameNanos = 0L
+                            var previousError = Float.MAX_VALUE
                             while (true) {
                                 var done = false
                                 withFrameNanos { frameNanos ->
@@ -599,15 +609,14 @@ fun KaraokeLyricsView(
                                         return@withFrameNanos
                                     }
                                     val error = (centredSlot - info.offset).toFloat()
-                                    val next = follower.step(error, dt)
-                                    val delta = next - appliedDelta
-                                    appliedDelta = next
+                                    // 1 - e^(-rate*dt): smooth, frame-rate independent, never overshoots.
+                                    val fraction = 1f - kotlin.math.exp(-FOLLOW_RATE * dt.coerceAtMost(1f / 30f))
+                                    val delta = error * fraction
                                     if (delta != 0f) listState.dispatchRawDelta(delta)
-                                    if (kotlin.math.abs(error) < 0.5f &&
-                                        kotlin.math.abs(delta) < 0.5f
-                                    ) {
-                                        done = true
-                                    }
+                                    val settled = kotlin.math.abs(error) < 0.5f ||
+                                        kotlin.math.abs(error) >= previousError
+                                    previousError = kotlin.math.abs(error)
+                                    if (settled) done = true
                                 }
                                 if (done) break
                             }
