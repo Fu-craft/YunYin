@@ -618,9 +618,7 @@ fun KaraokeLyricsView(
                                 // visible second correction. Snapping here (instant, sub-pixel)
                                 // puts the list on the exact slot before the decider is consulted
                                 // again, so the correction has nothing left to correct.
-                                if (listState.firstVisibleItemIndex != decision.index) {
-                                    listState.scrollToItem(decision.index)
-                                }
+                                decider.markArrived(decision.index)
                                 }
                             } else {
                                 listState.animateScrollToItem(decision.index)

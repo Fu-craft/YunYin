@@ -37,6 +37,17 @@ internal class LyricScrollDecider {
     }
 
     private var hasPlaced = false
+
+    /** 
+     * Index the list has already been brought to by a caller-driven animation.
+     *
+     * The pixel spring in the view settles within its own threshold, so the target line can stop a
+     * few pixels off the slot scrollToItem would use. Without this the next [decide] sees
+     * irstVisibleIndex != index and re-issues the scroll, producing a visible second nudge right
+     * after the animation. Recording the arrival makes the request settled regardless of that
+     * sub-pixel difference.
+     */
+    private var arrived = NONE
     private var lastRequested = NONE
     private var heldByUser = false
 
@@ -61,6 +72,8 @@ internal class LyricScrollDecider {
             return Decision.Wait
         }
         if (index == null) return Decision.Wait
+        // Already brought here by the caller's own animation: nothing left to correct.
+        if (index == arrived) return Decision.Wait
 
         // Held: stay where the user left it until playback actually moves the line on.
         if (heldByUser) {
@@ -80,11 +93,19 @@ internal class LyricScrollDecider {
         return Decision.Scroll(index, animate)
     }
 
+    /** Records that the caller has finished a scroll to [index]. */
+    fun markArrived(index: Int) {
+        arrived = index
+        lastRequested = index
+        hasPlaced = true
+    }
+
     /** Forget prior state, e.g. when the lyrics document is replaced or the user seeks. */
     fun reset() {
         hasPlaced = false
         lastRequested = NONE
         heldByUser = false
+        arrived = NONE
     }
 
     private companion object {
