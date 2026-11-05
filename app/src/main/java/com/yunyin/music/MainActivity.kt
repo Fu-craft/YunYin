@@ -2561,7 +2561,7 @@ class MainActivity : ComponentActivity() {
         }
         BackHandler(enabled = showDownloadCenter) { showDownloadCenter = false }
         if (showFootprint) {
-            com.yunyin.music.ui.screens.ListeningFootprintScreen(
+            com.yunyin.music.ui.screens.StatsScreen(
                 recorder = container.playbackStatsRecorder,
                 onBack = { showFootprint = false },
             )
