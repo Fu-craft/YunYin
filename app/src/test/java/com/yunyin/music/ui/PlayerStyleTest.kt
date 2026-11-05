@@ -19,8 +19,9 @@ class PlayerStyleTest {
 
     @Test
     fun `each style round-trips through its stored level`() {
-        assertEquals(3, PlayerStyle.entries.size)
+        assertEquals(4, PlayerStyle.entries.size)          // classic / vinyl / immersive / flamingo
         assertEquals(PlayerStyle.Immersive, PlayerStyle.entries[2])
+        assertEquals(PlayerStyle.Flamingo, PlayerStyle.entries[3])
         PlayerStyle.entries.forEach { style ->
             assertEquals(style, PlayerStyle.from(style.level))
         }
@@ -45,6 +46,7 @@ class PlayerStyleTest {
         assertEquals("classic", PlayerStyle.Classic.level)
         assertEquals("vinyl", PlayerStyle.Vinyl.level)
         assertEquals("immersive", PlayerStyle.Immersive.level)
+        assertEquals("flamingo", PlayerStyle.Flamingo.level)
     }
 
     @Test
