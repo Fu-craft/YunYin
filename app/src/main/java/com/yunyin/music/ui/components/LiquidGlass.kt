@@ -319,6 +319,14 @@ internal val FloatingChromeGap = 8.dp
 internal val FloatingChromeBottomGap = 10.dp
 
 /**
+ * 迷你条底边到屏幕底边的距离(不含导航栏):tab 行 + 行间距 + 底边距。
+ *
+ * 迷你条从 chrome 的 Column 搬进了根部的 `AnimatedContent`(折叠态),所以它不再由 Column 的
+ * 排列来定位,而要靠这个偏移量复刻原来的位置(列高 = 两行 [FloatingChromeHeight] + 一个间距)。
+ */
+internal val MiniPlayerBottomOffset = FloatingChromeHeight + FloatingChromeGap + FloatingChromeBottomGap
+
+/**
  * Whether the chrome's now-playing row is currently composed (a track is loaded).
  *
  * The chrome no longer shows the "未在播放" placeholder: with nothing playing only the tab row is
@@ -1449,19 +1457,12 @@ fun FloatingMiniPlayer(
     onExpand: () -> Unit,
     onTogglePlay: () -> Unit,
     /**
-     * 0 = 迷你态, 1 = 展开态.
+     * 附加到封面上的修饰符。
      *
-     * Read inside the layout/draw lambdas below, never captured into state: this value is driven by the
-     * two-stage spring in `MiniPlayerChromeMotion`, so reading it in composition would re-run this whole
-     * capsule every frame of the expansion.
+     * 宿主在这里挂 `sharedBounds`(key 与播放器封面相同)。胶囊本身不认识共享过渡,也不该认识:
+     * 它只把宿主给的修饰符贴到封面上,几何保持原样——不再有手写的 progress 位移/缩放。
      */
-    progress: () -> Float = { 0f },
-    /**
-     * 迷你条静止时中心到屏幕中心的纵向距离(px).
-     *
-     * Measured by the host (`onGloballyPositioned`), because only the host knows the window height.
-     */
-    travelPx: () -> Float = { 0f },
+    artworkModifier: Modifier = Modifier,
     modifier: Modifier = Modifier,
 ) {
     val track = state.current ?: return
@@ -1482,14 +1483,9 @@ fun FloatingMiniPlayer(
         modifier = modifier
             .fillMaxWidth()
             .height(FloatingChromeHeight)
-            // 展开时整条迷你条**自己**向上走完这段行程,而不是被另一个容器替换掉。位移走 layout 阶段的
-            // lambda,透明度走 draw 阶段,两者都不触发重组——弹簧每帧都在改这两个值。
-            .offset { IntOffset(0, -(progress() * travelPx()).roundToInt()) }
             .graphicsLayer {
                 scaleX = press.scaleX
                 scaleY = press.scaleY
-                // 只做轻微淡出:主要的那次淡出由宿主的 chromeRecede 负责,这里再加满就会变成闪一下。
-                alpha = 1f - progress() * 0.15f
             }
             ,
     ) {
@@ -1528,7 +1524,8 @@ fun FloatingMiniPlayer(
                 requestSize = 200,
                 modifier = Modifier
                     .size(MiniArtworkSize)
-                    .clip(CircleShape),
+                    .clip(CircleShape)
+                    .then(artworkModifier),
             )
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {

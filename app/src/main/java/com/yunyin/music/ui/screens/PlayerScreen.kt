@@ -896,7 +896,11 @@ fun PlayerScreen(
         // so changing presentation reads as one object moving rather than two screens replacing
         // each other. Both sides declare the same key; [AnimatedContent] tells the framework which
         // is incoming and which is outgoing.
-        SharedTransitionLayout(modifier = Modifier.fillMaxSize()) {
+        // 共享过渡的作用域来自宿主(MainActivity 根部)。这里不再自建 SharedTransitionLayout:
+        // 自建会把封面锁在这一屏内部,迷你条上的封面无法与它是同一个元素。
+        val sharedScope = LocalCoverSharedScope.current
+            ?: error("PlayerScreen 需要根部的 SharedTransitionLayout(见 LocalCoverSharedScope)")
+        Box(modifier = Modifier.fillMaxSize()) {
             AnimatedContent(
                 targetState = showLyrics,
                 transitionSpec = {
@@ -1078,7 +1082,7 @@ fun PlayerScreen(
                                         onAnimatedArtworkFailed = { animatedCoverUrl = null },
                                         videoEdgeField = if (fullScreenCover) immersiveEdgeField else null,
                                         artworkScale = sharedCoverScale,
-                                        sharedScope = this@SharedTransitionLayout,
+                                        sharedScope = sharedScope,
                                         visibilityScope = this@AnimatedContent,
                                         onCoverCenter = { artworkCoverCenter = it },
                                     )
@@ -1165,7 +1169,7 @@ fun PlayerScreen(
                                         posterUrl = animatedCoverPoster,
                                         posterBitmap = coverFrame,
                                         artworkScale = sharedCoverScale,
-                                        sharedScope = this@SharedTransitionLayout,
+                                        sharedScope = sharedScope,
                                         visibilityScope = this@AnimatedContent,
                                     )
                                 } else {
@@ -1289,7 +1293,7 @@ fun PlayerScreen(
                                     posterUrl = animatedCoverPoster,
                                     posterBitmap = coverFrame,
                                     artworkScale = sharedCoverScale,
-                                    sharedScope = this@SharedTransitionLayout,
+                                    sharedScope = sharedScope,
                                     visibilityScope = this@AnimatedContent,
                                 )
                             }
@@ -1432,7 +1436,7 @@ fun PlayerScreen(
                                 onAnimatedArtworkFailed = { animatedCoverUrl = null },
                                 videoEdgeField = if (fullScreenCover) immersiveEdgeField else null,
                                 artworkScale = sharedCoverScale,
-                                sharedScope = this@SharedTransitionLayout,
+                                sharedScope = sharedScope,
                                 visibilityScope = this@AnimatedContent,
                                 onCoverCenter = { artworkCoverCenter = it },
                             )
@@ -1846,7 +1850,7 @@ private fun ArtworkWithGestures(
                             Modifier
                         } else {
                             with(sharedScope) {
-                                Modifier.sharedElement(
+                                Modifier.sharedBounds(
                                     rememberSharedContentState(key = COVER_SHARED_KEY),
                                     animatedVisibilityScope = visibilityScope,
                                     // Both ends of the shared element pass the same curve, so the travel is
@@ -2421,7 +2425,7 @@ private fun LyricsHeader(
                         interactionSource = null,
                         onClick = onCoverClick,
                     )
-                    .sharedElement(
+                    .sharedBounds(
                         rememberSharedContentState(key = COVER_SHARED_KEY),
                         animatedVisibilityScope = visibilityScope,
                         // Must match the full artwork's boundsTransform exactly (same key): the two ends
@@ -3419,7 +3423,17 @@ private const val PRESENTATION_WARP_ENABLED = false
  * Both sides declare it, which is what lets the framework treat the full-size artwork and the
  * header thumbnail as one object travelling between two positions.
  */
-private const val COVER_SHARED_KEY = "album-cover"
+internal const val COVER_SHARED_KEY = "album-cover"
+
+/**
+ * 宿主在根部提供的 `SharedTransitionLayout` 作用域。
+ *
+ * 以前这个 layout 是 PlayerScreen 自己在内部创建的,结果封面只能在**本屏内部**形变(大图 ↔ 头部缩略图),
+ * 迷你条上的那颗封面不在这张"共享地图"里,两者永远配不上。提到 MainActivity 根部、并由根部的
+ * `AnimatedContent` 同时容纳"迷你条"与"播放器"两个 state 之后,两端才能注册同一个 key。
+ */
+internal val LocalCoverSharedScope =
+    androidx.compose.runtime.staticCompositionLocalOf<SharedTransitionScope?> { null }
 
 /** Corner radius of the full-size artwork, and of the header thumbnail it shrinks into. */
 private val ARTWORK_CORNER = 14.dp

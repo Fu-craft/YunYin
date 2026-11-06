@@ -21,6 +21,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.expandVertically
@@ -98,6 +99,7 @@ import com.yunyin.music.ui.PlayerViewModel
 import com.yunyin.music.ui.components.CrossfadeContent
 import com.yunyin.music.ui.components.FloatingChromeBottomGap
 import com.yunyin.music.ui.components.FloatingChromeGap
+import com.yunyin.music.ui.screens.COVER_SHARED_KEY
 import com.yunyin.music.ui.components.FloatingMiniPlayer
 import com.yunyin.music.ui.components.FloatingTabBar
 import com.yunyin.music.ui.components.LocalChromeTopRowVisible
@@ -105,6 +107,7 @@ import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.yunyin.music.ui.components.PlayerTab
 import com.yunyin.music.ui.components.QueueSheet
+import com.yunyin.music.ui.components.MiniPlayerBottomOffset
 import com.yunyin.music.ui.components.TabBarInset
 import com.yunyin.music.ui.screens.CollectionScreen
 import com.yunyin.music.ui.screens.PlaylistSquareScreen
@@ -179,8 +182,15 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             AmllTheme {
-                CompositionLocalProvider(LocalPlayerController provides container.player) {
-                    YunYinApp(container)
+                // 根部一个 SharedTransitionLayout:迷你条封面与播放器封面要在同一张共享地图上注册同一个 key。
+                // 迷你条是它的根 AnimatedContent 的折叠态,播放器是展开态——只有同一次内容过渡的两个 state 才能配对形变。
+                androidx.compose.animation.SharedTransitionLayout {
+                    CompositionLocalProvider(
+                        com.yunyin.music.ui.screens.LocalCoverSharedScope provides this,
+                        LocalPlayerController provides container.player,
+                    ) {
+                        YunYinApp(container)
+                    }
                 }
             }
         }
@@ -323,29 +333,9 @@ class MainActivity : ComponentActivity() {
             label = "chrome-recede",
         )
 
-        // 迷你条展开/收起的三通道动画(移植自 MeiloX 的 MiniPlayerChromeMotion,数值见其单测)。
-        // 它只在 showPlayer 变化时被推一次:播放位置和音量每帧都在变,放进重组路径就等于每帧重起弹簧。
-        val miniChromeMotion = remember {
-            com.yunyin.music.ui.sheet.MiniPlayerChromeMotion(compact = showPlayer)
-        }
-        // 迷你条静止时的中心到屏幕中心的纵向距离;由迷你条自己的 onGloballyPositioned 写入。
-        var miniTravelPx by remember { mutableStateOf(0f) }
-        // Hoisted because `onGloballyPositioned` is not composable — reading LocalView inside its lambda
-        // would be a composition call from a layout callback.
-        val rootView = LocalView.current
-        LaunchedEffect(showPlayer) {
-            miniChromeMotion.update(
-                compact = showPlayer,
-                // NOT `showPlayer`. In MeiloX this argument is `derivedStateOf { sheet.isContentVisible }`
-                // — "the player content is already on screen" — and the snap branch exists so a *captured
-                // opening* does not replay a cancelled morph. Passing the open flag here would take that
-                // branch on the very frame the capsule should start travelling, teleporting it to the
-                // screen centre. Our player becomes visible *because of* this animation, so the flag is
-                // false for both directions and the two-stage springs run.
-                playerVisible = false,
-                centerTravel = with(density) { miniTravelPx.toDp() },
-            )
-        }
+        // 展开/收起交给共享元素:封面在迷你条与播放器之间由框架做 bounds 过渡,
+        // 不再有手写的 progress 位移/缩放,也不需要测行程或推弹簧。
+        val coverSharedScope = com.yunyin.music.ui.screens.LocalCoverSharedScope.current
         // The playlist the current playback queue was started from, when it was started from one. It is
         // what 心动模式 uses for `pid` when the player is the entry point; null means "not a playlist"
         // and the fallback is the liked-songs playlist (or no pid at all).
@@ -1406,29 +1396,11 @@ class MainActivity : ComponentActivity() {
                 // capsule travels up by its own measured distance (and fades under the chrome's recede)
                 // while the player fades in over it. `AnimatedVisibility` cannot express "two springs
                 // with a 50 ms hand-off", which is the whole point of the ported model.
-                if (hasTrack) {
-                    Box(Modifier.fillMaxWidth()) {
-                        FloatingMiniPlayer(
-                            state = if (hasTrack) miniPlayerState else lastMiniPlayerState,
-                            loader = container.artwork,
-                            backdrop = bottomBackdrop,
-                            onExpand = { showPlayer = true },
-                            onTogglePlay = { container.player.togglePlayPause() },
-                            progress = { miniChromeMotion.verticalProgress.value },
-                            travelPx = { miniTravelPx },
-                            modifier = Modifier.onGloballyPositioned { coordinates ->
-                                // Travel = how far this capsule's centre sits below the screen centre.
-                                // Measured, not assumed: the chrome sits above the tab bar, and the tab
-                                // bar's height depends on the layout (rail / expanded tablet / phone).
-                                val rootHeight = rootView.height.toFloat()
-                                if (rootHeight > 0f) {
-                                    val centerY = coordinates.boundsInRoot().center.y
-                                    miniTravelPx = (centerY - rootHeight / 2f).coerceAtLeast(0f)
-                                }
-                            },
-                        )
-                    }
-                }
+                // The capsule no longer lives here. It is the collapsed state of the root
+                // AnimatedContent (see the player overlay below), because a shared element can only
+                // morph between the two states of one content transition, and this column and the
+                // player overlay are two unrelated ones. Its old position is reconstructed from
+                // MiniPlayerBottomOffset so nothing moves visually.
 
                 // Bottom row: the tab bar fills the same width as the capsule above it (the column applies
                 // the screen inset) and its four slots (主页 / 歌单广场 / 资料库 / 心动模式) divide that width
@@ -1954,18 +1926,18 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            AnimatedVisibility(
-                visible = showPlayer,
-                // The expansion is carried by the mini capsule's own three-channel motion (see
-                // MiniPlayerChromeMotion above), so the player must not animate in on top of it —
-                // a scale + slide + fade here would be a second, competing choreography for the same
-                // gesture. What is left is the minimum that keeps the swap from being a hard cut:
-                // a short fade, delayed past the capsule's first spring stage so the travel is seen at
-                // all (an immediate 120 ms fade painted the opaque player over the capsule while it was
-                // still moving, which is why the open read as "no animation").
-                enter = fadeIn(tween(140, delayMillis = 160)),
-                exit = fadeOut(tween(80)),
-            ) {
+            androidx.compose.animation.AnimatedContent(
+                targetState = showPlayer,
+                transitionSpec = {
+                    // The morph is the shared cover; the surface only fades, so the two states never
+                    // read as two unrelated surfaces appearing and disappearing. The incoming page
+                    // waits out the shared element's first stretch before it covers anything.
+                    androidx.compose.animation.fadeIn(tween(140, delayMillis = 160)) togetherWith
+                        androidx.compose.animation.fadeOut(tween(80))
+                },
+                label = "player-overlay",
+            ) { playerVisible ->
+                if (playerVisible) {
                 // Collected here, inside the player's own branch, so the 4x/second position tick
                 // invalidates only the player screen and never the browsing tabs behind it.
                 val playback by container.player.state.collectAsState()
@@ -2087,6 +2059,35 @@ class MainActivity : ComponentActivity() {
                     positionProvider = container.player::positionMsNow,
                     playerStyle = playerStyle,
                 )
+                }
+                } else if (hasTrack && !showSettings && !showDownloadCenter && !showFootprint &&
+                    !showStats && !showLogin && !showSimilarArtists && !showListenReport &&
+                    !showStyleBrowser
+                ) {
+                    // Collapsed state: the capsule itself, so its cover and the player's cover are
+                    // the two ends of one shared element instead of two unrelated surfaces.
+                    Box(Modifier.fillMaxSize()) {
+                        FloatingMiniPlayer(
+                            state = miniPlayerState,
+                            loader = container.artwork,
+                            backdrop = bottomBackdrop,
+                            onExpand = { showPlayer = true },
+                            onTogglePlay = { container.player.togglePlayPause() },
+                            artworkModifier = coverSharedScope?.let { scope ->
+                                with(scope) {
+                                    Modifier.sharedBounds(
+                                        rememberSharedContentState(COVER_SHARED_KEY),
+                                        animatedVisibilityScope = this@AnimatedContent,
+                                    )
+                                }
+                            } ?: Modifier,
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .navigationBarsPadding()
+                                .padding(horizontal = TabBarInset)
+                                .padding(bottom = MiniPlayerBottomOffset),
+                        )
+                    }
                 }
             }
 
