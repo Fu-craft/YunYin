@@ -17,11 +17,6 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.togetherWith
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.expandVertically
@@ -62,14 +57,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.boundsInRoot
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -99,7 +91,6 @@ import com.yunyin.music.ui.PlayerViewModel
 import com.yunyin.music.ui.components.CrossfadeContent
 import com.yunyin.music.ui.components.FloatingChromeBottomGap
 import com.yunyin.music.ui.components.FloatingChromeGap
-import com.yunyin.music.ui.screens.COVER_SHARED_KEY
 import com.yunyin.music.ui.components.FloatingMiniPlayer
 import com.yunyin.music.ui.components.FloatingTabBar
 import com.yunyin.music.ui.components.LocalChromeTopRowVisible
@@ -107,7 +98,6 @@ import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.yunyin.music.ui.components.PlayerTab
 import com.yunyin.music.ui.components.QueueSheet
-import com.yunyin.music.ui.components.MiniPlayerBottomOffset
 import com.yunyin.music.ui.components.TabBarInset
 import com.yunyin.music.ui.screens.CollectionScreen
 import com.yunyin.music.ui.screens.PlaylistSquareScreen
@@ -182,15 +172,8 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             AmllTheme {
-                // 根部一个 SharedTransitionLayout:迷你条封面与播放器封面要在同一张共享地图上注册同一个 key。
-                // 迷你条是它的根 AnimatedContent 的折叠态,播放器是展开态——只有同一次内容过渡的两个 state 才能配对形变。
-                androidx.compose.animation.SharedTransitionLayout {
-                    CompositionLocalProvider(
-                        com.yunyin.music.ui.screens.LocalCoverSharedScope provides this,
-                        LocalPlayerController provides container.player,
-                    ) {
-                        YunYinApp(container)
-                    }
+                CompositionLocalProvider(LocalPlayerController provides container.player) {
+                    YunYinApp(container)
                 }
             }
         }
@@ -316,7 +299,7 @@ class MainActivity : ComponentActivity() {
         val downloadStatesAll by container.downloads.states.collectAsState()
 
         var tab by remember { mutableStateOf(PlayerTab.Home) }
-
+        // 桌面小组件 taps open the player page itself, not whichever tab was last shown.
         var showPlayer by remember {
             mutableStateOf(
                 (context as? android.app.Activity)
@@ -325,17 +308,6 @@ class MainActivity : ComponentActivity() {
                     ?: false,
             )
         }
-
-        // 0 = mini bar present, 1 = player fully expanded. Drives the bar receding into the player.
-        val chromeRecede by androidx.compose.animation.core.animateFloatAsState(
-            targetValue = if (showPlayer) 1f else 0f,
-            animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.86f, stiffness = 420f),
-            label = "chrome-recede",
-        )
-
-        // 展开/收起交给共享元素:封面在迷你条与播放器之间由框架做 bounds 过渡,
-        // 不再有手写的 progress 位移/缩放,也不需要测行程或推弹簧。
-        val coverSharedScope = com.yunyin.music.ui.screens.LocalCoverSharedScope.current
         // The playlist the current playback queue was started from, when it was started from one. It is
         // what 心动模式 uses for `pid` when the player is the entry point; null means "not a playlist"
         // and the fallback is the liked-songs playlist (or no pid at all).
@@ -464,9 +436,6 @@ class MainActivity : ComponentActivity() {
         // publishing, and it mirrors the stored value, so the switch cannot disagree with what is running.
         var lyriconEnabled by remember { mutableStateOf(container.lyricon.enabled) }
         var downloadWifiOnly by remember { mutableStateOf(container.settings.downloadWifiOnly) }
-    // Hoisted into Compose state: writing straight to the store leaves the row showing the old
-    // value until the screen is re-entered, which reads as a tap that did nothing.
-    var lyricFontScale by remember { mutableStateOf(container.settings.lyricFontScale) }
         // Platform equaliser. The service reads the store, so writing it here is all a toggle has to do.
         var equalizerEnabled by remember { mutableStateOf(container.settings.equalizerEnabled) }
         var equalizerPreset by remember { mutableStateOf(container.settings.equalizerPreset) }
@@ -1383,7 +1352,13 @@ class MainActivity : ComponentActivity() {
                     // Inset once, here, rather than on each panel: both rows — the now-playing capsule and
                     // the tab bar — fill this same margin, so the two panels line up edge to edge.
                     .padding(horizontal = TabBarInset)
-                    .padding(bottom = FloatingChromeBottomGap),
+                    .padding(bottom = FloatingChromeBottomGap)
+                    // The player is a full-screen surface *above* this chrome, but the glass panels
+                    // still draw their own material over it (and the recorded backdrop keeps the
+                    // last frame), which left the tab icons ghosting through the player. Hiding the
+                    // whole chrome while the player is open removes the source entirely; the player
+                    // is the only thing on screen at that point anyway.
+                    .alpha(if (showPlayer) 0f else 1f),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(FloatingChromeGap),
             ) {
@@ -1392,15 +1367,37 @@ class MainActivity : ComponentActivity() {
                 // does not want the "未在播放" placeholder. The chrome column is bottom-anchored, so the
                 // tab bar's screen position does not change when the row appears or goes away.
                 //
-                // The entrance is owned by MiniPlayerChromeMotion now, not by an AnimatedVisibility: the
-                // capsule travels up by its own measured distance (and fades under the chrome's recede)
-                // while the player fades in over it. `AnimatedVisibility` cannot express "two springs
-                // with a 50 ms hand-off", which is the whole point of the ported model.
-                // The capsule no longer lives here. It is the collapsed state of the root
-                // AnimatedContent (see the player overlay below), because a shared element can only
-                // morph between the two states of one content transition, and this column and the
-                // player overlay are two unrelated ones. Its old position is reconstructed from
-                // MiniPlayerBottomOffset so nothing moves visually.
+                // Entrance/exit is the theme's small-motion budget: fade + a short rise/drop, with the
+                // row's own height expanding/shrinking under it so the space above the tab row does not
+                // pop. The chrome's *total* height is not animated against the content padding — the
+                // padding follows the row count, not this animation.
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = hasTrack,
+                    // One kind of travel only: the row's own height expands under the fade. The slide
+                    // added a second, second-order movement that lived inside the expanding clip (so
+                    // it was largely invisible) and the exit was as slow as the entrance, unlike every
+                    // other chrome overlay here (320/260, 200/160).
+                    enter = fadeIn(tween(Motion.duration(Motion.SmallDuration), easing = Motion.EaseOut)) +
+                        expandVertically(
+                            tween(Motion.duration(Motion.SmallDuration), easing = Motion.EaseOut),
+                            expandFrom = Alignment.Bottom,
+                        ),
+                    exit = fadeOut(tween(Motion.duration(Motion.SmallDuration), easing = Motion.EaseOut)) +
+                        shrinkVertically(
+                            tween(Motion.duration(Motion.SmallDuration), easing = Motion.EaseOut),
+                            shrinkTowards = Alignment.Bottom,
+                        ),
+                ) {
+                    Box(Modifier.fillMaxWidth()) {
+                        FloatingMiniPlayer(
+                            state = if (hasTrack) miniPlayerState else lastMiniPlayerState,
+                            loader = container.artwork,
+                            backdrop = bottomBackdrop,
+                            onExpand = { showPlayer = true },
+                            onTogglePlay = { container.player.togglePlayPause() },
+                        )
+                    }
+                }
 
                 // Bottom row: the tab bar fills the same width as the capsule above it (the column applies
                 // the screen inset) and its four slots (主页 / 歌单广场 / 资料库 / 心动模式) divide that width
@@ -1412,17 +1409,6 @@ class MainActivity : ComponentActivity() {
                         onBeatMode = { openBeatMode() },
                         beatModeSignedIn = beatModeActions.signedIn,
                         backdrop = bottomBackdrop,
-                        // The recede moved from the column to the bar. It used to fade the whole chrome,
-                        // which also faded the capsule — and a capsule that is already transparency-0
-                        // cannot show the travel that is now its job. The bar still has to disappear
-                        // under the player (its glass would ghost through), so it keeps the fade+shrink.
-                        modifier = Modifier.graphicsLayer {
-                            val p = chromeRecede
-                            alpha = 1f - p
-                            scaleX = 1f - 0.06f * p
-                            scaleY = 1f - 0.06f * p
-                            transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f)
-                        },
                     )
                 }
             }
@@ -1440,11 +1426,6 @@ class MainActivity : ComponentActivity() {
                     onBack = { showSettings = false },
                     onOpenDownloads = { showDownloadCenter = true },
                     onOpenFootprint = { showFootprint = true },
-                    lyricFontScale = lyricFontScale,
-                    onLyricFontScaleChange = {
-                        lyricFontScale = it
-                        container.settings.lyricFontScale = it
-                    },
                     downloadWifiOnly = downloadWifiOnly,
                     onDownloadWifiOnlyChange = { enabled ->
                         downloadWifiOnly = enabled
@@ -1926,18 +1907,11 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            androidx.compose.animation.AnimatedContent(
-                targetState = showPlayer,
-                transitionSpec = {
-                    // The morph is the shared cover; the surface only fades, so the two states never
-                    // read as two unrelated surfaces appearing and disappearing. The incoming page
-                    // waits out the shared element's first stretch before it covers anything.
-                    androidx.compose.animation.fadeIn(tween(140, delayMillis = 160)) togetherWith
-                        androidx.compose.animation.fadeOut(tween(80))
-                },
-                label = "player-overlay",
-            ) { playerVisible ->
-                if (playerVisible) {
+            AnimatedVisibility(
+                visible = showPlayer,
+                enter = slideInVertically(tween(Motion.duration(Motion.SheetEnterDuration), easing = Motion.EaseOut)) { it } + fadeIn(tween(Motion.duration(Motion.SmallDuration), easing = Motion.EaseOut)),
+                exit = slideOutVertically(tween(Motion.duration(Motion.SheetEnterDuration), easing = Motion.EaseOut)) { it } + fadeOut(tween(Motion.duration(Motion.SmallDuration), easing = Motion.EaseOut)),
+            ) {
                 // Collected here, inside the player's own branch, so the 4x/second position tick
                 // invalidates only the player screen and never the browsing tabs behind it.
                 val playback by container.player.state.collectAsState()
@@ -2010,8 +1984,6 @@ class MainActivity : ComponentActivity() {
                     onSaveCover = playerViewModel::saveCover,
                     onDownloadDismissed = playerViewModel::clearDownloadState,
                     liked = playerViewModel.liked,
-                    lyricFontScale = lyricFontScale,
-
                     onToggleLike = playerViewModel::toggleLike,
                     onShareTrack = {
                         shareText(playerViewModel.currentShareText(), "分享歌曲")
@@ -2059,35 +2031,6 @@ class MainActivity : ComponentActivity() {
                     positionProvider = container.player::positionMsNow,
                     playerStyle = playerStyle,
                 )
-                }
-                } else if (hasTrack && !showSettings && !showDownloadCenter && !showFootprint &&
-                    !showStats && !showLogin && !showSimilarArtists && !showListenReport &&
-                    !showStyleBrowser
-                ) {
-                    // Collapsed state: the capsule itself, so its cover and the player's cover are
-                    // the two ends of one shared element instead of two unrelated surfaces.
-                    Box(Modifier.fillMaxSize()) {
-                        FloatingMiniPlayer(
-                            state = miniPlayerState,
-                            loader = container.artwork,
-                            backdrop = bottomBackdrop,
-                            onExpand = { showPlayer = true },
-                            onTogglePlay = { container.player.togglePlayPause() },
-                            artworkModifier = coverSharedScope?.let { scope ->
-                                with(scope) {
-                                    Modifier.sharedBounds(
-                                        rememberSharedContentState(COVER_SHARED_KEY),
-                                        animatedVisibilityScope = this@AnimatedContent,
-                                    )
-                                }
-                            } ?: Modifier,
-                            modifier = Modifier
-                                .align(Alignment.BottomCenter)
-                                .navigationBarsPadding()
-                                .padding(horizontal = TabBarInset)
-                                .padding(bottom = MiniPlayerBottomOffset),
-                        )
-                    }
                 }
             }
 
@@ -2608,9 +2551,7 @@ class MainActivity : ComponentActivity() {
         }
         BackHandler(enabled = showDownloadCenter) { showDownloadCenter = false }
         if (showFootprint) {
-            com.yunyin.music.ui.screens.StatsScreen(
-                loader = container.artwork,
-                coverUrlFor = { id -> runCatching { container.music.coverUrlFor(id) }.getOrNull() },
+            com.yunyin.music.ui.screens.ListeningFootprintScreen(
                 recorder = container.playbackStatsRecorder,
                 onBack = { showFootprint = false },
             )

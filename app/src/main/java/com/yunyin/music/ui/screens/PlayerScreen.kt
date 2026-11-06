@@ -104,10 +104,6 @@ import androidx.compose.ui.text.style.TextMotion
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
-import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.hazeEffect
-import dev.chrisbanes.haze.hazeSource
-import dev.chrisbanes.haze.rememberHazeState
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.Player
@@ -237,8 +233,6 @@ fun PlayerScreen(
     /** Whether the current track is liked, and its toggle (the heart). */
     liked: Boolean = false,
     onToggleLike: () -> Unit = {},
-    /** User-chosen lyric type multiplier. */
-    lyricFontScale: Float = 1f,
     /** Shares the current track: the caller owns the clipboard and the chooser. */
     onShareTrack: () -> Unit = {},
     /** Opens the artist page for the current track's first artist. */
@@ -628,12 +622,7 @@ fun PlayerScreen(
         // The lyric type scale, per orientation (see `lyricTypeScale`). Portrait is height-driven;
         // landscape measures against its own short reference so the type is *larger* than portrait,
         // which is what fills a wide screen.
-        // Landscape dampening: `lyricTypeScale` deliberately renders landscape lyrics larger than
-        // the 36sp base (a fixed bug, pinned by LyricTypeScaleTest), but on a phone in landscape the
-        // result left only about two lines visible. The dampening is applied here rather than inside
-        // the tested function so the pinned expectations and the user-facing size can move apart.
-        val landscapeDamping = if (isLandscape) LANDSCAPE_LYRIC_DAMPING else 1f
-        val lyricScale = lyricTypeScale(isLandscape, lyricsAreaHeight) * lyricFontScale * landscapeDamping
+        val lyricScale = lyricTypeScale(isLandscape, lyricsAreaHeight)
 
         /**
          * Syllable layouts for the current song, owned here — above the presentation switch.
@@ -644,9 +633,6 @@ fun PlayerScreen(
          * track *and* the type scale, so a rotation starts from a clean cache rather than reusing
          * layouts measured at the other orientation's size.
          */
-        // 全屏封面：封面作为模糊来源，底部控制区显示磨砂（Flamingo 同款做法）。
-        val hazeState = rememberHazeState()
-
         val lyricLayoutCache = remember(track?.id, lyricScale) {
             mutableStateMapOf<Int, List<com.yunyin.music.lyrics.composable.lyrics.SyllableLayout>>()
         }
@@ -662,14 +648,14 @@ fun PlayerScreen(
                 ),
                 accompaniment = TextStyle(
                     fontFamily = SFPro,
-                    fontSize = 22.sp * lyricScale,   // NeriPlayer: base x 0.62
-                    lineHeight = 30.sp * lyricScale,
+                    fontSize = 24.sp * lyricScale,
+                    lineHeight = 32.sp * lyricScale,
                     fontWeight = FontWeight.SemiBold,
                     textMotion = TextMotion.Animated,
                 ),
                 phonetic = TextStyle(
                     fontFamily = SFPro,
-                    fontSize = 25.sp * lyricScale,   // NeriPlayer: base x 0.70
+                    fontSize = 14.sp * lyricScale,
                     fontWeight = FontWeight.Normal,
                 ),
             )
@@ -896,11 +882,7 @@ fun PlayerScreen(
         // so changing presentation reads as one object moving rather than two screens replacing
         // each other. Both sides declare the same key; [AnimatedContent] tells the framework which
         // is incoming and which is outgoing.
-        // 共享过渡的作用域来自宿主(MainActivity 根部)。这里不再自建 SharedTransitionLayout:
-        // 自建会把封面锁在这一屏内部,迷你条上的封面无法与它是同一个元素。
-        val sharedScope = LocalCoverSharedScope.current
-            ?: error("PlayerScreen 需要根部的 SharedTransitionLayout(见 LocalCoverSharedScope)")
-        Box(modifier = Modifier.fillMaxSize()) {
+        SharedTransitionLayout(modifier = Modifier.fillMaxSize()) {
             AnimatedContent(
                 targetState = showLyrics,
                 transitionSpec = {
@@ -1082,7 +1064,7 @@ fun PlayerScreen(
                                         onAnimatedArtworkFailed = { animatedCoverUrl = null },
                                         videoEdgeField = if (fullScreenCover) immersiveEdgeField else null,
                                         artworkScale = sharedCoverScale,
-                                        sharedScope = sharedScope,
+                                        sharedScope = this@SharedTransitionLayout,
                                         visibilityScope = this@AnimatedContent,
                                         onCoverCenter = { artworkCoverCenter = it },
                                     )
@@ -1169,7 +1151,7 @@ fun PlayerScreen(
                                         posterUrl = animatedCoverPoster,
                                         posterBitmap = coverFrame,
                                         artworkScale = sharedCoverScale,
-                                        sharedScope = sharedScope,
+                                        sharedScope = this@SharedTransitionLayout,
                                         visibilityScope = this@AnimatedContent,
                                     )
                                 } else {
@@ -1293,7 +1275,7 @@ fun PlayerScreen(
                                     posterUrl = animatedCoverPoster,
                                     posterBitmap = coverFrame,
                                     artworkScale = sharedCoverScale,
-                                    sharedScope = sharedScope,
+                                    sharedScope = this@SharedTransitionLayout,
                                     visibilityScope = this@AnimatedContent,
                                 )
                             }
@@ -1390,11 +1372,7 @@ fun PlayerScreen(
                         BoxWithConstraints(
                             Modifier
                                 .weight(1f, fill = false)
-                                .fillMaxWidth()
-                                .then(
-                                    if (fullScreenCover) Modifier.hazeSource(hazeState)
-                                    else Modifier,
-                                ),
+                                .fillMaxWidth(),
                             contentAlignment = Alignment.TopCenter,
                         ) {
                             // `fill = false`: the region is measured against the height left after
@@ -1436,7 +1414,7 @@ fun PlayerScreen(
                                 onAnimatedArtworkFailed = { animatedCoverUrl = null },
                                 videoEdgeField = if (fullScreenCover) immersiveEdgeField else null,
                                 artworkScale = sharedCoverScale,
-                                sharedScope = sharedScope,
+                                sharedScope = this@SharedTransitionLayout,
                                 visibilityScope = this@AnimatedContent,
                                 onCoverCenter = { artworkCoverCenter = it },
                             )
@@ -1449,62 +1427,44 @@ fun PlayerScreen(
                             ),
                         )
 
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .then(
-                                    if (fullScreenCover) {
-                                        Modifier.hazeEffect(state = hazeState) {
-                                            blurRadius = 32.dp
-                                            backgroundColor = androidx.compose.ui.graphics.Color.Transparent
-                                            noiseFactor = 0f
-                                        }
-                                    } else {
-                                        Modifier
-                                    },
-                                ),
-                        ) {
-                            Column(Modifier.fillMaxWidth()) {
-                            TitleBlock(
-                                track = track,
-                                liked = liked,
-                                onToggleLike = { interaction++; onToggleLike() },
-                                onMoreClick = {
-                                    interaction++
-                                    showActions = true
-                                },
-                                onArtistClick = onArtistClick,
-                                modifier = Modifier.padding(horizontal = 24.dp),
-                            )
-                            Spacer(Modifier.height(18.dp))
+                        TitleBlock(
+                            track = track,
+                            liked = liked,
+                            onToggleLike = { interaction++; onToggleLike() },
+                            onMoreClick = {
+                                interaction++
+                                showActions = true
+                            },
+                            onArtistClick = onArtistClick,
+                            modifier = Modifier.padding(horizontal = 24.dp),
+                        )
+                        Spacer(Modifier.height(18.dp))
 
-                            PlayerControls(
-                                state = state,
-                                displayedPosition = displayedPosition,
-                                positionProvider = positionProvider,
-                                quality = quality,
-                                onQualityClick = {
-                                    interaction++
-                                    showQuality = true
-                                },
-                                showLyrics = showLyrics,
-                                onSeek = { fraction ->
-                                    interaction++
-                                    onSeek((state.durationMs * fraction).toLong())
-                                },
-                                onTogglePlay = { interaction++; onTogglePlay() },
-                                onNext = { interaction++; onNext() },
-                                onPrevious = { interaction++; onPrevious() },
-                                onCycleRepeat = {
-                                    interaction++
-                                    if (state.shuffle) onToggleShuffle() else onCycleRepeat()
-                                },
-                                onToggleShuffle = { interaction++; onToggleShuffle() },
-                                onToggleLyrics = { interaction++; togglePresentation() },
-                                onShowQueue = { interaction++; onShowQueue() },
-                            )
-                            }
-                        }
+                        PlayerControls(
+                            state = state,
+                            displayedPosition = displayedPosition,
+                            positionProvider = positionProvider,
+                            quality = quality,
+                            onQualityClick = {
+                                interaction++
+                                showQuality = true
+                            },
+                            showLyrics = showLyrics,
+                            onSeek = { fraction ->
+                                interaction++
+                                onSeek((state.durationMs * fraction).toLong())
+                            },
+                            onTogglePlay = { interaction++; onTogglePlay() },
+                            onNext = { interaction++; onNext() },
+                            onPrevious = { interaction++; onPrevious() },
+                            onCycleRepeat = {
+                                interaction++
+                                if (state.shuffle) onToggleShuffle() else onCycleRepeat()
+                            },
+                            onToggleShuffle = { interaction++; onToggleShuffle() },
+                            onToggleLyrics = { interaction++; togglePresentation() },
+                            onShowQueue = { interaction++; onShowQueue() },
+                        )
                     }
                 }
             }
@@ -1850,7 +1810,7 @@ private fun ArtworkWithGestures(
                             Modifier
                         } else {
                             with(sharedScope) {
-                                Modifier.sharedBounds(
+                                Modifier.sharedElement(
                                     rememberSharedContentState(key = COVER_SHARED_KEY),
                                     animatedVisibilityScope = visibilityScope,
                                     // Both ends of the shared element pass the same curve, so the travel is
@@ -2193,9 +2153,6 @@ internal const val MIN_LYRIC_SCALE = 0.55f
  */
 internal const val MAX_LANDSCAPE_LYRIC_SCALE = 1.2f
 
-/** Extra shrink applied to landscape lyrics only; keeps ~4 lines on screen. */
-private const val LANDSCAPE_LYRIC_DAMPING = 0.78f
-
 /**
  * Ceiling for portrait, slightly below the base size.
  *
@@ -2425,7 +2382,7 @@ private fun LyricsHeader(
                         interactionSource = null,
                         onClick = onCoverClick,
                     )
-                    .sharedBounds(
+                    .sharedElement(
                         rememberSharedContentState(key = COVER_SHARED_KEY),
                         animatedVisibilityScope = visibilityScope,
                         // Must match the full artwork's boundsTransform exactly (same key): the two ends
@@ -2893,8 +2850,6 @@ private fun TitleBlock(
     track: Track?,
     liked: Boolean = false,
     onToggleLike: () -> Unit = {},
-    /** User-chosen lyric type multiplier. */
-    lyricFontScale: Float = 1f,
     onMoreClick: () -> Unit = {},
     /** Opens the artist page for the track's first artist; absent when there is nowhere to go. */
     onArtistClick: ((String) -> Unit)? = null,
@@ -3423,17 +3378,7 @@ private const val PRESENTATION_WARP_ENABLED = false
  * Both sides declare it, which is what lets the framework treat the full-size artwork and the
  * header thumbnail as one object travelling between two positions.
  */
-internal const val COVER_SHARED_KEY = "album-cover"
-
-/**
- * 宿主在根部提供的 `SharedTransitionLayout` 作用域。
- *
- * 以前这个 layout 是 PlayerScreen 自己在内部创建的,结果封面只能在**本屏内部**形变(大图 ↔ 头部缩略图),
- * 迷你条上的那颗封面不在这张"共享地图"里,两者永远配不上。提到 MainActivity 根部、并由根部的
- * `AnimatedContent` 同时容纳"迷你条"与"播放器"两个 state 之后,两端才能注册同一个 key。
- */
-internal val LocalCoverSharedScope =
-    androidx.compose.runtime.staticCompositionLocalOf<SharedTransitionScope?> { null }
+private const val COVER_SHARED_KEY = "album-cover"
 
 /** Corner radius of the full-size artwork, and of the header thumbnail it shrinks into. */
 private val ARTWORK_CORNER = 14.dp
@@ -3654,7 +3599,7 @@ private const val RAIL_SCRIM_REACH = 1.7f
 private const val BOTTOM_SCRIM_FRACTION = 0.34f
 
 /** Width of the landscape chrome rail, sized so the transport still fits. */
-private val LANDSCAPE_CONTROLS_WIDTH = 372.dp
+private val LANDSCAPE_CONTROLS_WIDTH = 340.dp
 
 /** Tablet landscape: a wider rail so the transport row does not look cramped next to a large cover. */
 private val LANDSCAPE_CONTROLS_WIDTH_TABLET = 400.dp

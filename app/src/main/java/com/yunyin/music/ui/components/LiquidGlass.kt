@@ -87,7 +87,6 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -149,7 +148,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.fastCoerceIn
@@ -317,14 +315,6 @@ internal val FloatingChromeGap = 8.dp
  * drift from the panels it clears.
  */
 internal val FloatingChromeBottomGap = 10.dp
-
-/**
- * 迷你条底边到屏幕底边的距离(不含导航栏):tab 行 + 行间距 + 底边距。
- *
- * 迷你条从 chrome 的 Column 搬进了根部的 `AnimatedContent`(折叠态),所以它不再由 Column 的
- * 排列来定位,而要靠这个偏移量复刻原来的位置(列高 = 两行 [FloatingChromeHeight] + 一个间距)。
- */
-internal val MiniPlayerBottomOffset = FloatingChromeHeight + FloatingChromeGap + FloatingChromeBottomGap
 
 /**
  * Whether the chrome's now-playing row is currently composed (a track is loaded).
@@ -1456,13 +1446,6 @@ fun FloatingMiniPlayer(
     backdrop: Backdrop,
     onExpand: () -> Unit,
     onTogglePlay: () -> Unit,
-    /**
-     * 附加到封面上的修饰符。
-     *
-     * 宿主在这里挂 `sharedBounds`(key 与播放器封面相同)。胶囊本身不认识共享过渡,也不该认识:
-     * 它只把宿主给的修饰符贴到封面上,几何保持原样——不再有手写的 progress 位移/缩放。
-     */
-    artworkModifier: Modifier = Modifier,
     modifier: Modifier = Modifier,
 ) {
     val track = state.current ?: return
@@ -1524,8 +1507,7 @@ fun FloatingMiniPlayer(
                 requestSize = 200,
                 modifier = Modifier
                     .size(MiniArtworkSize)
-                    .clip(CircleShape)
-                    .then(artworkModifier),
+                    .clip(CircleShape),
             )
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
