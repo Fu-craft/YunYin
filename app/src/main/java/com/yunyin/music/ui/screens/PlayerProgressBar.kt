@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
@@ -144,12 +145,52 @@ fun PlayerProgressBar(
         val top = (size.height - thickness) / 2f
         val radius = CornerRadius(thickness / 2f, thickness / 2f)
 
+        // 拖动时"整条轨道被照亮":背景先垫一层宽而柔的光,再画背景轨道本体。
+        // `thick` 已经是 0→1 的按压/拖动动画(160ms),直接拿它当亮度,所以亮起与变粗是同一个节拍。
+        if (glow && thick > 0f) {
+            val bgGlowPx = thickness * 2.2f
+            drawIntoCanvas { canvas ->
+                val native = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                    color = activeColor.copy(alpha = 0.30f * thick).toArgb()
+                    maskFilter = android.graphics.BlurMaskFilter(
+                        bgGlowPx,
+                        android.graphics.BlurMaskFilter.Blur.NORMAL,
+                    )
+                }
+                canvas.nativeCanvas.drawRoundRect(
+                    -thickness * 0.5f,
+                    top - thickness * 0.6f,
+                    size.width + thickness * 0.5f,
+                    top + thickness * 1.6f,
+                    radius.x,
+                    radius.y,
+                    native,
+                )
+            }
+        }
+
         drawRoundRect(
             color = inactiveColor,
             topLeft = Offset(0f, top),
             size = Size(size.width, thickness),
             cornerRadius = radius,
         )
+
+        // 手指底下的那团光:随着拖动移动,照亮它经过的地方(包括未播段)。
+        // 半径取轨道厚度的 7 倍,拖动变粗时光斑也跟着变大,看起来像同一盏灯。
+        if (glow && thick > 0f) {
+            val centerX = (size.width * fraction).coerceIn(0f, size.width)
+            val spot = thickness * 7f
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(activeColor.copy(alpha = 0.35f * thick), Color.Transparent),
+                    center = Offset(centerX, size.height / 2f),
+                    radius = spot,
+                ),
+                radius = spot,
+                center = Offset(centerX, size.height / 2f),
+            )
+        }
         // A rounded rect shorter than 2·radius has its corners clamped by the backend, which made the
         // leading end a square sliver for the first seconds of a track. Keep the drawn fill at least one
         // thickness wide (width ≥ 2·radius) so the capsule's end stays round at every progress; 0 draws
