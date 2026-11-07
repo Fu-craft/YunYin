@@ -12,7 +12,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import com.itos.coui.slider.CouiSliderColors
 import com.itos.coui.slider.Slider
 
 /**
@@ -67,6 +70,23 @@ internal fun CouiPlayerProgressBar(
             onSeek(dragFraction)
         },
         valueRange = 0f..1f,
-        modifier = modifier,
+        // 已播色用白色而不是强调色:这一条压在模糊封面上,红色会在深色封面里发闷,白色与两侧时间
+        // 标签同色,读起来是一条完整的"播放线"。
+        colors = CouiSliderColors(
+            activeTrack = PlayerTrackActive,
+            inactiveTrack = PlayerTrackInactive,
+            thumb = Color.White,
+            activeTick = PlayerTrackActive,
+            inactiveTick = PlayerTrackInactive,
+            thumbShadow = Color.Black.copy(alpha = 0.35f),
+        ),
+        // 铺满整行。Slider 自己不撑宽,只有给了 fillMaxWidth 才画满,否则只按内容宽度画一小段。
+        modifier = modifier.fillMaxWidth(),
     )
 }
+
+/** 已播段:白 95%,在任意封面底色上都清楚。 */
+private val PlayerTrackActive = Color.White.copy(alpha = 0.95f)
+
+/** 未播段:白 25%,存在感够低,不挡住封面。 */
+private val PlayerTrackInactive = Color.White.copy(alpha = 0.25f)
