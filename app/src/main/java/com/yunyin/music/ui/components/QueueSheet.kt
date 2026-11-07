@@ -352,18 +352,14 @@ fun QueueSheet(
         }
 
         if (showClearConfirm) {
-            AlertDialog(
+            com.yunyin.music.ui.components.YunYinConfirmDialog(
                 onDismissRequest = { showClearConfirm = false },
-                title = { Text("清空队列", fontFamily = SFPro, fontWeight = FontWeight.SemiBold) },
-                text = { Text("保留当前歌曲，清空队列中的其他歌曲？", fontFamily = SFPro) },
-                confirmButton = {
-                    TextButton(onClick = {
-                        showClearConfirm = false
-                        onClear()
-                    }) { Text("清空", color = AppTheme.palette.accent) }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showClearConfirm = false }) { Text("取消") }
+                title = "清空队列",
+                message = "保留当前歌曲，清空队列中的其他歌曲？",
+                confirmLabel = "清空",
+                onConfirm = {
+                    showClearConfirm = false
+                    onClear()
                 },
             )
         }

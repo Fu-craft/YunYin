@@ -162,37 +162,59 @@ fun MediaRow(
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
 ) {
+    // 凝光:行内改为 COUI 的 `PreferenceTitle` / `PreferenceSummary` 字级,行距 6→8dp,行的上下留白
+    // 也略宽(6→7dp),让列表读起来更"松开"一点。经典版保持 16/13sp 的原节奏。
+    val couiRow = com.yunyin.music.ui.style.CurrentUiStyle.value ==
+        com.yunyin.music.ui.style.UiStyle.Coui
     Row(
         modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 6.dp),
+            .padding(horizontal = 20.dp, vertical = if (couiRow) 7.dp else 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         artwork()
         Spacer(Modifier.width(12.dp))
         Column(
             modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(1.dp),
+            verticalArrangement = Arrangement.spacedBy(if (couiRow) 2.dp else 1.dp),
         ) {
-            Text(
-                text = title,
-                fontFamily = SFPro,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Medium,
-                color = AppTheme.palette.label,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (subtitle != null) {
-                Text(
-                    text = subtitle,
-                    fontFamily = SFPro,
-                    fontSize = 13.sp,
-                    color = AppTheme.palette.secondaryLabel,
+            if (couiRow) {
+                com.itos.coui.text.Text(
+                    text = title,
+                    kind = com.itos.coui.text.CouiTextKind.PreferenceTitle,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+            } else {
+                Text(
+                    text = title,
+                    fontFamily = SFPro,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = AppTheme.palette.label,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (subtitle != null) {
+                if (couiRow) {
+                    com.itos.coui.text.Text(
+                        text = subtitle,
+                        kind = com.itos.coui.text.CouiTextKind.PreferenceSummary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                } else {
+                    Text(
+                        text = subtitle,
+                        fontFamily = SFPro,
+                        fontSize = 13.sp,
+                        color = AppTheme.palette.secondaryLabel,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
         if (trailing != null) {

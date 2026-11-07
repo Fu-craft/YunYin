@@ -289,36 +289,26 @@ fun DownloadCenterScreen(
         // Deleting is destructive enough to ask first — both for one row and for the whole done list.
         val target = pendingDelete
         if (target != null) {
-            AlertDialog(
+            com.yunyin.music.ui.components.YunYinConfirmDialog(
                 onDismissRequest = { pendingDelete = null },
-                title = { Text("删除下载", fontFamily = SFPro, fontWeight = FontWeight.SemiBold) },
-                text = {
-                    Text("删除「${target.track.name}」的下载记录？已下载的文件不会从系统音乐库移除。", fontFamily = SFPro)
-                },
-                confirmButton = {
-                    TextButton(onClick = {
-                        pendingDelete = null
-                        onDelete(target.track.id)
-                    }) { Text("删除", color = AppTheme.palette.accent) }
-                },
-                dismissButton = {
-                    TextButton(onClick = { pendingDelete = null }) { Text("取消") }
+                title = "删除下载",
+                message = "删除「${target.track.name}」的下载记录？已下载的文件不会从系统音乐库移除。",
+                confirmLabel = "删除",
+                onConfirm = {
+                    pendingDelete = null
+                    onDelete(target.track.id)
                 },
             )
         }
         if (confirmClear) {
-            AlertDialog(
+            com.yunyin.music.ui.components.YunYinConfirmDialog(
                 onDismissRequest = { confirmClear = false },
-                title = { Text("清空已完成", fontFamily = SFPro, fontWeight = FontWeight.SemiBold) },
-                text = { Text("清空 ${done.size} 条已完成记录？已下载的文件不会从系统音乐库移除。", fontFamily = SFPro) },
-                confirmButton = {
-                    TextButton(onClick = {
-                        confirmClear = false
-                        onClearCompleted()
-                    }) { Text("清空", color = AppTheme.palette.accent) }
-                },
-                dismissButton = {
-                    TextButton(onClick = { confirmClear = false }) { Text("取消") }
+                title = "清空已完成",
+                message = "清空 ${done.size} 条已完成记录？已下载的文件不会从系统音乐库移除。",
+                confirmLabel = "清空",
+                onConfirm = {
+                    confirmClear = false
+                    onClearCompleted()
                 },
             )
         }
