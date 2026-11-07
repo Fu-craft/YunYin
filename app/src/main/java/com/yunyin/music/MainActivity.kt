@@ -436,6 +436,10 @@ class MainActivity : ComponentActivity() {
         // publishing, and it mirrors the stored value, so the switch cannot disagree with what is running.
         var lyriconEnabled by remember { mutableStateOf(container.lyricon.enabled) }
         var downloadWifiOnly by remember { mutableStateOf(container.settings.downloadWifiOnly) }
+        // 界面风格:两套实现并存,这里只保存"用哪一份"。默认经典,老用户升级后界面不变。
+        var uiStyle by remember {
+            mutableStateOf(com.yunyin.music.ui.style.UiStyle.fromKey(container.settings.uiStyle))
+        }
         // Platform equaliser. The service reads the store, so writing it here is all a toggle has to do.
         var equalizerEnabled by remember { mutableStateOf(container.settings.equalizerEnabled) }
         var equalizerPreset by remember { mutableStateOf(container.settings.equalizerPreset) }
@@ -1426,6 +1430,11 @@ class MainActivity : ComponentActivity() {
                     onBack = { showSettings = false },
                     onOpenDownloads = { showDownloadCenter = true },
                     onOpenFootprint = { showFootprint = true },
+                    uiStyle = uiStyle,
+                    onUiStyleChange = { style ->
+                        uiStyle = style
+                        container.settings.uiStyle = style.storageKey
+                    },
                     downloadWifiOnly = downloadWifiOnly,
                     onDownloadWifiOnlyChange = { enabled ->
                         downloadWifiOnly = enabled

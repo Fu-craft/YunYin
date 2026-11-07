@@ -120,6 +120,14 @@ class SettingsStore(context: Context) {
      * automatically; only a user who explicitly turned it off has `false` persisted and keeps it.
      * The manual way into the lyrics page is unaffected; this gates only the idle timer.
      */
+    /**
+     * 界面风格: "classic" = 原有 miuix 组件, "coui" = COUI 凝光组件。
+     *
+     * 存字符串而不是枚举,是因为 data 层不该依赖 ui 层;映射放在 [com.yunyin.music.ui.style.UiStyle.fromKey]。
+     */
+    var uiStyle: String
+        get() = prefs.getString(KEY_UI_STYLE, "classic") ?: "classic"
+        set(value) = prefs.edit().putString(KEY_UI_STYLE, value).apply()
     var autoImmersiveLyrics: Boolean
         get() = prefs.getBoolean(KEY_AUTO_IMMERSIVE_LYRICS, DEFAULT_AUTO_IMMERSIVE_LYRICS)
         set(value) = prefs.edit().putBoolean(KEY_AUTO_IMMERSIVE_LYRICS, value).apply()
@@ -431,6 +439,7 @@ private const val KEY_COOKIE = "cookie"
         private const val KEY_EQUALIZER_PRESET = "equalizer_preset"
         private const val KEY_EQUALIZER_BANDS = "equalizer_bands"
         private const val KEY_AUTO_IMMERSIVE_LYRICS = "auto_immersive_lyrics"
+        private const val KEY_UI_STYLE = "ui_style"
         private const val KEY_PLAYER_STYLE = "player_style"
         private const val KEY_NOW_PLAYING_COVER_BLUR = "now_playing_cover_blur_background"
         private const val KEY_NOW_PLAYING_AUDIO_REACTIVE = "now_playing_audio_reactive"

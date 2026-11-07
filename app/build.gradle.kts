@@ -35,8 +35,8 @@ android {
         // versionCode must increase for Android to accept a build as an update over a previous one;
         // versionName is what the user sees. Bumped together: a version name change with an unchanged
         // code would install as a downgrade and be rejected.
-        versionCode = 438
-        versionName = "4.96.1"
+        versionCode = 439
+        versionName = "4.97.0"
         vectorDrawables { useSupportLibrary = true }
 
         // The API endpoint is injected at build time rather than baked into the sources, so the
@@ -156,6 +156,8 @@ dependencies {
     // Miuix: the component library the reference settings UI is built on.
     implementation("top.yukonga.miuix.kmp:miuix-ui-android:0.9.3")
     implementation("top.yukonga.miuix.kmp:miuix-preference-android:0.9.3")
+    // COUI: the second UI style (ColorOS 17 凝光). Kept alongside Miuix — the user picks one in Settings.
+    implementation("io.github.itoseo:coui:0.0.1-alpha7")
     implementation(libs.coil3.network.okhttp)
     implementation(libs.androidx.palette)
     implementation(libs.androidx.activity.compose)

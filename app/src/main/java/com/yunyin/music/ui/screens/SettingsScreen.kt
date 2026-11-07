@@ -138,6 +138,9 @@ fun SettingsScreen(
     onOpenDownloads: () -> Unit = {},
     /** Lyric type multiplier (0.8-1.6). */
     lyricFontScale: Float = 1f,
+    /** 界面风格。两套实现并存,这里只决定用哪一份。 */
+    uiStyle: com.yunyin.music.ui.style.UiStyle = com.yunyin.music.ui.style.UiStyle.Classic,
+    onUiStyleChange: (com.yunyin.music.ui.style.UiStyle) -> Unit = {},
     onLyricFontScaleChange: (Float) -> Unit = {},
     /** 打开「听歌足迹」。 */
     /** Opens the listening footprint screen. */
@@ -327,7 +330,39 @@ fun SettingsScreen(
             Box(Modifier.fillMaxSize().layerBackdrop(topBarBackdrop)) {
                 pageStates.SaveableStateProvider(page) {
                     when (page) {
-                        SettingsPage.Main -> MainPage(
+                        SettingsPage.Main -> if (uiStyle == com.yunyin.music.ui.style.UiStyle.Coui) {
+                            // COUI 版主页:与下面的 miuix 版并存,由设置里的风格开关选择。
+                            CouiSettingsMainPage(
+                                uiStyle = uiStyle,
+                                onUiStyleChange = onUiStyleChange,
+                                sleepTimerLabel = sleepTimerLabel,
+                                onShowSleepTimer = onShowSleepTimer,
+                                onOpenFootprint = onOpenFootprint,
+                                onShowPlayerStyle = onShowPlayerStyle,
+                                playlistShowcaseLabel = playlistShowcaseLabel,
+                                onCyclePlaylistShowcase = onCyclePlaylistShowcase,
+                                onOpenLxSources = { page = SettingsPage.LxSources },
+                                onOpenEffects = { page = SettingsPage.Effects },
+                                onOpenLicenses = { page = SettingsPage.Licenses },
+                                onOpenUpdate = { page = SettingsPage.Update },
+                                onOpenLogs = { page = SettingsPage.Logs },
+                                hasCrashLog = hasCrashLog,
+                                onOpenDownloads = onOpenDownloads,
+                                downloadWifiOnly = downloadWifiOnly,
+                                onDownloadWifiOnlyChange = onDownloadWifiOnlyChange,
+                                onClearLyricsCache = onClearLyricsCache,
+                                onOpenProject = onOpenProject,
+                                nowPlayingCoverBlurBackground = nowPlayingCoverBlurBackground,
+                                onNowPlayingCoverBlurBackgroundChange = onNowPlayingCoverBlurBackgroundChange,
+                                nowPlayingAudioReactive = nowPlayingAudioReactive,
+                                onNowPlayingAudioReactiveChange = onNowPlayingAudioReactiveChange,
+                                nowPlayingDynamicBackground = nowPlayingDynamicBackground,
+                                onNowPlayingDynamicBackgroundChange = onNowPlayingDynamicBackgroundChange,
+                                animatedCoverEnabled = animatedCoverEnabled,
+                                onAnimatedCoverChange = onAnimatedCoverChange,
+                            )
+                        } else {
+                        MainPage(
                             page = page,
                             onNavigate = { page = it },
                             onClearLyricsCache = onClearLyricsCache,
@@ -379,7 +414,10 @@ fun SettingsScreen(
                             lxSourceCount = lxSources.size,
                             lyricFontScale = lyricFontScale,
                             onLyricFontScaleChange = onLyricFontScaleChange,
+                            uiStyle = uiStyle,
+                            onUiStyleChange = onUiStyleChange,
                         )
+                        }
 
                         SettingsPage.LxSources -> LxSourcesPage(
                             sources = lxSources,
@@ -511,12 +549,34 @@ private fun MainPage(
     lxSourceCount: Int,
     lyricFontScale: Float,
     onLyricFontScaleChange: (Float) -> Unit,
+    uiStyle: com.yunyin.music.ui.style.UiStyle,
+    onUiStyleChange: (com.yunyin.music.ui.style.UiStyle) -> Unit,
 ) {
     val listState = rememberLazyListState()
     SettingsPageList(
         title = page.title,
         state = listState,
     ) {
+        // 0 — 界面风格。两边都在:经典版能切到凝光,凝光版也能切回来。
+        item(key = "ui-style") {
+            SettingsSection(
+                title = "界面风格",
+                note = "两套组件各自实现,切换后设置页立即换用另一份;已保存的偏好不受影响。",
+            ) {
+                com.yunyin.music.ui.style.UiStyle.entries.forEachIndexed { index, style ->
+                    if (index > 0) GroupDivider()
+                    ArrowPreference(
+                        insideMargin = RowInsets,
+                        title = style.label,
+                        summary = style.summary,
+                        endActions = {
+                            if (style == uiStyle) PreferenceValue("使用中")
+                        },
+                        onClick = { onUiStyleChange(style) },
+                    )
+                }
+            }
+        }
         // 1 — 播放
         item(key = "play") {
             SettingsSection(title = "播放") {
