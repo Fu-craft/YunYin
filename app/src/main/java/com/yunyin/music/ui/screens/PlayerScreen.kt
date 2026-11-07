@@ -2242,22 +2242,14 @@ private fun PlayerControls(
     onShowQueue: () -> Unit,
 ) {
     Column {
-        if (uiStyle == com.yunyin.music.ui.style.UiStyle.Coui) {
-            // 凝光:COUI 的 Slider。逐帧采样与「松手才 seek」的语义由 CouiPlayerProgressBar 自己保证。
-            CouiPlayerProgressBar(
-                positionProvider = positionProvider,
-                durationMs = state.durationMs,
-                onSeek = onSeek,
-                modifier = Modifier.padding(horizontal = 24.dp),
-            )
-        } else {
-            PlayerProgressBar(
-                positionProvider = positionProvider,
-                durationMs = state.durationMs,
-                onSeek = onSeek,
-                modifier = Modifier.padding(horizontal = 24.dp),
-            )
-        }
+        // 两种风格共用这一条进度条;凝光只额外加一层轮廓光,几何与手感保持原样。
+        PlayerProgressBar(
+            positionProvider = positionProvider,
+            durationMs = state.durationMs,
+            onSeek = onSeek,
+            glow = uiStyle == com.yunyin.music.ui.style.UiStyle.Coui,
+            modifier = Modifier.padding(horizontal = 24.dp),
+        )
 
         Box(
             Modifier
@@ -2279,19 +2271,11 @@ private fun PlayerControls(
                 modifier = Modifier.align(Alignment.CenterStart),
             )
             }
-            if (uiStyle == com.yunyin.music.ui.style.UiStyle.Coui) {
-                CouiQualityChip(
-                    quality = quality,
-                    onClick = onQualityClick,
-                    modifier = Modifier.align(Alignment.Center),
-                )
-            } else {
             QualityChip(
                 quality = quality,
                 onClick = onQualityClick,
                 modifier = Modifier.align(Alignment.Center),
             )
-            }
             if (uiStyle == com.yunyin.music.ui.style.UiStyle.Coui) {
                 CouiTimeLabel(
                     text = formatDuration(state.durationMs),

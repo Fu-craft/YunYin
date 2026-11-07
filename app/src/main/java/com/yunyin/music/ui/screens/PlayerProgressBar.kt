@@ -25,6 +25,9 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -63,6 +66,13 @@ fun PlayerProgressBar(
     activeTrackHeight: Dp = 9.dp,
     activeColor: Color = Color.White,
     inactiveColor: Color = Color.White.copy(alpha = 0.25f),
+    /**
+     * 凝光的轮廓光:在已播段下面垫一层模糊的同色光晕。
+     *
+     * 只有新风格(COUI)开启;经典版保持原来的纯色轨道。几何、厚度动画、拖拽手感都不受影响——
+     * 光晕是在同一条轨道位置额外画一遍模糊矩形,不参与测量也不参与布局。
+     */
+    glow: Boolean = false,
 ) {
     var width by remember { mutableStateOf(1) }
     var dragging by remember { mutableStateOf(false) }
@@ -149,6 +159,31 @@ fun PlayerProgressBar(
             thicknessPx = thickness,
             fullWidthPx = size.width,
         )
+        // 轮廓光:先画一层比轨道更宽、更柔的同色矩形,再画清晰的轨道,于是边缘"漏光"。
+        // 用 BlurMaskFilter(原生 Paint)而不是多层叠加,是为了让光晕真的是渐隐的,而不是几道硬边。
+        if (glow && fillWidth > 0f) {
+            val glowPx = thickness * 1.6f
+            val glowAlpha = 0.55f
+            drawIntoCanvas { canvas ->
+                val native = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                    color = activeColor.copy(alpha = glowAlpha).toArgb()
+                    maskFilter = android.graphics.BlurMaskFilter(
+                        glowPx,
+                        android.graphics.BlurMaskFilter.Blur.NORMAL,
+                    )
+                }
+                canvas.nativeCanvas.drawRoundRect(
+                    0f,
+                    top - thickness * 0.35f,
+                    fillWidth,
+                    top + thickness * 1.35f,
+                    radius.x,
+                    radius.y,
+                    native,
+                )
+            }
+        }
+
         drawRoundRect(
             color = activeColor,
             topLeft = Offset(0f, top),
