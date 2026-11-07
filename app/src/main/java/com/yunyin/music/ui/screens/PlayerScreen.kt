@@ -2264,6 +2264,12 @@ private fun PlayerControls(
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp, vertical = 2.dp),
         ) {
+            if (uiStyle == com.yunyin.music.ui.style.UiStyle.Coui) {
+                CouiTimeLabel(
+                    text = formatDuration(displayedPosition),
+                    modifier = Modifier.align(Alignment.CenterStart),
+                )
+            } else {
             Text(
                 text = formatDuration(displayedPosition),
                 fontFamily = SFPro,
@@ -2272,11 +2278,26 @@ private fun PlayerControls(
                 color = Color.White.copy(alpha = 0.9f),
                 modifier = Modifier.align(Alignment.CenterStart),
             )
+            }
+            if (uiStyle == com.yunyin.music.ui.style.UiStyle.Coui) {
+                CouiQualityChip(
+                    quality = quality,
+                    onClick = onQualityClick,
+                    modifier = Modifier.align(Alignment.Center),
+                )
+            } else {
             QualityChip(
                 quality = quality,
                 onClick = onQualityClick,
                 modifier = Modifier.align(Alignment.Center),
             )
+            }
+            if (uiStyle == com.yunyin.music.ui.style.UiStyle.Coui) {
+                CouiTimeLabel(
+                    text = formatDuration(state.durationMs),
+                    modifier = Modifier.align(Alignment.CenterEnd),
+                )
+            } else {
             Text(
                 text = formatDuration(state.durationMs),
                 fontFamily = SFPro,
@@ -2285,6 +2306,7 @@ private fun PlayerControls(
                 color = Color.White.copy(alpha = 0.9f),
                 modifier = Modifier.align(Alignment.CenterEnd),
             )
+            }
         }
 
         Spacer(Modifier.height(30.dp))
