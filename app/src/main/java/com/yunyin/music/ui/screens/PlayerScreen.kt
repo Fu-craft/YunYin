@@ -173,6 +173,8 @@ import kotlinx.coroutines.withContext
 @Composable
 fun PlayerScreen(
     state: PlaybackUiState,
+    /** 界面风格:决定用哪一份控件实现(经典 = 自有玻璃控件, 凝光 = COUI)。 */
+    uiStyle: com.yunyin.music.ui.style.UiStyle = com.yunyin.music.ui.style.UiStyle.Classic,
     cover: ImageBitmap?,
     palette: DynamicBackgroundPalette,
     lyrics: SyncedLyrics?,
@@ -1168,6 +1170,7 @@ fun PlayerScreen(
                                 }
                                 Spacer(Modifier.height(16.dp))
                                 PlayerControls(
+                                    uiStyle = uiStyle,
                                     state = state,
                                     displayedPosition = displayedPosition,
                                     positionProvider = positionProvider,
@@ -1322,6 +1325,7 @@ fun PlayerScreen(
                                 .then(wakeOnTap),
                         ) {
                             PlayerControls(
+                                uiStyle = uiStyle,
                                 state = state,
                                 displayedPosition = displayedPosition,
                                 positionProvider = positionProvider,
@@ -1441,6 +1445,7 @@ fun PlayerScreen(
                         Spacer(Modifier.height(18.dp))
 
                         PlayerControls(
+                            uiStyle = uiStyle,
                             state = state,
                             displayedPosition = displayedPosition,
                             positionProvider = positionProvider,
@@ -2220,6 +2225,7 @@ private fun readPowerSaveMode(context: android.content.Context): Boolean =
 @Composable
 private fun PlayerControls(
     state: PlaybackUiState,
+    uiStyle: com.yunyin.music.ui.style.UiStyle,
     displayedPosition: Long,
     /** Interpolated position, safe to poll per frame; the progress bar samples this. */
     positionProvider: () -> Long,
@@ -2236,12 +2242,22 @@ private fun PlayerControls(
     onShowQueue: () -> Unit,
 ) {
     Column {
-        PlayerProgressBar(
-            positionProvider = positionProvider,
-            durationMs = state.durationMs,
-            onSeek = onSeek,
-            modifier = Modifier.padding(horizontal = 24.dp),
-        )
+        if (uiStyle == com.yunyin.music.ui.style.UiStyle.Coui) {
+            // 凝光:COUI 的 Slider。逐帧采样与「松手才 seek」的语义由 CouiPlayerProgressBar 自己保证。
+            CouiPlayerProgressBar(
+                positionProvider = positionProvider,
+                durationMs = state.durationMs,
+                onSeek = onSeek,
+                modifier = Modifier.padding(horizontal = 24.dp),
+            )
+        } else {
+            PlayerProgressBar(
+                positionProvider = positionProvider,
+                durationMs = state.durationMs,
+                onSeek = onSeek,
+                modifier = Modifier.padding(horizontal = 24.dp),
+            )
+        }
 
         Box(
             Modifier

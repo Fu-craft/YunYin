@@ -1944,6 +1944,7 @@ class MainActivity : ComponentActivity() {
                         ),
                 ) {
                     PlayerScreen(
+                    uiStyle = uiStyle,
                     state = playback,
                     cover = playerViewModel.coverBitmap,
                     palette = playerViewModel.palette,
