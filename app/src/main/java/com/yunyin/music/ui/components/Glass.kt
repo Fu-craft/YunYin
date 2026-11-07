@@ -85,27 +85,45 @@ fun SectionHeader(
     onMore: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
+    // 凝光:标题用 COUI 的 `SectionTitle` 字级(18sp medium 600)、行距更松,副标题用 `Description`;
+    // 右侧"更多"箭头换成强调色。经典版保持原来的 21sp Bold + 三级灰。
+    val coui = com.yunyin.music.ui.style.CurrentUiStyle.value ==
+        com.yunyin.music.ui.style.UiStyle.Coui
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 8.dp),
+            .padding(horizontal = 20.dp, vertical = if (coui) 12.dp else 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                fontFamily = SFPro,
-                fontWeight = FontWeight.Bold,
-                fontSize = com.yunyin.music.ui.TabletType.size(21.sp, com.yunyin.music.ui.LocalExpandedLayout.current),
-                color = AppTheme.palette.label,
-            )
-            if (subtitle != null) {
-                Text(
-                    text = subtitle,
-                    fontFamily = SFPro,
-                    fontSize = 13.sp,
-                    color = AppTheme.palette.secondaryLabel,
+            if (coui) {
+                com.itos.coui.text.Text(
+                    text = title,
+                    kind = com.itos.coui.text.CouiTextKind.SectionTitle,
                 )
+            } else {
+                Text(
+                    text = title,
+                    fontFamily = SFPro,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = com.yunyin.music.ui.TabletType.size(21.sp, com.yunyin.music.ui.LocalExpandedLayout.current),
+                    color = AppTheme.palette.label,
+                )
+            }
+            if (subtitle != null) {
+                if (coui) {
+                    com.itos.coui.text.Text(
+                        text = subtitle,
+                        kind = com.itos.coui.text.CouiTextKind.Description,
+                    )
+                } else {
+                    Text(
+                        text = subtitle,
+                        fontFamily = SFPro,
+                        fontSize = 13.sp,
+                        color = AppTheme.palette.secondaryLabel,
+                    )
+                }
             }
         }
         if (onMore != null) {
@@ -115,7 +133,11 @@ fun SectionHeader(
                 Icon(
                     imageVector = com.yunyin.music.ui.icons.SfIcons.ChevronRight,
                     contentDescription = "更多",
-                    tint = AppTheme.palette.tertiaryLabel,
+                    tint = if (coui) {
+                        com.itos.coui.theme.CouiTheme.colorScheme.accent
+                    } else {
+                        AppTheme.palette.tertiaryLabel
+                    },
                     modifier = Modifier
                         .size(20.dp)
                         .clip(CircleShape)

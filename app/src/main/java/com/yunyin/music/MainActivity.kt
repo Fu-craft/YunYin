@@ -440,6 +440,8 @@ class MainActivity : ComponentActivity() {
         var uiStyle by remember {
             mutableStateOf(com.yunyin.music.ui.style.UiStyle.fromKey(container.settings.uiStyle))
         }
+        // 共享组件(SectionHeader 等)通过这个全局读数取风格;写入放在唯一的风格状态旁边,避免两处漂移。
+        SideEffect { com.yunyin.music.ui.style.CurrentUiStyle.value = uiStyle }
         // Platform equaliser. The service reads the store, so writing it here is all a toggle has to do.
         var equalizerEnabled by remember { mutableStateOf(container.settings.equalizerEnabled) }
         var equalizerPreset by remember { mutableStateOf(container.settings.equalizerPreset) }
