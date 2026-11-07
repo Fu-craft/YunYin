@@ -92,7 +92,7 @@ internal const val PROJECT_URL = "https://github.com/Fu-craft/YunYin"
  * rarely, they are long, and mixing them into the main list made it a wall of rows where the choices
  * people actually change (无缝衔接, 桌面歌词) sat next to licence boilerplate.
  */
-private enum class SettingsPage(val title: String) {
+internal enum class SettingsPage(val title: String) {
     Main("设置"),
     LxSources("音源管理"),
     Licenses("开源许可"),
@@ -419,7 +419,20 @@ fun SettingsScreen(
                         )
                         }
 
-                        SettingsPage.LxSources -> LxSourcesPage(
+                        SettingsPage.LxSources -> if (uiStyle == com.yunyin.music.ui.style.UiStyle.Coui) {
+                            CouiLxSourcesPage(
+                                sources = lxSources,
+                                importing = lxImporting,
+                                message = lxImportMessage,
+                                errorLogAvailable = lxErrorLogAvailable,
+                                onCopyErrorLog = onCopyLxErrorLog,
+                                onImport = onImportLxSource,
+                                onImportFromUrl = onImportLxSourceFromUrl,
+                                onRefresh = onRefreshLxSource,
+                                onToggle = onToggleLxSource,
+                                onDelete = onDeleteLxSource,
+                            )
+                        } else LxSourcesPage(
                             sources = lxSources,
                             importing = lxImporting,
                             message = lxImportMessage,
@@ -432,26 +445,52 @@ fun SettingsScreen(
                             onDelete = onDeleteLxSource,
                         )
 
-                        SettingsPage.Licenses -> LicensesPage()
+                        SettingsPage.Licenses -> if (uiStyle == com.yunyin.music.ui.style.UiStyle.Coui) {
+                            CouiLicensesPage()
+                        } else {
+                            LicensesPage()
+                        }
 
-                        SettingsPage.Update -> UpdatePage(
-                            state = updateState,
-                            onCheckUpdate = onCheckUpdate,
-                        )
+                        SettingsPage.Update -> if (uiStyle == com.yunyin.music.ui.style.UiStyle.Coui) {
+                            CouiUpdatePage(state = updateState, onCheckUpdate = onCheckUpdate)
+                        } else {
+                            UpdatePage(
+                                state = updateState,
+                                onCheckUpdate = onCheckUpdate,
+                            )
+                        }
 
-                        SettingsPage.Logs -> LogsPage(
-                            hasCrashLog = hasCrashLog,
-                            onCopyCrashLog = onCopyCrashLog,
-                        )
+                        SettingsPage.Logs -> if (uiStyle == com.yunyin.music.ui.style.UiStyle.Coui) {
+                            CouiLogsPage(
+                                hasCrashLog = hasCrashLog,
+                                onCopyCrashLog = onCopyCrashLog,
+                            )
+                        } else {
+                            LogsPage(
+                                hasCrashLog = hasCrashLog,
+                                onCopyCrashLog = onCopyCrashLog,
+                            )
+                        }
 
-                        SettingsPage.Effects -> EffectsPage(
-                            enabled = equalizerEnabled,
-                            onEnabledChange = onEqualizerEnabledChange,
-                            preset = equalizerPreset,
-                            onPresetChange = onEqualizerPresetChange,
-                            bands = equalizerBands,
-                            onBandChange = onEqualizerBandChange,
-                        )
+                        SettingsPage.Effects -> if (uiStyle == com.yunyin.music.ui.style.UiStyle.Coui) {
+                            CouiEffectsPage(
+                                enabled = equalizerEnabled,
+                                onEnabledChange = onEqualizerEnabledChange,
+                                preset = equalizerPreset,
+                                onPresetChange = onEqualizerPresetChange,
+                                bands = equalizerBands,
+                                onBandChange = onEqualizerBandChange,
+                            )
+                        } else {
+                            EffectsPage(
+                                enabled = equalizerEnabled,
+                                onEnabledChange = onEqualizerEnabledChange,
+                                preset = equalizerPreset,
+                                onPresetChange = onEqualizerPresetChange,
+                                bands = equalizerBands,
+                                onBandChange = onEqualizerBandChange,
+                            )
+                        }
                     }
                 }
             }
@@ -1546,7 +1585,7 @@ private fun LyriconPreference(
  * is how an updater ends up telling someone "已是最新" when it never managed to ask. A failed check says
  * so, and stays tappable so the user can retry.
  */
-private fun updateRowValue(state: UpdateUiState): String = when (state) {
+internal fun updateRowValue(state: UpdateUiState): String = when (state) {
     is UpdateUiState.Idle -> "点击检查"
     is UpdateUiState.Available -> "发现 ${state.update.versionName}"
     is UpdateUiState.AvailableSkipped -> "有新版本 ${state.update.versionName}"
