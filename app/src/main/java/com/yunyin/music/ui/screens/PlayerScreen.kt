@@ -113,6 +113,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import com.yunyin.music.core.Track
 import kotlin.math.roundToInt
 import com.yunyin.music.core.player.effects.AudioReactive
+import com.yunyin.music.R
 import com.yunyin.music.data.ArtworkLoader
 import com.yunyin.music.playback.PlaybackUiState
 import com.yunyin.music.ui.AudioQuality
@@ -2243,12 +2244,16 @@ private fun PlayerControls(
 ) {
     Column {
         // 两种风格共用这一条进度条;凝光只额外加一层轮廓光,几何与手感保持原样。
-        PlayerProgressBar(
+        // 发光胶囊进度条（AuraPlayer 的 HYPER 样式）：轨道 + 渐变填充 + 辉光 + 端点光晕。
+        com.yunyin.music.ui.components.GlowPlayerProgress(
             positionProvider = positionProvider,
             durationMs = state.durationMs,
+            accentColor = Color.White,
             onSeek = onSeek,
-            glow = uiStyle == com.yunyin.music.ui.style.UiStyle.Coui,
-            modifier = Modifier.padding(horizontal = 24.dp),
+            trackColor = Color.White.copy(alpha = 0.26f),
+            modifier = Modifier
+                .padding(horizontal = 24.dp)
+                .height(28.dp),
         )
 
         Box(
@@ -2301,14 +2306,23 @@ private fun PlayerControls(
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            TransportButton(SfIcons.Backward, "上一首", 47.dp, onPrevious)
+            TransportButton(R.drawable.aura_ic_previous, "上一首", 34.dp, onPrevious)
             PlayPauseButton(
                 isPlaying = state.isPlaying,
                 isBuffering = state.isBuffering,
                 onClick = onTogglePlay,
             )
-            TransportButton(SfIcons.Forward, "下一首", 47.dp, onNext)
+            TransportButton(R.drawable.aura_ic_next, "下一首", 34.dp, onNext)
         }
+
+        Spacer(Modifier.height(12.dp))
+        // 媒体音量条（AuraPlayer 的 OneUi 样式）：静音 / 细条 / 增音。
+        com.yunyin.music.ui.components.VolumeSliderRow(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .height(30.dp),
+        )
 
         Spacer(Modifier.height(14.dp))
         Row(
@@ -3207,6 +3221,32 @@ private fun rememberPressScale(
 
 @Composable
 private fun TransportButton(
+    @androidx.annotation.DrawableRes iconRes: Int,
+    description: String,
+    size: androidx.compose.ui.unit.Dp,
+    onClick: () -> Unit,
+) {
+    val ripple = rememberControlRipple()
+    val interaction = remember { MutableInteractionSource() }
+    val scale = rememberPressScale(interaction)
+    Box(
+        Modifier
+            .size(72.dp)
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .clickable(interactionSource = interaction, indication = ripple, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Image(
+            painter = androidx.compose.ui.res.painterResource(iconRes),
+            contentDescription = description,
+            colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(Color.White),
+            modifier = Modifier.size(size),
+        )
+    }
+}
+
+@Composable
+private fun TransportButton(
     icon: ImageVector,
     description: String,
     size: androidx.compose.ui.unit.Dp,
@@ -3247,11 +3287,13 @@ private fun PlayPauseButton(isPlaying: Boolean, isBuffering: Boolean, onClick: (
             durationMillis = Motion.SmallDuration,
             label = "play-pause",
         ) { playing ->
-            Icon(
-                imageVector = if (playing) SfIcons.Pause else SfIcons.Play,
+            Image(
+                painter = androidx.compose.ui.res.painterResource(
+                    if (playing) R.drawable.aura_ic_pause else R.drawable.aura_ic_play,
+                ),
                 contentDescription = if (playing) "暂停" else "播放",
-                tint = Color.White,
-                modifier = Modifier.size(if (playing) 52.dp else 50.dp),
+                colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(Color.White),
+                modifier = Modifier.size(if (playing) 38.dp else 38.dp),
             )
         }
         if (isBuffering) {
