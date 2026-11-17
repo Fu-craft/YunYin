@@ -71,9 +71,9 @@ import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -673,7 +673,7 @@ fun FloatingTabBar(
             }
         }
     }
-    val isLightTheme = !isSystemInDarkTheme()
+    val isLightTheme = !AppTheme.palette.isDark
     val contentColor = if (isLightTheme) Color.Black else Color.White
 
     LiquidBottomTabs(
@@ -689,7 +689,10 @@ fun FloatingTabBar(
         modifier = modifier,
     ) {
         BarSlots.forEachIndexed { index, slot ->
-            LiquidBottomTab(onClick = { onTabSelected(index) }) {
+            LiquidBottomTab(
+                onClick = { onTabSelected(index) },
+                selected = slot is BarSlot.Screen && slot.tab == selected,
+            ) {
                 // The reference's tab content: a 28 dp glyph over a 12 sp label. `LiquidBottomTabs`
                 // re-draws this same row tinted inside the travelling selection, which is what makes
                 // the selected glyph accent-coloured.
@@ -759,17 +762,12 @@ private fun LiquidBottomTabs(
     content: @Composable RowScope.() -> Unit,
 ) {
     val selectedTabClick = rememberUpdatedState(onSelectedTabClick)
-    val isLightTheme = !isSystemInDarkTheme()
     val accentColor = if (accentOverride != Color.Unspecified) {
         accentOverride
-    } else if (isLightTheme) {
-        Color(0xFF0088FF)
     } else {
-        Color(0xFF0091FF)
+        AppTheme.palette.accent
     }
-    val containerColor =
-        if (isLightTheme) Color(0xFFFAFAFA).copy(GlassSurfaceAlpha)
-        else Color(0xFF121212).copy(GlassSurfaceAlpha)
+    val containerColor = AppTheme.palette.secondaryBackground.copy(GlassSurfaceAlpha)
 
     // The accent mask the selection samples. Recorded by `layerBackdrop` below.
     val tabsBackdrop = rememberLayerBackdrop()
@@ -897,6 +895,7 @@ private fun LiquidBottomTabs(
             glassRefractionMaterial(backdrop, containerColor, dampedDragAnimation, material)
         }
         val selectionBackdrop = rememberCombinedBackdrop(backdrop, tabsBackdrop)
+        val isLightTheme = !AppTheme.palette.isDark
         val selectionMaterial = remember(selectionBackdrop, dampedDragAnimation, isLightTheme) {
             glassSelectionMaterial(selectionBackdrop, dampedDragAnimation, isLightTheme)
         }
@@ -986,6 +985,7 @@ internal val LocalLiquidBottomTabScale = staticCompositionLocalOf { { 1f } }
 @Composable
 internal fun RowScope.LiquidBottomTab(
     onClick: () -> Unit,
+    selected: Boolean,
     modifier: Modifier = Modifier,
     shape: Shape = Capsule,
     content: @Composable ColumnScope.() -> Unit,
@@ -997,7 +997,8 @@ internal fun RowScope.LiquidBottomTab(
             // The reference takes no indication: the press response is the travelling selection
             // growing under the finger plus the glow that follows it, and a Material ripple bounded
             // to this slot is the "small square" that appears behind a tapped tab on glass chrome.
-            .clickable(
+            .selectable(
+                selected = selected,
                 interactionSource = null,
                 indication = null,
                 role = Role.Tab,
@@ -1449,10 +1450,7 @@ fun FloatingMiniPlayer(
     modifier: Modifier = Modifier,
 ) {
     val track = state.current ?: return
-    val isLightTheme = !isSystemInDarkTheme()
-    val containerColor =
-        if (isLightTheme) Color(0xFFFAFAFA).copy(GlassSurfaceAlpha)
-        else Color(0xFF121212).copy(GlassSurfaceAlpha)
+    val containerColor = AppTheme.palette.secondaryBackground.copy(GlassSurfaceAlpha)
     val density = LocalDensity.current
     val radiusPx = with(density) { GlassBlurRadius.toPx() }
     val material = remember(radiusPx) { VibrantBlur(radiusPx) }

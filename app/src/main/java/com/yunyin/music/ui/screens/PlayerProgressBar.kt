@@ -8,7 +8,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -34,6 +33,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -109,12 +109,6 @@ fun PlayerProgressBar(
     val restingPx = with(density) { trackHeight.toPx() }
     val activePx = with(density) { activeTrackHeight.toPx() }
 
-    // 轨道表面会随按压/拖动变高,所以高度交给动画;手势仍留在 28dp 的外层,触摸目标不缩水。
-    val trackHeightAnimated by animateDpAsState(
-        targetValue = if (dragging) activeTrackHeight else trackHeight,
-        animationSpec = tween(Motion.PressDuration, easing = Motion.EaseOut),
-        label = "progress-track-height",
-    )
     // COUI 官方跟手光:返回"触摸 Modifier + 绘制回调"。只有新风格需要它。
     val light: Pair<Modifier, (androidx.compose.ui.graphics.drawscope.DrawScope.() -> Unit)?> =
         if (glow) {
@@ -164,7 +158,14 @@ fun PlayerProgressBar(
             Modifier
                 .align(Alignment.Center)
                 .fillMaxWidth()
-                .height(trackHeightAnimated)
+                .height(activeTrackHeight)
+                .graphicsLayer {
+                    scaleY = if (activePx > 0f) {
+                        (restingPx + (activePx - restingPx) * thick) / activePx
+                    } else {
+                        1f
+                    }
+                }
                 .clip(RoundedCornerShape(percent = 50))
                 .background(if (glow) inactiveColor else Color.Transparent)
                 .then(lightInput)

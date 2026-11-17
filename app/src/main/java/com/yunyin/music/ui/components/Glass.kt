@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.yunyin.music.ui.theme.AppleShapes
+import com.yunyin.music.ui.theme.AppLayout
 import com.yunyin.music.ui.theme.AppTheme
 import com.yunyin.music.ui.theme.SFPro
 import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
@@ -60,7 +61,7 @@ fun GlassCircleButton(
     contentDescription: String?,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    size: Dp = 44.dp,
+    size: Dp = AppLayout.minTouchTarget,
     iconSize: Dp = 19.dp,
     tint: Color = AppTheme.palette.label,
 ) {
@@ -87,12 +88,12 @@ fun SectionHeader(
 ) {
     // 凝光:标题用 COUI 的 `SectionTitle` 字级(18sp medium 600)、行距更松,副标题用 `Description`;
     // 右侧"更多"箭头换成强调色。经典版保持原来的 21sp Bold + 三级灰。
-    val coui = com.yunyin.music.ui.style.CurrentUiStyle.value ==
+    val coui = com.yunyin.music.ui.style.LocalUiStyle.current ==
         com.yunyin.music.ui.style.UiStyle.Coui
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = if (coui) 12.dp else 8.dp),
+            .padding(horizontal = AppLayout.pageGutter, vertical = if (coui) 12.dp else 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
@@ -104,9 +105,12 @@ fun SectionHeader(
             } else {
                 Text(
                     text = title,
-                    fontFamily = SFPro,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = com.yunyin.music.ui.TabletType.size(21.sp, com.yunyin.music.ui.LocalExpandedLayout.current),
+                    style = androidx.compose.material3.MaterialTheme.typography.headlineMedium.copy(
+                        fontSize = com.yunyin.music.ui.TabletType.size(
+                            androidx.compose.material3.MaterialTheme.typography.headlineMedium.fontSize,
+                            com.yunyin.music.ui.LocalExpandedLayout.current,
+                        ),
+                    ),
                     color = AppTheme.palette.label,
                 )
             }
@@ -119,8 +123,7 @@ fun SectionHeader(
                 } else {
                     Text(
                         text = subtitle,
-                        fontFamily = SFPro,
-                        fontSize = 13.sp,
+                        style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
                         color = AppTheme.palette.secondaryLabel,
                     )
                 }
@@ -129,7 +132,13 @@ fun SectionHeader(
         if (onMore != null) {
             // 44 dp touch target, same 20 dp glyph: the chevron was the smallest actionable control
             // on the home shelves (20 dp is barely half the minimum target).
-            Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
+            Box(
+                Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .clickable(onClick = onMore),
+                contentAlignment = Alignment.Center,
+            ) {
                 Icon(
                     imageVector = com.yunyin.music.ui.icons.SfIcons.ChevronRight,
                     contentDescription = "更多",
@@ -138,10 +147,7 @@ fun SectionHeader(
                     } else {
                         AppTheme.palette.tertiaryLabel
                     },
-                    modifier = Modifier
-                        .size(20.dp)
-                        .clip(CircleShape)
-                        .clickable(onClick = onMore),
+                    modifier = Modifier.size(20.dp),
                 )
             }
         }
@@ -164,13 +170,13 @@ fun MediaRow(
 ) {
     // 凝光:行内改为 COUI 的 `PreferenceTitle` / `PreferenceSummary` 字级,行距 6→8dp,行的上下留白
     // 也略宽(6→7dp),让列表读起来更"松开"一点。经典版保持 16/13sp 的原节奏。
-    val couiRow = com.yunyin.music.ui.style.CurrentUiStyle.value ==
+    val couiRow = com.yunyin.music.ui.style.LocalUiStyle.current ==
         com.yunyin.music.ui.style.UiStyle.Coui
     Row(
         modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = if (couiRow) 7.dp else 6.dp),
+            .padding(horizontal = AppLayout.pageGutter, vertical = AppLayout.rowVerticalPadding),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         artwork()
@@ -189,9 +195,7 @@ fun MediaRow(
             } else {
                 Text(
                     text = title,
-                    fontFamily = SFPro,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium,
+                    style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
                     color = AppTheme.palette.label,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -208,8 +212,7 @@ fun MediaRow(
                 } else {
                     Text(
                         text = subtitle,
-                        fontFamily = SFPro,
-                        fontSize = 13.sp,
+                        style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
                         color = AppTheme.palette.secondaryLabel,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,

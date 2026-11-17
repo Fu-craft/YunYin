@@ -38,6 +38,7 @@ import coil3.request.ImageRequest
 import androidx.compose.ui.layout.ContentScale
 import com.yunyin.music.ui.components.shelf.ShelfSong
 import com.yunyin.music.ui.theme.AppTheme
+import com.yunyin.music.ui.theme.Motion
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.customActions
@@ -81,12 +82,22 @@ private typealias Song = ShelfSong
         if (!dragging) {
             val velocity = releaseVelocity ?: position.velocity
             releaseVelocity = null
-            position.animateTo(targetPosition, spring(dampingRatio = .94f, stiffness = 135f, visibilityThreshold = .001f),
-                initialVelocity = velocity)
+            position.animateTo(
+                targetPosition,
+                Motion.springOrSnap(
+                    spring(dampingRatio = .94f, stiffness = 260f, visibilityThreshold = .001f),
+                ),
+                initialVelocity = velocity,
+            )
         }
     }
-    val recordReveal = animateFloatAsState(if (showRecord) 1f else 0f,
-        spring(dampingRatio = .94f, stiffness = 115f, visibilityThreshold = .001f), label = "recommendation record")
+    val recordReveal = animateFloatAsState(
+        if (showRecord) 1f else 0f,
+        Motion.springOrSnap(
+            spring(dampingRatio = .94f, stiffness = 240f, visibilityThreshold = .001f),
+        ),
+        label = "recommendation record",
+    )
     val rotationStart = LocalPlayerArtworkRotation.current
     val rotation = remember { mutableFloatStateOf(rotationStart) }
     val density = LocalDensity.current

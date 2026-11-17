@@ -84,6 +84,7 @@ import com.yunyin.music.ui.components.rememberControlRipple
 import com.yunyin.music.ui.components.rememberGlassTopBarBackdrop
 import com.yunyin.music.ui.icons.SfIcons
 import com.yunyin.music.ui.theme.AppleShapes
+import com.yunyin.music.ui.theme.AppLayout
 import com.yunyin.music.ui.theme.AppTheme
 import com.yunyin.music.ui.theme.Motion
 import com.yunyin.music.ui.theme.SFPro
@@ -779,7 +780,7 @@ private fun GroupedCard(content: @Composable () -> Unit) {
     Column(
         Modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp)
+            .padding(horizontal = AppLayout.pageGutter)
             .clip(ContinuousRoundedRectangle(CardCorner))
             .background(AppTheme.palette.secondaryBackground)
             .padding(vertical = 6.dp),
@@ -938,9 +939,7 @@ private fun LibrarySubpage(
                 Spacer(Modifier.width(6.dp))
                 Text(
                     text = title,
-                    fontFamily = SFPro,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 28.sp,
+                    style = androidx.compose.material3.MaterialTheme.typography.displayMedium,
                     color = AppTheme.palette.label,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -1157,7 +1156,7 @@ private fun RecentIdList(
                     Modifier
                         .fillMaxWidth()
                         .clickable { onClick(id) }
-                        .padding(horizontal = 20.dp, vertical = 16.dp),
+                        .padding(horizontal = AppLayout.pageGutter, vertical = 16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
@@ -1200,7 +1199,7 @@ private fun PlaylistRow(
                 interactionSource = null,
                 onClick = onClick,
             )
-            .padding(horizontal = 20.dp, vertical = 10.dp),
+            .padding(horizontal = AppLayout.pageGutter, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Artwork(

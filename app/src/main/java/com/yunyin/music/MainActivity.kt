@@ -45,6 +45,8 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Surface
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -56,6 +58,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -183,6 +186,15 @@ class MainActivity : ComponentActivity() {
     private fun YunYinApp(container: AppContainer) {
         val context = LocalContext.current
         val scope = rememberCoroutineScope()
+        val appSnackbarHostState = remember { SnackbarHostState() }
+        val showMessage: (String) -> Unit = remember(appSnackbarHostState, scope) {
+            { message ->
+                scope.launch {
+                    appSnackbarHostState.currentSnackbarData?.dismiss()
+                    appSnackbarHostState.showSnackbar(message)
+                }
+            }
+        }
         val windowInfo by remember {
             val activity = context as? ComponentActivity
             if (activity == null) kotlinx.coroutines.flow.flowOf(WindowLayoutInfo(emptyList()))
@@ -298,9 +310,9 @@ class MainActivity : ComponentActivity() {
         val updateState by container.update.state.collectAsState()
         val downloadStatesAll by container.downloads.states.collectAsState()
 
-        var tab by remember { mutableStateOf(PlayerTab.Home) }
+        var tab by rememberSaveable { mutableStateOf(PlayerTab.Home) }
         // 桌面小组件 taps open the player page itself, not whichever tab was last shown.
-        var showPlayer by remember {
+        var showPlayer by rememberSaveable {
             mutableStateOf(
                 (context as? android.app.Activity)
                     ?.intent
@@ -312,13 +324,13 @@ class MainActivity : ComponentActivity() {
         // what 心动模式 uses for `pid` when the player is the entry point; null means "not a playlist"
         // and the fallback is the liked-songs playlist (or no pid at all).
         var lastPlaylistId by remember { mutableStateOf<Long?>(null) }
-        var showLyrics by remember { mutableStateOf(false) }
-        var showQueue by remember { mutableStateOf(false) }
+        var showLyrics by rememberSaveable { mutableStateOf(false) }
+        var showQueue by rememberSaveable { mutableStateOf(false) }
         // True while the playback queue is a 心动模式 queue. The bar's 心动模式 slot uses it to show the
         // queue that already exists instead of spending another request; any normal play clears it.
         var beatModeActive by remember { mutableStateOf(false) }
-        var showSettings by remember { mutableStateOf(false) }
-        var showStyleBrowser by remember { mutableStateOf(false) }
+        var showSettings by rememberSaveable { mutableStateOf(false) }
+        var showStyleBrowser by rememberSaveable { mutableStateOf(false) }
         var playlistShowcase by remember { mutableStateOf(container.settings.playlistShowcase) }
         var cloudRecentSongs by remember { mutableStateOf<List<com.yunyin.music.core.Track>>(emptyList()) }
         var cloudRecentAlbumIds by remember { mutableStateOf<List<Long>>(emptyList()) }
@@ -327,14 +339,14 @@ class MainActivity : ComponentActivity() {
         var cloudRecentError by remember { mutableStateOf<String?>(null) }
         var cloudRecentLoaded by remember { mutableStateOf(false) }
         var showImportSheet by remember { mutableStateOf(false) }
-        var showListenReport by remember { mutableStateOf(false) }
-        var showSimilarArtists by remember { mutableStateOf(false) }
+        var showListenReport by rememberSaveable { mutableStateOf(false) }
+        var showSimilarArtists by rememberSaveable { mutableStateOf(false) }
         var similarArtistTrackId by remember { mutableStateOf(0L) }
         var importText by remember { mutableStateOf("") }
         var importing by remember { mutableStateOf(false) }
-        var showDownloadCenter by remember { mutableStateOf(false) }
-    var showStats by remember { mutableStateOf(false) }
-        var showFootprint by remember { mutableStateOf(false) }
+        var showDownloadCenter by rememberSaveable { mutableStateOf(false) }
+        var showStats by rememberSaveable { mutableStateOf(false) }
+        var showFootprint by rememberSaveable { mutableStateOf(false) }
     var showLyricPicker by remember { mutableStateOf(false) }
     var lyricShareLines by remember { mutableStateOf<List<String>>(emptyList()) }
     var lyricShareStarts by remember { mutableStateOf<List<Int>>(emptyList()) }
@@ -440,8 +452,8 @@ class MainActivity : ComponentActivity() {
         var uiStyle by remember {
             mutableStateOf(com.yunyin.music.ui.style.UiStyle.fromKey(container.settings.uiStyle))
         }
-        // 共享组件(SectionHeader 等)通过这个全局读数取风格;写入放在唯一的风格状态旁边,避免两处漂移。
-        SideEffect { com.yunyin.music.ui.style.CurrentUiStyle.value = uiStyle }
+        CompositionLocalProvider(com.yunyin.music.ui.style.LocalUiStyle provides uiStyle) {
+        Box(Modifier.fillMaxSize()) {
         // Platform equaliser. The service reads the store, so writing it here is all a toggle has to do.
         var equalizerEnabled by remember { mutableStateOf(container.settings.equalizerEnabled) }
         var equalizerPreset by remember { mutableStateOf(container.settings.equalizerPreset) }
@@ -504,7 +516,7 @@ class MainActivity : ComponentActivity() {
         val sleepTimerEndOfTrack by container.player.sleepTimerEndOfTrack.collectAsState()
 
         fun toast(message: String) {
-            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+            showMessage(message)
         }
 
         fun currentUid(): Long = account?.takeIf { !it.isAnonymous }?.userId ?: 0L
@@ -884,20 +896,18 @@ class MainActivity : ComponentActivity() {
         // light bar appearance), which is the right choice for the white window background.
         LaunchedEffect(Unit) {
             container.liked.onSyncFailure = {
-                Toast.makeText(context, "同步失败，已保存在本地", Toast.LENGTH_SHORT).show()
+                showMessage("同步失败，已保存在本地")
             }
-            appViewModel.onSubscribeFailure = { message ->
-                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-            }
+            appViewModel.onSubscribeFailure = showMessage
             appViewModel.onSubscribeSuccess = { kind, active ->
                 val message = when (kind) {
                     "artist" -> if (active) "已关注" else "已取消关注"
                     else -> if (active) "已收藏" else "已取消收藏"
                 }
-                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                showMessage(message)
             }
         }
-        val darkTheme = androidx.compose.foundation.isSystemInDarkTheme()
+        val darkTheme = AppTheme.palette.isDark
         DisposableEffect(darkTheme) {
             val window = (context as? android.app.Activity)?.window
             val controller = window?.let {
@@ -1188,6 +1198,7 @@ class MainActivity : ComponentActivity() {
                 // padding is read.
                 CompositionLocalProvider(
                     LocalChromeTopRowVisible provides hasTrack,
+                    com.yunyin.music.ui.style.LocalUiStyle provides uiStyle,
                     com.yunyin.music.ui.LocalExpandedLayout provides expandedLayout,
                     com.yunyin.music.ui.components.LocalPlaylistShowcase provides playlistShowcase,
                 ) {
@@ -2575,7 +2586,7 @@ class MainActivity : ComponentActivity() {
         // Surface playback errors once, then clear them.
         LaunchedEffect(playbackError) {
             if (playbackError != null) {
-                Toast.makeText(context, playbackError, Toast.LENGTH_SHORT).show()
+                showMessage(playbackError.orEmpty())
                 container.player.clearError()
             }
         }
@@ -2583,9 +2594,19 @@ class MainActivity : ComponentActivity() {
         // One-shot notices from the player (member-only preview, unavailable track).
         LaunchedEffect(playbackNotice) {
             if (playbackNotice != null) {
-                Toast.makeText(context, playbackNotice, Toast.LENGTH_LONG).show()
+                showMessage(playbackNotice.orEmpty())
                 container.player.clearNotice()
             }
+        }
+        SnackbarHost(
+            hostState = appSnackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+        )
+        }
         }
     }
 

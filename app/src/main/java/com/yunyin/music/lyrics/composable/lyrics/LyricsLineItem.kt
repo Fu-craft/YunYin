@@ -3,8 +3,6 @@
 
 package com.yunyin.music.lyrics.composable.lyrics
 
-import androidx.compose.animation.core.EaseInOut
-import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.combinedClickable
@@ -22,6 +20,7 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
+import com.yunyin.music.ui.theme.Motion
 
 @Composable
 fun LyricsLineItem(
@@ -46,19 +45,20 @@ fun LyricsLineItem(
     isInteractive: Boolean = true,
     content: @Composable () -> Unit
 ) {
+    // Focus follows playback, so both properties settle together within one interaction beat.
+    val focusSpec = tween<Float>(
+        durationMillis = Motion.duration(Motion.Base),
+        easing = if (isFocused) Motion.EaseOut else Motion.EaseInOut,
+    )
     val scaleState by animateFloatAsState(
         targetValue = if (isFocused) focusedScale else unfocusedScale,
-        animationSpec = if (isFocused) {
-            tween(durationMillis = 600, easing = LinearOutSlowInEasing)
-        } else {
-            tween(durationMillis = 300, easing = EaseInOut)
-        },
-        label = "scale"
+        animationSpec = focusSpec,
+        label = "lyric-focus-scale",
     )
-
     val alphaState by animateFloatAsState(
         targetValue = if (isFocused) activeAlpha else inactiveAlpha,
-        label = "alpha"
+        animationSpec = focusSpec,
+        label = "lyric-focus-alpha",
     )
 
     Box(
@@ -70,15 +70,17 @@ fun LyricsLineItem(
                 alpha = alphaState
                 transformOrigin = TransformOrigin(if (isRightAligned) 1f else 0f, 1f)
                 this.blendMode = blendMode
-                compositingStrategy = CompositingStrategy.Offscreen
-
                 val radius = blurRadius()
                 if (radius > 0f) {
+                    compositingStrategy = CompositingStrategy.Offscreen
                     renderEffect = BlurEffect(
                         radiusX = radius,
                         radiusY = radius,
-                        edgeTreatment = TileMode.Clamp
+                        edgeTreatment = TileMode.Clamp,
                     )
+                } else {
+                    compositingStrategy = CompositingStrategy.Auto
+                    renderEffect = null
                 }
             }
             .then(

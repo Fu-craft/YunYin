@@ -68,7 +68,7 @@ fun ListeningFootprintScreen(
                     fontFamily = SFPro,
                     fontSize = 28.sp,
                     fontWeight = FontWeight.Bold,
-                    letterSpacing = (-0.6).sp,
+                    letterSpacing = 0.sp,
                     color = AppTheme.palette.label,
                 )
             }
@@ -188,7 +188,7 @@ private fun DayRow(day: StatsBucket, peakMs: Long) {
                 fontFamily = SFPro,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Medium,
-                letterSpacing = (-0.1).sp,
+                letterSpacing = 0.sp,
                 color = AppTheme.palette.label,
             )
             Text(

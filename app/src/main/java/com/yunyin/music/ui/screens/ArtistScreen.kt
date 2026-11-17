@@ -61,11 +61,16 @@ fun ArtistScreen(
     }
 
     // 歌手图先用 AuraPlayer 的来源（Apple Music 艺术家图），拿不到才回落到网易云封面。
-    var artistArtwork by remember(state.id, state.name) { mutableStateOf<String?>(null) }
-    var artistArtworkResolved by remember(state.id, state.name) { mutableStateOf(false) }
+    var artistArtwork by remember(state.id, state.name) {
+        mutableStateOf(AppleMusicArtistLogoManager.peekLoadedArtistArtworkUrl(state.name))
+    }
     LaunchedEffect(state.id, state.name) {
-        artistArtworkResolved = false
-        artistArtwork = runCatching {
+        if (artistArtwork == null) {
+            artistArtwork = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                AppleMusicArtistLogoManager.peekCachedArtistArtworkUrl(context, state.name)
+            }
+        }
+        artistArtwork = artistArtwork ?: runCatching {
             AppleMusicArtistLogoManager.resolveArtistMedia(
                 context = context,
                 artistName = state.name,
@@ -76,7 +81,6 @@ fun ArtistScreen(
         }.onFailure { error ->
             android.util.Log.w("YunYinArtist", "Apple Music artist artwork failed: ${state.name}", error)
         }.getOrNull()?.takeIf { it.isNotBlank() }
-        artistArtworkResolved = true
         android.util.Log.d(
             "YunYinArtist",
             if (artistArtwork != null) {
@@ -86,11 +90,9 @@ fun ArtistScreen(
             },
         )
     }
-    val artworkUrl = when {
-        artistArtwork != null -> artistArtwork.orEmpty()
-        artistArtworkResolved -> state.coverUrl.orEmpty()
-        else -> ""
-    }
+    // NetEase is only the immediate placeholder while the first Apple lookup runs. The resolved
+    // Apple URL is persisted by AuraPlayer's manager, so subsequent visits replace it immediately.
+    val artworkUrl = artistArtwork?.takeIf { it.isNotBlank() } ?: state.coverUrl.orEmpty()
 
     LaunchedEffect(artworkUrl) { prewarmArtworkColor(artworkUrl) }
 

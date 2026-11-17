@@ -50,6 +50,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -280,7 +283,23 @@ fun QueueSheet(
                             }
                             Box(
                                 Modifier
-                                    .size(44.dp)
+                                    .size(48.dp)
+                                    .semantics {
+                                        customActions = buildList {
+                                            if (index > 0) {
+                                                add(CustomAccessibilityAction("上移") {
+                                                    onMove(index, index - 1)
+                                                    true
+                                                })
+                                            }
+                                            if (index < queue.lastIndex) {
+                                                add(CustomAccessibilityAction("下移") {
+                                                    onMove(index, index + 1)
+                                                    true
+                                                })
+                                            }
+                                        }
+                                    }
                                     .pointerInput(queue.size, index) {
                                         detectDragGesturesAfterLongPress(
                                             onDragStart = { dragging = true },

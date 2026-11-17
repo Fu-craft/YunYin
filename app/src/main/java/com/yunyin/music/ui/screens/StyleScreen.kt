@@ -55,8 +55,11 @@ fun StyleScreen(
     var tags by remember { mutableStateOf<List<NeteaseClient.StyleTag>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
+    var retryKey by remember { androidx.compose.runtime.mutableIntStateOf(0) }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(retryKey) {
+        loading = true
+        error = null
         when (val result = runCatching { loadTags() }.getOrNull()) {
             is NetResult.Ok -> tags = result.value
             is NetResult.Err -> error = "曲风加载失败，请重试"
@@ -87,26 +90,22 @@ fun StyleScreen(
             )
             Spacer(Modifier.height(0.dp))
             Box(Modifier.fillMaxWidth()) {
-                Text(
-                    text = "返回",
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .clickable(onClick = onBack)
-                        .padding(vertical = 6.dp, horizontal = 4.dp),
-                    fontFamily = SFPro,
-                    fontSize = 15.sp,
-                    color = AppTheme.palette.accent,
+                com.yunyin.music.ui.components.GlassCircleButton(
+                    icon = com.yunyin.music.ui.icons.SfIcons.ChevronLeft,
+                    contentDescription = "返回",
+                    onClick = onBack,
+                    tint = AppTheme.palette.accent,
+                    modifier = Modifier.align(Alignment.CenterEnd),
                 )
             }
         }
 
         when {
-            loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = AppTheme.palette.accent)
-            }
-            error != null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(error.orEmpty(), fontFamily = SFPro, color = AppTheme.palette.secondaryLabel)
-            }
+            loading -> com.yunyin.music.ui.components.AsyncStatePanel(loading = true)
+            error != null -> com.yunyin.music.ui.components.AsyncStatePanel(
+                message = error,
+                onRetry = { retryKey += 1 },
+            )
             else -> LazyColumn(
                 contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 32.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -166,9 +165,10 @@ private fun StyleTagGroup(
 private fun StyleChip(label: String, onClick: () -> Unit) {
     Box(
         Modifier
+            .height(48.dp)
             .background(AppTheme.palette.secondaryBackground, RoundedCornerShape(50))
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 6.dp),
+            .padding(horizontal = 14.dp, vertical = 14.dp),
     ) {
         Text(
             text = label,

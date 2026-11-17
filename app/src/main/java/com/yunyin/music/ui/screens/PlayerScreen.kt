@@ -283,7 +283,13 @@ fun PlayerScreen(
     LaunchedEffect(showLyrics) {
         if (showLyrics) {
             sheetBlur.snapTo(11f)
-            sheetBlur.animateTo(0f, androidx.compose.animation.core.tween(Motion.Base, easing = Motion.EaseOut))
+            sheetBlur.animateTo(
+                0f,
+                androidx.compose.animation.core.tween(
+                    durationMillis = Motion.duration(Motion.Base),
+                    easing = Motion.EaseOut,
+                ),
+            )
         } else {
             sheetBlur.snapTo(0f)
         }
@@ -297,7 +303,7 @@ fun PlayerScreen(
             lyricsSheet.animateTo(
                 targetValue = 1f,
                 animationSpec = androidx.compose.animation.core.tween(
-                    durationMillis = SLIDE_MS,
+                    durationMillis = Motion.duration(SLIDE_MS),
                     easing = androidx.compose.animation.core.CubicBezierEasing(0.32f, 0.72f, 0f, 1f),
                 ),
             )
@@ -309,7 +315,7 @@ fun PlayerScreen(
             lyricsSheet.animateTo(
                 targetValue = 0f,
                 animationSpec = androidx.compose.animation.core.tween(
-                    durationMillis = SLIDE_OUT_MS,
+                    durationMillis = Motion.duration(SLIDE_OUT_MS),
                     easing = androidx.compose.animation.core.CubicBezierEasing(0.4f, 0f, 0.2f, 1f),
                 ),
             )
@@ -338,7 +344,7 @@ fun PlayerScreen(
         // composed with the previous `transitioning` value, so it never sees the flag flip. This is
         // also the last moment the TextureView is still attached and painting.
         transitionActive = true
-        delay(TRANSITION_SETTLE_MS)
+        delay(Motion.duration(TRANSITION_SETTLE_MS).toLong())
         transitionActive = false
     }
 
@@ -588,8 +594,9 @@ fun PlayerScreen(
         // by painting the backdrop's own field colours over its edges. Computed from the same inputs
         // as FullScreenCoverBackdrop, so the two gradients agree.
         val immersiveEdgeField by produceState<IntArray?>(null, cover, state.current?.id, fullScreenCover) {
-            value = if (!fullScreenCover || cover == null) null else withContext(Dispatchers.Default) {
-                val dominant = runCatching { CoverFieldCache.average(state.current?.id ?: 0L, cover!!) }
+            val loadedCover = cover
+            value = if (!fullScreenCover || loadedCover == null) null else withContext(Dispatchers.Default) {
+                val dominant = runCatching { CoverFieldCache.average(state.current?.id ?: 0L, loadedCover) }
                     .getOrNull()
                     ?: palette.colors.firstOrNull()
                 FullScreenCoverRules.fieldColors(dominant ?: FullScreenCoverRules.FALLBACK_COLOR)
@@ -3459,10 +3466,10 @@ private const val PRESENTATION_FADE_MS = 560
  * How long the lyrics sheet takes to slide in or out. Long enough to read as a sheet, short enough
  * that a tap does not feel queued behind an animation.
  */
-private const val SLIDE_MS = 440
+private const val SLIDE_MS = 300
 
 /** The exit leg is a little shorter: the sheet is leaving, not being read. */
-private const val SLIDE_OUT_MS = 300
+private const val SLIDE_OUT_MS = 210
 
 /**
  * The AGSL warp that distorted the outgoing presentation. It was the signature of an earlier design,
@@ -3567,7 +3574,7 @@ internal fun sharedCoverPausedAlpha(pausedCoverScale: Float): Float {
 val PlayerArtworkCorner = ARTWORK_CORNER
 
 /** How long the backdrop stays frozen after a presentation change begins. */
-private const val TRANSITION_SETTLE_MS = 800L
+private const val TRANSITION_SETTLE_MS = 300
 
 /**
  * Fraction of the chrome's travel that happens *after* it has faded out completely.

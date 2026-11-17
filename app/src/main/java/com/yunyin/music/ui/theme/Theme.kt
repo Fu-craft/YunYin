@@ -43,9 +43,9 @@ object AppTheme {
  */
 @Composable
 fun AmllTheme(
-    // The app is now uniformly light (iOS grouped style: grey page, white cards). Kept as a
-    // parameter so a future appearance switch only has to pass 	rue here.
-    darkTheme: Boolean = false,
+    // One appearance authority for the whole app: Material, semantic palette, system bars and glass
+    // chrome all follow this value. The default follows the Android system appearance.
+    darkTheme: Boolean = isSystemInDarkTheme(),
     /** Optional accent override, e.g. a color sampled from the current artwork. */
     accent: Color? = null,
     content: @Composable () -> Unit,
@@ -67,7 +67,7 @@ fun AmllTheme(
     val scheme = if (darkTheme) {
         darkColorScheme(
             primary = palette.accent,
-            onPrimary = Color.White,
+            onPrimary = palette.onAccent,
             background = palette.background,
             onBackground = palette.label,
             surface = palette.secondaryBackground,
@@ -75,12 +75,12 @@ fun AmllTheme(
             surfaceVariant = palette.tertiaryBackground,
             onSurfaceVariant = palette.secondaryLabel,
             outline = palette.separator,
-            error = AppleColors.systemRed,
+            error = palette.destructive,
         )
     } else {
         lightColorScheme(
             primary = palette.accent,
-            onPrimary = Color.White,
+            onPrimary = palette.onAccent,
             background = palette.background,
             onBackground = palette.label,
             surface = palette.secondaryBackground,
@@ -88,15 +88,17 @@ fun AmllTheme(
             surfaceVariant = palette.tertiaryBackground,
             onSurfaceVariant = palette.secondaryLabel,
             outline = palette.separator,
-            error = AppleColors.systemRed,
+            error = palette.destructive,
         )
     }
 
     CompositionLocalProvider(LocalPalette provides palette) {
-        MaterialTheme(
-            colorScheme = scheme,
-            typography = appleTypography(),
-            content = content,
-        )
+        com.itos.coui.theme.CouiTheme(darkTheme = darkTheme) {
+            MaterialTheme(
+                colorScheme = scheme,
+                typography = appleTypography(),
+                content = content,
+            )
+        }
     }
 }

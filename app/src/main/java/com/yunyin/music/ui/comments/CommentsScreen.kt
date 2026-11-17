@@ -8,6 +8,8 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -279,6 +281,7 @@ private fun CommentsSegmentedControl(
             .height(44.dp)
             .clip(ContinuousRoundedRectangle(AppleShapes.pill))
             .background(AppTheme.palette.secondaryBackground)
+            .selectableGroup()
             .padding(4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -309,9 +312,11 @@ private fun Segment(
             .fillMaxHeight()
             .clip(ContinuousRoundedRectangle(AppleShapes.pill))
             .background(if (selected) AppTheme.palette.tertiaryBackground else Color.Transparent)
-            .clickable(
+            .selectable(
+                selected = selected,
                 indication = rememberControlRipple(bounded = true),
                 interactionSource = null,
+                role = androidx.compose.ui.semantics.Role.Tab,
                 onClick = onClick,
             ),
         contentAlignment = Alignment.Center,

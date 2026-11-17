@@ -511,7 +511,7 @@ internal fun CoverField(
                         scaleX = 1.5f
                         scaleY = 1.5f
                     }
-                    .blur(56.dp),
+                    .blur(20.dp),
             )
         } else {
             Box(Modifier.matchParentSize().background(AppTheme.palette.secondaryBackground))

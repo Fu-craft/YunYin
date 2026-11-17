@@ -14,7 +14,7 @@ import com.itos.coui.dialog.CouiDialogActionStyle
 import com.itos.coui.dialog.CouiDialogPlacement
 import com.itos.coui.dialog.Dialog as CouiDialog
 import com.itos.coui.theme.CouiTheme
-import com.yunyin.music.ui.style.CurrentUiStyle
+import com.yunyin.music.ui.style.LocalUiStyle
 import com.yunyin.music.ui.style.UiStyle
 import com.yunyin.music.ui.theme.AppTheme
 
@@ -38,7 +38,7 @@ fun YunYinConfirmDialog(
     /** true 时确认按钮按"危险操作"着色(删除、清空)。 */
     danger: Boolean = true,
 ) {
-    if (CurrentUiStyle.value == UiStyle.Coui) {
+    if (LocalUiStyle.current == UiStyle.Coui) {
         val scheme = CouiTheme.colorScheme
         val accent = if (danger) scheme.accent else scheme.accent
         CouiDialog(

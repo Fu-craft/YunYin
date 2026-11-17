@@ -22,6 +22,21 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.round
 
+private fun placementSpec(
+    isFirstFrame: Boolean,
+    isManualScrolling: Boolean,
+    stiffness: Float,
+): androidx.compose.animation.core.FiniteAnimationSpec<IntOffset> =
+    if (
+        isFirstFrame ||
+        isManualScrolling ||
+        !runCatching { android.animation.ValueAnimator.areAnimatorsEnabled() }.getOrDefault(true)
+    ) {
+        snap()
+    } else {
+        spring(dampingRatio = 0.95f, stiffness = stiffness.coerceAtLeast(220f))
+    }
+
 class SpringPlacementModifierNode(
     var lookaheadScope: LookaheadScope,
     var itemKey: Any,
@@ -40,7 +55,7 @@ class SpringPlacementModifierNode(
         val target = with(lookaheadScope) {
             lookaheadScopeCoordinates.localLookaheadPositionOf(lookaheadCoordinates).round()
         }
-        -offsetAnimation.updateTarget(target, coroutineScope, if (isFirstFrame || isManualScrolling) snap() else spring(dampingRatio = 0.95f, stiffness = stiffness))
+        -offsetAnimation.updateTarget(target, coroutineScope, placementSpec(isFirstFrame, isManualScrolling, stiffness))
         return !offsetAnimation.isIdle
     }
 
@@ -59,7 +74,7 @@ class SpringPlacementModifierNode(
                 val animatedOffset = offsetAnimation.updateTarget(
                     target,
                     coroutineScope,
-                    if (isFirstFrame || isManualScrolling) snap() else spring(dampingRatio = 0.95f, stiffness = stiffness)
+                    placementSpec(isFirstFrame, isManualScrolling, stiffness)
                 )
 
                 isFirstFrame = false

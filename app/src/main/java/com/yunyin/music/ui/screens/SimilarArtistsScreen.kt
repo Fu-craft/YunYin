@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -51,8 +52,11 @@ fun SimilarArtistsScreen(
     var artists by remember { mutableStateOf<List<ArtistInfo>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
+    var retryKey by remember { androidx.compose.runtime.mutableIntStateOf(0) }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(retryKey) {
+        loading = true
+        error = null
         when (val result = runCatching { loadArtists() }.getOrNull()) {
             is NetResult.Ok -> artists = result.value
             is NetResult.Err -> error = result.message
@@ -81,26 +85,22 @@ fun SimilarArtistsScreen(
                 color = AppTheme.palette.label,
             )
             Box(Modifier.fillMaxWidth()) {
-                Text(
-                    text = "返回",
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .clickable(onClick = onBack)
-                        .padding(vertical = 6.dp, horizontal = 4.dp),
-                    fontFamily = SFPro,
-                    fontSize = 15.sp,
-                    color = AppTheme.palette.accent,
+                com.yunyin.music.ui.components.GlassCircleButton(
+                    icon = com.yunyin.music.ui.icons.SfIcons.ChevronLeft,
+                    contentDescription = "返回",
+                    onClick = onBack,
+                    tint = AppTheme.palette.accent,
+                    modifier = Modifier.align(Alignment.CenterEnd),
                 )
             }
         }
 
         when {
-            loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = AppTheme.palette.accent)
-            }
-            error != null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(error.orEmpty(), fontFamily = SFPro, color = AppTheme.palette.secondaryLabel)
-            }
+            loading -> com.yunyin.music.ui.components.AsyncStatePanel(loading = true)
+            error != null -> com.yunyin.music.ui.components.AsyncStatePanel(
+                message = error,
+                onRetry = { retryKey += 1 },
+            )
             artists.isEmpty() -> Box(
                 Modifier.fillMaxSize().enterOnceRise(),
                 contentAlignment = Alignment.Center,

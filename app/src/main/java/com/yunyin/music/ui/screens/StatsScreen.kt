@@ -5,6 +5,8 @@ package com.yunyin.music.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -130,7 +132,7 @@ fun StatsScreen(
                     fontFamily = SFPro,
                     fontSize = 32.sp,
                     fontWeight = FontWeight.Bold,
-                    letterSpacing = (-0.8).sp,
+                    letterSpacing = 0.sp,
                     color = AppTheme.palette.label,
                 )
                 Spacer(Modifier.weight(1f))
@@ -186,7 +188,7 @@ fun StatsScreen(
                     fontFamily = SFPro,
                     fontSize = 30.sp,
                     fontWeight = FontWeight.Bold,
-                    letterSpacing = (-0.5).sp,
+                    letterSpacing = 0.sp,
                     color = AppTheme.palette.label,
                 )
 
@@ -292,6 +294,7 @@ private fun RangeSegments(selected: StatsRange, onSelect: (StatsRange) -> Unit) 
             .fillMaxWidth()
             .clip(CircleShape)
             .background(AppTheme.palette.tertiaryBackground)
+            .selectableGroup()
             .padding(3.dp),
         horizontalArrangement = Arrangement.spacedBy(0.dp),
     ) {
@@ -302,8 +305,12 @@ private fun RangeSegments(selected: StatsRange, onSelect: (StatsRange) -> Unit) 
                     .weight(1f)
                     .clip(CircleShape)
                     .background(if (active) AppTheme.palette.secondaryBackground else androidx.compose.ui.graphics.Color.Transparent)
-                    .clickable { onSelect(range) }
-                    .padding(vertical = 7.dp),
+                    .selectable(
+                        selected = active,
+                        role = androidx.compose.ui.semantics.Role.Tab,
+                        onClick = { onSelect(range) },
+                    )
+                    .padding(vertical = 14.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(

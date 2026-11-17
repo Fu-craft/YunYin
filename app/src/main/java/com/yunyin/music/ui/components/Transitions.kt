@@ -42,9 +42,11 @@ fun <T> CrossfadeContent(
         targetState = targetState,
         modifier = modifier,
         transitionSpec = {
+            val enterMs = Motion.duration(durationMillis)
+            val exitMs = Motion.duration((durationMillis - 60).coerceAtLeast(1))
             (
-                fadeIn(tween(durationMillis, easing = Motion.EaseOut)) togetherWith
-                    fadeOut(tween((durationMillis - 60).coerceAtLeast(1), easing = Motion.EaseOut))
+                fadeIn(tween(enterMs, easing = Motion.EaseOut)) togetherWith
+                    fadeOut(tween(exitMs, easing = Motion.EaseOut))
                 ) using null
         },
         label = label,

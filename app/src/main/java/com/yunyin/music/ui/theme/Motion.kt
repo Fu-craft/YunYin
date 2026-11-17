@@ -136,11 +136,11 @@ object Motion {
      */
     const val PressDuration = 160
 
-    /** Small popovers, chips, glyph and label swaps: the calmer 3.41.4 tempo (was 200). */
-    const val SmallDuration = 260
+    /** Small popovers, chips, glyph and label swaps. */
+    const val SmallDuration = 180
 
-    /** Content cross-fades: phase changes, lyric documents, titles (was 220). */
-    const val CrossfadeDuration = 280
+    /** Content cross-fades: phase changes, lyric documents, titles. */
+    const val CrossfadeDuration = 220
 
     /**
      * Tab switches. Faster than a content cross-fade on purpose: switching tabs is a high-frequency
@@ -149,14 +149,14 @@ object Motion {
      */
     const val TabCrossfadeDuration = 160
 
-    /** Scrims and simple overlay fades (was 200 in sheets, 320 on the cover overlay). */
-    const val ScrimDuration = 360
+    /** Scrims and simple overlay fades. */
+    const val ScrimDuration = 200
 
-    /** List-item appearance when paging appends rows (was 260). */
-    const val ItemAppearDuration = 320
+    /** List-item appearance when paging appends rows. */
+    const val ItemAppearDuration = 180
 
-    /** Sheets and drawers: modals are allowed 200-500ms (was 320 / 260). */
-    const val SheetEnterDuration = 420
+    /** Sheets and drawers: fast enough to feel immediate, long enough to preserve spatial continuity. */
+    const val SheetEnterDuration = 300
 
     /**
      * Exit is deliberately faster than entry — the user has already decided to leave, so the sheet
@@ -168,13 +168,9 @@ object Motion {
      */
     const val SheetExitDuration = SheetEnterDuration * 7 / 10
 
-    /**
-     * Pushed subpages (资料库 subpages, 本地音乐, 下载中心): the same 420/340 tempo as sheets because a
-     * full-screen page is a modal-scale surface. Enter is ease-out so the page arrives fast and settles;
-     * exit is shorter because the user has already decided to leave.
-     */
-    const val PageEnterDuration = 420
-    const val PageExitDuration = 340
+    /** Pushed subpages: entrance preserves direction; exit is deliberately faster. */
+    const val PageEnterDuration = 280
+    const val PageExitDuration = 220
 
     /** Outgoing page parallax spec (kept as a token; applied where a shared host can scale the old page). */
     const val PageParallaxScale = 0.98f

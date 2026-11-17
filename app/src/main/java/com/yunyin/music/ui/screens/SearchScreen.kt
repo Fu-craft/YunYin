@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -65,6 +66,7 @@ import com.yunyin.music.ui.components.rememberControlRipple
 import com.yunyin.music.ui.components.rememberGlassTopBarBackdrop
 import com.yunyin.music.ui.icons.SfIcons
 import com.yunyin.music.ui.theme.AppleShapes
+import com.yunyin.music.ui.theme.AppLayout
 import com.yunyin.music.ui.theme.AppTheme
 import com.yunyin.music.ui.theme.SFPro
 
@@ -227,7 +229,7 @@ fun SearchScreen(
                             // Append failure: the rows above stay; only the footer turns into a retry.
                             item("load-more-error") {
                                 Column(
-                                    Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp),
+                                    Modifier.fillMaxWidth().padding(horizontal = AppLayout.pageGutter, vertical = 16.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     verticalArrangement = Arrangement.spacedBy(8.dp),
                                 ) {
@@ -246,8 +248,9 @@ fun SearchScreen(
                                         modifier = Modifier
                                             .clip(ContinuousRoundedRectangle(AppleShapes.pill))
                                             .background(AppTheme.palette.secondaryBackground)
+                                            .heightIn(min = AppLayout.minTouchTarget)
                                             .clickable { onLoadMore() }
-                                            .padding(horizontal = 18.dp, vertical = 9.dp),
+                                            .padding(horizontal = 18.dp, vertical = 14.dp),
                                     )
                                 }
                             }
@@ -295,7 +298,7 @@ fun SearchScreen(
                             items(suggestions.artists, key = { "sg-artist-${it.id}" }) { artist ->
                                 Row(
                                     Modifier.fillMaxWidth().clickable { dismissForNavigation { onSuggestionArtist(artist.id, artist.name) } }
-                                        .padding(horizontal = 20.dp, vertical = 12.dp),
+                                        .padding(horizontal = AppLayout.pageGutter, vertical = 12.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Icon(SfIcons.MagnifyingGlass, null, tint = AppTheme.palette.tertiaryLabel, modifier = Modifier.size(16.dp))
@@ -307,7 +310,7 @@ fun SearchScreen(
                             items(suggestions.albums, key = { "sg-album-${it.id}" }) { album ->
                                 Row(
                                     Modifier.fillMaxWidth().clickable { dismissForNavigation { onSuggestionAlbum(album.id, album.name) } }
-                                        .padding(horizontal = 20.dp, vertical = 12.dp),
+                                        .padding(horizontal = AppLayout.pageGutter, vertical = 12.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Icon(SfIcons.ListBullet, null, tint = AppTheme.palette.tertiaryLabel, modifier = Modifier.size(16.dp))
@@ -321,14 +324,12 @@ fun SearchScreen(
                         if (state.history.isNotEmpty()) {
                             item("history-header") {
                                 Row(
-                                    Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+                                    Modifier.fillMaxWidth().padding(horizontal = AppLayout.pageGutter, vertical = 8.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Text(
                                         "最近搜索",
-                                        fontFamily = SFPro,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 21.sp,
+                                        style = androidx.compose.material3.MaterialTheme.typography.headlineMedium,
                                         color = AppTheme.palette.label,
                                         modifier = Modifier.weight(1f),
                                     )
@@ -339,7 +340,7 @@ fun SearchScreen(
                                     Modifier
                                         .fillMaxWidth()
                                         .clickable { onSubmit(keyword) }
-                                        .padding(horizontal = 20.dp, vertical = 2.dp),
+                                        .padding(horizontal = AppLayout.pageGutter, vertical = 2.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Icon(
@@ -385,7 +386,7 @@ fun SearchScreen(
                                 Modifier
                                     .fillMaxWidth()
                                     .clickable(onClick = onOpenStyles)
-                                    .padding(horizontal = 20.dp, vertical = 14.dp),
+                                    .padding(horizontal = AppLayout.pageGutter, vertical = 14.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Text(
@@ -412,7 +413,7 @@ fun SearchScreen(
                                     Modifier
                                         .fillMaxWidth()
                                         .clickable { onSubmit(keyword) }
-                                        .padding(horizontal = 20.dp, vertical = 12.dp),
+                                        .padding(horizontal = AppLayout.pageGutter, vertical = 12.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Icon(

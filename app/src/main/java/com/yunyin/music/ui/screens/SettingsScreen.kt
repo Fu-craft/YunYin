@@ -304,7 +304,7 @@ fun SettingsScreen(
             headline1 = baseTextStyles.headline1.copy(
                 fontSize = 16.sp,
                 lineHeight = 22.sp,
-                letterSpacing = (-0.1).sp,
+                letterSpacing = 0.sp,
             ),
             body2 = baseTextStyles.body2.copy(
                 fontSize = 12.5.sp,
@@ -1369,10 +1369,7 @@ private fun SettingsPageList(
                 modifier = Modifier.padding(start = TextColumn, top = 4.dp, bottom = 4.dp),
                 fontFamily = SFPro,
                 fontWeight = FontWeight.Bold,
-                // 32 sp Bold, −0.6 tracking: large sizes need negative tracking or the glyphs drift
-                // apart at CJK spacing.
-                fontSize = 32.sp,
-                letterSpacing = (-0.6).sp,
+                style = androidx.compose.material3.MaterialTheme.typography.displayLarge,
                 color = MiuixTheme.colorScheme.onBackground,
             )
         }

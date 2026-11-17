@@ -50,7 +50,8 @@ object AppleMusicArtistLogoManager {
     private val STOREFRONTS = listOf("cn", "us")
     private const val MAX_CANDIDATES = 3
     internal const val DEFAULT_MAX_WIDTH_PX = 1200
-    internal const val DEFAULT_MAX_ARTWORK_PX = 1200
+    // 768px is sufficient for the phone hero and substantially faster than the original 1200px asset.
+    internal const val DEFAULT_MAX_ARTWORK_PX = 768
     private const val NONE_TTL_MS = 7L * 24 * 3600 * 1000
     private const val FAIL_TTL_MS = 30L * 60 * 1000
     // v2 invalidates FAIL/NONE entries written before the Apple Music artist source was wired correctly.
@@ -83,6 +84,25 @@ object AppleMusicArtistLogoManager {
         val key = normalizeArtistKey(artistName) ?: return null
         val file = motionCacheFile(context.applicationContext, key)
         return file.takeIf { it.isFile && it.length() > 0L }?.absolutePath
+    }
+
+    /** Main-thread-safe fast path: reads only the already-loaded in-memory index. */
+    fun peekLoadedArtistArtworkUrl(artistName: String): String? =
+        cachedArtworkUrl(artistName)
+
+    /** Disk-cache lookup for cold starts. Call from an IO dispatcher; it never performs network IO. */
+    fun peekCachedArtistArtworkUrl(context: Context, artistName: String): String? {
+        ensureIndexLoadedSync(context.applicationContext)
+        return cachedArtworkUrl(artistName)
+    }
+
+    private fun cachedArtworkUrl(artistName: String): String? {
+        for (candidate in artistNameCandidates(artistName)) {
+            val key = AppleMusicMotionCoverManager.norm(candidate)
+            val entry = indexCache[key] ?: continue
+            if (entry.status == "OK") return entry.assets.artworkUrl?.takeIf { it.isNotBlank() }
+        }
+        return null
     }
 
     suspend fun resolveArtistLogoUrl(context: Context, artistName: String): String? =

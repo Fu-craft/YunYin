@@ -1,18 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 云音 / YunYin contributors
 //
-// AuraPlayer 移植层的「运行时替身」。
+// AuraPlayer 移植层的运行时替身。
 //
-// AuraCatalogDetails.kt / AuraLibraryPages.kt 是从 AuraPlayer 逐行拷来的原件，只改了 package 与
-// 内部 import。它们引用的数据模型、设计 token、布局对象、动作总线都属于 AuraPlayer 自己的运行时，
-// 本文件提供同名同签名的替身，让原件能原样编译；真正的数据由下层的适配器（ArtistScreen）填充。
+// AuraCatalogDetails.kt / AuraLibraryPages.kt / AuraAppleMusic*.kt 是从 AuraPlayer 逐行拷来的原件，
+// 只改了 package 与内部 import。它们引用的数据模型、设计 token、布局对象、动作总线属于 AuraPlayer
+// 自己的运行时，本文件给出同名同签名的替身，让原件原样编译；数据由 ArtistScreen 适配进来。
 
 package com.yunyin.music.aura
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -26,7 +27,6 @@ import com.yunyin.music.ui.theme.AppTheme
 
 // ------------------------------------------------------------------ 数据模型
 
-/** AuraPlayer 的歌曲模型（字段与原件引用一致）。 */
 data class Song(
     val id: Long = 0L,
     val title: String = "",
@@ -52,7 +52,6 @@ data class Song(
     val key: String get() = if (cloud) "cloud:$id" else id.toString()
 }
 
-/** 集合：专辑 / 艺术家 / 歌单都走这一个类型。 */
 data class MusicCollection(
     val key: String,
     val title: String,
@@ -104,12 +103,6 @@ data class LocalPlaylist(
     val songKeys: List<String> = emptyList(),
 )
 
-data class ResolvedArtistMedia(
-    val logoUrl: String? = null,
-    val artwork: String = "",
-    val motionVideoPath: String? = null,
-)
-
 data class SongActionRequest(
     val song: Song,
     val backdrop: Any? = null,
@@ -122,7 +115,16 @@ data class NowPlayingConfig(
     val artistWordmarkLogo: Boolean = false,
 )
 
+/** 播放历史 + 本地歌单（原件用 model.history.revision / playlists() / savePlaylists()）。 */
+class AuraHistory {
+    val revision: Int = 0
+    fun playlists(): List<LocalPlaylist> = emptyList()
+    fun savePlaylists(list: List<LocalPlaylist>) = Unit
+}
+
 // --------------------------------------------------------------- 设计 token
+
+typealias AuraMonetPalette = com.materialkolor.palettes.CorePalette
 
 data class AuraHeroTokens(
     val heroMixTint: Color = Color.Transparent,
@@ -153,41 +155,8 @@ data class AuraOneUiPalette(
     val subText: Long = 0xFF6B6B6B,
 )
 
-class AuraTone(val tone: Int) {
-    fun tone(level: Int): Int = tone
-}
-
-data class AuraMonetPalette(
-    val accent: Color = Color.Unspecified,
-    val a2: AuraTone = AuraTone(0xFF303030.toInt()),
-)
-
 @Composable
-fun rememberCatalogPlayerThemeTokens(
-    artwork: String = "",
-    config: NowPlayingConfig = NowPlayingConfig(),
-    fallbackDarkSurface: Boolean = false,
-    forceHeroSurface: Boolean = false,
-): AuraHeroTokens {
-    val tint = rememberArtworkColor(artwork)
-    val base = if (tint == Color.Transparent) Color(0xFF2A2A2E) else tint
-    // 页面底色：封面主色压暗（沉浸式肤色），不是固定的白或黑。
-    val surface = Color(
-        red = (base.red * 0.22f).coerceIn(0f, 1f),
-        green = (base.green * 0.20f).coerceIn(0f, 1f),
-        blue = (base.blue * 0.24f).coerceIn(0f, 1f),
-        alpha = 1f,
-    )
-    return AuraHeroTokens(
-        heroMixTint = base,
-        surface = surface,
-        foreground = Color.White,
-        muted = Color.White.copy(alpha = 0.72f),
-        accent = base,
-        onAccent = Color.Black,
-        cardFill = Color.White.copy(alpha = 0.14f),
-    )
-}
+fun rememberActiveOneUiPalette(): AuraOneUiPalette = AuraOneUiPalette()
 
 @Composable
 fun rememberActiveExpressiveScheme(): AuraExpressiveScheme {
@@ -201,10 +170,49 @@ fun rememberActiveExpressiveScheme(): AuraExpressiveScheme {
 }
 
 @Composable
-fun rememberActiveOneUiPalette(): AuraOneUiPalette = AuraOneUiPalette()
+fun rememberPlayerMonetPalette(artwork: String = ""): AuraMonetPalette {
+    val seed = rememberArtworkSeed(artwork)
+    return androidx.compose.runtime.remember(seed) { com.materialkolor.palettes.CorePalette.of(seed) }
+}
 
+/** AuraPlayer `rememberCatalogPlayerThemeTokens`, using the same CorePalette tone values. */
 @Composable
-fun rememberPlayerMonetPalette(artwork: String = ""): AuraMonetPalette = AuraMonetPalette()
+fun rememberCatalogPlayerThemeTokens(
+    artwork: String = "",
+    config: NowPlayingConfig = NowPlayingConfig(),
+    fallbackDarkSurface: Boolean = false,
+    forceHeroSurface: Boolean = false,
+): AuraHeroTokens {
+    val palette = rememberPlayerMonetPalette(artwork)
+    return androidx.compose.runtime.remember(palette, fallbackDarkSurface, forceHeroSurface) {
+        if (!forceHeroSurface && !fallbackDarkSurface) {
+            val foreground = Color(palette.a1.tone(10))
+            AuraHeroTokens(
+                surface = Color(palette.a2.tone(90)),
+                foreground = foreground,
+                muted = foreground.copy(alpha = 0.66f),
+                accent = Color(palette.a1.tone(25)),
+                onAccent = Color.White,
+                cardFill = foreground.copy(alpha = 0.10f),
+                heroMixTint = Color(palette.a1.tone(82)),
+            )
+        } else {
+            AuraHeroTokens(
+                surface = Color(palette.a2.tone(14)),
+                foreground = Color.White,
+                muted = Color.White.copy(alpha = 0.70f),
+                accent = Color(palette.a1.tone(80)),
+                onAccent = Color(palette.n1.tone(12)),
+                cardFill = Color.White.copy(alpha = 0.11f),
+                heroMixTint = androidx.compose.ui.graphics.lerp(
+                    Color(palette.a1.tone(30)),
+                    Color(palette.a3.tone(24)),
+                    0.35f,
+                ),
+            )
+        }
+    }
+}
 
 // ------------------------------------------------------------------ 布局/风格
 
@@ -226,12 +234,17 @@ val LocalToolbarCollapsed = staticCompositionLocalOf { 0f }
 val LocalToolbarBackdrop = staticCompositionLocalOf<CouiBackdrop?> { null }
 val LocalAuraCouiBackdrop = staticCompositionLocalOf<CouiBackdrop?> { null }
 
+/** coui 的背景类型直接用它们库里的。 */
+typealias CouiBackdrop = com.itos.coui.backdrop.CouiBackdrop
+
 class SongActions {
     fun openActions(request: SongActionRequest) = Unit
     operator fun invoke(request: SongActionRequest) = openActions(request)
 }
 
 val LocalSongActions = staticCompositionLocalOf { SongActions() }
+
+fun openSongActions(request: SongActionRequest) = Unit
 
 fun pageContentModifier(): Modifier = Modifier
 
@@ -243,8 +256,9 @@ object I18n {
     val language: String = "zh"
 }
 
-
 val AuraMoreHorizontalIcon: ImageVector = SfIcons.Ellipsis
+
+fun appleMusicTabIcon(index: Int): ImageVector = SfIcons.MusicNote
 
 data class AuraMemoryEntry(val key: String)
 
@@ -252,7 +266,6 @@ fun findCachedArtworkMemoryEntry(loader: Any?, uri: String): AuraMemoryEntry? = 
 
 // ------------------------------------------------------------------ ViewModel
 
-/** 只是让原件编译的替身：真正的数据由 [com.yunyin.music.ui.screens.ArtistScreen] 注入。 */
 class AuraViewModel(
     songs: List<Song> = emptyList(),
     sortedSongs: List<Song> = emptyList(),
@@ -305,6 +318,10 @@ class AuraViewModel(
 
 // ------------------------------------------------------------- 组件替身（空壳）
 
+object ButtonDefaults {
+    fun buttonColorsPrimary(): Any = Any()
+}
+
 @Composable
 fun EmptyState(
     title: String,
@@ -345,13 +362,10 @@ fun GlassToolbarIconButton(
     description: String = "",
     backdrop: Any? = null,
     collapsedFraction: Float = 1f,
-    containerPadding: androidx.compose.foundation.layout.PaddingValues = androidx.compose.foundation.layout.PaddingValues(0.dp),
+    containerPadding: PaddingValues = PaddingValues(0.dp),
     surfaceAlpha: Float = 0.24f,
     onClick: () -> Unit = {},
 ) = Unit
-
-@Composable
-fun GlassToolbarIconButton(icon: ImageVector, description: String, onClick: () -> Unit) = Unit
 
 @Composable
 fun MaterialExpressiveButton(
@@ -371,8 +385,7 @@ fun OneUiButton(
 fun SeamlessCard(
     modifier: Modifier = Modifier,
     cornerRadius: androidx.compose.ui.unit.Dp = 22.dp,
-    insideMargin: androidx.compose.foundation.layout.PaddingValues =
-        androidx.compose.foundation.layout.PaddingValues(16.dp),
+    insideMargin: PaddingValues = PaddingValues(16.dp),
     content: @Composable () -> Unit = {},
 ) = Unit
 
@@ -404,33 +417,6 @@ fun AuraTextField(
 fun Preference(title: String, onClick: () -> Unit) = Unit
 
 @Composable
-fun CatalogNowPlayingBackground(
-    artwork: String = "",
-    config: NowPlayingConfig = NowPlayingConfig(),
-    fallbackDarkSurface: Boolean = false,
-    forceHeroSurface: Boolean = false,
-    modifier: Modifier = Modifier,
-) {
-    val tint = rememberArtworkColor(artwork)
-    val base = if (tint == Color.Transparent) Color(0xFF2A2A2E) else tint
-    androidx.compose.foundation.layout.Box(
-        modifier
-            .then(Modifier)
-            .fillMaxSizeCompat()
-            .background(
-                androidx.compose.ui.graphics.Brush.verticalGradient(
-                    0f to base.copy(alpha = 0.55f),
-                    0.55f to base.copy(alpha = 0.22f),
-                    1f to Color(0xFF101013),
-                ),
-            ),
-    )
-}
-
-/** `fillMaxSize` 的小包装（避免在替身里引入整包 layout import）。 */
-private fun Modifier.fillMaxSizeCompat(): Modifier = this.fillMaxSize()
-
-@Composable
 fun AnimatedMotionCoverVideo(
     videoPath: String?,
     playing: Boolean = false,
@@ -438,33 +424,100 @@ fun AnimatedMotionCoverVideo(
     modifier: Modifier = Modifier,
 ) = Unit
 
-object AppleMusicMotionCoverManager {
-    fun peekCachedFile(context: android.content.Context, song: Song): java.io.File? = null
-    fun resolve(
-        context: android.content.Context,
-        song: Song,
-        activePlayingPath: String? = null,
-    ): java.io.File? = null
+/** 页面背景：封面主色 → 深底 的竖向渐变（AuraPlayer 的沉浸式背景）。 */
+@Composable
+fun CatalogNowPlayingBackground(
+    artwork: String = "",
+    config: NowPlayingConfig = NowPlayingConfig(),
+    fallbackDarkSurface: Boolean = false,
+    forceHeroSurface: Boolean = false,
+    modifier: Modifier = Modifier,
+) {
+    val tokens = rememberCatalogPlayerThemeTokens(
+        artwork = artwork,
+        config = config,
+        fallbackDarkSurface = fallbackDarkSurface,
+        forceHeroSurface = forceHeroSurface,
+    )
+    androidx.compose.foundation.layout.Box(modifier.fillMaxSize().background(tokens.surface))
 }
 
-object AppleMusicArtistLogoManager {
-    fun peekCachedArtistMotionPath(context: android.content.Context, artistName: String): String? = null
-    fun resolveArtistMedia(
-        context: android.content.Context,
-        artistName: String,
-        needLogo: Boolean = false,
-        needArtwork: Boolean = false,
-        needMotionVideo: Boolean = false,
-        activePlayingPath: String? = null,
-        activePlayingVideoPath: String? = null,
-    ): ResolvedArtistMedia = ResolvedArtistMedia()
+// ------------------------------------------------------- 封面取色（背景 / 前景）
+
+/** 由 ArtistScreen 注入：复用 UI 已经下载并缓存好的封面位图，避免为取色再下一次网络。 */
+object AuraColorSource {
+    var loadBitmap: (suspend (String, Int) -> android.graphics.Bitmap?)? = null
 }
 
-fun appleMusicTabIcon(index: Int): ImageVector = SfIcons.MusicNote
+private const val DEFAULT_ARTWORK_SEED = 0xFF6750A4.toInt()
+private const val ARTWORK_SEED_CACHE_LIMIT = 512
+private val artworkSeedCache = LinkedHashMap<String, Int>(64, 0.75f, true)
 
+/** AuraPlayer's exact 64x64 sampling + Celebi quantizer + Material score seed selection. */
+private fun coverMonetSeed(bitmap: android.graphics.Bitmap?): Int {
+    if (bitmap == null || bitmap.width <= 0 || bitmap.height <= 0) return DEFAULT_ARTWORK_SEED
+    val pixels = ArrayList<Int>(4096)
+    for (y in 0 until 64) for (x in 0 until 64) {
+        val pixel = bitmap.getPixel(x * bitmap.width / 64, y * bitmap.height / 64)
+        if (android.graphics.Color.alpha(pixel) >= 128) pixels.add(pixel or 0xFF000000.toInt())
+    }
+    if (pixels.isEmpty()) return DEFAULT_ARTWORK_SEED
+    return com.materialkolor.score.Score.score(
+        com.materialkolor.quantize.QuantizerCelebi.quantize(pixels.toIntArray(), 128),
+        1,
+        DEFAULT_ARTWORK_SEED,
+        true,
+    ).firstOrNull() ?: DEFAULT_ARTWORK_SEED
+}
 
+private fun cachedArtworkSeed(url: String): Int? = synchronized(artworkSeedCache) { artworkSeedCache[url] }
 
-/** 原件引用的是 AuraPlayer 自己的 R；这里映射到我们已经拷进项目的同款矢量。 */
+private fun recordArtworkSeed(url: String, seed: Int) {
+    if (url.isBlank()) return
+    synchronized(artworkSeedCache) {
+        artworkSeedCache[url] = seed
+        while (artworkSeedCache.size > ARTWORK_SEED_CACHE_LIMIT) {
+            artworkSeedCache.remove(artworkSeedCache.entries.firstOrNull()?.key ?: break)
+        }
+    }
+}
+
+@Composable
+fun rememberArtworkSeed(url: String): Int {
+    val initial = androidx.compose.runtime.remember(url) { cachedArtworkSeed(url) ?: DEFAULT_ARTWORK_SEED }
+    val state = androidx.compose.runtime.produceState(initialValue = initial, url) {
+        if (url.isBlank()) return@produceState
+        cachedArtworkSeed(url)?.let {
+            value = it
+            return@produceState
+        }
+        val seed = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                val loader = AuraColorSource.loadBitmap
+                coverMonetSeed(loader?.invoke(url, 128))
+            }.getOrDefault(DEFAULT_ARTWORK_SEED)
+        }
+        recordArtworkSeed(url, seed)
+        value = seed
+    }
+    return state.value
+}
+
+/** Compatibility for the vendored page; the value is AuraPlayer's `a1.tone(40)`. */
+@Composable
+fun rememberArtworkColor(url: String): Color = Color(rememberPlayerMonetPalette(url).a1.tone(40))
+
+suspend fun prewarmArtworkColor(url: String) {
+    if (url.isBlank() || cachedArtworkSeed(url) != null) return
+    val loader = AuraColorSource.loadBitmap ?: return
+    val seed = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        runCatching { coverMonetSeed(loader(url, 128)) }.getOrDefault(DEFAULT_ARTWORK_SEED)
+    }
+    recordArtworkSeed(url, seed)
+}
+
+// ---------------------------------------------------------------------- 资源
+
 object R {
     object drawable {
         val ic_player_play = com.yunyin.music.R.drawable.aura_ic_play
@@ -479,20 +532,7 @@ object R {
     }
 }
 
-
-/** 原件里以函数形式调用动作总线的地方；转发到当前 [LocalSongActions]。 */
-fun openSongActions(request: SongActionRequest) = Unit
-
-/** miuix `ButtonDefaults` 的最小替身（原件只用到 buttonColorsPrimary）。 */
-object ButtonDefaults {
-    fun buttonColorsPrimary(): Any = Any()
-}
-
-/** coui 的背景类型直接用它们库里的。 */
-typealias CouiBackdrop = com.itos.coui.backdrop.CouiBackdrop
-
-// miuix 0.9.4（目前唯一可解析的版本）缺少 AuraPlayer 用到的这几个 Material3 风格配色名，
-// 用扩展属性补上，原件里的 `MiuixTheme.colorScheme.xxx` 因此可以原样编译。
+// miuix 0.9.4 缺少 AuraPlayer 用到的这几个 Material3 风格配色名，用扩展属性补上。
 val top.yukonga.miuix.kmp.theme.Colors.surfaceContainerHigh: Color
     get() = surfaceVariant
 
@@ -501,64 +541,3 @@ val top.yukonga.miuix.kmp.theme.Colors.surfaceContainer: Color
 
 val top.yukonga.miuix.kmp.theme.Colors.surfaceContainerLow: Color
     get() = background
-
-
-/** 播放历史 + 本地歌单（原件用 model.history.revision / playlists() / savePlaylists()）。 */
-class AuraHistory {
-    val revision: Int = 0
-    fun playlists(): List<LocalPlaylist> = emptyList()
-    fun savePlaylists(list: List<LocalPlaylist>) = Unit
-}
-
-
-
-
-// ------------------------------------------------------- 封面取色（背景 / 前景）
-
-private val artworkColorCache = java.util.concurrent.ConcurrentHashMap<String, Color>()
-
-/** 用 Coil 取回封面并算主色（AuraPlayer 的 rememberPlayerMonetPalette 做的是同一件事）。 */
-@Composable
-fun rememberArtworkColor(url: String): Color {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val cached = artworkColorCache[url]
-    if (cached != null) return cached
-    val state = androidx.compose.runtime.produceState(
-        initialValue = Color.Transparent,
-        url,
-    ) {
-        if (url.isBlank()) {
-            value = Color.Transparent
-            return@produceState
-        }
-        val color: Color = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            runCatching {
-                // 直接用 OkHttp 取封面字节再解码：Coil3 的 Image 类型在不同版本间不一致，
-                // Palette 只需要一张 Bitmap。
-                val client = okhttp3.OkHttpClient()
-                val request = okhttp3.Request.Builder().url(url).build()
-                client.newCall(request).execute().use { response ->
-                    val bytes = response.body?.bytes()
-                    if (bytes == null || bytes.isEmpty()) {
-                        Color.Transparent
-                    } else {
-                        val bitmap = android.graphics.BitmapFactory
-                            .decodeByteArray(bytes, 0, bytes.size)
-                        if (bitmap == null) {
-                            Color.Transparent
-                        } else {
-                            val palette = androidx.palette.graphics.Palette.from(bitmap).generate()
-                            val swatch = palette.vibrantSwatch
-                                ?: palette.dominantSwatch
-                                ?: palette.mutedSwatch
-                            if (swatch != null) Color(swatch.rgb) else Color.Transparent
-                        }
-                    }
-                }
-            }.getOrDefault(Color.Transparent)
-        }
-        artworkColorCache[url] = color
-        value = color
-    }
-    return state.value
-}

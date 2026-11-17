@@ -35,8 +35,8 @@ android {
         // versionCode must increase for Android to accept a build as an update over a previous one;
         // versionName is what the user sees. Bumped together: a version name change with an unchanged
         // code would install as a downgrade and be rejected.
-        versionCode = 463
-        versionName = "5.09.0"
+        versionCode = 464
+        versionName = "5.10.0"
         vectorDrawables { useSupportLibrary = true }
 
         // The API endpoint is injected at build time rather than baked into the sources, so the
@@ -185,6 +185,8 @@ dependencies {
 
     // Palette extraction for the audio-reactive background colours.
     implementation(libs.palette)
+    // AuraPlayer's exact Monet seed quantizer and CorePalette tone generation.
+    implementation("com.materialkolor:material-color-utilities:5.0.0")
 
     // Word-by-word lyrics: lyrics-core parses TTML/YRC/LRC. The lyrics *view* is vendored
     // under `com.yunyin.music.lyrics` so its focus and auto-scroll behaviour could be adapted;

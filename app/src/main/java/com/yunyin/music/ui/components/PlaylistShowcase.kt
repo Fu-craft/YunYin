@@ -128,7 +128,7 @@ fun PlaylistRibbon(
 ) {
     if (playlists.isEmpty()) return
     val count = playlists.size.coerceAtMost(20)
-    var phase by androidx.compose.runtime.mutableFloatStateOf(0f)
+    var phase by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
     val density = LocalDensity.current
     BoxWithConstraints(
         modifier
@@ -242,7 +242,10 @@ fun PlaylistShowcaseScreen(
         targetValue = sceneColor,
         // A colour cross-fade is morph-like, so it takes the in-out curve; without an explicit easing
         // this ran on LinearEasing and the scene colour arrived with a visible "step" at the end.
-        animationSpec = androidx.compose.animation.core.tween(600, easing = Motion.EaseInOut),
+        animationSpec = androidx.compose.animation.core.tween(
+            Motion.duration(Motion.Base),
+            easing = Motion.EaseInOut,
+        ),
         label = "scene-color",
     )
     // Recorded layer behind the controls: liquid glass needs a backdrop to refract, otherwise the
@@ -272,7 +275,7 @@ fun PlaylistShowcaseScreen(
             contentScale = androidx.compose.ui.layout.ContentScale.Crop,
             modifier = Modifier
                 .matchParentSize()
-                .blur(28.dp)
+                .blur(16.dp)
                 .graphicsLayer { alpha = 0.55f },
         )
         if (tracks.isEmpty()) {
@@ -366,7 +369,7 @@ fun PlaylistShowcaseScreen(
                     fontFamily = SFPro,
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Bold,
-                    letterSpacing = (-0.5).sp,
+                    letterSpacing = 0.sp,
                     textAlign = TextAlign.Center,
                     color = androidx.compose.ui.graphics.Color.White,
                     maxLines = 1,

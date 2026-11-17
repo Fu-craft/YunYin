@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -80,6 +81,7 @@ import com.yunyin.music.ui.components.rememberControlRipple
 import com.yunyin.music.ui.components.rememberGlassTopBarBackdrop
 import com.yunyin.music.ui.icons.SfIcons
 import com.yunyin.music.ui.theme.AppleShapes
+import com.yunyin.music.ui.theme.AppLayout
 import com.yunyin.music.ui.theme.AppTheme
 import com.yunyin.music.ui.theme.Motion
 import com.yunyin.music.ui.theme.SFPro
@@ -294,7 +296,7 @@ private fun PlaylistGrid(
     modifier: Modifier = Modifier,
 ) {
     Column(
-        modifier.fillMaxWidth().padding(horizontal = 20.dp),
+        modifier.fillMaxWidth().padding(horizontal = AppLayout.pageGutter),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         playlists.chunked(columns).forEach { row ->
@@ -325,7 +327,7 @@ private fun TrackGrid(
     modifier: Modifier = Modifier,
 ) {
     Column(
-        modifier.fillMaxWidth().padding(horizontal = 20.dp),
+        modifier.fillMaxWidth().padding(horizontal = AppLayout.pageGutter),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         tracks.chunked(columns).forEach { row ->
@@ -569,6 +571,14 @@ fun HomeScreen(
                     // 继续播放: the fastest possible "resume" entry, and one Apple Music does not
                     // have. Only shown when the player actually holds a track.
                     if (continueTrack != null) {
+                        item("continue-listening") {
+                            ContinueListeningRow(
+                                track = continueTrack,
+                                loader = loader,
+                                onClick = onContinueListening,
+                                modifier = shelfAppear(),
+                            )
+                        }
                     }
 
                     // 每日推荐 leads the page: the one shelf that answers "what should I play?"
@@ -579,14 +589,16 @@ fun HomeScreen(
                             Column(
                                 Modifier
                                     .fillMaxWidth()
-                                    .padding(start = 20.dp, end = 20.dp, top = 6.dp, bottom = 6.dp),
+                                    .padding(
+                                        start = AppLayout.pageGutter,
+                                        end = AppLayout.pageGutter,
+                                        top = 6.dp,
+                                        bottom = 6.dp,
+                                    ),
                             ) {
                                 Text(
                                     text = if (userName.isBlank()) "你好" else "你好，$userName",
-                                    fontFamily = SFPro,
-                                    fontSize = 28.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    letterSpacing = (-0.6).sp,
+                                    style = androidx.compose.material3.MaterialTheme.typography.displayMedium,
                                     color = AppTheme.palette.label,
                                     maxLines = 1,
                                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
@@ -753,6 +765,32 @@ fun HomeScreen(
                     Spacer(Modifier.height(6.dp))
                     // The error block used to be a dead end: a message and no way to ask again.
                     ProminentButton(text = "重新加载", onClick = onRetry)
+                }
+            }
+        } else if (state.error != null) {
+            item("partial-error") {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = AppLayout.pageGutter, vertical = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(
+                        text = "部分内容未加载",
+                        style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                        color = AppTheme.palette.secondaryLabel,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        text = "重试",
+                        style = androidx.compose.material3.MaterialTheme.typography.labelLarge,
+                        color = AppTheme.palette.accent,
+                        modifier = Modifier
+                            .heightIn(min = AppLayout.minTouchTarget)
+                            .clickable(onClick = onRetry)
+                            .padding(horizontal = 12.dp, vertical = 14.dp),
+                    )
                 }
             }
         }
