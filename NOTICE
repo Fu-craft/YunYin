@@ -7,6 +7,7 @@ Full license text: LICENSE.
 
 Third-party components shipped in this application
 ---------------------------------------------------
+AuraPlayer (artist/album content pages, selected MIUIX / Backdrop UI adaptations, Apple Music artist visuals, and MaterialKolor artwork color pipeline; © ColdP and AuraPlayer contributors) — AGPL-3.0-or-later — https://github.com/ColdP/AuraPlayer
 AMLL / apple-music-like-lyrics (Mesh Gradient shader and mesh generator, © AMLL Contributors; ported via QPlayer) — AGPL-3.0-only — https://github.com/amll-dev/applemusic-like-lyrics
 NeriPlayer (background palette, blurred-cover and audio-reactive ideas/adaptations) — GPL-3.0 — https://github.com/cwuom/NeriPlayer
 QPlayer (Pixi Renderer and Classic shaders; © QPlayer contributors) — Apache-2.0 — https://github.com/TIMER-err/QPlayer

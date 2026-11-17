@@ -29,6 +29,10 @@
 > YunYin runs no cloud catalogue. All content comes from a **NeteaseCloudMusicApi** instance you deploy;
 > the repository contains no endpoint and no credential.
 
+## Upstream and porting notice
+
+Parts of YunYin's interface and interaction layer are ported and adapted from [AuraPlayer](https://github.com/ColdP/AuraPlayer), including artist/album content pages, selected MIUIX / Backdrop visual components, Apple Music artist visuals, and the MaterialKolor artwork color pipeline. The port is adapted to YunYin's NetEase data model, player architecture, and AGPL-3.0-only distribution; see [NOTICE](NOTICE) for copyright and license information for the upstream project and bundled components.
+
 ---
 
 ## About
