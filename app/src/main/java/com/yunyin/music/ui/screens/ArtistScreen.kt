@@ -10,6 +10,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.yunyin.music.aura.AuraViewModel
+import com.yunyin.music.aura.CatalogBackground
 import com.yunyin.music.aura.CatalogDetailPage
 import com.yunyin.music.aura.MusicCollection
 import com.yunyin.music.aura.NowPlayingConfig
@@ -82,14 +83,22 @@ fun ArtistScreen(
         )
     }
 
-    CatalogDetailPage(
-        model = model,
-        padding = PaddingValues(0.dp),
-        collection = collection,
-        cloud = null,
-        destinationId = state.id,
-        nowPlayingConfig = NowPlayingConfig(),
-    )
+    androidx.compose.foundation.layout.Box(modifier.fillMaxSize()) {
+        // 他页面自己的背景：从封面主色渐到深底（CatalogBackground → CatalogNowPlayingBackground）。
+        CatalogBackground(
+            collection = collection,
+            nowPlayingConfig = NowPlayingConfig(),
+            immersiveAlbum = true,
+        )
+        CatalogDetailPage(
+            model = model,
+            padding = PaddingValues(0.dp),
+            collection = collection,
+            cloud = null,
+            destinationId = state.id,
+            nowPlayingConfig = NowPlayingConfig(),
+        )
+    }
 }
 
 /** 我们的 [Track] → AuraPlayer 的 `Song`。 */

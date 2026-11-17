@@ -9,6 +9,8 @@
 
 package com.yunyin.music.aura
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
@@ -167,14 +169,23 @@ fun rememberCatalogPlayerThemeTokens(
     fallbackDarkSurface: Boolean = false,
     forceHeroSurface: Boolean = false,
 ): AuraHeroTokens {
-    val palette = AppTheme.palette
+    val tint = rememberArtworkColor(artwork)
+    val base = if (tint == Color.Transparent) Color(0xFF2A2A2E) else tint
+    // 页面底色：封面主色压暗（沉浸式肤色），不是固定的白或黑。
+    val surface = Color(
+        red = (base.red * 0.22f).coerceIn(0f, 1f),
+        green = (base.green * 0.20f).coerceIn(0f, 1f),
+        blue = (base.blue * 0.24f).coerceIn(0f, 1f),
+        alpha = 1f,
+    )
     return AuraHeroTokens(
-        heroMixTint = palette.background,
-        surface = palette.background,
-        foreground = if (forceHeroSurface) Color.White else palette.label,
-        muted = if (forceHeroSurface) Color.White.copy(alpha = 0.72f) else palette.secondaryLabel,
-        accent = palette.accent,
+        heroMixTint = base,
+        surface = surface,
+        foreground = Color.White,
+        muted = Color.White.copy(alpha = 0.72f),
+        accent = base,
         onAccent = Color.Black,
+        cardFill = Color.White.copy(alpha = 0.14f),
     )
 }
 
@@ -399,7 +410,25 @@ fun CatalogNowPlayingBackground(
     fallbackDarkSurface: Boolean = false,
     forceHeroSurface: Boolean = false,
     modifier: Modifier = Modifier,
-) = Unit
+) {
+    val tint = rememberArtworkColor(artwork)
+    val base = if (tint == Color.Transparent) Color(0xFF2A2A2E) else tint
+    androidx.compose.foundation.layout.Box(
+        modifier
+            .then(Modifier)
+            .fillMaxSizeCompat()
+            .background(
+                androidx.compose.ui.graphics.Brush.verticalGradient(
+                    0f to base.copy(alpha = 0.55f),
+                    0.55f to base.copy(alpha = 0.22f),
+                    1f to Color(0xFF101013),
+                ),
+            ),
+    )
+}
+
+/** `fillMaxSize` 的小包装（避免在替身里引入整包 layout import）。 */
+private fun Modifier.fillMaxSizeCompat(): Modifier = this.fillMaxSize()
 
 @Composable
 fun AnimatedMotionCoverVideo(
@@ -479,4 +508,57 @@ class AuraHistory {
     val revision: Int = 0
     fun playlists(): List<LocalPlaylist> = emptyList()
     fun savePlaylists(list: List<LocalPlaylist>) = Unit
+}
+
+
+
+
+// ------------------------------------------------------- 封面取色（背景 / 前景）
+
+private val artworkColorCache = java.util.concurrent.ConcurrentHashMap<String, Color>()
+
+/** 用 Coil 取回封面并算主色（AuraPlayer 的 rememberPlayerMonetPalette 做的是同一件事）。 */
+@Composable
+fun rememberArtworkColor(url: String): Color {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val cached = artworkColorCache[url]
+    if (cached != null) return cached
+    val state = androidx.compose.runtime.produceState(
+        initialValue = Color.Transparent,
+        url,
+    ) {
+        if (url.isBlank()) {
+            value = Color.Transparent
+            return@produceState
+        }
+        val color: Color = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                // 直接用 OkHttp 取封面字节再解码：Coil3 的 Image 类型在不同版本间不一致，
+                // Palette 只需要一张 Bitmap。
+                val client = okhttp3.OkHttpClient()
+                val request = okhttp3.Request.Builder().url(url).build()
+                client.newCall(request).execute().use { response ->
+                    val bytes = response.body?.bytes()
+                    if (bytes == null || bytes.isEmpty()) {
+                        Color.Transparent
+                    } else {
+                        val bitmap = android.graphics.BitmapFactory
+                            .decodeByteArray(bytes, 0, bytes.size)
+                        if (bitmap == null) {
+                            Color.Transparent
+                        } else {
+                            val palette = androidx.palette.graphics.Palette.from(bitmap).generate()
+                            val swatch = palette.vibrantSwatch
+                                ?: palette.dominantSwatch
+                                ?: palette.mutedSwatch
+                            if (swatch != null) Color(swatch.rgb) else Color.Transparent
+                        }
+                    }
+                }
+            }.getOrDefault(Color.Transparent)
+        }
+        artworkColorCache[url] = color
+        value = color
+    }
+    return state.value
 }
