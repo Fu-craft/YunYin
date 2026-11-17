@@ -61,26 +61,34 @@ fun ArtistScreen(
     }
 
     // 歌手图先用 AuraPlayer 的来源（Apple Music 艺术家图），拿不到才回落到网易云封面。
-    var artistArtwork by remember(state.id, state.name) {
+    // Keep the selected source stable while the NetEase detail request replaces the seed name with
+    // its canonical name. Keying this state by name would recreate it during that update and briefly
+    // expose state.coverUrl again, making the Apple image appear to be replaced by NetEase.
+    var artistArtwork by remember(state.id) {
         mutableStateOf(AppleMusicArtistLogoManager.peekLoadedArtistArtworkUrl(state.name))
     }
     LaunchedEffect(state.id, state.name) {
         if (artistArtwork == null) {
-            artistArtwork = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val cached = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 AppleMusicArtistLogoManager.peekCachedArtistArtworkUrl(context, state.name)
             }
+            if (!cached.isNullOrBlank()) artistArtwork = cached
         }
-        artistArtwork = artistArtwork ?: runCatching {
-            AppleMusicArtistLogoManager.resolveArtistMedia(
-                context = context,
-                artistName = state.name,
-                needLogo = false,
-                needArtwork = true,
-                needMotionVideo = false,
-            ).artworkUrl
-        }.onFailure { error ->
-            android.util.Log.w("YunYinArtist", "Apple Music artist artwork failed: ${state.name}", error)
-        }.getOrNull()?.takeIf { it.isNotBlank() }
+        if (artistArtwork == null) {
+            val resolved = runCatching {
+                AppleMusicArtistLogoManager.resolveArtistMedia(
+                    context = context,
+                    artistName = state.name,
+                    needLogo = false,
+                    needArtwork = true,
+                    needMotionVideo = false,
+                ).artworkUrl
+            }.onFailure { error ->
+                android.util.Log.w("YunYinArtist", "Apple Music artist artwork failed: ${state.name}", error)
+            }.getOrNull()?.takeIf { it.isNotBlank() }
+            // A failed lookup must never erase a previously selected Apple Music image.
+            if (resolved != null) artistArtwork = resolved
+        }
         android.util.Log.d(
             "YunYinArtist",
             if (artistArtwork != null) {
