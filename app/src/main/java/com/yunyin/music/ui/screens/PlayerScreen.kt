@@ -614,6 +614,20 @@ fun PlayerScreen(
         // here because this is the scope where the constraints are readable; the stack itself is
         // composed further down, where `maxHeight` is not in scope.
         val artworkAvailableHeight = (maxHeight - systemBarInset).coerceAtLeast(0.dp)
+        // 沉浸封面几何：AuraPlayer 的 computeImmersiveCoverGeometry（函数体未改）。
+        // 在这里算一次，封面高度、标题 Y、进度条 Y 三处共用同一组数值。
+        val immersiveGeometry = if (fullScreenCover) {
+            computeImmersiveCoverGeometry(
+                width = maxWidth,
+                height = maxHeight,
+                statusTop = 0.dp,
+                seekCeiling = maxHeight * 0.74f,
+                titleToSeek = 96.dp,
+                compactWindow = maxHeight < 640.dp,
+            )
+        } else {
+            null
+        }
         // The lyrics area is the whole viewport in portrait, and the viewport minus the system
         // bars in landscape, where the row holding it is inset for them. Kept as a dp magnitude for
         // `lyricTypeScale`.
@@ -1387,8 +1401,10 @@ fun PlayerScreen(
                             // sits below the controls, never between the cover and its title.
                             val artSize = if (fullScreenCover) maxWidth
                             else PlayerArtworkLayoutRules.artworkSize(maxWidth, maxHeight)
+                            // 沉浸封面高度取自 AuraPlayer 的 computeImmersiveCoverGeometry：
                             ArtworkWithGestures(
                                 artSize = artSize,
+                                artHeight = immersiveGeometry?.coverHeight,
                                 track = track,
                                 cover = cover,
                                 loader = loader,
@@ -1404,7 +1420,18 @@ fun PlayerScreen(
                                 // Not gated on `transitioning`: if that flag ever lagged behind, the
                                 // dissolve would vanish for good after a trip to the lyrics page.
                                 soften = fullScreenCover,
-                                corner = if (fullScreenCover) 0.dp else ARTWORK_CORNER,
+                                corner = if (fullScreenCover) {
+                                    // AuraPlayer 的沉浸封面底角：从迷你条圆角插值到 0dp，
+                                    // 歌词态再插值回 lyricsCorner。
+                                    immersiveCoverBottomCornerRadius(
+                                        miniCorner = 0.dp,
+                                        lyricsCorner = 16.dp,
+                                        expansion = 1f,
+                                        lyricsProgress = if (showLyrics) 1f else 0f,
+                                    )
+                                } else {
+                                    ARTWORK_CORNER
+                                },
                                 // The portrait cover is the other half of the same feature: without
                                 // these four the phone layout never built the video layer at all,
                                 // which is why the tablet/landscape branch looked wired while the
@@ -1428,7 +1455,12 @@ fun PlayerScreen(
 
                         Spacer(
                             Modifier.height(
-                                PlayerArtworkLayoutRules.coverTitleGap(artworkAvailableHeight),
+                                if (immersiveGeometry != null) {
+                                    // 标题落在几何算出的 titleY 上（AuraPlayer 的排版）。
+                                    (immersiveGeometry.titleY - immersiveGeometry.coverHeight).coerceAtLeast(12.dp)
+                                } else {
+                                    PlayerArtworkLayoutRules.coverTitleGap(artworkAvailableHeight)
+                                },
                             ),
                         )
 
@@ -1443,7 +1475,15 @@ fun PlayerScreen(
                             onArtistClick = onArtistClick,
                             modifier = Modifier.padding(horizontal = 24.dp),
                         )
-                        Spacer(Modifier.height(18.dp))
+                        Spacer(
+                            Modifier.height(
+                                if (immersiveGeometry != null) {
+                                    (immersiveGeometry.seekY - immersiveGeometry.titleY - 76.dp).coerceAtLeast(8.dp)
+                                } else {
+                                    18.dp
+                                },
+                            ),
+                        )
 
                         PlayerControls(
                             uiStyle = uiStyle,
@@ -1647,6 +1687,8 @@ private fun sampleFieldColor(field: IntArray, fraction: Float): Color {
 @Composable
 private fun ArtworkWithGestures(
     artSize: androidx.compose.ui.unit.Dp,
+    /** 沉浸封面：宽度铺满、高度由 AuraPlayer 的几何算出来；为 null 时保持正方形。 */
+    artHeight: androidx.compose.ui.unit.Dp? = null,
     track: Track?,
     cover: ImageBitmap?,
     loader: ArtworkLoader,
@@ -1804,7 +1846,13 @@ private fun ArtworkWithGestures(
                 // mid-transition.
                 preloaded = cover,
                 modifier = Modifier
-                    .size(artSize)
+                    .then(
+                        if (artHeight != null) {
+                            Modifier.width(artSize).height(artHeight)
+                        } else {
+                            Modifier.size(artSize)
+                        },
+                    )
                     // The other half of the shared cover: switching to the lyrics presentation shrinks
                     // this into the header thumbnail.
                     //
