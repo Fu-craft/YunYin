@@ -62,7 +62,9 @@ fun ArtistScreen(
 
     // 歌手图先用 AuraPlayer 的来源（Apple Music 艺术家图），拿不到才回落到网易云封面。
     var artistArtwork by remember(state.id, state.name) { mutableStateOf<String?>(null) }
+    var artistArtworkResolved by remember(state.id, state.name) { mutableStateOf(false) }
     LaunchedEffect(state.id, state.name) {
+        artistArtworkResolved = false
         artistArtwork = runCatching {
             AppleMusicArtistLogoManager.resolveArtistMedia(
                 context = context,
@@ -71,9 +73,24 @@ fun ArtistScreen(
                 needArtwork = true,
                 needMotionVideo = false,
             ).artworkUrl
+        }.onFailure { error ->
+            android.util.Log.w("YunYinArtist", "Apple Music artist artwork failed: ${state.name}", error)
         }.getOrNull()?.takeIf { it.isNotBlank() }
+        artistArtworkResolved = true
+        android.util.Log.d(
+            "YunYinArtist",
+            if (artistArtwork != null) {
+                "Apple Music artist artwork selected: ${state.name} -> $artistArtwork"
+            } else {
+                "Apple Music artist artwork unavailable; using NetEase fallback: ${state.name}"
+            },
+        )
     }
-    val artworkUrl = artistArtwork?.takeIf { it.isNotBlank() } ?: state.coverUrl.orEmpty()
+    val artworkUrl = when {
+        artistArtwork != null -> artistArtwork.orEmpty()
+        artistArtworkResolved -> state.coverUrl.orEmpty()
+        else -> ""
+    }
 
     LaunchedEffect(artworkUrl) { prewarmArtworkColor(artworkUrl) }
 
