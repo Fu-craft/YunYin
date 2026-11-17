@@ -2248,9 +2248,10 @@ private fun PlayerControls(
         com.yunyin.music.ui.components.GlowPlayerProgress(
             positionProvider = positionProvider,
             durationMs = state.durationMs,
-            accentColor = Color.White,
+            accentColor = AppTheme.palette.accent,
             onSeek = onSeek,
-            trackColor = Color.White.copy(alpha = 0.26f),
+            trackColor = AppTheme.palette.label.copy(alpha = 0.16f),
+            isLightSurface = !AppTheme.palette.isDark,
             modifier = Modifier
                 .padding(horizontal = 24.dp)
                 .height(28.dp),
@@ -2322,6 +2323,9 @@ private fun PlayerControls(
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp)
                 .height(30.dp),
+            accentColor = AppTheme.palette.accent,
+            trackColor = AppTheme.palette.label.copy(alpha = 0.16f),
+            iconColor = AppTheme.palette.label,
         )
 
         Spacer(Modifier.height(14.dp))

@@ -51,6 +51,7 @@ fun VolumeSliderRow(
     modifier: Modifier = Modifier,
     accentColor: Color = Color.White,
     trackColor: Color = Color.White.copy(alpha = 0.26f),
+    iconColor: Color = Color.White,
 ) {
     val context = LocalContext.current
     val manager = remember(context) { context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager }
@@ -79,6 +80,7 @@ fun VolumeSliderRow(
             iconRes = R.drawable.aura_ic_volume_muted,
             description = "减小音量",
             enabled = !fixed,
+            iconColor = iconColor,
             onClick = {
                 val next = (manager.getStreamVolume(AudioManager.STREAM_MUSIC) - 1).coerceAtLeast(0)
                 manager.setStreamVolume(AudioManager.STREAM_MUSIC, next, 0)
@@ -105,6 +107,7 @@ fun VolumeSliderRow(
             iconRes = R.drawable.aura_ic_volume_full,
             description = "增大音量",
             enabled = !fixed,
+            iconColor = iconColor,
             onClick = {
                 val next = (manager.getStreamVolume(AudioManager.STREAM_MUSIC) + 1).coerceAtMost(max)
                 manager.setStreamVolume(AudioManager.STREAM_MUSIC, next, 0)
@@ -119,21 +122,20 @@ private fun VolumeStepButton(
     iconRes: Int,
     description: String,
     enabled: Boolean,
+    iconColor: Color = Color.White,
     onClick: () -> Unit,
 ) {
     Box(
         Modifier
             .size(30.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(Color.White.copy(alpha = 0.12f))
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Image(
             painter = painterResource(iconRes),
             contentDescription = description,
-            colorFilter = ColorFilter.tint(Color.White.copy(alpha = if (enabled) 0.9f else 0.4f)),
-            modifier = Modifier.size(16.dp),
+            colorFilter = ColorFilter.tint(iconColor.copy(alpha = if (enabled) 1f else 0.4f)),
+            modifier = Modifier.size(18.dp),
         )
     }
 }
