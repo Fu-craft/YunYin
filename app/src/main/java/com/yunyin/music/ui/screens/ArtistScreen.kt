@@ -107,13 +107,10 @@ fun ArtistScreen(
                 val heroHeight = (maxWidth / 0.95f).coerceIn(360.dp, 500.dp) * (1.25f * 0.90f)
 
                 Box(Modifier.fillMaxWidth().height(heroHeight)) {
-                    Artwork(
-                        url = state.coverUrl,
-                        loader = loader,
-                        corner = 0.dp,
-                        requestSize = 1080,
-                        placeholderIcon = SfIcons.Person,
+                    com.yunyin.music.ui.components.AuraArtwork(
+                        uri = state.coverUrl.orEmpty(),
                         modifier = Modifier.fillMaxSize(),
+                        cornerRadius = 0.dp,
                     )
                     // 底部渐隐：让名字与按钮压得住图片上。
                     Box(
@@ -226,12 +223,10 @@ fun ArtistScreen(
                         .padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Artwork(
-                        url = latestAlbum.coverUrl,
-                        loader = loader,
-                        corner = 12.dp,
-                        requestSize = 240,
+                    com.yunyin.music.ui.components.AuraArtwork(
+                        uri = latestAlbum.coverUrl.orEmpty(),
                         modifier = Modifier.size(64.dp),
+                        cornerRadius = 12.dp,
                     )
                     Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                         Text(
@@ -288,10 +283,9 @@ fun ArtistScreen(
                 val track = songs[index]
                 AuraSongRow(
                     track = track,
-                    loader = loader,
                     isCurrent = track.id == nowPlayingId,
                     onClick = { onTrackClick(track, index) },
-                    modifier = Modifier.padding(vertical = 1.dp),
+                    modifier = Modifier.padding(horizontal = 12.dp),
                 )
             }
         }
@@ -310,7 +304,6 @@ fun ArtistScreen(
                             title = album.name,
                             subtitle = if (album.trackCount > 0) "${album.trackCount} 首" else "",
                             artUrl = album.coverUrl.orEmpty(),
-                            loader = loader,
                             onClick = { onAlbumClick(album) },
                             modifier = Modifier.weight(1f),
                         )
