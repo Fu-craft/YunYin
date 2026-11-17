@@ -3,6 +3,9 @@
 
 package com.yunyin.music.ui.screens
 
+import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
+import top.yukonga.miuix.kmp.blur.layerBackdrop
+import top.yukonga.miuix.kmp.blur.textureBlur
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -107,10 +110,37 @@ fun ArtistScreen(
                 val heroHeight = (maxWidth / 0.95f).coerceIn(360.dp, 500.dp) * (1.25f * 0.90f)
 
                 Box(Modifier.fillMaxWidth().height(heroHeight)) {
+                    val heroBackdrop = rememberLayerBackdrop { drawContent() }
+                    Box(Modifier.fillMaxSize().layerBackdrop(heroBackdrop)) {
                     com.yunyin.music.ui.components.AuraArtwork(
                         uri = state.coverUrl.orEmpty(),
                         modifier = Modifier.fillMaxSize(),
                         cornerRadius = 0.dp,
+                    )
+                    }
+                    // 头图下缘的纹理模糊（他 473-493 行的 progressiveTextureBlur 位置）：
+                    // 用 miuix 0.9.4 的 textureBlur 采样同一图层，再用渐变把模糊限制在下缘。
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                            .textureBlur(
+                                backdrop = heroBackdrop,
+                                shape = androidx.compose.ui.graphics.RectangleShape,
+                                blurRadius = 3.8f,
+                            )
+                            .drawWithContent {
+                                drawContent()
+                                drawRect(
+                                    brush = Brush.verticalGradient(
+                                        0f to Color.Transparent,
+                                        0.52f to Color.Transparent,
+                                        0.92f to Color.White,
+                                        1f to Color.White,
+                                    ),
+                                    blendMode = BlendMode.DstIn,
+                                )
+                            },
                     )
                     // 底部渐隐：先用 DstIn 把图片本身淡出（他 339-461 行的画法），
                     // 再叠一层到页面底色的过渡（他的 heroMixTint / surface 三段）。
