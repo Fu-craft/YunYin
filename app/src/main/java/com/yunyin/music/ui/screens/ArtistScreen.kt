@@ -139,34 +139,11 @@ fun ArtistScreen(
             }
 
             item("tabs") {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    listOf("歌曲", "专辑").forEachIndexed { index, label ->
-                        val active = contentTab == index
-                        Box(
-                            Modifier
-                                .weight(1f)
-                                .height(38.dp)
-                                .clip(ContinuousRoundedRectangle(AppleShapes.pill))
-                                .background(
-                                    if (active) palette.label.copy(alpha = 0.12f)
-                                    else Color.Transparent,
-                                )
-                                .clickable { contentTab = index },
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                text = label,
-                                fontFamily = SFPro,
-                                fontSize = 14.sp,
-                                fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
-                                color = if (active) palette.label else palette.secondaryLabel,
-                            )
-                        }
-                    }
-                }
+                com.yunyin.music.ui.components.AuraSegmentedTabs(
+                    labels = listOf("歌曲", "专辑"),
+                    selected = contentTab,
+                    onSelect = { contentTab = it },
+                )
             }
 
             if (contentTab == 0) {
@@ -191,12 +168,10 @@ fun ArtistScreen(
                 }
             } else {
                 itemsIndexed(state.hotSongs, key = { index, track -> "hot-${track.id}#$index" }) { index, track ->
-                    CollectionTrackRow(
-                        index = index,
+                    com.yunyin.music.ui.components.AuraSongRow(
                         track = track,
                         loader = loader,
                         isCurrent = track.id == nowPlayingId,
-                        isPlaying = isPlaying && track.id == nowPlayingId,
                         onClick = { onTrackClick(track, index) },
                         modifier = appendedRowAppear(),
                     )
@@ -227,13 +202,11 @@ fun ArtistScreen(
                 }
             } else {
                 itemsIndexed(state.allSongs, key = { index, track -> "all-${track.id}#$index" }) { index, track ->
-                    CollectionTrackRow(
-                        index = index,
+                    com.yunyin.music.ui.components.AuraSongRow(
                         track = track,
                         loader = loader,
                         isCurrent = track.id == nowPlayingId,
-                        isPlaying = isPlaying && track.id == nowPlayingId,
-                        onClick = { onAllTrackClick(track, index) },
+                        onClick = { onTrackClick(track, index) },
                         modifier = appendedRowAppear(),
                     )
                 }
@@ -283,20 +256,24 @@ fun ArtistScreen(
                     }
                 }
             } else {
-                item("albums-rail") {
-                    LazyRow(
-                        state = albumRailState,
-                        contentPadding = PaddingValues(horizontal = 20.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                // AuraPlayer 的专辑区：两列网格（ArtistContentsPage 的 rows.chunked(2)），
+                // 每格是 CollectionTile 的形态——方形封面 + 标题 + 副标题。
+                items(state.albums.chunked(2), key = { pair -> pair.first().id }) { pair ->
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
-                        items(state.albums, key = { it.id }) { album ->
-                            AlbumCard(
-                                album,
-                                loader,
+                        pair.forEach { album ->
+                            com.yunyin.music.ui.components.AuraCollectionTile(
+                                title = album.name,
+                                subtitle = if (album.trackCount > 0) "${album.trackCount} 首" else "",
+                                artUrl = album.coverUrl.orEmpty(),
+                                loader = loader,
                                 onClick = { onAlbumClick(album) },
-                                modifier = appendedRowAppear(),
+                                modifier = Modifier.weight(1f),
                             )
                         }
+                        if (pair.size == 1) Spacer(Modifier.weight(1f))
                     }
                 }
                 item("albums-footer") {
