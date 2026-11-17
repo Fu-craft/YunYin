@@ -9,6 +9,10 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -420,37 +424,65 @@ private fun ArtistHeaderBlock(
     onToggleFollow: (() -> Unit)?,
 ) {
     val palette = AppTheme.palette
-    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Spacer(Modifier.height(8.dp))
-        Artwork(
-            url = state.coverUrl,
-            loader = loader,
-            corner = 64.dp,
-            requestSize = 320,
-            // A singer without artwork is a person, not a note: the default (MusicNote) read as a
-            // broken song row in the middle of an artist page.
-            placeholderIcon = SfIcons.Person,
-            modifier = Modifier.size(128.dp).clip(CircleShape),
-        )
-        Spacer(Modifier.height(12.dp))
-        Text(
-            text = state.name.ifBlank { "歌手" },
-            fontFamily = SFPro,
-            fontWeight = FontWeight.Bold,
-            fontSize = 26.sp,
-            color = palette.label,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-        )
-        val counts = buildList {
-            state.musicSize.takeIf { it > 0 }?.let { add("单曲 $it") }
-            state.albumSize.takeIf { it > 0 }?.let { add("专辑 $it") }
-        }.joinToString("  ·  ")
-        if (counts.isNotBlank()) {
-            Spacer(Modifier.height(4.dp))
-            Text(counts, fontFamily = SFPro, fontSize = 12.sp, color = palette.secondaryLabel)
+    Column(Modifier.fillMaxWidth()) {
+        // 沉浸式歌手头图，几何取自 AuraPlayer 的 artist hero：
+        // 高度 = (屏宽 / 0.95f).coerceIn(360, 500) × 1.125，底部用 DstIn 渐变淡出到页面底色。
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val heroHeight = (maxWidth / 0.95f).coerceIn(360.dp, 500.dp) * (1.25f * 0.90f)
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(heroHeight)
+                    .graphicsLayer {
+                        compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen
+                    }
+                    .drawWithContent {
+                        drawContent()
+                        drawRect(
+                            brush = Brush.verticalGradient(
+                                0f to Color.Black,
+                                0.58f to Color.Black,
+                                0.86f to Color.Black.copy(alpha = 0.36f),
+                                1f to Color.Transparent,
+                            ),
+                            blendMode = BlendMode.DstIn,
+                        )
+                    },
+            ) {
+                Artwork(
+                    url = state.coverUrl,
+                    loader = loader,
+                    corner = 0.dp,
+                    requestSize = 1080,
+                    placeholderIcon = SfIcons.Person,
+                    modifier = Modifier.fillMaxSize(),
+                )
+                Column(Modifier.align(Alignment.BottomStart).padding(horizontal = 20.dp, vertical = 16.dp)) {
+                    Text(
+                        text = state.name.ifBlank { "歌手" },
+                        fontFamily = SFPro,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 30.sp,
+                        color = Color.White,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    val heroCounts = buildList {
+                        state.musicSize.takeIf { it > 0 }?.let { add("单曲 $it") }
+                        state.albumSize.takeIf { it > 0 }?.let { add("专辑 $it") }
+                    }.joinToString("  ·  ")
+                    if (heroCounts.isNotBlank()) {
+                        Text(
+                            text = heroCounts,
+                            fontFamily = SFPro,
+                            fontSize = 13.sp,
+                            color = Color.White.copy(alpha = 0.78f),
+                        )
+                    }
+                }
+            }
         }
+        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         if (state.briefDesc.isNotBlank()) {
             Spacer(Modifier.height(10.dp))
             // The box animates its own height and clips: expanding flips `maxLines` 3 → MAX in one
@@ -527,6 +559,7 @@ private fun ArtistHeaderBlock(
             )
         }
         Spacer(Modifier.height(8.dp))
+        }
     }
 }
 
