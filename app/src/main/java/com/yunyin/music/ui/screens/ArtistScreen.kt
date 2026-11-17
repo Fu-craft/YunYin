@@ -112,7 +112,8 @@ fun ArtistScreen(
                         modifier = Modifier.fillMaxSize(),
                         cornerRadius = 0.dp,
                     )
-                    // 底部渐隐：让名字与按钮压得住图片上。
+                    // 底部渐隐：先用 DstIn 把图片本身淡出（他 339-461 行的画法），
+                    // 再叠一层到页面底色的过渡（他的 heroMixTint / surface 三段）。
                     Box(
                         Modifier
                             .fillMaxSize()
@@ -121,14 +122,27 @@ fun ArtistScreen(
                                 drawContent()
                                 drawRect(
                                     brush = Brush.verticalGradient(
-                                        0f to Color.Black.copy(alpha = 0.10f),
-                                        0.42f to Color.Transparent,
-                                        0.78f to Color.Black.copy(alpha = 0.42f),
-                                        1f to Color.Black.copy(alpha = 0.72f),
+                                        0f to Color.Black,
+                                        0.58f to Color.Black,
+                                        0.88f to Color.Black.copy(alpha = 0.32f),
+                                        1f to Color.Transparent,
                                     ),
-                                    blendMode = BlendMode.SrcOver,
+                                    blendMode = BlendMode.DstIn,
                                 )
                             },
+                    )
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    0f to Color.Transparent,
+                                    0.46f to Color.Transparent,
+                                    0.72f to palette.background.copy(alpha = 0.34f),
+                                    0.96f to palette.background.copy(alpha = 0.74f),
+                                    1f to palette.background.copy(alpha = 0.92f),
+                                ),
+                            ),
                     )
 
                     // 返回
@@ -161,8 +175,8 @@ fun ArtistScreen(
                             text = state.name.ifBlank { "歌手" },
                             fontFamily = SFPro,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 26.sp,
-                            color = Color.White,
+                            fontSize = 24.sp,
+                            color = palette.label,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -170,40 +184,62 @@ fun ArtistScreen(
                         )
                         Spacer(Modifier.height(18.dp))
                         Row(
+                            Modifier.padding(top = 16.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(24.dp),
+                            horizontalArrangement = Arrangement.spacedBy(20.dp),
                         ) {
-                            HeroCircleButton(
-                                icon = SfIcons.MusicNote,
-                                description = "简介",
-                                size = 56.dp,
-                                container = Color.White.copy(alpha = 0.16f),
-                                tint = Color.White,
-                                onClick = {},
-                            )
+                            // 他：IconButton(42dp, CircleShape, heroCardFill) { Text("i") }
                             Box(
                                 Modifier
-                                    .size(84.dp)
+                                    .size(42.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.White.copy(alpha = 0.18f))
+                                    .clickable { },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    text = "i",
+                                    fontFamily = SFPro,
+                                    fontSize = 17.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = palette.label,
+                                )
+                            }
+                            // 他：IconButton(60dp, accent) { Image(ic_player_play, 32dp) }
+                            Box(
+                                Modifier
+                                    .size(60.dp)
                                     .clip(CircleShape)
                                     .background(palette.accent)
                                     .clickable(onClick = onPlayAll),
                                 contentAlignment = Alignment.Center,
                             ) {
-                                Icon(
-                                    imageVector = SfIcons.Play,
-                                    contentDescription = "播放全部",
-                                    tint = Color.Black,
-                                    modifier = Modifier.size(36.dp),
+                                androidx.compose.foundation.Image(
+                                    painter = androidx.compose.ui.res.painterResource(com.yunyin.music.R.drawable.aura_ic_play),
+                                    contentDescription = "播放",
+                                    colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(Color.Black),
+                                    modifier = Modifier.size(32.dp),
                                 )
                             }
-                            HeroCircleButton(
-                                icon = SfIcons.StarFill,
-                                description = if (followed) "已收藏" else "收藏",
-                                size = 56.dp,
-                                container = Color.White.copy(alpha = 0.16f),
-                                tint = if (followed) palette.accent else Color.White,
-                                onClick = { onToggleFollow?.invoke() },
-                            )
+                            // 他：IconButton(42dp) { Image(ic_player_favorite / _on, 24dp) }
+                            Box(
+                                Modifier
+                                    .size(42.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.White.copy(alpha = 0.18f))
+                                    .clickable { onToggleFollow?.invoke() },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                androidx.compose.foundation.Image(
+                                    painter = androidx.compose.ui.res.painterResource(
+                                        if (followed) com.yunyin.music.R.drawable.aura_ic_favorite_on
+                                        else com.yunyin.music.R.drawable.aura_ic_favorite,
+                                    ),
+                                    contentDescription = "收藏艺术家",
+                                    colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(palette.label),
+                                    modifier = Modifier.size(24.dp),
+                                )
+                            }
                         }
                     }
                 }
