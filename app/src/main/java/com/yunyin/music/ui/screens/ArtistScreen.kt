@@ -106,6 +106,8 @@ fun ArtistScreen(
 ) {
     val palette = AppTheme.palette
     var bioExpanded by remember(state.briefDesc) { mutableStateOf(false) }
+    // AuraPlayer 的歌手页是「歌曲 / 专辑」两个 tab（ArtistContentsPage 的 albums 参数）。
+    var contentTab by remember { mutableStateOf(0) }
 
     val listState = rememberLazyListState()
     val albumRailState = rememberLazyListState()
@@ -136,6 +138,38 @@ fun ArtistScreen(
                 )
             }
 
+            item("tabs") {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    listOf("歌曲", "专辑").forEachIndexed { index, label ->
+                        val active = contentTab == index
+                        Box(
+                            Modifier
+                                .weight(1f)
+                                .height(38.dp)
+                                .clip(ContinuousRoundedRectangle(AppleShapes.pill))
+                                .background(
+                                    if (active) palette.label.copy(alpha = 0.12f)
+                                    else Color.Transparent,
+                                )
+                                .clickable { contentTab = index },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = label,
+                                fontFamily = SFPro,
+                                fontSize = 14.sp,
+                                fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+                                color = if (active) palette.label else palette.secondaryLabel,
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (contentTab == 0) {
             item("hot-title") { SectionTitle("热门歌曲") }
             if (state.hotSongs.isEmpty()) {
                 item("hot-state") {
@@ -229,6 +263,7 @@ fun ArtistScreen(
                 }
             }
 
+            } else {
             item("albums-title") { SectionTitle("专辑") }
             if (state.albums.isEmpty()) {
                 item("albums-state") {
@@ -286,6 +321,8 @@ fun ArtistScreen(
                         }
                     }
                 }
+            }
+
             }
 
             item("bottom") { Spacer(Modifier.navigationBarsPadding().height(12.dp)) }
