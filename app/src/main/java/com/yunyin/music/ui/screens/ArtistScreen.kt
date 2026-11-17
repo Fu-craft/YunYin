@@ -3,18 +3,11 @@
 
 package com.yunyin.music.ui.screens
 
-import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -25,66 +18,60 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyItemScope
-import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.kyant.backdrop.Backdrop
-import com.kyant.backdrop.backdrops.layerBackdrop
-import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
 import com.yunyin.music.core.AlbumInfo
 import com.yunyin.music.core.Track
 import com.yunyin.music.data.ArtworkLoader
 import com.yunyin.music.ui.ArtistUiState
+import com.yunyin.music.ui.components.AuraCollectionTile
+import com.yunyin.music.ui.components.AuraSongRow
 import com.yunyin.music.ui.components.Artwork
-import com.yunyin.music.ui.components.CrossfadeContent
-import com.yunyin.music.ui.components.DefaultTopBarTintIntensity
-import com.yunyin.music.ui.components.EmptyState
-import com.yunyin.music.ui.components.GlassTopBar
-import com.yunyin.music.ui.components.PagingAutoLoader
-import com.yunyin.music.ui.components.PagingAutoLoaderAtFooter
-import com.yunyin.music.ui.components.glassTopBarTopPadding
-import com.yunyin.music.ui.components.liquidGlassControl
-import com.yunyin.music.ui.components.rememberControlRipple
-import com.yunyin.music.ui.components.rememberGlassTopBarBackdrop
 import com.yunyin.music.ui.icons.SfIcons
 import com.yunyin.music.ui.theme.AppTheme
-import com.yunyin.music.ui.theme.AppleShapes
-import com.yunyin.music.ui.theme.Motion
 import com.yunyin.music.ui.theme.SFPro
-
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
- * 歌手详情：header + 热门歌曲 / 全部歌曲（分页）/ 专辑（横向）。
+ * 歌手页 —— 版式取自 AuraPlayer 的艺术家页
+ * （`CatalogDetails.kt` 的 artist hero + `ArtistContentsPage` 的列表）：
  *
- * One vertical LazyColumn owns the whole page (the album rail is a horizontal LazyRow inside one item), so there is
- * no vertical-nested-scroller. Each section carries its own loading/error/empty state: an album failure leaves the
- * header and songs untouched. The previous page only had `/artist/top/song`, which is exactly the "只能显示热门歌曲"
- * report.
+ * ```
+ * 全幅头图（底部渐隐）
+ *   返回                    ← 左上
+ * 歌手名          28sp 白色粗体，居中
+ * (ⓘ)   (▶ 84dp)   (★)      ← 三颗圆形按钮
+ * ┌ 最新发行 ─────────────┐  ← 玻璃卡片：封面 64dp / 日期 / 专辑名 / 曲目数
+ * 热门歌曲 ›
+ * 列表行…
+ * 专辑（两列网格）
+ * ```
+ *
+ * 与原版的差别只在数据来源：`AuraViewModel` / `MusicCollection` 换成本项目的 [ArtistUiState]。
  */
 @Composable
 fun ArtistScreen(
@@ -105,620 +92,294 @@ fun ArtistScreen(
     isPlaying: Boolean = false,
 ) {
     val palette = AppTheme.palette
-    var bioExpanded by remember(state.briefDesc) { mutableStateOf(false) }
-    // AuraPlayer 的歌手页是「歌曲 / 专辑」两个 tab（ArtistContentsPage 的 albums 参数）。
-    var contentTab by remember { mutableStateOf(0) }
-
     val listState = rememberLazyListState()
-    val albumRailState = rememberLazyListState()
+    val latestAlbum = remember(state.albums) { state.albums.firstOrNull() }
 
-    // The frosted top bar's pixel source: the page content recorded with the page background painted
-    // in first (`rememberGlassTopBarBackdrop`), which is the arrangement that makes the strip render
-    // at all. The bar itself is composed outside this layer below, so it samples the header and rows
-    // scrolling under it rather than sampling itself.
-    val topBarBackdrop = rememberGlassTopBarBackdrop()
+    LazyColumn(
+        state = listState,
+        modifier = modifier.fillMaxSize().background(palette.background),
+        contentPadding = PaddingValues(bottom = 24.dp),
+    ) {
+        // ---------------------------------------------------------------- hero
+        item("hero") {
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                // AuraPlayer：height = (宽 / 0.95).coerceIn(360, 500) × 1.125
+                val heroHeight = (maxWidth / 0.95f).coerceIn(360.dp, 500.dp) * (1.25f * 0.90f)
 
-    Box(modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxSize().layerBackdrop(topBarBackdrop)) {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxSize(),
-                // The strip floats over the content: the first row starts below it and scrolls under it.
-                contentPadding = PaddingValues(top = glassTopBarTopPadding(), bottom = 32.dp),
-            ) {
-            item("header") {
-                ArtistHeaderBlock(
-                    state = state,
-                    loader = loader,
-                    bioExpanded = bioExpanded,
-                    onToggleBio = { bioExpanded = !bioExpanded },
-                    onPlayAll = onPlayAll,
-                    followed = followed,
-                    onToggleFollow = onToggleFollow,
-                )
-            }
-
-            item("tabs") {
-                com.yunyin.music.ui.components.AuraSegmentedTabs(
-                    labels = listOf("歌曲", "专辑"),
-                    selected = contentTab,
-                    onSelect = { contentTab = it },
-                )
-            }
-
-            if (contentTab == 0) {
-            item("hot-title") { SectionTitle("热门歌曲") }
-            if (state.hotSongs.isEmpty()) {
-                item("hot-state") {
-                    // Spinner → empty is a content-state change: cross-fade it instead of swapping a
-                    // frame. (The loaded list stays lazy — rows fade in via `appendedRowAppear`.)
-                    CrossfadeContent(
-                        targetState = if (state.loading) "loading" else "empty",
-                        durationMillis = Motion.CrossfadeDuration,
-                        label = "hot-state",
-                    ) { current ->
-                        Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-                            if (current == "loading") {
-                                CircularProgressIndicator(color = palette.accent, strokeWidth = 2.5.dp, modifier = Modifier.size(24.dp))
-                            } else {
-                                Text("暂无热门歌曲", fontFamily = SFPro, fontSize = 13.sp, color = palette.secondaryLabel)
-                            }
-                        }
-                    }
-                }
-            } else {
-                itemsIndexed(state.hotSongs, key = { index, track -> "hot-${track.id}#$index" }) { index, track ->
-                    com.yunyin.music.ui.components.AuraSongRow(
-                        track = track,
+                Box(Modifier.fillMaxWidth().height(heroHeight)) {
+                    Artwork(
+                        url = state.coverUrl,
                         loader = loader,
-                        isCurrent = track.id == nowPlayingId,
-                        onClick = { onTrackClick(track, index) },
-                        modifier = appendedRowAppear(),
+                        corner = 0.dp,
+                        requestSize = 1080,
+                        placeholderIcon = SfIcons.Person,
+                        modifier = Modifier.fillMaxSize(),
                     )
-                }
-            }
-
-            item("all-title") { SectionTitle("全部歌曲") }
-            if (state.allSongs.isEmpty()) {
-                item("all-state") {
-                    // Data-carrying target: an error message is distinct from "loading"/"empty", so
-                    // the cross-fade is real rather than both branches rendering the same snapshot.
-                    val phase: Any = state.songsError ?: if (state.loading) "loading" else "empty"
-                    CrossfadeContent(
-                        targetState = phase,
-                        durationMillis = Motion.CrossfadeDuration,
-                        label = "all-state",
-                    ) { current ->
-                        when (current) {
-                            "loading" -> Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-                                CircularProgressIndicator(color = palette.accent, strokeWidth = 2.5.dp, modifier = Modifier.size(22.dp))
-                            }
-                            "empty" -> Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-                                Text("暂无歌曲", fontFamily = SFPro, fontSize = 13.sp, color = palette.secondaryLabel)
-                            }
-                            else -> SectionMessage(current as String, isError = true)
-                        }
-                    }
-                }
-            } else {
-                itemsIndexed(state.allSongs, key = { index, track -> "all-${track.id}#$index" }) { index, track ->
-                    com.yunyin.music.ui.components.AuraSongRow(
-                        track = track,
-                        loader = loader,
-                        isCurrent = track.id == nowPlayingId,
-                        onClick = { onTrackClick(track, index) },
-                        modifier = appendedRowAppear(),
+                    // 底部渐隐：让名字与按钮压得住图片上。
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                            .drawWithContent {
+                                drawContent()
+                                drawRect(
+                                    brush = Brush.verticalGradient(
+                                        0f to Color.Black.copy(alpha = 0.10f),
+                                        0.42f to Color.Transparent,
+                                        0.78f to Color.Black.copy(alpha = 0.42f),
+                                        1f to Color.Black.copy(alpha = 0.72f),
+                                    ),
+                                    blendMode = BlendMode.SrcOver,
+                                )
+                            },
                     )
-                }
-                item("all-footer") {
-                    // The footer is informational now: automatic paging owns the trigger, while an
-                    // append failure keeps the loaded songs and offers the explicit retry.
-                    val footerPhase: Any = when {
-                        state.loadingSongs -> "loading"
-                        state.songsError != null -> "error"
-                        state.allMore -> "more"
-                        else -> "end"
-                    }
-                    CrossfadeContent(
-                        targetState = footerPhase,
-                        durationMillis = Motion.CrossfadeDuration,
-                        label = "all-footer",
-                    ) { current ->
-                        when (current) {
-                            "loading" -> Box(Modifier.fillMaxWidth().padding(20.dp), contentAlignment = Alignment.Center) {
-                                CircularProgressIndicator(color = palette.accent, strokeWidth = 2.5.dp, modifier = Modifier.size(20.dp))
-                            }
-                            "error" -> FooterRetry(state.songsError ?: "加载更多歌曲失败", onLoadMoreSongs)
-                            "more" -> Spacer(Modifier.height(8.dp))
-                            else -> EndRow("已显示全部歌曲")
-                        }
-                    }
-                }
-            }
 
-            } else {
-            item("albums-title") { SectionTitle("专辑") }
-            if (state.albums.isEmpty()) {
-                item("albums-state") {
-                    val phase: Any = state.albumsError ?: if (state.loading) "loading" else "empty"
-                    CrossfadeContent(
-                        targetState = phase,
-                        durationMillis = Motion.CrossfadeDuration,
-                        label = "albums-state",
-                    ) { current ->
-                        Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-                            when (current) {
-                                "loading" -> CircularProgressIndicator(color = palette.accent, strokeWidth = 2.5.dp, modifier = Modifier.size(22.dp))
-                                "empty" -> Text("暂无专辑", fontFamily = SFPro, fontSize = 13.sp, color = palette.secondaryLabel)
-                                else -> SectionMessage(current as String, isError = true)
-                            }
-                        }
-                    }
-                }
-            } else {
-                // AuraPlayer 的专辑区：两列网格（ArtistContentsPage 的 rows.chunked(2)），
-                // 每格是 CollectionTile 的形态——方形封面 + 标题 + 副标题。
-                items(state.albums.chunked(2), key = { pair -> pair.first().id }) { pair ->
-                    Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp),
-                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    // 返回
+                    Box(
+                        Modifier
+                            .align(Alignment.TopStart)
+                            .statusBarsPadding()
+                            .padding(start = 12.dp, top = 8.dp)
+                            .size(44.dp)
+                            .clip(CircleShape)
+                            .clickable(onClick = onBack),
+                        contentAlignment = Alignment.Center,
                     ) {
-                        pair.forEach { album ->
-                            com.yunyin.music.ui.components.AuraCollectionTile(
-                                title = album.name,
-                                subtitle = if (album.trackCount > 0) "${album.trackCount} 首" else "",
-                                artUrl = album.coverUrl.orEmpty(),
-                                loader = loader,
-                                onClick = { onAlbumClick(album) },
-                                modifier = Modifier.weight(1f),
+                        Icon(
+                            imageVector = SfIcons.ChevronLeft,
+                            contentDescription = "返回",
+                            tint = Color.White,
+                            modifier = Modifier.size(26.dp),
+                        )
+                    }
+
+                    Column(
+                        Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .padding(bottom = 18.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text(
+                            text = state.name.ifBlank { "歌手" },
+                            fontFamily = SFPro,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 26.sp,
+                            color = Color.White,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 32.dp),
+                        )
+                        Spacer(Modifier.height(18.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(24.dp),
+                        ) {
+                            HeroCircleButton(
+                                icon = SfIcons.MusicNote,
+                                description = "简介",
+                                size = 56.dp,
+                                container = Color.White.copy(alpha = 0.16f),
+                                tint = Color.White,
+                                onClick = {},
+                            )
+                            Box(
+                                Modifier
+                                    .size(84.dp)
+                                    .clip(CircleShape)
+                                    .background(palette.accent)
+                                    .clickable(onClick = onPlayAll),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    imageVector = SfIcons.Play,
+                                    contentDescription = "播放全部",
+                                    tint = Color.Black,
+                                    modifier = Modifier.size(36.dp),
+                                )
+                            }
+                            HeroCircleButton(
+                                icon = SfIcons.StarFill,
+                                description = if (followed) "已收藏" else "收藏",
+                                size = 56.dp,
+                                container = Color.White.copy(alpha = 0.16f),
+                                tint = if (followed) palette.accent else Color.White,
+                                onClick = { onToggleFollow?.invoke() },
                             )
                         }
-                        if (pair.size == 1) Spacer(Modifier.weight(1f))
-                    }
-                }
-                item("albums-footer") {
-                    val footerPhase: Any = when {
-                        state.loadingAlbums -> "loading"
-                        state.albumsError != null -> "error"
-                        state.albumsMore -> "more"
-                        else -> "end"
-                    }
-                    CrossfadeContent(
-                        targetState = footerPhase,
-                        durationMillis = Motion.CrossfadeDuration,
-                        label = "albums-footer",
-                    ) { current ->
-                        when (current) {
-                            "loading" -> Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                                CircularProgressIndicator(color = palette.accent, strokeWidth = 2.5.dp, modifier = Modifier.size(20.dp))
-                            }
-                            "error" -> FooterRetry(state.albumsError ?: "加载更多专辑失败", onLoadMoreAlbums)
-                            "more" -> Spacer(Modifier.height(8.dp))
-                            else -> EndRow("已显示全部专辑")
-                        }
                     }
                 }
             }
+        }
 
-            }
-
-            item("bottom") { Spacer(Modifier.navigationBarsPadding().height(12.dp)) }
+        // ------------------------------------------------- 最新发行（玻璃卡片）
+        if (latestAlbum != null) {
+            item("latest") {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                        .clip(RoundedCornerShape(22.dp))
+                        .background(palette.label.copy(alpha = 0.06f))
+                        .clickable { onAlbumClick(latestAlbum) }
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Artwork(
+                        url = latestAlbum.coverUrl,
+                        loader = loader,
+                        corner = 12.dp,
+                        requestSize = 240,
+                        modifier = Modifier.size(64.dp),
+                    )
+                    Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                        Text(
+                            text = formatReleaseDate(latestAlbum.publishTime),
+                            fontFamily = SFPro,
+                            fontSize = 12.sp,
+                            color = palette.secondaryLabel,
+                        )
+                        Text(
+                            text = latestAlbum.name,
+                            fontFamily = SFPro,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = palette.label,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = 2.dp),
+                        )
+                        Text(
+                            text = if (latestAlbum.trackCount > 0) "${latestAlbum.trackCount} 首歌曲" else "专辑",
+                            fontFamily = SFPro,
+                            fontSize = 12.sp,
+                            color = palette.secondaryLabel,
+                            modifier = Modifier.padding(top = 2.dp),
+                        )
+                    }
+                    Icon(
+                        imageVector = SfIcons.Plus,
+                        contentDescription = "添加到播放列表",
+                        tint = palette.label,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
             }
         }
 
-        // Automatic paging for the two artist sections. The albums live in a horizontal rail, so its
-        // own scroll state is the near-end signal; the songs section is one part of the outer list, so
-        // its footer becoming visible is the equivalent sentinel.
-        PagingAutoLoader(
-            lastVisibleItemIndex = { albumRailState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 },
-            totalItemCount = { albumRailState.layoutInfo.totalItemsCount },
-            hasMore = state.albumsMore,
-            loadingMore = state.loadingAlbums,
-            appendError = state.albumsError != null,
-            hasItems = state.albums.isNotEmpty(),
-            onLoadMore = onLoadMoreAlbums,
-        )
-        PagingAutoLoaderAtFooter(
-            listState = listState,
-            footerKey = "all-footer",
-            hasMore = state.allMore,
-            loadingMore = state.loadingSongs,
-            appendError = state.songsError != null,
-            hasItems = state.allSongs.isNotEmpty(),
-            onLoadMore = onLoadMoreSongs,
-        )
-
-        // Pinned last, outside the recorded layer, so it draws over the scrolling header and samples
-        // it instead of sampling itself — the collection page's arrangement, reused verbatim.
-        ArtistTopBar(
-            backdrop = topBarBackdrop,
-            onBack = onBack,
-            onShuffle = onShufflePlay,
-            modifier = Modifier.align(Alignment.TopCenter),
-        )
-    }
-}
-
-/**
- * Rows appended by 加载更多 fade in like Home's shelves (`HomeScreen.shelfAppear`). Placement is off on
- * purpose: content arriving must not slide around under the user's finger.
- */
-private fun LazyItemScope.appendedRowAppear(): Modifier = Modifier.animateItem(
-    fadeInSpec = tween(Motion.duration(Motion.ItemAppearDuration), easing = Motion.EaseOut),
-    fadeOutSpec = null,
-    placementSpec = null,
-)
-
-/**
- * The artist page's pinned bar: the app's progressive-blur strip with the page's controls as liquid
- * glass, matching the collection page.
- *
- * Deliberately **icon-only**: the artist's name is already the page's large header, and a second copy
- * on the blur strip had to fight the background for legibility (the user objected to it twice). Back
- * disc on the leading edge, shuffle disc on the trailing edge, nothing in between.
- *
- * No scroll state is read here any more: it existed only for the removed bar title.
- */
-@Composable
-private fun ArtistTopBar(
-    backdrop: Backdrop,
-    onBack: () -> Unit,
-    onShuffle: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    GlassTopBar(
-        backdrop = backdrop,
-        tintIntensity = DefaultTopBarTintIntensity,
-        modifier = modifier,
-    ) {
-        // Two symmetric controls and nothing between them. The full-width strip puts them at the
-        // leading/trailing edges, so the bar reads as back + shuffle rather than as a title with
-        // buttons crowded around it.
-        Box(Modifier.fillMaxSize().padding(horizontal = 8.dp)) {
-            ArtistBarButton(
-                icon = SfIcons.ChevronDown,
-                description = "返回",
-                backdrop = backdrop,
-                onClick = onBack,
-                modifier = Modifier.align(Alignment.CenterStart),
-            )
-            ArtistBarButton(
-                icon = SfIcons.Shuffle,
-                description = "随机播放",
-                backdrop = backdrop,
-                onClick = onShuffle,
-                modifier = Modifier.align(Alignment.CenterEnd),
-            )
+        // ------------------------------------------------------------ 热门歌曲
+        val songs = if (state.hotSongs.isNotEmpty()) state.hotSongs else state.allSongs
+        item("hot-header") {
+            SectionHeader(title = "热门歌曲", showChevron = true)
         }
+        if (songs.isEmpty()) {
+            item("hot-empty") {
+                Text(
+                    text = if (state.loading) "加载中…" else "暂无歌曲",
+                    fontFamily = SFPro,
+                    fontSize = 13.sp,
+                    color = palette.secondaryLabel,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
+                )
+            }
+        } else {
+            items(songs.size) { index ->
+                val track = songs[index]
+                AuraSongRow(
+                    track = track,
+                    loader = loader,
+                    isCurrent = track.id == nowPlayingId,
+                    onClick = { onTrackClick(track, index) },
+                    modifier = Modifier.padding(vertical = 1.dp),
+                )
+            }
+        }
+
+        // ---------------------------------------------------------------- 专辑
+        if (state.albums.isNotEmpty()) {
+            item("albums-header") { SectionHeader(title = "专辑", showChevron = false) }
+            items(state.albums.chunked(2).size) { rowIndex ->
+                val pair = state.albums.chunked(2)[rowIndex]
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    pair.forEach { album ->
+                        AuraCollectionTile(
+                            title = album.name,
+                            subtitle = if (album.trackCount > 0) "${album.trackCount} 首" else "",
+                            artUrl = album.coverUrl.orEmpty(),
+                            loader = loader,
+                            onClick = { onAlbumClick(album) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    if (pair.size == 1) Spacer(Modifier.weight(1f))
+                }
+            }
+        }
+
+        item("bottom") { Spacer(Modifier.navigationBarsPadding().height(24.dp)) }
     }
 }
 
-/**
- * A control on the pinned bar: a 44dp liquid-glass disc that samples the bar's recorded page layer.
- *
- * The disc and the touch target are the same 44dp object (the collection bar's back/share discs use
- * the same arrangement), so the glass never shrinks the tap area.
- */
 @Composable
-private fun ArtistBarButton(
-    icon: ImageVector,
+private fun HeroCircleButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
     description: String,
-    backdrop: Backdrop,
+    size: androidx.compose.ui.unit.Dp,
+    container: Color,
+    tint: Color,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier,
 ) {
     Box(
-        modifier
-            .size(44.dp)
-            .liquidGlassControl(backdrop, CircleShape)
-            .clickable(
-                indication = rememberControlRipple(bounded = true),
-                interactionSource = null,
-                onClick = onClick,
-            ),
+        Modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(container)
+            .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            icon,
+            imageVector = icon,
             contentDescription = description,
-            tint = AppTheme.palette.label,
-            modifier = Modifier.size(20.dp),
+            tint = tint,
+            modifier = Modifier.size(size * 0.42f),
         )
     }
 }
 
 @Composable
-private fun ArtistHeaderBlock(
-    state: ArtistUiState,
-    loader: ArtworkLoader,
-    bioExpanded: Boolean,
-    onToggleBio: () -> Unit,
-    onPlayAll: () -> Unit,
-    followed: Boolean,
-    onToggleFollow: (() -> Unit)?,
-) {
+private fun SectionHeader(title: String, showChevron: Boolean) {
     val palette = AppTheme.palette
-    Column(Modifier.fillMaxWidth()) {
-        // 沉浸式歌手头图，几何取自 AuraPlayer 的 artist hero：
-        // 高度 = (屏宽 / 0.95f).coerceIn(360, 500) × 1.125，底部用 DstIn 渐变淡出到页面底色。
-        BoxWithConstraints(Modifier.fillMaxWidth()) {
-            val heroHeight = (maxWidth / 0.95f).coerceIn(360.dp, 500.dp) * (1.25f * 0.90f)
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(heroHeight)
-                    .graphicsLayer {
-                        compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen
-                    }
-                    .drawWithContent {
-                        drawContent()
-                        drawRect(
-                            brush = Brush.verticalGradient(
-                                0f to Color.Black,
-                                0.58f to Color.Black,
-                                0.86f to Color.Black.copy(alpha = 0.36f),
-                                1f to Color.Transparent,
-                            ),
-                            blendMode = BlendMode.DstIn,
-                        )
-                    },
-            ) {
-                Artwork(
-                    url = state.coverUrl,
-                    loader = loader,
-                    corner = 0.dp,
-                    requestSize = 1080,
-                    placeholderIcon = SfIcons.Person,
-                    modifier = Modifier.fillMaxSize(),
-                )
-                Column(Modifier.align(Alignment.BottomStart).padding(horizontal = 20.dp, vertical = 16.dp)) {
-                    Text(
-                        text = state.name.ifBlank { "歌手" },
-                        fontFamily = SFPro,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 30.sp,
-                        color = Color.White,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    val heroCounts = buildList {
-                        state.musicSize.takeIf { it > 0 }?.let { add("单曲 $it") }
-                        state.albumSize.takeIf { it > 0 }?.let { add("专辑 $it") }
-                    }.joinToString("  ·  ")
-                    if (heroCounts.isNotBlank()) {
-                        Text(
-                            text = heroCounts,
-                            fontFamily = SFPro,
-                            fontSize = 13.sp,
-                            color = Color.White.copy(alpha = 0.78f),
-                        )
-                    }
-                }
-            }
-        }
-        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        if (state.briefDesc.isNotBlank()) {
-            Spacer(Modifier.height(10.dp))
-            // The box animates its own height and clips: expanding flips `maxLines` 3 → MAX in one
-            // frame, and without this every section below jumps instantly. Clipping makes the
-            // deferred-overdraw trade-off safe — lines reveal as the box grows.
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .animateContentSize(tween(Motion.duration(Motion.SmallDuration), easing = Motion.EaseOut))
-                    .clipToBounds(),
-            ) {
-                Text(
-                    text = if (bioExpanded) state.briefDesc else ArtistUiRules.clampBio(state.briefDesc, 160),
-                    fontFamily = SFPro,
-                    fontSize = 13.sp,
-                    lineHeight = 18.sp,
-                    color = palette.secondaryLabel,
-                    maxLines = if (bioExpanded) Int.MAX_VALUE else 3,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(ContinuousRoundedRectangle(AppleShapes.control))
-                        .clickable(onClick = onToggleBio)
-                        .padding(10.dp),
-                )
-            }
-            Spacer(Modifier.height(4.dp))
-            // Visible affordance for a tappable bio: the platform's own chevron, rotated 220 ms like
-            // LibraryScreen's expandable rows. Read only in the layer phase.
-            val chevron by animateFloatAsState(
-                targetValue = if (bioExpanded) 1f else 0f,
-                animationSpec = tween(Motion.duration(Motion.SmallDuration), easing = Motion.EaseOut),
-                label = "bio-chevron",
-            )
-            Icon(
-                imageVector = SfIcons.ChevronDown,
-                contentDescription = if (bioExpanded) "收起简介" else "展开简介",
-                tint = palette.secondaryLabel,
-                modifier = Modifier
-                    .size(14.dp)
-                    .clickable(onClick = onToggleBio)
-                    .graphicsLayer { rotationZ = chevron * 180f },
-            )
-        }
-        if (state.error != null) {
-            Spacer(Modifier.height(6.dp))
-            Text(state.error, fontFamily = SFPro, fontSize = 12.sp, color = palette.accent)
-        }
-        Spacer(Modifier.height(12.dp))
-        // One row, follow left / play all right (skill: related secondary + primary actions share a
-        // band; 46 dp keeps both above the 44 dp target and gives the two labels equal height). The
-        // weights split the width evenly, so 已关注 cannot wrap — the text ellipsizes in the worst
-        // case instead of pushing 播放全部 to a second line.
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (onToggleFollow != null) {
-                PillAction(
-                    label = if (followed) "已关注" else "关注",
-                    icon = SfIcons.Person,
-                    primary = false,
-                    onClick = onToggleFollow,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-            PillAction(
-                label = "播放全部",
-                icon = SfIcons.Play,
-                primary = true,
-                onClick = onPlayAll,
-                modifier = Modifier.weight(1f),
-            )
-        }
-        Spacer(Modifier.height(8.dp))
-        }
-    }
-}
-
-@Composable
-private fun PillAction(
-    label: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    primary: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val palette = AppTheme.palette
-    val shape = ContinuousRoundedRectangle(AppleShapes.pill)
     Row(
-        modifier
-            .height(46.dp)
-            .clip(shape)
-            // No opaque fill behind the secondary action: a hairline glass border is enough contrast
-            // on the page background, and the press feedback is the app's unbounded ripple (skill:
-            // 44 dp+ target, visible press feedback, no flat colour block).
-            .then(
-                if (primary) {
-                    Modifier.background(palette.accent)
-                } else {
-                    Modifier.border(1.dp, palette.separator, shape)
-                },
-            )
-            .clickable(
-                indication = rememberControlRipple(bounded = false),
-                interactionSource = null,
-                onClick = onClick,
-            )
-            .padding(horizontal = 12.dp),
+        Modifier
+            .fillMaxWidth()
+            .padding(start = 20.dp, end = 20.dp, top = 22.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
     ) {
-        Icon(icon, contentDescription = null, tint = if (primary) Color.White else palette.label, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(8.dp))
         Text(
-            label,
+            text = title,
             fontFamily = SFPro,
-            fontWeight = FontWeight.Medium,
-            fontSize = 15.sp,
-            color = if (primary) Color.White else palette.label,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Bold,
+            color = palette.label,
         )
-    }
-}
-
-@Composable
-private fun SectionTitle(text: String) {
-    Text(
-        text = text,
-        fontFamily = SFPro,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 17.sp,
-        color = AppTheme.palette.label,
-        modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 6.dp),
-    )
-}
-
-@Composable
-private fun SectionMessage(text: String, isError: Boolean) {
-    Text(
-        // There is no pull-to-refresh on this page, so the old "（下拉重试）" promised a gesture
-        // that does not exist; the sections reload with the page, and re-entering retries.
-        text = if (isError) "$text，请稍后重试" else text,
-        fontFamily = SFPro,
-        fontSize = 13.sp,
-        color = if (isError) AppTheme.palette.accent else AppTheme.palette.secondaryLabel,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
-    )
-}
-
-@Composable
-private fun LoadMoreRow(label: String, onClick: () -> Unit) {
-    Box(
-        Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)
-            .clip(ContinuousRoundedRectangle(AppleShapes.control))
-            .background(AppTheme.palette.secondaryBackground)
-            .clickable(onClick = onClick)
-            .padding(vertical = 12.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(label, fontFamily = SFPro, fontSize = 14.sp, color = AppTheme.palette.accent)
-    }
-}
-
-@Composable
-private fun EndRow(text: String) {
-    Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-        Text(text, fontFamily = SFPro, fontSize = 12.sp, color = AppTheme.palette.tertiaryLabel)
-    }
-}
-
-@Composable
-private fun FooterRetry(message: String, onRetry: () -> Unit) {
-    Column(
-        Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(message, fontFamily = SFPro, fontSize = 12.sp, color = AppTheme.palette.secondaryLabel)
-        Spacer(Modifier.height(8.dp))
-        LoadMoreRow("重试", onRetry)
-    }
-}
-
-@Composable
-private fun AlbumCard(
-    album: AlbumInfo,
-    loader: ArtworkLoader,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier
-            .width(124.dp)
-            // No filled surface and no default bounded indication: the press/long-press feedback is the
-            // app's water ripple, so the card never flashes a grey rectangle under the artwork.
-            .clickable(
-                indication = rememberControlRipple(bounded = false),
-                interactionSource = null,
-                onClick = onClick,
-            ),
-    ) {
-        Artwork(
-            url = album.coverUrl,
-            loader = loader,
-            corner = 10.dp,
-            requestSize = 300,
-            modifier = Modifier.size(124.dp),
-        )
-        Spacer(Modifier.height(6.dp))
-        Text(
-            text = album.name,
-            fontFamily = SFPro,
-            fontSize = 13.sp,
-            color = AppTheme.palette.label,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        val year = ArtistUiRules.yearOf(album.publishTime)
-        if (year != null) {
-            Text(year, fontFamily = SFPro, fontSize = 11.sp, color = AppTheme.palette.secondaryLabel)
+        if (showChevron) {
+            Spacer(Modifier.width(4.dp))
+            Icon(
+                imageVector = SfIcons.ChevronRight,
+                contentDescription = null,
+                tint = palette.secondaryLabel,
+                modifier = Modifier.size(18.dp),
+            )
         }
     }
+}
+
+/** 2026年11月8日 —— AuraPlayer 的发行日期写法。 */
+private fun formatReleaseDate(epochMs: Long): String {
+    if (epochMs <= 0L) return "最新发行"
+    return SimpleDateFormat("yyyy年M月d日", Locale.CHINA).format(Date(epochMs))
 }
