@@ -1,0 +1,319 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 云音 / YunYin contributors
+//
+// AuraPlayer 移植层的「运行时替身」。
+//
+// AuraCatalogDetails.kt / AuraLibraryPages.kt 是从 AuraPlayer 逐行拷来的原件，只改了 package 与
+// 内部 import。它们引用的数据模型、设计 token、布局对象、动作总线都属于 AuraPlayer 自己的运行时，
+// 本文件提供同名同签名的替身，让原件能原样编译；真正的数据由下层的适配器（ArtistScreen）填充。
+
+package com.yunyin.music.aura
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.dp
+import com.yunyin.music.ui.icons.SfIcons
+import com.yunyin.music.ui.theme.AppTheme
+
+// ------------------------------------------------------------------ 数据模型
+
+/** AuraPlayer 的歌曲模型（字段与原件引用一致）。 */
+data class Song(
+    val id: Long = 0L,
+    val title: String = "",
+    val artist: String = "",
+    val album: String = "",
+    val duration: Long = 0L,
+    val artwork: String = "",
+    val albumId: Long = 0L,
+    val artistId: Long = 0L,
+    val year: Int = 0,
+    val track: Int = 0,
+    val volume: Int = 0,
+    val playCount: Long = 0L,
+    val source: String = "",
+    val absolutePath: String = "",
+    val isFile: Boolean = false,
+    val cloud: Boolean = false,
+    val albumArtist: String = "",
+    val published: Long = 0L,
+    val total: Int = 0,
+    val uri: String = "",
+) {
+    val key: String get() = if (cloud) "cloud:$id" else id.toString()
+}
+
+/** 集合：专辑 / 艺术家 / 歌单都走这一个类型。 */
+data class MusicCollection(
+    val key: String,
+    val title: String,
+    val subtitle: String = "",
+    val songs: List<Song> = emptyList(),
+    val artwork: String = "",
+    val albumArtist: String = "",
+    val published: Long = 0L,
+    val total: Int = 0,
+    val language: String = "",
+)
+
+data class CatalogAlbum(
+    val id: Long,
+    val title: String,
+    val artwork: String,
+    val artistId: Long = 0L,
+    val artist: String = "",
+    val count: Int = 0,
+)
+
+data class CloudPlaylistContent(
+    val songs: List<Song> = emptyList(),
+    val albums: List<CatalogAlbum> = emptyList(),
+    val loading: Boolean = false,
+    val failed: Boolean = false,
+    val hasMore: Boolean = false,
+    val albumsLoading: Boolean = false,
+    val albumsFailed: Boolean = false,
+    val albumsHasMore: Boolean = false,
+)
+
+data class LocalPlaylist(
+    val id: Long = 0L,
+    val name: String = "",
+    val songKeys: List<String> = emptyList(),
+)
+
+data class ResolvedArtistMedia(
+    val logoUrl: String? = null,
+    val artwork: String = "",
+    val motionVideoPath: String? = null,
+)
+
+data class SongActionRequest(
+    val song: Song,
+    val backdrop: Any? = null,
+    val onLongAction: (() -> Unit)? = null,
+)
+
+data class NowPlayingConfig(
+    val albumAnimatedCover: Boolean = false,
+    val artistAnimatedCover: Boolean = false,
+    val artistWordmarkLogo: Boolean = false,
+)
+
+// --------------------------------------------------------------- 设计 token
+
+data class AuraHeroTokens(
+    val heroMixTint: Color = Color.Transparent,
+    val surface: Color = Color.Transparent,
+)
+
+data class AuraExpressiveScheme(
+    val secondaryContainer: Color = Color.Transparent,
+    val onSecondaryContainer: Color = Color.Black,
+    val onSurface: Color = Color.Black,
+    val onSurfaceVariant: Color = Color.Gray,
+)
+
+data class AuraOneUiPalette(
+    val chip: Long = 0xFFE8E8E8,
+    val accent: Long = 0xFF1A73E8,
+    val accentDeep: Long = 0xFF0B57D0,
+    val text: Long = 0xFF1A1A1A,
+    val subText: Long = 0xFF6B6B6B,
+)
+
+data class AuraMonetPalette(
+    val accent: Color = Color.Unspecified,
+)
+
+@Composable
+fun rememberCatalogPlayerThemeTokens(): AuraHeroTokens {
+    val palette = AppTheme.palette
+    return AuraHeroTokens(heroMixTint = palette.background, surface = palette.background)
+}
+
+@Composable
+fun rememberActiveExpressiveScheme(): AuraExpressiveScheme {
+    val palette = AppTheme.palette
+    return AuraExpressiveScheme(
+        secondaryContainer = palette.label.copy(alpha = 0.10f),
+        onSecondaryContainer = palette.label,
+        onSurface = palette.label,
+        onSurfaceVariant = palette.secondaryLabel,
+    )
+}
+
+@Composable
+fun rememberActiveOneUiPalette(): AuraOneUiPalette = AuraOneUiPalette()
+
+@Composable
+fun rememberPlayerMonetPalette(): AuraMonetPalette = AuraMonetPalette()
+
+// ------------------------------------------------------------------ 布局/风格
+
+enum class AppUiStyle { ONE, MATERIAL, MIUIX }
+
+data class AuraLayout(
+    val width: Int = 1080,
+    val height: Int = 2400,
+    val tablet: Boolean = false,
+    val gridColumns: Int = 2,
+    val pageMargin: Int = 20,
+    val listColumns: Int = 1,
+)
+
+val LocalAppUiStyle = staticCompositionLocalOf { AppUiStyle.ONE }
+val LocalAuraLayout = staticCompositionLocalOf { AuraLayout() }
+val LocalAdvancedMaterialEnabled = staticCompositionLocalOf { false }
+val LocalToolbarCollapsed = staticCompositionLocalOf { false }
+val LocalToolbarBackdrop = staticCompositionLocalOf<Any?> { null }
+val LocalAuraCouiBackdrop = staticCompositionLocalOf<Any?> { null }
+
+class SongActions {
+    fun openActions(request: SongActionRequest) = Unit
+}
+
+val LocalSongActions = staticCompositionLocalOf { SongActions() }
+
+fun pageContentModifier(): Modifier = Modifier
+
+// ---------------------------------------------------------------------- 文本
+
+fun tr(key: String, default: String): String = default
+
+object I18n {
+    val language: String = "zh"
+}
+
+fun durationText(ms: Long): String {
+    if (ms <= 0L) return "--:--"
+    val totalSeconds = ms / 1000
+    return "%d:%02d".format(totalSeconds / 60, totalSeconds % 60)
+}
+
+val AuraMoreHorizontalIcon: ImageVector = SfIcons.Ellipsis
+
+fun findCachedArtworkMemoryEntry(loader: Any?, uri: String): Any? = null
+
+// ------------------------------------------------------------------ ViewModel
+
+/** 只是让原件编译的替身：真正的数据由 [com.yunyin.music.ui.screens.ArtistScreen] 注入。 */
+class AuraViewModel {
+    val current: Song? = null
+    val songs: List<Song> = emptyList()
+    val downloadedSongs: List<Song> = emptyList()
+    val account: Any? = null
+    val history: List<Song> = emptyList()
+    val nowPlayingConfig: NowPlayingConfig = NowPlayingConfig()
+
+    fun play(song: Song, queue: List<Song> = emptyList()) = Unit
+    fun playCollection(tracks: List<Song>, content: CloudPlaylistContent? = null) = Unit
+    fun openCollection(collection: MusicCollection) = Unit
+    fun openCatalogAlbum(album: CatalogAlbum) = Unit
+    fun openSongAlbum(song: Song) = Unit
+    fun openSongArtist(song: Song) = Unit
+    fun loadMoreArtistAlbums(content: CloudPlaylistContent) = Unit
+    fun loadMoreCloudSongsFor(content: CloudPlaylistContent) = Unit
+    fun refreshCloudSongs() = Unit
+    fun refreshDownloadedSongs() = Unit
+    fun refreshLibrary() = Unit
+    fun hasPermission(permission: String): Boolean = true
+
+    val playlists: List<LocalPlaylist> = emptyList()
+    fun savePlaylists() = Unit
+    fun openSongActions(song: Song) = Unit
+    fun peekCachedFile(song: Song): String? = null
+    fun resolveArtistMedia(name: String): ResolvedArtistMedia = ResolvedArtistMedia()
+    val revision: Int = 0
+    val language: String = "zh"
+    val catalog: List<MusicCollection> = emptyList()
+}
+
+// ------------------------------------------------------------- 组件替身（空壳）
+
+@Composable
+fun EmptyState(title: String, subtitle: String) {
+    Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(title)
+        Text(subtitle)
+    }
+}
+
+@Composable
+fun GlassDialogButton(text: String, onClick: () -> Unit) = Unit
+
+@Composable
+fun GlassIconDropdownMenu(expanded: Boolean, onDismiss: () -> Unit, content: @Composable () -> Unit) = Unit
+
+@Composable
+fun GlassToolbarIconButton(icon: ImageVector, description: String, onClick: () -> Unit) = Unit
+
+@Composable
+fun MaterialExpressiveButton(text: String, onClick: () -> Unit) = Unit
+
+@Composable
+fun OneUiButton(text: String, onClick: () -> Unit) = Unit
+
+@Composable
+fun SeamlessCard(content: @Composable () -> Unit) = Unit
+
+@Composable
+fun WindowDialog(visible: Boolean, onDismiss: () -> Unit, content: @Composable () -> Unit) = Unit
+
+@Composable
+fun AuraCheckbox(checked: Boolean, onCheckedChange: (Boolean) -> Unit) = Unit
+
+@Composable
+fun AuraTextField(value: String, onValueChange: (String) -> Unit, placeholder: String = "") = Unit
+
+@Composable
+fun Preference(title: String, onClick: () -> Unit) = Unit
+
+@Composable
+fun CatalogNowPlayingBackground(artwork: String, modifier: Modifier = Modifier) = Unit
+
+@Composable
+fun AnimatedMotionCoverVideo(
+    videoPath: String?,
+    playing: Boolean = false,
+    visibleAlpha: Float = 1f,
+    modifier: Modifier = Modifier,
+) = Unit
+
+object AppleMusicMotionCoverManager {
+    fun peekCachedFile(context: android.content.Context, song: Song): java.io.File? = null
+    fun resolve(
+        context: android.content.Context,
+        song: Song,
+        activePlayingPath: String? = null,
+    ): java.io.File? = null
+}
+
+object AppleMusicArtistLogoManager
+
+fun appleMusicTabIcon(index: Int): ImageVector = SfIcons.MusicNote
+
+private val unusedBox = Box(Modifier)
+
+
+/** 原件引用的是 AuraPlayer 自己的 R；这里映射到我们已经拷进项目的同款矢量。 */
+object R {
+    object drawable {
+        val ic_player_play = com.yunyin.music.R.drawable.aura_ic_play
+        val ic_player_pause = com.yunyin.music.R.drawable.aura_ic_pause
+        val ic_player_next = com.yunyin.music.R.drawable.aura_ic_next
+        val ic_player_previous = com.yunyin.music.R.drawable.aura_ic_previous
+        val ic_player_favorite = com.yunyin.music.R.drawable.aura_ic_favorite
+        val ic_player_favorite_on = com.yunyin.music.R.drawable.aura_ic_favorite_on
+        val ic_player_volume_full = com.yunyin.music.R.drawable.aura_ic_volume_full
+        val ic_player_volume_muted = com.yunyin.music.R.drawable.aura_ic_volume_muted
+    }
+}
