@@ -711,15 +711,13 @@ class MainActivity : ComponentActivity() {
         fun pickSleepTimer(option: Int?) {
             container.player.setSleepTimer(option)
             showSleepTimer = false
-            Toast.makeText(
-                context,
+            toast(
                 when (option) {
                     null, com.yunyin.music.playback.PlaybackSleepTimerRules.OFF -> "已关闭定时关闭"
                     com.yunyin.music.playback.PlaybackSleepTimerRules.END_OF_TRACK -> "播完当前歌后暂停"
                     else -> "将在 $option 分钟后暂停播放"
                 },
-                Toast.LENGTH_SHORT,
-            ).show()
+            )
         }
 
         // ------------------------------------------------------------ profile
