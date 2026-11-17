@@ -5,6 +5,8 @@ package com.yunyin.music.lyrics.composable.lyrics
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.scrollBy
@@ -730,9 +732,9 @@ fun KaraokeLyricsView(
                                     lookaheadScope = this@LookaheadScope,
                                     itemKey = index,
                                     isManualScrolling = isDragging.value,
-                                    // Keep the spatial handoff, but settle every visible row promptly.
-                                    // Very soft per-row springs leave distant lines moving long after focus changes.
-                                    stiffness = (320f - distanceWeightState.value * 20f).coerceAtLeast(220f),
+                                    // 上游：离焦点越远的行，弹簧越软（120 - 距离*20，下限 20）。
+                                    // 常数刚度会让远处的行和当前行同步移动，失去层次。
+                                    stiffness = (120f - distanceWeightState.value * 20f).coerceAtLeast(20f),
                                 ),
                             horizontalAlignment = if (isVisualRightAligned) Alignment.End else Alignment.Start
                         ) {
@@ -766,17 +768,14 @@ fun KaraokeLyricsView(
                             // or still settling. Since this view auto-scrolls continuously
                             // during playback, the blur was therefore off much of the time —
                             // which is why non-current lines often looked unblurred.
-                            // Quantized, non-animated blur avoids concurrent RenderEffect tweens on
-                            // every visible lyric layer while the list is scrolling.
-                            val blurRadius = if (!useBlurEffect) {
-                                0f
-                            } else {
-                                when {
-                                    distanceWeightState.value < 0.34f -> 0f
-                                    distanceWeightState.value < 0.67f -> minOf(3f, blurDelta)
-                                    else -> minOf(6f, blurDelta)
-                                }
-                            }
+                            val blurRadiusState = animateFloatAsState(
+                                targetValue = if (!useBlurEffect) {
+                                    0f
+                                } else {
+                                    distanceWeightState.value * blurDelta
+                                },
+                                animationSpec = tween(300),
+                            )
 
                             when (line) {
                                 is KaraokeLine -> {
@@ -786,7 +785,7 @@ fun KaraokeLyricsView(
                                             isRightAligned = isVisualRightAligned,
                                             onLineClicked = { onLineClicked(line) },
                                             onLinePressed = { onLinePressed(line) },
-                                            blurRadius = { blurRadius },
+                                            blurRadius = { blurRadiusState.value },
                                             focusedScale = focusedLineScale,
                                             unfocusedScale = unfocusedLineScale,
                                             activeAlpha = activeLineAlpha,
@@ -829,7 +828,7 @@ fun KaraokeLyricsView(
                                         isRightAligned = isLineRtl,
                                         onLineClicked = { onLineClicked(line) },
                                         onLinePressed = { onLinePressed(line) },
-                                        blurRadius = { blurRadius },
+                                        blurRadius = { blurRadiusState.value },
                                         focusedScale = focusedLineScale,
                                         unfocusedScale = unfocusedLineScale,
                                         activeAlpha = activeLineAlpha,
