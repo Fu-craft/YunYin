@@ -2244,17 +2244,12 @@ private fun PlayerControls(
 ) {
     Column {
         // 两种风格共用这一条进度条;凝光只额外加一层轮廓光,几何与手感保持原样。
-        // 发光胶囊进度条（AuraPlayer 的 HYPER 样式）：轨道 + 渐变填充 + 辉光 + 端点光晕。
-        com.yunyin.music.ui.components.GlowPlayerProgress(
+        PlayerProgressBar(
             positionProvider = positionProvider,
             durationMs = state.durationMs,
-            accentColor = AppTheme.palette.accent,
             onSeek = onSeek,
-            trackColor = AppTheme.palette.label.copy(alpha = 0.16f),
-            isLightSurface = !AppTheme.palette.isDark,
-            modifier = Modifier
-                .padding(horizontal = 24.dp)
-                .height(28.dp),
+            glow = uiStyle == com.yunyin.music.ui.style.UiStyle.Coui,
+            modifier = Modifier.padding(horizontal = 24.dp),
         )
 
         Box(
@@ -2315,18 +2310,6 @@ private fun PlayerControls(
             )
             TransportButton(R.drawable.aura_ic_next, "下一首", 34.dp, onNext)
         }
-
-        Spacer(Modifier.height(12.dp))
-        // 媒体音量条（AuraPlayer 的 OneUi 样式）：静音 / 细条 / 增音。
-        com.yunyin.music.ui.components.VolumeSliderRow(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp)
-                .height(30.dp),
-            accentColor = AppTheme.palette.accent,
-            trackColor = AppTheme.palette.label.copy(alpha = 0.16f),
-            iconColor = AppTheme.palette.label,
-        )
 
         Spacer(Modifier.height(14.dp))
         Row(
